@@ -1,0 +1,6 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+# vitest → esbuild 需要平台二进制；显式放行其安装脚本（pnpm 11 供应链策略）
+allowBuilds:
+  esbuild: true

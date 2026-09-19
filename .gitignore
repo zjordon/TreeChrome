@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+# golden fixtures 是测试资产，需入库；仅忽略抓取过程中的临时目录
+test/fixtures/_tmp/

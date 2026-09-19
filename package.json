@@ -1,0 +1,15 @@
+{
+  "name": "treechrome",
+  "version": "0.0.1",
+  "private": true,
+  "description": "TreeChrome：TreeWalker 核心的 TypeScript 实现（平台无关核心库 + Chrome 扩展/评测/控制台多宿主）。架构见 docs/architecture.md",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  }
+}
