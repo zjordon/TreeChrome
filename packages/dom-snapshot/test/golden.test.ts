@@ -12,7 +12,12 @@ import { describe, expect, it } from "vitest";
 const FIXTURES_DIR = join(__dirname, "fixtures");
 
 interface Fixture {
-  meta: { url: string; generated_at: string; degradation: string; source_statuses?: Record<string, string> };
+  meta: {
+    url: string;
+    generated_at: string;
+    degradation: string;
+    source_statuses?: Record<string, string>;
+  };
   input: {
     dom_tree: Record<string, unknown> | null;
     snapshot: Record<string, unknown> | null;
@@ -60,8 +65,8 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
       }
       for (const [idx, proj] of Object.entries(fixture.output.selector_map)) {
         expect(String(Number(idx))).toBe(idx); // 键是数字字符串（backendNodeId）
-        expect(proj["backend_node_id"]).toBeTypeOf("number");
-        expect(typeof proj["node_name"]).toBe("string");
+        expect(proj.backend_node_id).toBeTypeOf("number");
+        expect(typeof proj.node_name).toBe("string");
       }
     });
   }

@@ -8,13 +8,13 @@
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "../src/sha256.js";
 import {
-  DOMRect,
-  EnhancedAXNode,
-  EnhancedDOMTreeNode,
-  EnhancedSnapshotNode,
-  NodeType,
-  filterDynamicClasses,
   DEFAULT_INCLUDE_ATTRIBUTES,
+  DOMRect,
+  type EnhancedAXNode,
+  EnhancedDOMTreeNode,
+  type EnhancedSnapshotNode,
+  filterDynamicClasses,
+  NodeType,
 } from "../src/types.js";
 
 // ── 参考树：与 Python 参考脚本逐字段一致 ────────────────────────────────
@@ -88,9 +88,7 @@ describe("sha256Hex（同步纯 TS 实现）", () => {
     expect(sha256Hex("abc")).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
-    expect(sha256Hex("")).toBe(
-      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    );
+    expect(sha256Hex("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     expect(sha256Hex("hello world")).toBe(
       "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
     );
@@ -218,12 +216,12 @@ describe("toJson snake_case 形态", () => {
   it("键名与枚举名对齐 Python", () => {
     const { btn } = buildReferenceTree();
     const j = btn.toJson();
-    expect(j["node_type"]).toBe("ELEMENT_NODE");
-    expect(j["node_id"]).toBe(4);
-    expect(j["backend_node_id"]).toBe(104);
-    expect(j["ax_node"]).toMatchObject({ role: "button", name: "Submit" });
-    expect(Array.isArray(j["children_nodes"])).toBe(true);
-    expect((j["children_nodes"] as unknown[])[0]).toMatchObject({
+    expect(j.node_type).toBe("ELEMENT_NODE");
+    expect(j.node_id).toBe(4);
+    expect(j.backend_node_id).toBe(104);
+    expect(j.ax_node).toMatchObject({ role: "button", name: "Submit" });
+    expect(Array.isArray(j.children_nodes)).toBe(true);
+    expect((j.children_nodes as unknown[])[0]).toMatchObject({
       node_type: "TEXT_NODE",
       node_value: "Hello world",
     });

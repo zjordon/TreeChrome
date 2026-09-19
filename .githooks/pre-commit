@@ -1,0 +1,4 @@
+#!/bin/sh
+# 版本化 git pre-commit：人工 git commit 与 agent 提交走同一道门（scripts/gate.mjs）。
+# 启用（每克隆一次）：git config core.hooksPath .githooks
+node scripts/gate.mjs pre-commit

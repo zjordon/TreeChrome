@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "enabled": true,
+    "events": {
+      "PreToolUse": [
+        {
+          "matcher": "Bash",
+          "hooks": [
+            {
+              "type": "process",
+              "command": "node",
+              "args": ["${ZCODE_PROJECT_DIR}/scripts/gate.mjs", "hook-commit"],
+              "timeoutMs": 300000,
+              "statusMessage": "提交门：staged/边界/质量检查"
+            }
+          ]
+        }
+      ],
+      "PostToolUse": [
+        {
+          "matcher": "Edit|Write",
+          "hooks": [
+            {
+              "type": "process",
+              "command": "node",
+              "args": ["${ZCODE_PROJECT_DIR}/scripts/gate.mjs", "hook-edit"],
+              "timeoutMs": 15000,
+              "statusMessage": "架构边界检查（核心包禁 chrome.*/process.*）"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

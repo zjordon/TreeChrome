@@ -14,6 +14,7 @@ TreeChrome = **TreeWalker 核心能力的 TypeScript 实现**，以 monorepo 形
 1. **集两家之长，不堆砌代码**：引擎（DOM 获取 / tools / agent loop）以 TreeWalker 为准（抖音上传任务实测占优）；权限分级与动作确认取 webbrain 的设计；skill 双层取 TreeWalker，管理工程取 webbrain。
 2. **核心是库，宿主是壳**：核心包禁 `chrome.*`、禁 `process.*`、禁读 ambient env；对宿主的能力需求全部走接口（§4）。配置是显式传入的类型化对象（教训：TreeWalker runner.py issue #1——口径开关曾因新建默认 settings 而从未生效）。
 3. **同一逻辑只写一遍（含 UI）**：侧边栏与 web 控制台共享 `console-ui` 组件包，消费同一事件协议。
+4. **面向对象 + 经典模式 + 小文件**：优先套用经典设计模式（Strategy/Registry/Observer/Adapter/Facade/Template Method/守卫链，映射见 AGENTS.md 设计规范）；单源文件 ≤ 3000 行为硬门槛（提交门强制），移植 Python 巨石文件（如 TreeWalker `actions.py` 3264 行）时必须按职责拆分。
 
 ## 2. 仓库布局
 

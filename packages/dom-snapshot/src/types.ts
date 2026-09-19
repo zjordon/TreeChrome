@@ -12,33 +12,134 @@ import { sha256Hex } from "./sha256.js";
 // ── 常量（models.py:22-153） ────────────────────────────────────────────
 
 export const DEFAULT_INCLUDE_ATTRIBUTES: readonly string[] = [
-  "title", "type", "checked", "id", "name", "role", "value", "placeholder",
-  "data-date-format", "alt", "aria-label", "aria-expanded", "data-state",
-  "aria-checked", "aria-valuemin", "aria-valuemax", "aria-valuenow",
-  "aria-placeholder", "pattern", "min", "max", "minlength", "maxlength", "step",
-  "accept", "multiple", "inputmode", "autocomplete", "aria-autocomplete",
-  "list", "data-mask", "data-inputmask", "data-datepicker", "format",
-  "expected_format", "contenteditable", "pseudo", "selected", "expanded",
-  "pressed", "disabled", "invalid", "valuemin", "valuemax", "valuenow",
-  "keyshortcuts", "haspopup", "multiselectable", "required", "valuetext",
-  "level", "busy", "live", "ax_name",
+  "title",
+  "type",
+  "checked",
+  "id",
+  "name",
+  "role",
+  "value",
+  "placeholder",
+  "data-date-format",
+  "alt",
+  "aria-label",
+  "aria-expanded",
+  "data-state",
+  "aria-checked",
+  "aria-valuemin",
+  "aria-valuemax",
+  "aria-valuenow",
+  "aria-placeholder",
+  "pattern",
+  "min",
+  "max",
+  "minlength",
+  "maxlength",
+  "step",
+  "accept",
+  "multiple",
+  "inputmode",
+  "autocomplete",
+  "aria-autocomplete",
+  "list",
+  "data-mask",
+  "data-inputmask",
+  "data-datepicker",
+  "format",
+  "expected_format",
+  "contenteditable",
+  "pseudo",
+  "selected",
+  "expanded",
+  "pressed",
+  "disabled",
+  "invalid",
+  "valuemin",
+  "valuemax",
+  "valuenow",
+  "keyshortcuts",
+  "haspopup",
+  "multiselectable",
+  "required",
+  "valuetext",
+  "level",
+  "busy",
+  "live",
+  "ax_name",
 ];
 
 export const STATIC_ATTRIBUTES: ReadonlySet<string> = new Set([
-  "class", "id", "name", "type", "placeholder", "aria-label", "title", "role",
-  "data-testid", "data-test", "data-cy", "data-selenium", "for", "required",
-  "disabled", "readonly", "checked", "selected", "multiple", "accept", "href",
-  "target", "rel", "aria-describedby", "aria-labelledby", "aria-controls",
-  "aria-owns", "aria-live", "aria-atomic", "aria-busy", "aria-hidden",
-  "aria-pressed", "aria-autocomplete", "aria-checked", "aria-selected", "list",
-  "tabindex", "alt", "src", "lang", "itemscope", "itemtype", "itemprop",
-  "pseudo", "aria-valuemin", "aria-valuemax", "aria-valuenow", "aria-placeholder",
+  "class",
+  "id",
+  "name",
+  "type",
+  "placeholder",
+  "aria-label",
+  "title",
+  "role",
+  "data-testid",
+  "data-test",
+  "data-cy",
+  "data-selenium",
+  "for",
+  "required",
+  "disabled",
+  "readonly",
+  "checked",
+  "selected",
+  "multiple",
+  "accept",
+  "href",
+  "target",
+  "rel",
+  "aria-describedby",
+  "aria-labelledby",
+  "aria-controls",
+  "aria-owns",
+  "aria-live",
+  "aria-atomic",
+  "aria-busy",
+  "aria-hidden",
+  "aria-pressed",
+  "aria-autocomplete",
+  "aria-checked",
+  "aria-selected",
+  "list",
+  "tabindex",
+  "alt",
+  "src",
+  "lang",
+  "itemscope",
+  "itemtype",
+  "itemprop",
+  "pseudo",
+  "aria-valuemin",
+  "aria-valuemax",
+  "aria-valuenow",
+  "aria-placeholder",
 ]);
 
 const DYNAMIC_CLASS_PATTERNS: ReadonlySet<string> = new Set([
-  "focus", "hover", "active", "selected", "disabled", "animation", "transition",
-  "loading", "open", "closed", "expanded", "collapsed", "visible", "hidden",
-  "pressed", "checked", "highlighted", "current", "entering", "leaving",
+  "focus",
+  "hover",
+  "active",
+  "selected",
+  "disabled",
+  "animation",
+  "transition",
+  "loading",
+  "open",
+  "closed",
+  "expanded",
+  "collapsed",
+  "visible",
+  "hidden",
+  "pressed",
+  "checked",
+  "highlighted",
+  "current",
+  "entering",
+  "leaving",
 ]);
 
 /** 去掉动态状态类，保留语义/识别类；结果按字典序排序（对齐 Python sorted）。 */
@@ -74,19 +175,48 @@ export enum NodeType {
 
 // ── 舍入工具（对齐 Python round 的银行家舍入） ──────────────────────────
 
+/**
+ * 对齐 Python round() 的精确十进制舍入（银行家舍入）。
+ *
+ * 不能用「n × 10^d 再看小数部分」的实现：乘法自身的舍入会把 1.05×10 恰好
+ * 舍到 10.5，制造假平局（Python round(1.05,1)=1.1，假平局会给 1.0）。
+ * 这里的做法是把浮点的精确值 m·2^e（BigInt 整数域）放大到目标位数后整除取余，
+ * 余数×2 与除数比较判平局——与 Python 基于 dtoa 精确十进制展开的舍入等价。
+ */
 export function roundHalfEven(n: number, digits: number): number {
-  const f = 10 ** digits;
-  const x = n * f;
-  const frac = Math.abs(x % 1);
-  // 仅在浮点恰好落在 .5 时走银行家舍入；带浮点噪声的值（如 10.500000000000002）
-  // 的行为与 Python 对实际二进制值舍入一致。
-  if (frac === 0.5) {
-    const t = Math.trunc(x);
-    const even = t % 2 === 0;
-    const v = even ? t : t + Math.sign(x);
-    return v / f;
+  if (!Number.isFinite(n) || digits < 0) return n;
+  const buf = new DataView(new ArrayBuffer(8));
+  buf.setFloat64(0, n);
+  const bits = buf.getBigUint64(0);
+  const negative = bits >> 63n === 1n;
+  const expBits = Number((bits >> 52n) & 0x7ffn);
+  const mant = bits & 0xfffffffffffffn;
+  let m: bigint;
+  let e: number;
+  if (expBits === 0) {
+    m = mant;
+    e = -1074;
+  } else {
+    m = mant | (1n << 52n);
+    e = expBits - 1075;
   }
-  return Math.round(x) / f;
+  if (m === 0n) return n;
+
+  // 精确值 |n| = m·2^e；放大 10^digits 后整除：num/den
+  const ten = 10n ** BigInt(digits);
+  let num: bigint;
+  let den: bigint = 1n;
+  if (e >= 0) num = m << BigInt(e);
+  else den = 1n << BigInt(-e);
+  num = m * ten;
+
+  const q = num / den; // num, den 恒正，截断即向零取整
+  const twice = (num % den) * 2n;
+  let k = q;
+  if (twice > den || (twice === den && q % 2n === 1n)) k = q + 1n;
+
+  const result = Number(k) / 10 ** digits;
+  return negative ? -result : result;
 }
 
 // ── 几何 ───────────────────────────────────────────────────────────────
@@ -327,7 +457,7 @@ export class EnhancedDOMTreeNode {
   llmRepresentation(maxTextLength = 100): string {
     let text = this.getAllChildrenText();
     if (text && text.length > maxTextLength) text = text.slice(0, maxTextLength);
-    return `<${this.tagName}>${text ?? ""}`;
+    return `<${this.tagName}>${text}`;
   }
 
   getMeaningfulTextForLlm(): string {
@@ -351,7 +481,7 @@ export class EnhancedDOMTreeNode {
       if (v || h) {
         const styles = this.snapshotNode.computed_styles;
         if (styles) {
-          const overflow = (styles["overflow"] ?? "visible").toLowerCase();
+          const overflow = (styles.overflow ?? "visible").toLowerCase();
           const ox = (styles["overflow-x"] ?? overflow).toLowerCase();
           const oy = (styles["overflow-y"] ?? overflow).toLowerCase();
           return (
@@ -384,12 +514,13 @@ export class EnhancedDOMTreeNode {
     let vPct = 0;
     let hPct = 0;
     if (scroll.height > client.height) {
+      // 进入本分支即保证 maxTop > 0（Python 原文的三元 else 在此恒不可达，直算）
       const maxTop = scroll.height - client.height;
-      vPct = maxTop > 0 ? (scrollTop / maxTop) * 100 : 0;
+      vPct = (scrollTop / maxTop) * 100;
     }
     if (scroll.width > client.width) {
       const maxLeft = scroll.width - client.width;
-      hPct = maxLeft > 0 ? (scrollLeft / maxLeft) * 100 : 0;
+      hPct = (scrollLeft / maxLeft) * 100;
     }
 
     const pagesAbove = client.height > 0 ? contentAbove / client.height : 0;
@@ -424,10 +555,7 @@ export class EnhancedDOMTreeNode {
     const info = this.scrollInfo;
     if (!info) return false;
     return (
-      info.can_scroll_up ||
-      info.can_scroll_down ||
-      info.can_scroll_left ||
-      info.can_scroll_right
+      info.can_scroll_up || info.can_scroll_down || info.can_scroll_left || info.can_scroll_right
     );
   }
 
@@ -454,13 +582,12 @@ export class EnhancedDOMTreeNode {
   private hashHex(filteredClass: boolean): bigint {
     const path = this.getParentBranchPath();
     const pathStr = path.join("/");
-    const entries = Object.entries(this.attributes).filter(([k]) =>
-      STATIC_ATTRIBUTES.has(k),
-    );
+    const entries = Object.entries(this.attributes).filter(([k]) => STATIC_ATTRIBUTES.has(k));
+    // 属性名唯一，等值分支不可达；两分支比较与 Python 的 tuple 排序等价
+    const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : 1));
     let attrsStr = "";
     if (filteredClass) {
       // compute_stable_hash：class 过滤动态类，过滤后为空则跳过
-      const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
       for (const [k, v] of sorted) {
         let val = v;
         if (k === "class") {
@@ -471,7 +598,6 @@ export class EnhancedDOMTreeNode {
       }
     } else {
       // __hash__：静态属性原样（class 不过滤）
-      const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
       for (const [k, v] of sorted) attrsStr += `${k}=${v}`;
     }
     const axName = this.axNode?.name ? `|ax_name=${this.axNode.name}` : "";
@@ -538,9 +664,7 @@ export class EnhancedDOMTreeNode {
           }
         : null,
       shadow_roots: this.shadowRoots ? this.shadowRoots.map((r) => r.toJson()) : [],
-      children_nodes: this.childrenNodes
-        ? this.childrenNodes.map((c) => c.toJson())
-        : [],
+      children_nodes: this.childrenNodes ? this.childrenNodes.map((c) => c.toJson()) : [],
     };
   }
 }
@@ -575,13 +699,11 @@ export class SimplifiedNode {
   ) {}
 
   private cleanOriginalNodeJson(nodeJson: Record<string, unknown>): Record<string, unknown> {
-    delete nodeJson["children_nodes"];
-    delete nodeJson["shadow_roots"];
-    const cd = nodeJson["content_document"];
+    delete nodeJson.children_nodes;
+    delete nodeJson.shadow_roots;
+    const cd = nodeJson.content_document;
     if (cd && typeof cd === "object") {
-      nodeJson["content_document"] = this.cleanOriginalNodeJson(
-        cd as Record<string, unknown>,
-      );
+      nodeJson.content_document = this.cleanOriginalNodeJson(cd as Record<string, unknown>);
     }
     return nodeJson;
   }
