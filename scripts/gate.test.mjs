@@ -36,6 +36,24 @@ test("非 commit 命令不误判（首个非选项 token 即子命令）", () =>
   assert.equal(isGitCommit(""), false);
 });
 
+test("git.exe / 带路径形态在生产入口可达（评审七轮 #3 回归）", () => {
+  assert.equal(isGitCommit("git.exe commit -m x"), true);
+  assert.equal(isGitCommit("/usr/bin/git commit -m x"), true);
+  assert.equal(isGitCommit("cd x && git.exe commit -m y"), true);
+  assert.equal(isGitCommit("git.exe status"), false);
+});
+
+test("gitSegmentHasFlag / gitAddIsBroad：-C 粘连参数（评审七轮 #2）", () => {
+  const force = (s) => gitSegmentHasFlag(s, ["add", "stage"], ["f"], "--force");
+  const noVerify = (s) => gitSegmentHasFlag(s, ["commit"], ["n"], "--no-verify");
+  // -C 参数粘连形式：子命令定位不得被 "-Csub" 吞掉
+  assert.equal(force("git -C.. add -f .env && git commit -m x"), true);
+  assert.equal(force("git -Csub add -f .env"), true);
+  assert.equal(gitAddIsBroad("git -Csub add -A"), true);
+  assert.equal(noVerify("git -C.. commit -n"), true);
+  assert.equal(force("git -C.. add packages"), false);
+});
+
 test(".env 系列拦截口径（评审四轮 #5 的回归覆盖）", () => {
   const blocked = [
     ".env",
@@ -65,6 +83,7 @@ test("parseStatus：剥状态列/去引号/剔目录项/重命名取新路径", 
     "!! .env",
     "!! node_modules/",
     "R  old-name.ts -> new-name.ts",
+    "RM old2.ts -> .env", // 组合状态：重命名后工作区又修改（评审七轮 #1）
   ].join("\n");
   assert.deepEqual(parseStatus(out), [
     { status: "M", path: "packages/a.ts" },
@@ -72,6 +91,7 @@ test("parseStatus：剥状态列/去引号/剔目录项/重命名取新路径", 
     { status: "??", path: "path with space.txt" },
     { status: "!!", path: ".env" },
     { status: "R", path: "new-name.ts" },
+    { status: "RM", path: ".env" },
   ]);
 });
 

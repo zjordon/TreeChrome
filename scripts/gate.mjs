@@ -168,10 +168,10 @@ export function parseStatus(out) {
     .map((l) => {
       const status = l.slice(0, 2).trim();
       const raw = l.slice(3).trim();
-      // 仅 R/C（重命名/拷贝）条目形如 "old -> new"（两侧各自带引号）；
-      // 其余状态的文件名可能天然含箭头，不做切分
+      // R/C 在 porcelain 的 index 列（首字符）：组合状态 RM/RD（重命名后工作区
+      // 又改/删）同样要箭头切分取新路径；其余状态的文件名可能天然含箭头，不切
       const path =
-        status === "R" || status === "C"
+        status.startsWith("R") || status.startsWith("C")
           ? raw
               .split(" -> ")
               .map((s) => s.trim().replace(/^"|"$/g, ""))
@@ -259,7 +259,9 @@ const GIT_OPTS_FLAG_ONLY = new Set([
 /** 单段命令是否为 git commit 子命令 */
 function segmentIsGitCommit(segment) {
   const tokens = segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-  if (tokens[0]?.replace(/^["']|["']$/g, "") !== "git") return false;
+  // 与 GIT_TOKEN_RE 同口径（裸 git / 带路径 / git.exe），否则 .exe 形态在生产入口被放行
+  const head = tokens[0]?.replace(/^["']|["']$/g, "");
+  if (!head || !GIT_TOKEN_RE.test(head)) return false;
   for (let i = 1; i < tokens.length; i++) {
     const t = tokens[i].replace(/^["']|["']$/g, "");
     if (GIT_OPTS_WITH_ARG.has(t)) {
@@ -279,7 +281,8 @@ function segmentIsGitCommit(segment) {
  */
 export function isGitCommit(cmd) {
   const s = String(cmd);
-  if (/\bgit\s+commit\b/.test(s)) return true;
+  // 兜底正则与 GIT_TOKEN_RE 同口径认 .exe，否则 git.exe commit 走不进任何检查
+  if (/\bgit(\.exe)?\s+commit\b/.test(s)) return true;
   return shellSegments(s).some(segmentIsGitCommit);
 }
 
@@ -310,7 +313,9 @@ function forGitSub(bare, subs, fn) {
         i++;
         continue;
       }
-      if (GIT_OPTS_FLAG_ONLY.has(t) || /^--[\w-]+=/.test(t)) continue;
+      // -C/-c 参数粘连（git -C.. add）：参数内联在 token 中，跳过本 token 即可；
+      // 否则 "-Csub" 会被当作子命令致整段跳过、标志判定全假阴性
+      if (/^-[Cc]\S/.test(t) || GIT_OPTS_FLAG_ONLY.has(t) || /^--[\w-]+=/.test(t)) continue;
       cmdIdx = i;
       break;
     }
