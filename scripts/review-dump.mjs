@@ -12,16 +12,24 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { argv, exit } from "node:process";
 
-const args = argv.slice(2).filter((a) => a !== "--out");
-const outIdx = argv.indexOf("--out");
-const outFile = outIdx >= 0 ? argv[outIdx + 1] : null;
+const rest = argv.slice(2);
+const outIdx = rest.indexOf("--out");
+const outFile = outIdx >= 0 ? rest[outIdx + 1] : null;
+// 同时剥掉 --out 与其值：容忍 `--out x.md a.json` 的参数顺序
+const args = rest.filter((_, i) => i !== outIdx && i !== outIdx + 1);
 const file = args[0];
 if (!file) {
   console.error("用法: node scripts/review-dump.mjs <review.json> [--out <md>]");
   exit(1);
 }
 
-const j = JSON.parse(readFileSync(file, "utf8"));
+let j;
+try {
+  j = JSON.parse(readFileSync(file, "utf8"));
+} catch (err) {
+  console.error(`[review-dump] 无法读取或解析 ${file}: ${err.message}`);
+  exit(1);
+}
 const comments = j.comments ?? [];
 const lines = [];
 lines.push(`# 评审摘要：${file}`);
@@ -45,16 +53,17 @@ comments.forEach((c, i) => {
   lines.push(c.content ?? "");
   if (c.existing_code) {
     lines.push("");
-    lines.push("```");
+    // 四反引号围栏：评审意见原文常含 ``` 围栏，三反引号会被提前截断
+    lines.push("````");
     lines.push(clip(c.existing_code, 600));
-    lines.push("```");
+    lines.push("````");
   }
   if (c.suggestion_code) {
     lines.push("");
     lines.push("建议:");
-    lines.push("```");
+    lines.push("````");
     lines.push(clip(c.suggestion_code, 800));
-    lines.push("```");
+    lines.push("````");
   }
   lines.push("");
 });

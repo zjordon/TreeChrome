@@ -70,7 +70,6 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
         const layout = doc.layout;
         // layout 是 CDP DocumentSnapshot 的必需字段：缺失即契约破坏，报警而非跳过
         expect(layout).toBeDefined();
-        if (!layout) continue;
         expect(Array.isArray(layout.bounds)).toBe(true);
         expect(Array.isArray(layout.nodeIndex)).toBe(true);
         expect(layout.bounds).toHaveLength(layout.nodeIndex.length);

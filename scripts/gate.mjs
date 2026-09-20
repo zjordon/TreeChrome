@@ -17,7 +17,7 @@
 import { execSync, spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 // fileURLToPath(new URL(...)) 而非 import.meta.dirname：后者 Node >= 20.11 才有，
 // 低版本在模块顶层抛 TypeError 且 hook 上下文 exit 1 不阻断（评审四轮 #10）
@@ -165,10 +165,12 @@ export function parseStatus(out) {
   return String(out)
     .split("\n")
     .filter((l) => l.trim() !== "")
-    .map((l) => ({
-      status: l.slice(0, 2).trim(),
-      path: l.slice(3).trim().replace(/^"|"$/g, ""),
-    }))
+    .map((l) => {
+      const raw = l.slice(3).trim().replace(/^"|"$/g, "");
+      // 重命名/拷贝条目（R/C）形如 "old -> new"，取新路径（git mv x .env 的漏检口径）
+      const path = raw.includes(" -> ") ? (raw.split(" -> ").pop() ?? raw) : raw;
+      return { status: l.slice(0, 2).trim(), path };
+    })
     .filter((e) => e.path !== "" && !e.path.endsWith("/"));
 }
 
@@ -270,7 +272,49 @@ function segmentIsGitCommit(segment) {
 export function isGitCommit(cmd) {
   const s = String(cmd);
   if (/\bgit\s+commit\b/.test(s)) return true;
-  return s.split(/&&|\|\||;|\|/).some(segmentIsGitCommit);
+  return shellSegments(s).some(segmentIsGitCommit);
+}
+
+/** 剥除命令中引号包裹的内容，防消息文本里的 -f/-n 等标志误判 */
+const stripQuoted = (cmd) => String(cmd).replace(/"[^"]*"|'[^']*'/g, " ");
+
+const shellSegments = (s) => String(s).split(/&&|\|\||;|\|/);
+
+/** 在含 git <sub> 的段上回调 sub 之后的 token；回调返回 true 则整体返回 true */
+function forGitSubTokens(bare, sub, fn) {
+  for (const seg of shellSegments(bare)) {
+    const tokens = seg.match(/\S+/g) ?? [];
+    const i = tokens.indexOf(sub);
+    if (i === -1 || !tokens.includes("git")) continue;
+    if (fn(tokens.slice(i + 1))) return true;
+  }
+  return false;
+}
+
+/**
+ * git <sub> 所在段是否带指定标志：短参合并（-Af）与长参唯一前缀（--forc）都识别。
+ * 段级收窄使无关命令的 -f（rm -f / tail -f / git push --force）不误命中。
+ */
+export function gitSegmentHasFlag(bare, sub, shortChars, longFull) {
+  return forGitSubTokens(bare, sub, (rest) =>
+    rest.some(
+      (t) =>
+        t.startsWith(longFull) ||
+        longFull.startsWith(t) ||
+        (/^-\w+$/.test(t) && [...t.slice(1)].some((c) => shortChars.includes(c))),
+    ),
+  );
+}
+
+/**
+ * git add 是否广域暂存：-A/--all/`.` 路径spec 会把未跟踪文件卷进 index。
+ * 注意 -u/--update 只更新已跟踪条目（git 语义 adds no new files），不计入。
+ */
+export function gitAddIsBroad(bare) {
+  return (
+    gitSegmentHasFlag(bare, "add", ["A"], "--all") ||
+    forGitSubTokens(bare, "add", (rest) => rest.some((t) => t === "." || t.startsWith("./")))
+  );
 }
 
 /**
@@ -281,11 +325,10 @@ export function isGitCommit(cmd) {
  * 拦下一切常规提交。git pre-commit 钩子是最终兜底。
  */
 function worktreePrecheck(cmd) {
-  // 引号内容剥除后再检测标志，防 -m "fix -f xxx" 之类的消息文本误判
-  const bare = String(cmd).replace(/"[^"]*"|'[^']*'/g, " ");
-  const usesForce = /(^|\s)(-f|--force)(\s|$)/.test(bare);
-  // 广域暂存（-A/-u/--all/`.`）才会把未跟踪文件卷进 index；限定路径的 add 摸不到
-  const broadAdd = /(^|\s)add\s+(-\w*[Au]\b|--all\b|\.)/.test(bare);
+  // 引号剥除后按段检测标志：无关命令的 -f 不误启用 --ignored，合并短参 -Af 不漏检
+  const bare = stripQuoted(cmd);
+  const usesForce = gitSegmentHasFlag(bare, "add", ["f"], "--force");
+  const broadAdd = gitAddIsBroad(bare);
   let out;
   try {
     out = execSync(`git status --porcelain${usesForce ? " --ignored" : ""}`, {
@@ -319,9 +362,8 @@ function hookCommit() {
   const input = readHookInput();
   const cmd = input?.tool_input?.command ?? "";
   if (!isGitCommit(cmd)) process.exit(0); // 非 commit 命令，放行
-  // --no-verify/-n 会跳过 pre-commit 这道最终兜底，显式拦截（引号内容剥除后再判）
-  const bare = String(cmd).replace(/"[^"]*"|'[^']*'/g, " ");
-  if (/(^|\s)(--no-verify|-n)(\s|$)/.test(bare)) {
+  // --no-verify/-n（含 -nm 合并短参、--no-ver 前缀）会跳过 pre-commit 这道最终兜底
+  if (gitSegmentHasFlag(stripQuoted(cmd), "commit", ["n"], "--no-verify")) {
     exit(2, "git commit 带 --no-verify/-n 会跳过 pre-commit 兜底，门禁拦截");
   }
   worktreePrecheck(cmd);
