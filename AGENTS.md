@@ -27,7 +27,7 @@
 
 - **面向对象风格**：状态与行为收进类，跨组件共享的可变状态必须挂在明确的实例上；对宿主能力一律构造注入（§4 五接口），不做服务定位器。
 - **优先套用经典设计模式**，本项目已预留的映射：
-  - Strategy：动作 handler（每个动作独立策略类）、`PolicyInteraction` 实现（交互确认卡 / 评测 AutoAllow）
+  - Strategy：动作 handler（每个动作独立策略类）、`PolicyInteraction` 实现（交互确认卡 / 评测 AutoAllow）、LLM 协议适配器（openai-completions / anthropic-messages / gemini）
   - Registry：动作注册表（Python `ActionRegistry` 的移植形态）
   - Observer：EventBus → `@tw/protocol` 事件流
   - Adapter：`CDPTransport` 双实现（chrome.debugger / WebSocket）、评测的 CDPPageAdapter
