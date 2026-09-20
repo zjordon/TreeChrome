@@ -15,10 +15,13 @@
  * 退出码：0 通过；2 拦截（stderr 给原因）；1 内部错误。
  */
 import { execSync, spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const REPO = join(import.meta.dirname, "..");
+// fileURLToPath(new URL(...)) 而非 import.meta.dirname：后者 Node >= 20.11 才有，
+// 低版本在模块顶层抛 TypeError 且 hook 上下文 exit 1 不阻断（评审四轮 #10）
+const REPO = fileURLToPath(new URL("..", import.meta.url));
 const exit = (code, msg) => {
   if (msg) process.stderr.write(`[gate] ${msg}\n`);
   process.exit(code);
@@ -145,12 +148,29 @@ function boundaries(pkgFilter) {
 
 const STAGED_FORBIDDEN = [
   { re: /(^|\/)_.*\.(txt|json|mjs|py|md)$/, msg: "临时文件（_ 前缀草稿）" },
-  // (^|\/) 锚定任意层级：子包路径（packages/foo/.env、apps/x/dist/…）同样拦截；
-  // 结尾锚定 + 例外 .env.example（.gitignore 的 !.env.example 允许入库，两处规则须一致）
-  { re: /(^|\/)\.env(\.(?!example\b)\w+)?$/, msg: "环境变量/密钥文件" },
+  // (^|\/) 锚定任意层级；结尾锚定 + rc 形态 + 多段后缀（.env.local.bak），
+  // 例外 .env.example（.gitignore 的 !.env.example 允许入库，两处规则须一致）
+  { re: /(^|\/)\.env(rc)?(\.(?!example\b)[\w.-]+)?$/, msg: "环境变量/密钥文件" },
   { re: /(^|\/)(node_modules|coverage|dist)\//, msg: "构建/测试产物" },
   { re: /(^|\/)coverage-final\.json$/, msg: "覆盖率产物" },
 ];
+
+/** 单个路径是否命中禁入库规则（导出供 gate.test.mjs 表驱动覆盖） */
+export function matchStagedForbidden(f) {
+  return STAGED_FORBIDDEN.find(({ re }) => re.test(f))?.msg;
+}
+
+/** 解析 git status --porcelain 输出为 {status, path}（目录项剔除；导出供测试） */
+export function parseStatus(out) {
+  return String(out)
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .map((l) => ({
+      status: l.slice(0, 2).trim(),
+      path: l.slice(3).trim().replace(/^"|"$/g, ""),
+    }))
+    .filter((e) => e.path !== "" && !e.path.endsWith("/"));
+}
 
 function stagedFiles() {
   try {
@@ -175,9 +195,8 @@ function staged() {
   }
   const violations = [];
   for (const f of files) {
-    for (const { re, msg } of STAGED_FORBIDDEN) {
-      if (re.test(f)) violations.push(`${f}: ${msg}`);
-    }
+    const msg = matchStagedForbidden(f);
+    if (msg) violations.push(`${f}: ${msg}`);
   }
   if (violations.length) exit(2, `暂存区包含不应提交的文件：\n  ${violations.join("\n  ")}`);
   ok(`staged 通过（${files.length} 个文件）`);
@@ -201,7 +220,7 @@ function run(cmd) {
 
 function quality() {
   run("pnpm exec biome check .");
-  run('node --test "scripts/**/*.test.mjs"');
+  run("pnpm run test:gate"); // 与 package.json 脚本同源，避免命令双份漂移
   run("pnpm -r run typecheck");
   run("pnpm -r run test:coverage");
   ok("quality 通过（biome + gate 单测 + typecheck + 测试 + 覆盖率阈值）");
@@ -256,30 +275,33 @@ export function isGitCommit(cmd) {
 
 /**
  * 时间差盲区预检：`git add -f .env && git commit` 在 PreToolUse 时刻 index 仍空，
- * staged() 看不到这条命令将要暂存的文件——命令含 git add / commit -a 时按工作区
- * 变更预检（宁可误拦）；git pre-commit 钩子是最终兜底。
+ * staged() 看不到这条命令将要暂存的文件。hookCommit 命中 commit 后无条件调用本预检
+ * （git -C <dir> add 等变体不再依赖窄正则识别）；--ignored 仅在命令含 -f/--force 时
+ * 启用——普通 add 摸不到被忽略文件，而本地 .env 常态存在，无条件 --ignored 会
+ * 拦下一切常规提交。git pre-commit 钩子是最终兜底。
  */
 function worktreePrecheck(cmd) {
-  const s = String(cmd);
-  if (!(/\bgit\s+add\b/.test(s) || /\bgit\s+commit\s+(?=-\w*a)/.test(s))) return;
-  let changed;
+  // 引号内容剥除后再检测标志，防 -m "fix -f xxx" 之类的消息文本误判
+  const bare = String(cmd).replace(/"[^"]*"|'[^']*'/g, " ");
+  const usesForce = /(^|\s)(-f|--force)(\s|$)/.test(bare);
+  // 广域暂存（-A/-u/--all/`.`）才会把未跟踪文件卷进 index；限定路径的 add 摸不到
+  const broadAdd = /(^|\s)add\s+(-\w*[Au]\b|--all\b|\.)/.test(bare);
+  let out;
   try {
-    // --ignored：git add -f 能强制暂存被 .gitignore 忽略的文件（.env 等），
-    // 普通 porcelain 不列出它们，时间差预检必须把忽略文件纳入视野
-    changed = execSync("git status --porcelain --ignored", { cwd: REPO, encoding: "utf8" })
-      .split("\n")
-      .map((l) => l.slice(3).trim().replace(/^"|"$/g, ""))
-      // 只看文件级条目：目录项（node_modules/ 等）恒存在，拦它们会让一切 git add 失败；
-      // 目录级 force-add 由后续 staged 检查（pre-commit）兜底
-      .filter((f) => f !== "" && !f.endsWith("/"));
+    out = execSync(`git status --porcelain${usesForce ? " --ignored" : ""}`, {
+      cwd: REPO,
+      encoding: "utf8",
+    });
   } catch (e) {
     exit(2, `git status 失败，门禁中止（hook 上下文须 exit 2 才阻断）：${e.message}`);
   }
   const violations = [];
-  for (const f of changed) {
-    for (const { re, msg } of STAGED_FORBIDDEN) {
-      if (re.test(f)) violations.push(`${f}: ${msg}`);
-    }
+  for (const { status, path } of parseStatus(out)) {
+    // 未跟踪文件仅广域 add 能卷入；被忽略条目只在 usesForce 扫描时出现，恰是 -f 能强加的时刻
+    if (status === "??" && !broadAdd) continue;
+    if (status === "!!" && !usesForce) continue;
+    const msg = matchStagedForbidden(path);
+    if (msg) violations.push(`${path}: ${msg}`);
   }
   if (violations.length) {
     exit(2, `命令将提交的工作区含禁入库文件（时间差预检）：\n  ${violations.join("\n  ")}`);
@@ -297,6 +319,11 @@ function hookCommit() {
   const input = readHookInput();
   const cmd = input?.tool_input?.command ?? "";
   if (!isGitCommit(cmd)) process.exit(0); // 非 commit 命令，放行
+  // --no-verify/-n 会跳过 pre-commit 这道最终兜底，显式拦截（引号内容剥除后再判）
+  const bare = String(cmd).replace(/"[^"]*"|'[^']*'/g, " ");
+  if (/(^|\s)(--no-verify|-n)(\s|$)/.test(bare)) {
+    exit(2, "git commit 带 --no-verify/-n 会跳过 pre-commit 兜底，门禁拦截");
+  }
   worktreePrecheck(cmd);
   fullGate();
 }
@@ -320,10 +347,13 @@ function hookEdit() {
 }
 
 // ── 入口（仅直接执行时运行；被测试 import 时不触发门禁） ────────────────
+// 两侧都取 realpath：ESM 加载器对模块做符号链接规范化，argv[1] 不解析时
+// 严格相等可能失配 → 门禁整体静默跳过（评审四轮 #7）
+const invokedAsMain =
+  process.argv[1] !== undefined &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 
-import { pathToFileURL } from "node:url";
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+if (invokedAsMain) {
   const mode = process.argv[2] ?? "pre-commit";
   switch (mode) {
     case "boundaries":

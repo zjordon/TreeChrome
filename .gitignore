@@ -11,5 +11,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+.envrc
 # golden fixtures 是测试资产，需入库；仅忽略抓取过程中的临时目录（任意层级）
 _tmp/

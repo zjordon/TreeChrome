@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+/**
+ * 评审结果摘要工具：把 open-code-review 产出的 JSON（含大量 thinking 原文，
+ * 通常 400KB+）抽取成紧凑 markdown，便于人和 agent 阅读。
+ *
+ * 用法：
+ *   node scripts/review-dump.mjs docs/code-review/four-review.json          # 打印到 stdout
+ *   node scripts/review-dump.mjs docs/code-review/four-review.json --out _review.md
+ *
+ * 输出文件建议用 _ 前缀（提交门会拦截 _ 前缀临时文件，天然不入库）。
+ */
+import { readFileSync, writeFileSync } from "node:fs";
+import { argv, exit } from "node:process";
+
+const args = argv.slice(2).filter((a) => a !== "--out");
+const outIdx = argv.indexOf("--out");
+const outFile = outIdx >= 0 ? argv[outIdx + 1] : null;
+const file = args[0];
+if (!file) {
+  console.error("用法: node scripts/review-dump.mjs <review.json> [--out <md>]");
+  exit(1);
+}
+
+const j = JSON.parse(readFileSync(file, "utf8"));
+const comments = j.comments ?? [];
+const lines = [];
+lines.push(`# 评审摘要：${file}`);
+lines.push("");
+lines.push(
+  `状态: ${j.status} | 文件数: ${j.summary?.files_reviewed ?? "?"} | 意见数: ${comments.length}` +
+    ` | 模型: ${j.llm?.model ?? "?"} | 耗时: ${j.summary?.elapsed ?? "?"}`,
+);
+lines.push("");
+lines.push(j.summary?.project_summary ?? "");
+lines.push("");
+
+const clip = (s, n) => {
+  const t = String(s ?? "").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+
+comments.forEach((c, i) => {
+  lines.push(`### [${i + 1}] ${c.path}:${c.start_line ?? "?"}-${c.end_line ?? "?"}`);
+  lines.push("");
+  lines.push(c.content ?? "");
+  if (c.existing_code) {
+    lines.push("");
+    lines.push("```");
+    lines.push(clip(c.existing_code, 600));
+    lines.push("```");
+  }
+  if (c.suggestion_code) {
+    lines.push("");
+    lines.push("建议:");
+    lines.push("```");
+    lines.push(clip(c.suggestion_code, 800));
+    lines.push("```");
+  }
+  lines.push("");
+});
+
+const text = lines.join("\n");
+if (outFile) {
+  writeFileSync(outFile, text, "utf8");
+  console.log(`[review-dump] ${comments.length} 条意见 -> ${outFile}（${text.length} 字符）`);
+} else {
+  console.log(text);
+}

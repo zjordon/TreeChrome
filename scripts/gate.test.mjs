@@ -1,8 +1,7 @@
-// isGitCommit 判定用例（review2 #5/#6/#7 的回归覆盖）
-
+// isGitCommit / matchStagedForbidden / parseStatusPaths 判定用例（评审二/四轮修复的回归覆盖）
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isGitCommit } from "./gate.mjs";
+import { isGitCommit, matchStagedForbidden, parseStatus } from "./gate.mjs";
 
 test("识别基础与全局选项变体", () => {
   assert.equal(isGitCommit("git commit -m x"), true);
@@ -28,4 +27,41 @@ test("非 commit 命令不误判（首个非选项 token 即子命令）", () =>
   assert.equal(isGitCommit("pnpm test"), false);
   assert.equal(isGitCommit("node scripts/gate.mjs pre-commit"), false);
   assert.equal(isGitCommit(""), false);
+});
+
+test(".env 系列拦截口径（评审四轮 #5 的回归覆盖）", () => {
+  const blocked = [
+    ".env",
+    "packages/x/.env",
+    ".env.local",
+    ".env.production",
+    ".env.local.bak", // 多段后缀
+    ".envrc", // direnv
+    "apps/y/.envrc",
+  ];
+  for (const f of blocked) {
+    assert.ok(matchStagedForbidden(f), `应拦截: ${f}`);
+  }
+  assert.equal(matchStagedForbidden(".env.example"), undefined); // 白名单例外
+  assert.equal(matchStagedForbidden(".environment-notes.md"), undefined); // 前缀相同但非密钥
+  assert.equal(matchStagedForbidden("src/env-loader.ts"), undefined);
+  // 临时文件与产物口径回归
+  assert.ok(matchStagedForbidden("_draft.json"));
+  assert.ok(matchStagedForbidden("packages/x/dist/main.js"));
+});
+
+test("parseStatus：剥状态列/去引号/剔目录项", () => {
+  const out = [
+    " M packages/a.ts",
+    "?? _new.md",
+    '?? "path with space.txt"',
+    "!! .env",
+    "!! node_modules/",
+  ].join("\n");
+  assert.deepEqual(parseStatus(out), [
+    { status: "M", path: "packages/a.ts" },
+    { status: "??", path: "_new.md" },
+    { status: "??", path: "path with space.txt" },
+    { status: "!!", path: ".env" },
+  ]);
 });

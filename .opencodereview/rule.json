@@ -1,0 +1,27 @@
+{
+  "rules": [],
+  "include": [
+    "packages/*/src/**/*.{ts,mts}",
+    "packages/*/test/**/*.{ts,mts}",
+    "packages/*/vitest.config.ts",
+    "packages/*/tools/**/*.py",
+    "apps/*/src/**/*.{ts,tsx,mts}",
+    "scripts/**/*.mjs",
+    "package.json",
+    "biome.json",
+    "pnpm-workspace.yaml",
+    "tsconfig.base.json",
+    ".zcode/config.json",
+    ".githooks/pre-commit"
+  ],
+  "exclude": [
+    "docs/**",
+    "packages/**/test/fixtures/**",
+    "**/node_modules/**",
+    "**/coverage/**",
+    "**/dist/**",
+    "pnpm-lock.yaml",
+    "**/*.md",
+    "_*"
+  ]
+}
