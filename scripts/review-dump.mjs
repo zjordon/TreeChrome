@@ -15,8 +15,9 @@ import { argv, exit } from "node:process";
 const rest = argv.slice(2);
 const outIdx = rest.indexOf("--out");
 const outFile = outIdx >= 0 ? rest[outIdx + 1] : null;
-// 同时剥掉 --out 与其值：容忍 `--out x.md a.json` 的参数顺序
-const args = rest.filter((_, i) => i !== outIdx && i !== outIdx + 1);
+// 同时剥掉 --out 与其值：容忍 `--out x.md a.json` 的参数顺序；
+// 未传 --out 时（outIdx=-1）不得剥除，否则第 0 个参数（输入文件）会被误滤掉
+const args = outIdx >= 0 ? rest.filter((_, i) => i !== outIdx && i !== outIdx + 1) : rest;
 const file = args[0];
 if (!file) {
   console.error("用法: node scripts/review-dump.mjs <review.json> [--out <md>]");

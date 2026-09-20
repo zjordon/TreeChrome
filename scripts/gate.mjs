@@ -166,10 +166,18 @@ export function parseStatus(out) {
     .split("\n")
     .filter((l) => l.trim() !== "")
     .map((l) => {
-      const raw = l.slice(3).trim().replace(/^"|"$/g, "");
-      // 重命名/拷贝条目（R/C）形如 "old -> new"，取新路径（git mv x .env 的漏检口径）
-      const path = raw.includes(" -> ") ? (raw.split(" -> ").pop() ?? raw) : raw;
-      return { status: l.slice(0, 2).trim(), path };
+      const status = l.slice(0, 2).trim();
+      const raw = l.slice(3).trim();
+      // 仅 R/C（重命名/拷贝）条目形如 "old -> new"（两侧各自带引号）；
+      // 其余状态的文件名可能天然含箭头，不做切分
+      const path =
+        status === "R" || status === "C"
+          ? raw
+              .split(" -> ")
+              .map((s) => s.trim().replace(/^"|"$/g, ""))
+              .pop()
+          : raw.replace(/^"|"$/g, "");
+      return { status, path };
     })
     .filter((e) => e.path !== "" && !e.path.endsWith("/"));
 }
@@ -278,42 +286,78 @@ export function isGitCommit(cmd) {
 /** 剥除命令中引号包裹的内容，防消息文本里的 -f/-n 等标志误判 */
 const stripQuoted = (cmd) => String(cmd).replace(/"[^"]*"|'[^']*'/g, " ");
 
-const shellSegments = (s) => String(s).split(/&&|\|\||;|\|/);
+/** shell 段切分：&&/||/;/| 分隔符与换行（多行命令同样按段判定） */
+const shellSegments = (s) => String(s).split(/&&|\|\||;|\||\n/);
 
-/** 在含 git <sub> 的段上回调 sub 之后的 token；回调返回 true 则整体返回 true */
-function forGitSubTokens(bare, sub, fn) {
+/** git 可执行 token 形态：裸 git / 带路径 / Windows git.exe */
+const GIT_TOKEN_RE = /(^|\/)git(\.exe)?$/;
+
+/**
+ * 在子命令命中的段上回调 {flags, args}：flags 为子命令后到 "--" 为止的选项 token
+ * （其后是 pathspec），args 为子命令后全部 token（含 "--" 之后的 pathspec）。
+ * 子命令按"git 形态 token 后的首个非全局选项 token"定位——`git commit -m add -f`
+ * 中的 add 是消息文本，不会被误认作子命令。回调返回 true 则整体返回 true。
+ */
+function forGitSub(bare, subs, fn) {
   for (const seg of shellSegments(bare)) {
     const tokens = seg.match(/\S+/g) ?? [];
-    const i = tokens.indexOf(sub);
-    if (i === -1 || !tokens.includes("git")) continue;
-    if (fn(tokens.slice(i + 1))) return true;
+    const gitIdx = tokens.findIndex((t) => GIT_TOKEN_RE.test(t));
+    if (gitIdx === -1) continue;
+    let cmdIdx = -1;
+    for (let i = gitIdx + 1; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (GIT_OPTS_WITH_ARG.has(t)) {
+        i++;
+        continue;
+      }
+      if (GIT_OPTS_FLAG_ONLY.has(t) || /^--[\w-]+=/.test(t)) continue;
+      cmdIdx = i;
+      break;
+    }
+    if (cmdIdx === -1 || !subs.includes(tokens[cmdIdx])) continue;
+    const dd = tokens.indexOf("--", cmdIdx + 1);
+    const flags = dd === -1 ? tokens.slice(cmdIdx + 1) : tokens.slice(cmdIdx + 1, dd);
+    if (fn(flags, tokens.slice(cmdIdx + 1))) return true;
   }
   return false;
 }
 
+/** add 的内建同义词：stage 与 add 同口径检测 */
+const ADD_SUBS = ["add", "stage"];
+
 /**
- * git <sub> 所在段是否带指定标志：短参合并（-Af）与长参唯一前缀（--forc）都识别。
+ * git add/stage 所在段是否带指定标志：短参合并（-Af）与长参唯一前缀（--forc）都识别。
+ * 长参前缀匹配只接受 "--" 开头且非裸 "--"（分隔符）的 token，防 "--all".startsWith("--") 误报。
  * 段级收窄使无关命令的 -f（rm -f / tail -f / git push --force）不误命中。
  */
-export function gitSegmentHasFlag(bare, sub, shortChars, longFull) {
-  return forGitSubTokens(bare, sub, (rest) =>
-    rest.some(
+export function gitSegmentHasFlag(bare, subs, shortChars, longFull) {
+  return forGitSub(bare, subs, (flags) =>
+    flags.some(
       (t) =>
-        t.startsWith(longFull) ||
-        longFull.startsWith(t) ||
+        (t.startsWith("--") && t !== "--" && (t.startsWith(longFull) || longFull.startsWith(t))) ||
         (/^-\w+$/.test(t) && [...t.slice(1)].some((c) => shortChars.includes(c))),
     ),
   );
 }
 
 /**
- * git add 是否广域暂存：-A/--all/`.` 路径spec 会把未跟踪文件卷进 index。
- * 注意 -u/--update 只更新已跟踪条目（git 语义 adds no new files），不计入。
+ * git add/stage 是否广域暂存：-A/--all 与 `.`,`..`,`./`,`../`,`:/`（仓库根 magic）
+ * pathspec 会把未跟踪文件卷进 index。注意 -u/--update 只更新已跟踪条目
+ * （git 语义 adds no new files），不计入。
  */
 export function gitAddIsBroad(bare) {
   return (
-    gitSegmentHasFlag(bare, "add", ["A"], "--all") ||
-    forGitSubTokens(bare, "add", (rest) => rest.some((t) => t === "." || t.startsWith("./")))
+    gitSegmentHasFlag(bare, ADD_SUBS, ["A"], "--all") ||
+    forGitSub(bare, ADD_SUBS, (_flags, args) =>
+      args.some(
+        (t) =>
+          t === "." ||
+          t === ".." ||
+          t.startsWith("./") ||
+          t.startsWith("../") ||
+          t.startsWith(":/"),
+      ),
+    )
   );
 }
 
@@ -327,7 +371,7 @@ export function gitAddIsBroad(bare) {
 function worktreePrecheck(cmd) {
   // 引号剥除后按段检测标志：无关命令的 -f 不误启用 --ignored，合并短参 -Af 不漏检
   const bare = stripQuoted(cmd);
-  const usesForce = gitSegmentHasFlag(bare, "add", ["f"], "--force");
+  const usesForce = gitSegmentHasFlag(bare, ADD_SUBS, ["f"], "--force");
   const broadAdd = gitAddIsBroad(bare);
   let out;
   try {
@@ -363,7 +407,7 @@ function hookCommit() {
   const cmd = input?.tool_input?.command ?? "";
   if (!isGitCommit(cmd)) process.exit(0); // 非 commit 命令，放行
   // --no-verify/-n（含 -nm 合并短参、--no-ver 前缀）会跳过 pre-commit 这道最终兜底
-  if (gitSegmentHasFlag(stripQuoted(cmd), "commit", ["n"], "--no-verify")) {
+  if (gitSegmentHasFlag(stripQuoted(cmd), ["commit"], ["n"], "--no-verify")) {
     exit(2, "git commit 带 --no-verify/-n 会跳过 pre-commit 兜底，门禁拦截");
   }
   worktreePrecheck(cmd);

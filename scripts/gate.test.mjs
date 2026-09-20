@@ -76,29 +76,40 @@ test("parseStatus：剥状态列/去引号/剔目录项/重命名取新路径", 
 });
 
 test("gitSegmentHasFlag：段级收窄 + 合并短参 + 长参前缀（评审五轮 #4/#5）", () => {
-  const force = (s) => gitSegmentHasFlag(s, "add", ["f"], "--force");
-  const noVerify = (s) => gitSegmentHasFlag(s, "commit", ["n"], "--no-verify");
+  const force = (s) => gitSegmentHasFlag(s, ["add", "stage"], ["f"], "--force");
+  const noVerify = (s) => gitSegmentHasFlag(s, ["commit"], ["n"], "--no-verify");
   // 无关命令的 -f 不误命中（rm -f / tail -f / git push --force）
   assert.equal(force("rm -f tmp && git commit -m x"), false);
   assert.equal(force("tail -f log && git commit -m x"), false);
   assert.equal(force("git push --force && git commit -m x"), false);
-  // add 段内的 force 命中（含合并短参 -Af）
+  // 消息文本中的子命令名不误定位（git commit -m add -f 中的 add 是消息）
+  assert.equal(force("git commit -m add -f"), false);
+  // add/stage 段内的 force 命中（含合并短参 -Af、同义词 stage、带路径的 git.exe）
   assert.equal(force("git add -f .env && git commit -m x"), true);
   assert.equal(force("git add -Af .env && git commit -m x"), true);
   assert.equal(force("git add --force .env"), true);
+  assert.equal(force("git stage -f .env && git commit -m x"), true);
+  assert.equal(force("/usr/bin/git add -f .env"), true);
+  assert.equal(force("git.exe add -f .env"), true);
   // commit 段的 --no-verify 命中（含 -nm 合并短参、--no-ver 前缀）
   assert.equal(noVerify("git commit -nm x"), true);
   assert.equal(noVerify("git commit --no-ver"), true);
   assert.equal(noVerify("git commit --no-verify -m x"), true);
-  // 无关段的 -n 不误命中
+  // 无关段的 -n 不误命中；"--" 分隔符不算长参前缀（评审六轮 #3）
   assert.equal(noVerify("git commit -m x && echo -n done"), false);
+  assert.equal(noVerify("git commit -- file"), false);
 });
 
-test("gitAddIsBroad：-u 不是广域暂存（评审五轮 #11）", () => {
+test("gitAddIsBroad：-u 不是广域暂存（评审五轮 #11）；--/../stage 边界（六轮 #1/#2/#3）", () => {
   assert.equal(gitAddIsBroad("git add -A && git commit"), true);
   assert.equal(gitAddIsBroad("git add . && git commit"), true);
   assert.equal(gitAddIsBroad("git add ./src && git commit"), true);
   assert.equal(gitAddIsBroad("git add -Au && git commit"), true);
+  assert.equal(gitAddIsBroad("git add .. && git commit"), true); // 子目录卷入父范围
+  assert.equal(gitAddIsBroad("git add ../dir && git commit"), true);
+  assert.equal(gitAddIsBroad("git add :/ && git commit"), true); // 仓库根 magic pathspec
+  assert.equal(gitAddIsBroad("git stage . && git commit"), true); // add 同义词
   assert.equal(gitAddIsBroad("git add -u && git commit"), false); // 只更新已跟踪条目
   assert.equal(gitAddIsBroad("git add packages && git commit"), false);
+  assert.equal(gitAddIsBroad("git add -- packages/a.ts && git commit"), false); // -- 后是 pathspec
 });
