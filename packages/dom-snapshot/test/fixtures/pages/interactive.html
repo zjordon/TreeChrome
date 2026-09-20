@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>fixture: interactive 交互页</title>
+  <style>
+    #scroller {
+      height: 200px;
+      width: 300px;
+      overflow: auto;
+      border: 1px solid #888;
+    }
+    #scroller > div { height: 1200px; }
+    .hidden-display { display: none; }
+    .hidden-visibility { visibility: hidden; }
+    .btn { border: 1px solid #36c; padding: 4px 12px; }
+    .menu-item { cursor: pointer; padding: 2px 6px; }
+  </style>
+</head>
+<body>
+  <h2>交互梯度页</h2>
+  <p>覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。</p>
+
+  <div id="scroller" role="region" aria-label="可滚动区域">
+    <div>
+      <p>第一段</p><p>第二段</p><p>第三段</p><p>……（长内容制造纵向滚动）</p>
+    </div>
+  </div>
+
+  <div>
+    <button class="btn focus active" data-testid="btn-dyn">动态类按钮</button>
+    <button class="btn primary" aria-expanded="true" aria-controls="menu1">展开菜单</button>
+    <ul id="menu1" role="menu">
+      <li class="menu-item selected" role="menuitem">复制</li>
+      <li class="menu-item" role="menuitem">粘贴</li>
+    </ul>
+  </div>
+
+  <div contenteditable="true" id="editor" aria-label="富文本编辑">可直接编辑的文本</div>
+
+  <div>
+    <a href="#" aria-checked="true" role="switch">开关项</a>
+    <input type="range" min="0" max="100" value="40" aria-valuenow="40" />
+    <span class="hidden-display">display:none 的内容</span>
+    <span class="hidden-visibility">visibility:hidden 的内容</span>
+    <input type="text" value="已填写的值" data-state="valid" required />
+    <input type="number" min="1" max="10" step="1" placeholder="数字" />
+  </div>
+
+  <script>
+    // JS 监听器：让下方按钮进入交互判定（has_js_click_listener 路径）
+    document.getElementById("btn-dyn").addEventListener("click", () => {});
+  </script>
+</body>
+</html>

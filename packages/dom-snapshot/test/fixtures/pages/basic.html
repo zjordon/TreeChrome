@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>fixture: basic 静态页</title>
+</head>
+<body>
+  <h1>基础结构页</h1>
+  <p>用于 golden fixture 的静态梯度：标题、段落、多个同类链接（xpath 索引）、表单、表格。</p>
+  <nav>
+    <a href="#a1">链接甲</a>
+    <a href="#a2">链接乙</a>
+    <a href="#a3">链接丙</a>
+  </nav>
+  <main>
+    <form id="login" action="/login" method="post">
+      <label for="user">用户名</label>
+      <input id="user" name="username" type="text" placeholder="请输入用户名" autocomplete="username" />
+      <label for="pass">密码</label>
+      <input id="pass" name="password" type="password" autocomplete="current-password" />
+      <label><input type="checkbox" name="remember" /> 记住我</label>
+      <label><input type="radio" name="plan" value="pro" checked /> 专业版</label>
+      <label><input type="radio" name="plan" value="free" /> 免费版</label>
+      <select id="city" name="city">
+        <option value="sh">上海</option>
+        <option value="bj" selected>北京</option>
+      </select>
+      <textarea id="memo" name="memo" placeholder="备注（可空）"></textarea>
+      <button type="submit" id="submit-btn">登录</button>
+      <button type="button" id="cancel-btn" disabled>取消</button>
+    </form>
+    <table>
+      <thead><tr><th>名称</th><th>数量</th></tr></thead>
+      <tbody>
+        <tr><td>苹果</td><td>3</td></tr>
+        <tr><td>香蕉</td><td>5</td></tr>
+      </tbody>
+    </table>
+    <img src="dot.png" alt="占位图" width="16" height="16" />
+    <input type="file" id="upload" accept="image/png,image/jpeg" />
+  </main>
+  <footer><span title="页脚提示">© fixture</span></footer>
+</body>
+</html>

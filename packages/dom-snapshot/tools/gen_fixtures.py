@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import re
 import subprocess
@@ -36,7 +37,9 @@ PROFILE_DEFAULT = r"C:\tmp\treechrome-fixture-profile"
 def slugify(url: str) -> str:
     s = re.sub(r"^https?://", "", url)
     s = re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
-    return (s[:80] or "page") + f"-{abs(hash(url)) % 100000:05d}"
+    # 稳定后缀：md5 而非内建 hash()——后者对字符串进程随机化，重生成会换文件名
+    digest = hashlib.md5(url.encode("utf-8")).hexdigest()[:5]
+    return (s[:80] or "page") + f"-{digest}"
 
 
 def wait_version(port: int, timeout_s: float = 15.0) -> dict:
@@ -70,10 +73,13 @@ async def generate(urls: list[str], out_dir: Path, ws_url: str, wait: float) -> 
                 raise RuntimeError("BrowserSession 未连接（navigate 后应有活跃 session）")
 
             cfg = DOMCollectionConfig()
-            dom_tree, snap, ax_tree, _elapsed, level, metrics = collector._collect_cdp_sources(
+            # 返回顺序（collector.py:551）：snapshot, dom_tree, ax_tree, dpr, degradation, metrics
+            snap, dom_tree, ax_tree, dpr, level, metrics = await collector._collect_cdp_sources(
                 client, sid, cfg
             )
-            state, _ = collector.build_dom_state(client, session_id=sid, config=cfg)
+            state, build_metrics = await collector.build_dom_state(client, session_id=sid, config=cfg)
+            # 库在采集路径不填 element_count，用交互元素数作规模参考
+            build_metrics.element_count = len(state.selector_map)
 
             selector_map_proj: dict[str, dict] = {}
             for idx, node in state.selector_map.items():
@@ -94,13 +100,14 @@ async def generate(urls: list[str], out_dir: Path, ws_url: str, wait: float) -> 
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "degradation": level.value,
                     "source_statuses": metrics.source_statuses,
-                    "element_count": metrics.element_count,
+                    "element_count": build_metrics.element_count,
                     "note": "由 Python dom-snapshot 生成；TS 端对 input 跑管线后须与 output 对拍",
                 },
                 "input": {
                     "dom_tree": dom_tree,
                     "snapshot": snap,
                     "ax_tree": ax_tree,
+                    "dpr": dpr,
                 },
                 "output": {
                     "element_tree_text": state.element_tree_text,

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>fixture: shadow-dom 页</title>
+</head>
+<body>
+  <h2>Shadow DOM 梯度页</h2>
+  <p>覆盖：open / closed shadow root、嵌套 shadow、shadow 内交互元素与文本。</p>
+
+  <my-panel id="panel-open"></my-panel>
+  <my-widget id="widget-closed"></my-widget>
+  <my-outer id="outer"></my-outer>
+
+  <script>
+    customElements.define(
+      "my-panel",
+      class extends HTMLElement {
+        connectedCallback() {
+          const root = this.attachShadow({ mode: "open" });
+          root.innerHTML = `
+            <section>
+              <h3>面板标题</h3>
+              <button id="open-btn" type="button">面板内按钮</button>
+              <input type="text" placeholder="面板内输入" />
+              <a href="#inside-open">面板内链接</a>
+            </section>`;
+          root.querySelector("#open-btn").addEventListener("click", () => {});
+        }
+      },
+    );
+
+    customElements.define(
+      "my-widget",
+      class extends HTMLElement {
+        connectedCallback() {
+          const root = this.attachShadow({ mode: "closed" });
+          root.innerHTML = `
+            <div>
+              <button type="submit">closed 内提交</button>
+              <label><input type="checkbox" /> closed 内勾选</label>
+            </div>`;
+        }
+      },
+    );
+
+    customElements.define(
+      "my-outer",
+      class extends HTMLElement {
+        connectedCallback() {
+          const outer = this.attachShadow({ mode: "open" });
+          outer.innerHTML = `<inner-host></inner-host>`;
+          const inner = outer.querySelector("inner-host").attachShadow({ mode: "open" });
+          inner.innerHTML = `<button type="button">嵌套 shadow 按钮</button>`;
+        }
+      },
+    );
+  </script>
+</body>
+</html>
