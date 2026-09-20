@@ -4,7 +4,12 @@
 #   git config core.hooksPath .githooks（每克隆一次）。
 cd "$(git rev-parse --show-toplevel)" || exit 1
 if ! command -v node >/dev/null 2>&1; then
-  echo "[pre-commit] 未找到 node，无法运行门禁 scripts/gate.mjs（需 Node >= 20.11）。" >&2
+  echo "[pre-commit] 未找到 node，无法运行门禁 scripts/gate.mjs（需 Node >= 22，与 package.json engines 一致）。" >&2
+  exit 1
+fi
+# 兑现文案承诺的版本校验（gate.mjs 依赖 import.meta.dirname，低版本会在模块顶层抛晦涩堆栈）
+if ! node -e 'const [a] = process.versions.node.split(".").map(Number); process.exit(a >= 22 ? 0 : 1)' >/dev/null 2>&1; then
+  echo "[pre-commit] Node 版本低于 22，无法运行门禁 scripts/gate.mjs。" >&2
   exit 1
 fi
 exec node scripts/gate.mjs pre-commit

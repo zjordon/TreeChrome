@@ -48,23 +48,26 @@ export interface DomGetDocumentParams {
 
 // ── 源 2：DOMSnapshot.captureSnapshot ─────────────────────────────────
 
-/** bounds 为展平 quad：每节点 4 点 × (x,y) 共 8 个数；切片步长统一引用此常量，禁止消费端硬编码 */
-export const QUAD_STRIDE = 8;
+/** CDP Rectangle：[x, y, width, height] 共 4 个数，宽高可含亚像素值（fixture wire 实证） */
+export type CdpRectangle = [number, number, number, number];
 
 /**
- * layout.bounds 为 quad 数组展平，按 QUAD_STRIDE 切片。
+ * layout.bounds 为 Rectangle[]：与 nodeIndex 平行，每节点一项。
  * strings 是全快照共享的字符串表，文本/样式值经索引引用。
  */
 export interface CdpSnapshotLayout {
   nodeIndex: number[];
-  bounds: number[];
+  bounds: CdpRectangle[];
   text: number[];
   /** CDP RareBooleanData：稀疏包装，index 为命中该属性的 nodeIndex 列表 */
   stackingContexts: { index: number[] };
-  /** 仅 includePaintOrder=true 时返回，采集层必须开启该开关 */
-  paintOrder?: number[];
-  /** CDP RareIntegerData：稀疏包装（值为 strings 表索引），非扁平 number[] */
-  cursor?: { index: number[] };
+  /**
+   * 仅 includePaintOrder=true 时返回，采集层必须开启该开关。
+   * 键名对齐 wire 实际（fixture 实证）：CDP 返回 paintOrders（复数）。
+   */
+  paintOrders?: number[];
+  /** CDP RareIntegerData：稀疏双平行数组，value 为 strings 表索引（光标名） */
+  cursor?: { index: number[]; value: number[] };
   /** layoutTextInputs 等其余字段按需补充 */
 }
 
@@ -75,10 +78,15 @@ export interface CdpSnapshotNodeTree {
 
 export interface CdpSnapshotDocument {
   documentIndex?: number;
-  /** layout.nodeIndex / paintOrder 等数组的下标指向本表的平行数组 */
+  /** layout.nodeIndex / paintOrders 等数组的下标指向本表的平行数组 */
   nodes: CdpSnapshotNodeTree;
   layout: CdpSnapshotLayout;
-  textBoxes?: { layoutIndex: number[]; bounds: number[]; start: number[]; length: number[] };
+  textBoxes?: {
+    layoutIndex: number[];
+    bounds: CdpRectangle[];
+    start: number[];
+    length: number[];
+  };
 }
 
 export interface CaptureSnapshotParams {

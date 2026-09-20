@@ -59,6 +59,21 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
       expect(snapshot && Array.isArray((snapshot as { documents?: unknown }).documents)).toBe(true);
       expect(Array.isArray((ax_tree as { nodes?: unknown }).nodes)).toBe(true);
 
+      // wire 形状契约（三轮评审 #11 的教训）：layout.bounds 是 Rectangle[] 嵌套数组，
+      // 与 nodeIndex 平行——上游形状变化（如改展平）在此报警而非静默错位
+      const docs = (snapshot as { documents?: Array<Record<string, unknown>> }).documents ?? [];
+      for (const doc of docs) {
+        const layout = doc["layout"] as
+          | { nodeIndex: number[]; bounds: number[][]; paintOrders?: number[] }
+          | undefined;
+        if (!layout) continue;
+        expect(layout.bounds.length).toBe(layout.nodeIndex.length);
+        for (const rect of layout.bounds.slice(0, 5)) {
+          expect(Array.isArray(rect)).toBe(true);
+          expect(rect).toHaveLength(4);
+        }
+      }
+
       // 降级为 failed 时产物允许为空；否则文本树必须非空
       if (fixture.meta.degradation !== "failed") {
         expect(fixture.output.element_tree_text.length).toBeGreaterThan(0);
