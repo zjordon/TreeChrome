@@ -1,4 +1,10 @@
 #!/bin/sh
 # 版本化 git pre-commit：人工 git commit 与 agent 提交走同一道门（scripts/gate.mjs）。
-# 启用（每克隆一次）：git config core.hooksPath .githooks
-node scripts/gate.mjs pre-commit
+# 启用：根 package.json 的 prepare 脚本会在 pnpm install 时自动执行
+#   git config core.hooksPath .githooks（每克隆一次）。
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if ! command -v node >/dev/null 2>&1; then
+  echo "[pre-commit] 未找到 node，无法运行门禁 scripts/gate.mjs（需 Node >= 20.11）。" >&2
+  exit 1
+fi
+exec node scripts/gate.mjs pre-commit

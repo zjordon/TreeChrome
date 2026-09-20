@@ -3,8 +3,13 @@ dist/
 coverage/
 *.tsbuildinfo
 .idea/
+# 编辑器个人配置不共享；如需共享 extensions.json 再改用取反规则
 .vscode/
 .DS_Store
 Thumbs.db
-# golden fixtures 是测试资产，需入库；仅忽略抓取过程中的临时目录
-test/fixtures/_tmp/
+# 敏感配置：密钥/环境变量不入库（提交门兜底，.gitignore 是第一道防线）
+.env
+.env.*
+!.env.example
+# golden fixtures 是测试资产，需入库；仅忽略抓取过程中的临时目录（任意层级）
+_tmp/

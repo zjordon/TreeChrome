@@ -112,17 +112,6 @@ function size() {
   checkFileSizes(paths);
 }
 
-function walkTs(dir) {
-  const out = [];
-  for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    const s = statSync(p);
-    if (s.isDirectory()) out.push(...walkTs(p));
-    else if (name.endsWith(".ts")) out.push(p);
-  }
-  return out;
-}
-
 function scanFile(path) {
   const text = readFileSync(path, "utf8");
   const hits = [];
@@ -140,9 +129,10 @@ function boundaries(pkgFilter) {
     const src = join(REPO, "packages", pkg, "src");
     let files;
     try {
-      files = walkTs(src);
-    } catch {
-      continue; // 包尚未建立
+      files = walkSrc(src); // 与 size 同口径（ts|mts|mjs），防扩展名绕过
+    } catch (e) {
+      if (e.code === "ENOENT") continue; // 包尚未建立
+      exit(1, `扫描 ${src} 失败，门禁中止（fail-closed）：${e.message}`);
     }
     for (const f of files) for (const hit of scanFile(f)) violations.push(`${f}: ${hit}`);
   }
@@ -154,8 +144,9 @@ function boundaries(pkgFilter) {
 
 const STAGED_FORBIDDEN = [
   { re: /(^|\/)_.*\.(txt|json|mjs|py|md)$/, msg: "临时文件（_ 前缀草稿）" },
-  { re: /^\.env/, msg: "环境变量/密钥文件" },
-  { re: /^(node_modules|coverage|dist)\//, msg: "构建/测试产物" },
+  // (^|\/) 锚定任意层级：子包路径（packages/foo/.env、apps/x/dist/…）同样拦截
+  { re: /(^|\/)\.env/, msg: "环境变量/密钥文件" },
+  { re: /(^|\/)(node_modules|coverage|dist)\//, msg: "构建/测试产物" },
   { re: /(^|\/)coverage-final\.json$/, msg: "覆盖率产物" },
 ];
 
@@ -165,8 +156,9 @@ function stagedFiles() {
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
-  } catch {
-    return [];
+  } catch (e) {
+    // fail-closed：读不到暂存区（非 git 仓库/git 不可用）必须中止，不能当"空"放行
+    exit(1, `读取暂存区失败（git diff --cached 异常），门禁中止：${e.message}`);
   }
 }
 
@@ -214,25 +206,56 @@ function quality() {
 function readHookInput() {
   try {
     return JSON.parse(readFileSync(0, "utf8"));
-  } catch {
-    return {};
+  } catch (e) {
+    // fail-closed：hook 输入不可解析时中止，不能当"非目标命令"放行
+    exit(1, `解析 hook stdin 失败，门禁中止：${e.message}`);
   }
+}
+
+/** git 全局选项（可出现在 git 与子命令之间），识别子命令时需跳过其参数 */
+const GIT_GLOBAL_OPTS = new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "-P",
+  "--no-pager",
+  "--literal-pathspecs",
+  "--no-optional-locks",
+]);
+
+/** 按引号感知的分词判断命令是否为 git commit（兼容 git -C <dir> commit 等变体） */
+function isGitCommit(cmd) {
+  const tokens = String(cmd).match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  if (tokens[0]?.replace(/^["']|["']$/g, "") !== "git") return false;
+  for (let i = 1; i < tokens.length; i++) {
+    const t = tokens[i].replace(/^["']|["']$/g, "");
+    if (t === "commit") return true;
+    if (GIT_GLOBAL_OPTS.has(t)) i++; // 跳过选项参数
+  }
+  return false;
 }
 
 function hookCommit() {
   const input = readHookInput();
   const cmd = input?.tool_input?.command ?? "";
-  if (!/\bgit\s+commit\b/.test(cmd)) process.exit(0); // 非 commit 命令，放行
+  if (!isGitCommit(cmd)) process.exit(0); // 非 commit 命令，放行
   staged();
   boundaries();
+  size();
   quality();
 }
+
+/** 核心包 src 路径识别正则：从 CORE_PACKAGES 动态构造，避免双份硬编码漂移 */
+const CORE_SRC_RE = new RegExp(
+  String.raw`[\\/]packages[\\/](${CORE_PACKAGES.join("|")})[\\/]src[\\/].*\.(ts|mts|mjs)$`,
+);
 
 function hookEdit() {
   const input = readHookInput();
   const path = input?.tool_input?.file_path ?? input?.tool_input?.path ?? "";
-  const m = /[\\/]packages[\\/](dom-snapshot|core)[\\/]src[\\/].*\.ts$/.exec(String(path));
-  if (!m) process.exit(0);
+  if (!CORE_SRC_RE.test(String(path))) process.exit(0);
   const violations = scanFile(String(path).replaceAll("\\", "/"));
   if (violations.length) exit(2, `${path}:\n  ${violations.join("\n  ")}`);
   const lines = countLines(String(path));

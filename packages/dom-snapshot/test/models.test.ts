@@ -15,6 +15,7 @@ import {
   type EnhancedSnapshotNode,
   filterDynamicClasses,
   NodeType,
+  roundHalfEven,
 } from "../src/types.js";
 
 // ── 参考树：与 Python 参考脚本逐字段一致 ────────────────────────────────
@@ -225,5 +226,47 @@ describe("toJson snake_case 形态", () => {
       node_type: "TEXT_NODE",
       node_value: "Hello world",
     });
+  });
+
+  it("toJson 浅模式跳过 children 序列化但保留核心字段（SimplifiedNode 性能路径）", () => {
+    const { btn } = buildReferenceTree();
+    const shallow = btn.toJson(false);
+    expect(shallow.children_nodes).toBeUndefined();
+    expect(shallow.shadow_roots).toBeUndefined();
+    expect(shallow.node_id).toBe(4);
+    expect(btn.toJson().children_nodes).toHaveLength(1);
+  });
+
+  it("toJson 对枚举外脏值兜底为数字串（不丢键）", () => {
+    const n = el("DIV", {}, 1, 1);
+    (n as unknown as { nodeType: number }).nodeType = 0;
+    expect(n.toJson().node_type).toBe("0");
+  });
+});
+
+// ── 多分组 SHA-256 向量（NIST，Python hashlib 实跑取值） ────────────────
+
+describe("sha256Hex 多分组路径", () => {
+  it("448-bit 消息触发填充分组切换边界", () => {
+    expect(sha256Hex("abcdbcdecdefdefgefghfghighijhijkijkljklmnlmnomnopnopq")).toBe(
+      "a57ed99266a7c7be3eaee2ffa23f54ff042a4829fa036cf5ea83d7e3de0c666e",
+    );
+  });
+  it("896-bit 消息跨多分组（w 调度与跨块累加）", () => {
+    expect(
+      sha256Hex(
+        "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+      ),
+    ).toBe("cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1");
+  });
+});
+
+// ── roundHalfEven 大数路径（e >= 0，|n| ≥ 2^52；Python 实跑取值） ──────
+
+describe("roundHalfEven 大数（回归：m<<e 曾被 m*ten 覆盖）", () => {
+  it("2^53 量级", () => {
+    expect(roundHalfEven(2 ** 53, 0)).toBe(9007199254740992);
+    expect(roundHalfEven(2 ** 53 + 2, 0)).toBe(9007199254740994);
+    expect(roundHalfEven(1e17, 2)).toBe(1e17);
   });
 });

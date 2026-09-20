@@ -48,22 +48,35 @@ export interface DomGetDocumentParams {
 
 // ── 源 2：DOMSnapshot.captureSnapshot ─────────────────────────────────
 
+/** bounds 为展平 quad：每节点 4 点 × (x,y) 共 8 个数；切片步长统一引用此常量，禁止消费端硬编码 */
+export const QUAD_STRIDE = 8;
+
 /**
- * layout.bounds 为 quad 数组展平：每节点 8 个数（x1,y1,x2,y2,x3,y3,x4,y4）。
+ * layout.bounds 为 quad 数组展平，按 QUAD_STRIDE 切片。
  * strings 是全快照共享的字符串表，文本/样式值经索引引用。
  */
 export interface CdpSnapshotLayout {
   nodeIndex: number[];
   bounds: number[];
   text: number[];
+  /** CDP RareBooleanData：稀疏包装，index 为命中该属性的 nodeIndex 列表 */
   stackingContexts: { index: number[] };
-  paintOrder: number[];
-  cursor: number[];
+  /** 仅 includePaintOrder=true 时返回，采集层必须开启该开关 */
+  paintOrder?: number[];
+  /** CDP RareIntegerData：稀疏包装（值为 strings 表索引），非扁平 number[] */
+  cursor?: { index: number[] };
   /** layoutTextInputs 等其余字段按需补充 */
+}
+
+/** 与 layout.nodeIndex 平行的扁平节点表；backendNodeId 为三源融合键 */
+export interface CdpSnapshotNodeTree {
+  backendNodeId: number[];
 }
 
 export interface CdpSnapshotDocument {
   documentIndex?: number;
+  /** layout.nodeIndex / paintOrder 等数组的下标指向本表的平行数组 */
+  nodes: CdpSnapshotNodeTree;
   layout: CdpSnapshotLayout;
   textBoxes?: { layoutIndex: number[]; bounds: number[]; start: number[]; length: number[] };
 }
@@ -87,8 +100,9 @@ export interface CdpAxValue {
 }
 
 export interface CdpAxTreeNode {
+  /** CDP 协议原名为 nodeId（AXNodeId），此处改名以避免与 CdpDomNode.nodeId 语义混淆 */
   axNodeId: string;
-  /** 与 DOM 树交叉引用的关键字段 */
+  /** 与 DOM 树交叉引用的关键字段；ignored 节点通常缺失，融合需容忍缺失与一对多 */
   backendDOMNodeId?: number;
   ignored?: boolean;
   role?: CdpAxValue;

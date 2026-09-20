@@ -150,7 +150,11 @@ export function filterDynamicClasses(classStr: string | null): string {
     .filter((c) => c !== "")
     .filter((c) => {
       const lower = c.toLowerCase();
-      return ![...DYNAMIC_CLASS_PATTERNS].some((p) => lower.includes(p));
+      // 热路径（computeStableHash 每元素调用）：直接迭代 Set，不为每个 token 展开新数组
+      for (const p of DYNAMIC_CLASS_PATTERNS) {
+        if (lower.includes(p)) return false;
+      }
+      return true;
     });
   stable.sort();
   return stable.join(" ");
@@ -206,9 +210,12 @@ export function roundHalfEven(n: number, digits: number): number {
   const ten = 10n ** BigInt(digits);
   let num: bigint;
   let den: bigint = 1n;
-  if (e >= 0) num = m << BigInt(e);
-  else den = 1n << BigInt(-e);
-  num = m * ten;
+  if (e >= 0) {
+    num = (m << BigInt(e)) * ten;
+  } else {
+    den = 1n << BigInt(-e);
+    num = m * ten;
+  }
 
   const q = num / den; // num, den 恒正，截断即向零取整
   const twice = (num % den) * 2n;
@@ -583,8 +590,13 @@ export class EnhancedDOMTreeNode {
     const path = this.getParentBranchPath();
     const pathStr = path.join("/");
     const entries = Object.entries(this.attributes).filter(([k]) => STATIC_ATTRIBUTES.has(k));
-    // 属性名唯一，等值分支不可达；两分支比较与 Python 的 tuple 排序等价
-    const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : 1));
+    // 三态比较固化不变量：属性名唯一时 0 分支不可达；若未来属性来源重构为可重复
+    // （如多 frame 合并），静默返回 1 会与 Python sorted() 产生不同顺序 → 哈希漂移
+    const sorted = entries.sort(([a], [b]) => {
+      if (a < b) return -1;
+      if (a > b) return 1;
+      return 0;
+    });
     let attrsStr = "";
     if (filteredClass) {
       // compute_stable_hash：class 过滤动态类，过滤后为空则跳过
@@ -635,11 +647,20 @@ export class EnhancedDOMTreeNode {
 
   // ── 序列化（snake_case 对齐 Python __json__，供 fixture 对拍） ───────
 
-  toJson(): Record<string, unknown> {
-    return {
+  /**
+   * snake_case 对齐 Python __json__，供 fixture 对拍。
+   *
+   * @param serializeChildren false 时跳过 children_nodes/shadow_roots 的递归序列化
+   *   （SimplifiedNode.toJson 会把这两个键删掉，浅模式把整树开销从 O(N×depth) 降到 O(N)）；
+   *   content_document 链仍序列化（浅模式同样跳过其 children）。
+   * 返回值为只读快照：attributes/ax_node.properties 等嵌套结构按引用共享，调用方不得修改。
+   */
+  toJson(serializeChildren = true): Record<string, unknown> {
+    const json: Record<string, unknown> = {
       node_id: this.nodeId,
       backend_node_id: this.backendNodeId,
-      node_type: NodeType[this.nodeType],
+      // 枚举外的脏值兜底为数字串，避免 JSON.stringify 丢弃键破坏对拍契约
+      node_type: NodeType[this.nodeType] ?? String(this.nodeType),
       node_name: this.nodeName,
       node_value: this.nodeValue,
       is_visible: this.isVisible,
@@ -648,7 +669,9 @@ export class EnhancedDOMTreeNode {
       session_id: this.sessionId,
       target_id: this.targetId,
       frame_id: this.frameId,
-      content_document: this.contentDocument ? this.contentDocument.toJson() : null,
+      content_document: this.contentDocument
+        ? this.contentDocument.toJson(serializeChildren)
+        : null,
       shadow_root_type: this.shadowRootType,
       ax_node: this.axNode ? { ...this.axNode } : null,
       snapshot_node: this.snapshotNode
@@ -663,9 +686,12 @@ export class EnhancedDOMTreeNode {
             stacking_contexts: this.snapshotNode.stacking_contexts,
           }
         : null,
-      shadow_roots: this.shadowRoots ? this.shadowRoots.map((r) => r.toJson()) : [],
-      children_nodes: this.childrenNodes ? this.childrenNodes.map((c) => c.toJson()) : [],
     };
+    if (serializeChildren) {
+      json.shadow_roots = this.shadowRoots ? this.shadowRoots.map((r) => r.toJson()) : [];
+      json.children_nodes = this.childrenNodes ? this.childrenNodes.map((c) => c.toJson()) : [];
+    }
+    return json;
   }
 }
 
@@ -709,7 +735,8 @@ export class SimplifiedNode {
   }
 
   toJson(): Record<string, unknown> {
-    const cleaned = this.cleanOriginalNodeJson(this.originalNode.toJson());
+    // 浅模式：跳过 children_nodes/shadow_roots 的深序列化（本就会被 cleanOriginalNodeJson 删除）
+    const cleaned = this.cleanOriginalNodeJson(this.originalNode.toJson(false));
     return {
       should_display: this.shouldDisplay,
       is_interactive: this.isInteractive,

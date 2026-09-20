@@ -4,15 +4,14 @@
  * 当前状态：models（types.ts）与协议（protocol.ts）已移植并通过 Python 参考值
  * 对拍；collector / serializer 尚未移植（见 docs/architecture.md §10 移植地图）。
  */
-
 export * from "./protocol.js";
 export * from "./types.js";
 
-import { DOMRect, type DOMSelectorMap, SerializedDOMState } from "./types.js";
+import { type EnhancedDOMTreeNode, SerializedDOMState, type SimplifiedNode } from "./types.js";
 
 /** 采集失败时的空态（对齐 Python EMPTY_DOM_STATE；collector 移植后核对字段） */
 export function createEmptyDomState(): SerializedDOMState {
-  return new SerializedDOMState(null, new Map() as DOMSelectorMap, "");
+  return new SerializedDOMState(null, new Map<number, EnhancedDOMTreeNode>(), "");
 }
 
 /**
@@ -36,8 +35,10 @@ export interface DOMTreeSerializerOptions {
 }
 
 export class DOMTreeSerializer {
+  options: DOMTreeSerializerOptions;
+
   constructor(
-    public rootNode: import("./types.js").EnhancedDOMTreeNode,
+    public rootNode: EnhancedDOMTreeNode,
     public previousCachedState: SerializedDOMState | null = null,
     options?: Partial<DOMTreeSerializerOptions>,
   ) {
@@ -50,17 +51,9 @@ export class DOMTreeSerializer {
     };
   }
 
-  options: DOMTreeSerializerOptions;
-
-  serializeTree(
-    _node: import("./types.js").SimplifiedNode | null,
-    _includeAttributes: string[],
-    _depth = 0,
-  ): string {
+  serializeTree(_node: SimplifiedNode | null, _includeAttributes: string[], _depth = 0): string {
     throw new Error(
       "DOMTreeSerializer.serializeTree 尚未移植：见 docs/architecture.md §10 移植地图（Python serializer.py）",
     );
   }
 }
-
-export { DOMRect };

@@ -1,1 +1,5777 @@
-{"meta":{"url":"http://localhost:18765/interactive.html","generated_at":"2026-09-20T00:14:00.620616+00:00","degradation":"full","source_statuses":{"dpr":"ok","snapshot":"ok","ax_tree":"ok","dom_tree":"ok"},"element_count":10,"note":"由 Python dom-snapshot 生成；TS 端对 input 跑管线后须与 output 对拍"},"input":{"dom_tree":{"root":{"nodeId":1,"backendNodeId":152,"nodeType":9,"nodeName":"#document","localName":"","nodeValue":"","childNodeCount":2,"children":[{"nodeId":2,"parentId":1,"backendNodeId":183,"nodeType":10,"nodeName":"html","localName":"","nodeValue":"","publicId":"","systemId":""},{"nodeId":3,"parentId":1,"backendNodeId":184,"nodeType":1,"nodeName":"HTML","localName":"html","nodeValue":"","childNodeCount":2,"children":[{"nodeId":4,"parentId":3,"backendNodeId":185,"nodeType":1,"nodeName":"HEAD","localName":"head","nodeValue":"","childNodeCount":3,"children":[{"nodeId":5,"parentId":4,"backendNodeId":187,"nodeType":1,"nodeName":"META","localName":"meta","nodeValue":"","childNodeCount":0,"children":[],"attributes":["charset","utf-8"]},{"nodeId":6,"parentId":4,"backendNodeId":189,"nodeType":1,"nodeName":"TITLE","localName":"title","nodeValue":"","childNodeCount":1,"children":[{"nodeId":7,"parentId":6,"backendNodeId":190,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"fixture: interactive 交互页"}],"attributes":[]},{"nodeId":8,"parentId":4,"backendNodeId":192,"nodeType":1,"nodeName":"STYLE","localName":"style","nodeValue":"","childNodeCount":1,"children":[{"nodeId":9,"parentId":8,"backendNodeId":193,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"\n    #scroller {\n      height: 200px;\n      width: 300px;\n      overflow: auto;\n      border: 1px solid #888;\n    }\n    #scroller > div { height: 1200px; }\n    .hidden-display { display: none; }\n    .hidden-visibility { visibility: hidden; }\n    .btn { border: 1px solid #36c; padding: 4px 12px; }\n    .menu-item { cursor: pointer; padding: 2px 6px; }\n  "}],"attributes":[]}],"attributes":[]},{"nodeId":10,"parentId":3,"backendNodeId":196,"nodeType":1,"nodeName":"BODY","localName":"body","nodeValue":"","childNodeCount":7,"children":[{"nodeId":11,"parentId":10,"backendNodeId":153,"nodeType":1,"nodeName":"H2","localName":"h2","nodeValue":"","childNodeCount":1,"children":[{"nodeId":12,"parentId":11,"backendNodeId":154,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"交互梯度页"}],"attributes":[]},{"nodeId":13,"parentId":10,"backendNodeId":155,"nodeType":1,"nodeName":"P","localName":"p","nodeValue":"","childNodeCount":1,"children":[{"nodeId":14,"parentId":13,"backendNodeId":156,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。"}],"attributes":[]},{"nodeId":15,"parentId":10,"backendNodeId":157,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":1,"children":[{"nodeId":16,"parentId":15,"backendNodeId":201,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":4,"children":[{"nodeId":17,"parentId":16,"backendNodeId":158,"nodeType":1,"nodeName":"P","localName":"p","nodeValue":"","childNodeCount":1,"children":[{"nodeId":18,"parentId":17,"backendNodeId":159,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"第一段"}],"attributes":[]},{"nodeId":19,"parentId":16,"backendNodeId":160,"nodeType":1,"nodeName":"P","localName":"p","nodeValue":"","childNodeCount":1,"children":[{"nodeId":20,"parentId":19,"backendNodeId":161,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"第二段"}],"attributes":[]},{"nodeId":21,"parentId":16,"backendNodeId":162,"nodeType":1,"nodeName":"P","localName":"p","nodeValue":"","childNodeCount":1,"children":[{"nodeId":22,"parentId":21,"backendNodeId":163,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"第三段"}],"attributes":[]},{"nodeId":23,"parentId":16,"backendNodeId":164,"nodeType":1,"nodeName":"P","localName":"p","nodeValue":"","childNodeCount":1,"children":[{"nodeId":24,"parentId":23,"backendNodeId":165,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"……（长内容制造纵向滚动）"}],"attributes":[]}],"attributes":[]}],"attributes":["id","scroller","role","region","aria-label","可滚动区域"],"isScrollable":true},{"nodeId":25,"parentId":10,"backendNodeId":206,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":3,"children":[{"nodeId":26,"parentId":25,"backendNodeId":166,"nodeType":1,"nodeName":"BUTTON","localName":"button","nodeValue":"","childNodeCount":1,"children":[{"nodeId":27,"parentId":26,"backendNodeId":167,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"动态类按钮"}],"attributes":["class","btn focus active","data-testid","btn-dyn"]},{"nodeId":28,"parentId":25,"backendNodeId":168,"nodeType":1,"nodeName":"BUTTON","localName":"button","nodeValue":"","childNodeCount":1,"children":[{"nodeId":29,"parentId":28,"backendNodeId":169,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"展开菜单"}],"attributes":["class","btn primary","aria-expanded","true","aria-controls","menu1"]},{"nodeId":30,"parentId":25,"backendNodeId":170,"nodeType":1,"nodeName":"UL","localName":"ul","nodeValue":"","childNodeCount":2,"children":[{"nodeId":31,"parentId":30,"backendNodeId":171,"nodeType":1,"nodeName":"LI","localName":"li","nodeValue":"","childNodeCount":1,"children":[{"nodeId":33,"parentId":31,"backendNodeId":172,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"复制"}],"attributes":["class","menu-item selected","role","menuitem"],"pseudoElements":[{"nodeId":32,"backendNodeId":211,"nodeType":1,"nodeName":"::marker","localName":"::marker","nodeValue":"","childNodeCount":0,"attributes":[],"pseudoType":"marker"}]},{"nodeId":34,"parentId":30,"backendNodeId":173,"nodeType":1,"nodeName":"LI","localName":"li","nodeValue":"","childNodeCount":1,"children":[{"nodeId":36,"parentId":34,"backendNodeId":174,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"粘贴"}],"attributes":["class","menu-item","role","menuitem"],"pseudoElements":[{"nodeId":35,"backendNodeId":213,"nodeType":1,"nodeName":"::marker","localName":"::marker","nodeValue":"","childNodeCount":0,"attributes":[],"pseudoType":"marker"}]}],"attributes":["id","menu1","role","menu"]}],"attributes":[]},{"nodeId":37,"parentId":10,"backendNodeId":217,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":1,"children":[{"nodeId":38,"parentId":37,"backendNodeId":175,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"可直接编辑的文本"}],"attributes":["contenteditable","true","id","editor","aria-label","富文本编辑"]},{"nodeId":39,"parentId":10,"backendNodeId":219,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":6,"children":[{"nodeId":40,"parentId":39,"backendNodeId":176,"nodeType":1,"nodeName":"A","localName":"a","nodeValue":"","childNodeCount":1,"children":[{"nodeId":41,"parentId":40,"backendNodeId":177,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"开关项"}],"attributes":["href","#","aria-checked","true","role","switch"]},{"nodeId":42,"parentId":39,"backendNodeId":178,"nodeType":1,"nodeName":"INPUT","localName":"input","nodeValue":"","childNodeCount":0,"children":[],"attributes":["type","range","min","0","max","100","value","40","aria-valuenow","40"],"shadowRoots":[{"nodeId":43,"backendNodeId":235,"nodeType":11,"nodeName":"#document-fragment","localName":"","nodeValue":"","childNodeCount":1,"children":[{"nodeId":44,"parentId":43,"backendNodeId":236,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":1,"children":[{"nodeId":45,"parentId":44,"backendNodeId":237,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":1,"children":[{"nodeId":46,"parentId":45,"backendNodeId":238,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":0,"children":[],"attributes":["id","thumb"]}],"attributes":["pseudo","-webkit-slider-runnable-track","id","track"]}],"attributes":[]}],"shadowRootType":"user-agent"}]},{"nodeId":47,"parentId":39,"backendNodeId":223,"nodeType":1,"nodeName":"SPAN","localName":"span","nodeValue":"","childNodeCount":1,"children":[{"nodeId":48,"parentId":47,"backendNodeId":224,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"display:none 的内容"}],"attributes":["class","hidden-display"]},{"nodeId":49,"parentId":39,"backendNodeId":226,"nodeType":1,"nodeName":"SPAN","localName":"span","nodeValue":"","childNodeCount":1,"children":[{"nodeId":50,"parentId":49,"backendNodeId":227,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"visibility:hidden 的内容"}],"attributes":["class","hidden-visibility"]},{"nodeId":51,"parentId":39,"backendNodeId":150,"nodeType":1,"nodeName":"INPUT","localName":"input","nodeValue":"","childNodeCount":0,"children":[],"attributes":["type","text","value","已填写的值","data-state","valid","required",""],"shadowRoots":[{"nodeId":52,"backendNodeId":239,"nodeType":11,"nodeName":"#document-fragment","localName":"","nodeValue":"","childNodeCount":1,"children":[{"nodeId":53,"parentId":52,"backendNodeId":179,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":1,"children":[{"nodeId":54,"parentId":53,"backendNodeId":180,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"已填写的值"}],"attributes":[]}],"shadowRootType":"user-agent"}]},{"nodeId":55,"parentId":39,"backendNodeId":151,"nodeType":1,"nodeName":"INPUT","localName":"input","nodeValue":"","childNodeCount":0,"children":[],"attributes":["type","number","min","1","max","10","step","1","placeholder","数字"],"shadowRoots":[{"nodeId":56,"backendNodeId":240,"nodeType":11,"nodeName":"#document-fragment","localName":"","nodeValue":"","childNodeCount":2,"children":[{"nodeId":57,"parentId":56,"backendNodeId":241,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":1,"children":[{"nodeId":58,"parentId":57,"backendNodeId":181,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"数字"}],"attributes":["pseudo","-webkit-input-placeholder","id","placeholder","style","display: block !important;"]},{"nodeId":59,"parentId":56,"backendNodeId":242,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":2,"children":[{"nodeId":60,"parentId":59,"backendNodeId":243,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":1,"children":[{"nodeId":61,"parentId":60,"backendNodeId":182,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":0,"children":[],"attributes":[]}],"attributes":["id","editing-view-port"]},{"nodeId":62,"parentId":59,"backendNodeId":244,"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":"","childNodeCount":0,"children":[],"attributes":["pseudo","-webkit-inner-spin-button","id","spin"]}],"attributes":["id","text-field-container","pseudo","-webkit-textfield-decoration-container","style","unicode-bidi: normal;"]}],"shadowRootType":"user-agent"}]}],"attributes":[]},{"nodeId":63,"parentId":10,"backendNodeId":232,"nodeType":1,"nodeName":"SCRIPT","localName":"script","nodeValue":"","childNodeCount":1,"children":[{"nodeId":64,"parentId":63,"backendNodeId":233,"nodeType":3,"nodeName":"#text","localName":"","nodeValue":"\n    // JS 监听器：让下方按钮进入交互判定（has_js_click_listener 路径）\n    document.getElementById(\"btn-dyn\").addEventListener(\"click\", () => {});\n  "}],"attributes":[]}],"attributes":[]}],"attributes":["lang","zh-CN"],"frameId":"6E424D6A6FCAF00A467E912E362B33C8"}],"documentURL":"http://localhost:18765/interactive.html","baseURL":"http://localhost:18765/interactive.html","xmlVersion":"","compatibilityMode":"NoQuirksMode","isScrollable":true}},"snapshot":{"documents":[{"documentURL":0,"title":1,"baseURL":0,"contentLanguage":-1,"encodingName":2,"publicId":-1,"systemId":-1,"frameId":3,"nodes":{"parentIndex":[-1,0,0,2,3,3,3,3,7,3,3,10,3,2,2,14,14,16,14,14,19,14,14,22,22,24,24,26,24,28,24,30,24,32,24,22,14,14,37,37,39,37,37,42,37,37,45,45,47,47,45,45,51,51,45,37,14,14,57,14,14,60,60,62,60,60,60,60,67,60,60,70,60,60,60,60,60,14,14,78,14],"nodeType":[9,10,1,1,3,1,3,1,3,3,1,3,3,3,1,3,1,3,3,1,3,3,1,3,1,3,1,3,1,3,1,3,1,3,3,3,3,1,3,1,3,3,1,3,3,1,3,1,1,3,3,1,1,3,3,3,3,1,3,3,1,3,1,3,3,1,3,1,3,3,1,3,3,1,3,1,3,3,1,3,3],"shadowRootType":{"index":[],"value":[]},"nodeName":[4,5,6,15,16,18,16,21,16,16,22,16,16,16,25,16,26,16,16,28,16,16,31,16,31,16,28,16,28,16,28,16,28,16,16,16,16,31,16,44,16,16,44,16,16,59,16,61,66,16,16,61,66,16,16,16,16,31,16,16,31,16,76,16,16,83,16,94,16,16,94,16,16,83,16,83,16,16,111,16,16],"nodeValue":[-1,-1,-1,-1,17,-1,17,-1,1,17,-1,23,24,24,-1,17,-1,27,17,-1,29,30,-1,38,-1,39,-1,40,-1,41,-1,42,-1,43,38,17,30,-1,38,-1,52,38,-1,58,38,-1,39,-1,-1,69,39,-1,-1,71,38,17,30,-1,75,30,-1,38,-1,82,38,-1,38,-1,96,38,-1,99,38,-1,38,-1,17,30,-1,112,113],"backendNodeId":[152,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,153,154,198,155,156,199,157,200,201,202,158,159,160,161,162,163,164,165,203,204,205,206,207,166,167,208,168,169,209,170,210,171,211,172,212,173,213,174,214,215,216,217,175,218,219,220,176,177,221,178,222,223,224,225,226,227,228,150,229,151,230,231,232,233,234],"attributes":[[],[],[7,8],[],[],[19,20],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[32,33,34,35,36,37],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[45,46,47,48],[],[],[45,53,54,55,56,57],[],[],[32,57,34,60],[],[45,62,34,63],[],[],[],[45,70,34,63],[],[],[],[],[],[72,55,32,73,36,74],[],[],[],[],[77,78,79,55,34,80],[],[],[84,85,86,87,88,89,90,91,92,91],[],[45,95],[],[],[45,97],[],[],[84,100,90,101,102,103,104,-1],[],[84,106,86,11,88,107,108,11,109,110],[],[],[],[],[]],"textValue":{"index":[],"value":[]},"inputValue":{"index":[65,73,75],"value":[91,101,-1]},"inputChecked":{"index":[]},"optionSelected":{"index":[]},"contentDocumentIndex":{"index":[],"value":[]},"pseudoType":{"index":[48,52],"value":[68,68]},"pseudoIdentifier":{"index":[],"value":[]},"isClickable":{"index":[57,58,62,65,73,75]},"currentSourceURL":{"index":[],"value":[]},"originURL":{"index":[],"value":[]}},"layout":{"nodeIndex":[0,2,14,16,17,19,20,22,24,26,27,28,29,30,31,32,33,37,39,40,41,42,43,44,45,47,48,48,49,51,52,52,53,57,58,60,62,63,64,65,66,70,71,72,73,74,75,76],"styles":[[],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,12,12,12,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[49,10,11,50,12,10,10,10,13,51],[49,10,11,50,12,10,10,10,13,51],[9,10,11,12,12,10,10,10,13,14],[49,10,11,50,12,10,10,10,13,51],[49,10,11,50,12,10,10,10,13,51],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[64,10,11,65,12,10,10,10,13,14],[49,10,11,65,12,10,10,10,13,14],[49,10,11,65,12,10,10,10,13,14],[64,10,11,65,12,10,10,10,13,14],[64,10,11,65,12,10,10,10,13,14],[49,10,11,65,12,10,10,10,13,14],[49,10,11,65,12,10,10,10,13,14],[64,10,11,65,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[81,10,11,65,12,10,10,10,13,14],[81,10,11,65,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[49,10,11,50,12,10,10,10,13,93],[9,10,11,12,12,10,10,10,13,14],[81,98,11,12,12,10,10,10,13,14],[81,98,11,12,12,10,10,10,13,14],[9,10,11,12,12,10,10,10,13,14],[49,10,11,100,12,105,105,105,13,93],[9,10,11,12,12,10,10,10,13,14],[49,10,11,100,12,105,105,105,13,93],[9,10,11,12,12,10,10,10,13,14]],"bounds":[[0,0,762,484],[0,0,747,490.8125],[8,19.90625,731,462.90625],[8,19.90625,731,35],[8,19.90625,120,35],[8,74.8125,731,24],[8,74.8125,712.421875,24],[8,114.8125,302,202],[9,131.8125,285,1200],[9,131.8125,285,24],[9,131.8125,48,24],[9,171.8125,285,24],[9,171.8125,48,24],[9,211.8125,285,24],[9,211.8125,48,24],[9,251.8125,285,24],[9,251.8125,208,24],[8,316.8125,731,101],[8,316.8125,92.65625,29],[21,324.8125,66.65625,15],[100.65625,317.8125,3.59375,24],[104.25,316.8125,79.328125,29],[117.25,324.8125,53.328125,15],[0,0,0,0],[8,361.8125,731,56],[48,361.8125,691,28],[28,363.8125,8,24],[28,363.8125,8,24],[54,363.8125,32,24],[48,389.8125,691,28],[28,391.8125,8,24],[28,391.8125,8,24],[54,391.8125,32,24],[8,433.8125,731,24],[8,433.8125,128,24],[8,457.8125,731,25],[8,457.8125,48,24],[8,457.8125,48,24],[56,457.8125,3.59375,24],[61.59375,460.8125,129,16],[192.59375,457.8125,3.59375,24],[196.1875,457.8125,170.84375,24],[196.1875,457.8125,170.84375,24],[367.03125,457.8125,3.59375,24],[370.625,460.8125,177,21],[547.625,457.8125,3.59375,24],[551.21875,461.8125,66,21],[0,0,0,0]],"text":[-1,-1,-1,-1,27,-1,29,-1,-1,-1,40,-1,41,-1,42,-1,43,-1,-1,52,38,-1,58,38,-1,-1,-1,67,69,-1,-1,67,71,-1,75,-1,-1,82,38,-1,38,-1,99,38,-1,38,-1,17],"stackingContexts":{"index":[0,1]},"paintOrders":[0,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3,1,5,1],"offsetRects":[[],[0,0,747,491],[0,0,731,463],[8,20,731,35],[],[8,75,731,24],[],[8,115,302,202],[9,132,285,1200],[9,132,285,24],[],[9,172,285,24],[],[9,212,285,24],[],[9,252,285,24],[],[8,317,731,101],[8,317,93,29],[],[],[104,317,79,29],[],[],[8,362,731,56],[48,362,691,28],[28,364,8,24],[28,364,8,24],[],[48,390,691,28],[28,392,8,24],[28,392,8,24],[],[8,434,731,24],[],[8,458,731,25],[8,458,48,24],[],[],[62,461,129,16],[],[196,458,171,24],[],[],[371,461,177,21],[],[551,462,66,21],[]],"scrollRects":[[],[0,0,747,491],[0,0,731,463],[0,0,731,35],[],[0,0,731,24],[],[0,0,285,1216],[0,0,285,1200],[0,0,285,24],[],[0,0,285,24],[],[0,0,285,24],[],[0,0,285,24],[],[0,0,731,101],[0,0,91,27],[],[],[0,0,77,27],[],[],[0,0,731,56],[0,0,691,28],[0,0,8,24],[0,0,8,24],[],[0,0,691,28],[0,0,8,24],[0,0,8,24],[],[0,0,731,24],[],[0,0,731,25],[0,0,0,0],[],[],[0,0,129,16],[],[0,0,0,0],[],[],[0,0,173,17],[],[0,0,62,17],[]],"clientRects":[[],[0,0,747,484],[0,0,731,463],[0,0,731,35],[],[0,0,731,24],[],[1,1,285,200],[0,0,285,1200],[0,0,285,24],[],[0,0,285,24],[],[0,0,285,24],[],[0,0,285,24],[],[0,0,731,101],[1,1,91,27],[],[],[1,1,77,27],[],[],[0,0,731,56],[0,0,691,28],[0,0,8,24],[0,0,8,24],[],[0,0,691,28],[0,0,8,24],[0,0,8,24],[],[0,0,731,24],[],[0,0,731,25],[0,0,0,0],[],[],[0,0,129,16],[],[0,0,0,0],[],[],[2,2,173,17],[],[2,2,62,17],[]]},"textBoxes":{"layoutIndex":[4,6,10,12,14,16,19,20,22,27,28,31,32,34,37,38,40,42,43,45],"bounds":[[8,19.90625,120,35],[8,74.8125,712.421875,24],[9,131.8125,48,24],[9,171.8125,48,24],[9,211.8125,48,24],[9,251.8125,208,24],[21,324.8125,66.65625,15],[100.65625,317.8125,3.59375,24],[117.25,324.8125,53.328125,15],[28,363.8125,8,24],[54,363.8125,32,24],[28,391.8125,8,24],[54,391.8125,32,24],[8,433.8125,128,24],[8,457.8125,48,24],[56,457.8125,3.59375,24],[192.59375,457.8125,3.59375,24],[196.1875,457.8125,170.84375,24],[367.03125,457.8125,3.59375,24],[547.625,457.8125,3.59375,24]],"start":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"length":[5,66,3,3,3,13,5,1,4,2,2,2,2,8,3,1,1,21,1,1]},"scrollOffsetX":0,"scrollOffsetY":0,"contentWidth":747,"contentHeight":491}],"strings":["http://localhost:18765/interactive.html","fixture: interactive 交互页","UTF-8","6E424D6A6FCAF00A467E912E362B33C8","#document","html","HTML","lang","zh-CN","block","visible","1","auto","static","rgba(0, 0, 0, 0)","HEAD","#text","\n  ","META","charset","utf-8","TITLE","STYLE","\n    #scroller {\n      height: 200px;\n      width: 300px;\n      overflow: auto;\n      border: 1px solid #888;\n    }\n    #scroller > div { height: 1200px; }\n    .hidden-display { display: none; }\n    .hidden-visibility { visibility: hidden; }\n    .btn { border: 1px solid #36c; padding: 4px 12px; }\n    .menu-item { cursor: pointer; padding: 2px 6px; }\n  ","\n","BODY","H2","交互梯度页","P","覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。","\n\n  ","DIV","id","scroller","role","region","aria-label","可滚动区域","\n    ","\n      ","第一段","第二段","第三段","……（长内容制造纵向滚动）","BUTTON","class","btn focus active","data-testid","btn-dyn","inline-block","default","rgb(240, 240, 240)","动态类按钮","btn primary","aria-expanded","true","aria-controls","menu1","展开菜单","UL","menu","LI","menu-item selected","menuitem","list-item","pointer","::marker","• ","marker","复制","menu-item","粘贴","contenteditable","editor","富文本编辑","可直接编辑的文本","A","href","#","aria-checked","switch","inline","开关项","INPUT","type","range","min","0","max","100","value","40","aria-valuenow","rgb(255, 255, 255)","SPAN","hidden-display","display:none 的内容","hidden-visibility","hidden","visibility:hidden 的内容","text","已填写的值","data-state","valid","required","clip","number","10","step","placeholder","数字","SCRIPT","\n    // JS 监听器：让下方按钮进入交互判定（has_js_click_listener 路径）\n    document.getElementById(\"btn-dyn\").addEventListener(\"click\", () => {});\n  ","\n\n\n"]},"ax_tree":{"nodes":[{"nodeId":"152","ignored":false,"role":{"type":"internalRole","value":"RootWebArea"},"chromeRole":{"type":"internalRole","value":144},"name":{"type":"computedString","value":"fixture: interactive 交互页","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"attribute","attribute":"aria-label","superseded":true},{"type":"relatedElement","value":{"type":"computedString","value":"fixture: interactive 交互页"},"nativeSource":"title"}]},"properties":[{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}},{"name":"url","value":{"type":"string","value":"http://localhost:18765/interactive.html"}}],"childIds":["184"],"backendDOMNodeId":152,"frameId":"6E424D6A6FCAF00A467E912E362B33C8"},{"nodeId":"184","ignored":true,"ignoredReasons":[{"name":"uninteresting","value":{"type":"boolean","value":true}}],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"152","childIds":["196"],"backendDOMNodeId":184},{"nodeId":"196","ignored":true,"ignoredReasons":[{"name":"uninteresting","value":{"type":"boolean","value":true}}],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"184","childIds":["153","155","157","206","217","219"],"backendDOMNodeId":196},{"nodeId":"153","ignored":false,"role":{"type":"role","value":"heading"},"chromeRole":{"type":"internalRole","value":96},"name":{"type":"computedString","value":"交互梯度页","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"contents","value":{"type":"computedString","value":"交互梯度页"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[{"name":"level","value":{"type":"integer","value":2}}],"parentId":"196","childIds":["154"],"backendDOMNodeId":153},{"nodeId":"155","ignored":false,"role":{"type":"role","value":"paragraph"},"chromeRole":{"type":"internalRole","value":133},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[],"parentId":"196","childIds":["156"],"backendDOMNodeId":155},{"nodeId":"157","ignored":false,"role":{"type":"role","value":"region"},"chromeRole":{"type":"internalRole","value":143},"name":{"type":"computedString","value":"可滚动区域","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","value":{"type":"computedString","value":"可滚动区域"},"attribute":"aria-label","attributeValue":{"type":"string","value":"可滚动区域"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[],"parentId":"196","childIds":["201"],"backendDOMNodeId":157},{"nodeId":"206","ignored":true,"ignoredReasons":[{"name":"uninteresting","value":{"type":"boolean","value":true}}],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"196","childIds":["166","168","170"],"backendDOMNodeId":206},{"nodeId":"166","ignored":false,"role":{"type":"role","value":"button"},"chromeRole":{"type":"internalRole","value":9},"name":{"type":"computedString","value":"动态类按钮","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"relatedElement","nativeSource":"label"},{"type":"contents","value":{"type":"computedString","value":"动态类按钮"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[{"name":"invalid","value":{"type":"token","value":"false"}},{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}}],"parentId":"206","childIds":["167"],"backendDOMNodeId":166},{"nodeId":"168","ignored":false,"role":{"type":"role","value":"button"},"chromeRole":{"type":"internalRole","value":9},"name":{"type":"computedString","value":"展开菜单","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"relatedElement","nativeSource":"label"},{"type":"contents","value":{"type":"computedString","value":"展开菜单"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[{"name":"invalid","value":{"type":"token","value":"false"}},{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}},{"name":"expanded","value":{"type":"booleanOrUndefined","value":true}},{"name":"controls","value":{"type":"idrefList","value":"menu1","relatedNodes":[{"backendDOMNodeId":170,"idref":"menu1"}]}}],"parentId":"206","childIds":["169"],"backendDOMNodeId":168},{"nodeId":"170","ignored":false,"role":{"type":"role","value":"menu"},"chromeRole":{"type":"internalRole","value":122},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"attribute","attribute":"title"}]},"properties":[{"name":"orientation","value":{"type":"token","value":"vertical"}}],"parentId":"206","childIds":["171","173"],"backendDOMNodeId":170},{"nodeId":"217","ignored":false,"role":{"type":"role","value":"generic"},"chromeRole":{"type":"internalRole","value":88},"name":{"type":"computedString","value":"富文本编辑","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","value":{"type":"computedString","value":"富文本编辑"},"attribute":"aria-label","attributeValue":{"type":"string","value":"富文本编辑"}},{"type":"placeholder","attribute":"aria-placeholder","superseded":true},{"type":"attribute","attribute":"title","superseded":true}]},"value":{"type":"string","value":"可直接编辑的文本"},"properties":[{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}},{"name":"editable","value":{"type":"token","value":"richtext"}}],"parentId":"196","childIds":["175"],"backendDOMNodeId":217},{"nodeId":"219","ignored":false,"role":{"type":"role","value":"generic"},"chromeRole":{"type":"internalRole","value":88},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[],"parentId":"196","childIds":["176","178","150","151"],"backendDOMNodeId":219},{"nodeId":"154","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"交互梯度页","sources":[{"type":"contents","value":{"type":"computedString","value":"交互梯度页"}}]},"properties":[],"parentId":"153","childIds":["-1000000023"],"backendDOMNodeId":154},{"nodeId":"156","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。","sources":[{"type":"contents","value":{"type":"computedString","value":"覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。"}}]},"properties":[],"parentId":"155","childIds":["-1000000024"],"backendDOMNodeId":156},{"nodeId":"201","ignored":true,"ignoredReasons":[{"name":"uninteresting","value":{"type":"boolean","value":true}}],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"157","childIds":["158","160","162","164"],"backendDOMNodeId":201},{"nodeId":"158","ignored":false,"role":{"type":"role","value":"paragraph"},"chromeRole":{"type":"internalRole","value":133},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[],"parentId":"201","childIds":["159"],"backendDOMNodeId":158},{"nodeId":"160","ignored":false,"role":{"type":"role","value":"paragraph"},"chromeRole":{"type":"internalRole","value":133},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[],"parentId":"201","childIds":["161"],"backendDOMNodeId":160},{"nodeId":"162","ignored":false,"role":{"type":"role","value":"paragraph"},"chromeRole":{"type":"internalRole","value":133},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[],"parentId":"201","childIds":["163"],"backendDOMNodeId":162},{"nodeId":"164","ignored":false,"role":{"type":"role","value":"paragraph"},"chromeRole":{"type":"internalRole","value":133},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[],"parentId":"201","childIds":["165"],"backendDOMNodeId":164},{"nodeId":"167","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"动态类按钮","sources":[{"type":"contents","value":{"type":"computedString","value":"动态类按钮"}}]},"properties":[],"parentId":"166","childIds":["-1000000029"],"backendDOMNodeId":167},{"nodeId":"169","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"展开菜单","sources":[{"type":"contents","value":{"type":"computedString","value":"展开菜单"}}]},"properties":[],"parentId":"168","childIds":["-1000000030"],"backendDOMNodeId":169},{"nodeId":"171","ignored":false,"role":{"type":"role","value":"menuitem"},"chromeRole":{"type":"internalRole","value":124},"name":{"type":"computedString","value":"复制","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"contents","value":{"type":"computedString","value":"复制"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[],"parentId":"170","childIds":["211","172"],"backendDOMNodeId":171},{"nodeId":"173","ignored":false,"role":{"type":"role","value":"menuitem"},"chromeRole":{"type":"internalRole","value":124},"name":{"type":"computedString","value":"粘贴","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"contents","value":{"type":"computedString","value":"粘贴"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[],"parentId":"170","childIds":["213","174"],"backendDOMNodeId":173},{"nodeId":"175","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"可直接编辑的文本","sources":[{"type":"contents","value":{"type":"computedString","value":"可直接编辑的文本"}}]},"properties":[{"name":"editable","value":{"type":"token","value":"richtext"}}],"parentId":"217","childIds":["-1000000037"],"backendDOMNodeId":175},{"nodeId":"176","ignored":false,"role":{"type":"role","value":"switch"},"chromeRole":{"type":"internalRole","value":163},"name":{"type":"computedString","value":"开关项","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"contents","value":{"type":"computedString","value":"开关项"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}},{"name":"checked","value":{"type":"tristate","value":"true"}}],"parentId":"219","childIds":["177"],"backendDOMNodeId":176},{"nodeId":"178","ignored":false,"role":{"type":"role","value":"slider"},"chromeRole":{"type":"internalRole","value":155},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"relatedElement","nativeSource":"label"},{"type":"attribute","attribute":"title"}]},"value":{"type":"number","value":40},"properties":[{"name":"invalid","value":{"type":"token","value":"false"}},{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}},{"name":"settable","value":{"type":"booleanOrUndefined","value":true}},{"name":"orientation","value":{"type":"token","value":"horizontal"}},{"name":"valuemin","value":{"type":"number","value":0}},{"name":"valuemax","value":{"type":"number","value":100}},{"name":"valuetext","value":{"type":"string","value":"40"}}],"parentId":"219","childIds":[],"backendDOMNodeId":178},{"nodeId":"150","ignored":false,"role":{"type":"role","value":"textbox"},"chromeRole":{"type":"internalRole","value":170},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"relatedElement","nativeSource":"label"},{"type":"attribute","attribute":"title"},{"type":"placeholder","attribute":"placeholder"},{"type":"placeholder","attribute":"aria-placeholder"},{"type":"attribute","attribute":"title"}]},"value":{"type":"string","value":"已填写的值"},"properties":[{"name":"invalid","value":{"type":"token","value":"false"}},{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}},{"name":"editable","value":{"type":"token","value":"plaintext"}},{"name":"settable","value":{"type":"booleanOrUndefined","value":true}},{"name":"multiline","value":{"type":"boolean","value":false}},{"name":"readonly","value":{"type":"boolean","value":false}},{"name":"required","value":{"type":"boolean","value":true}}],"parentId":"219","childIds":["179"],"backendDOMNodeId":150},{"nodeId":"151","ignored":false,"role":{"type":"role","value":"spinbutton"},"chromeRole":{"type":"internalRole","value":156},"name":{"type":"computedString","value":"数字","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"},{"type":"relatedElement","nativeSource":"label"},{"type":"attribute","attribute":"title"},{"type":"placeholder","value":{"type":"computedString","value":"数字"},"attribute":"placeholder","attributeValue":{"type":"string","value":"数字"}},{"type":"placeholder","attribute":"aria-placeholder","superseded":true},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[{"name":"invalid","value":{"type":"token","value":"false"}},{"name":"focusable","value":{"type":"booleanOrUndefined","value":true}},{"name":"editable","value":{"type":"token","value":"plaintext"}},{"name":"settable","value":{"type":"booleanOrUndefined","value":true}},{"name":"required","value":{"type":"boolean","value":false}},{"name":"valuemin","value":{"type":"number","value":1}},{"name":"valuemax","value":{"type":"number","value":10}},{"name":"valuetext","value":{"type":"string","value":""}}],"parentId":"219","childIds":["241","242"],"backendDOMNodeId":151},{"nodeId":"-1000000023","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"交互梯度页"},"properties":[],"parentId":"154","childIds":[]},{"nodeId":"-1000000024","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。"},"properties":[],"parentId":"156","childIds":[]},{"nodeId":"159","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"第一段","sources":[{"type":"contents","value":{"type":"computedString","value":"第一段"}}]},"properties":[],"parentId":"158","childIds":["-1000000025"],"backendDOMNodeId":159},{"nodeId":"161","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"第二段","sources":[{"type":"contents","value":{"type":"computedString","value":"第二段"}}]},"properties":[],"parentId":"160","childIds":["-1000000026"],"backendDOMNodeId":161},{"nodeId":"163","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"第三段","sources":[{"type":"contents","value":{"type":"computedString","value":"第三段"}}]},"properties":[],"parentId":"162","childIds":["-1000000027"],"backendDOMNodeId":163},{"nodeId":"165","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"……（长内容制造纵向滚动）","sources":[{"type":"contents","value":{"type":"computedString","value":"……（长内容制造纵向滚动）"}}]},"properties":[],"parentId":"164","childIds":["-1000000028"],"backendDOMNodeId":165},{"nodeId":"-1000000029","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"动态类按钮"},"properties":[],"parentId":"167","childIds":[]},{"nodeId":"-1000000030","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"展开菜单"},"properties":[],"parentId":"169","childIds":[]},{"nodeId":"211","ignored":true,"ignoredReasons":[{"name":"presentationalRole","value":{"type":"boolean","value":true}}],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"171","childIds":["-1000000031"],"backendDOMNodeId":211},{"nodeId":"-1000000031","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"• ","sources":[{"type":"contents","value":{"type":"computedString","value":"• "}}]},"properties":[],"parentId":"211","childIds":["-1000000032"]},{"nodeId":"-1000000032","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"• "},"properties":[],"parentId":"-1000000031","childIds":[]},{"nodeId":"172","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"复制","sources":[{"type":"contents","value":{"type":"computedString","value":"复制"}}]},"properties":[],"parentId":"171","childIds":["-1000000033"],"backendDOMNodeId":172},{"nodeId":"213","ignored":true,"ignoredReasons":[{"name":"presentationalRole","value":{"type":"boolean","value":true}}],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"173","childIds":["-1000000034"],"backendDOMNodeId":213},{"nodeId":"-1000000034","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"• ","sources":[{"type":"contents","value":{"type":"computedString","value":"• "}}]},"properties":[],"parentId":"213","childIds":["-1000000035"]},{"nodeId":"-1000000035","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"• "},"properties":[],"parentId":"-1000000034","childIds":[]},{"nodeId":"174","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"粘贴","sources":[{"type":"contents","value":{"type":"computedString","value":"粘贴"}}]},"properties":[],"parentId":"173","childIds":["-1000000036"],"backendDOMNodeId":174},{"nodeId":"-1000000037","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"可直接编辑的文本"},"properties":[{"name":"editable","value":{"type":"token","value":"richtext"}}],"parentId":"175","childIds":[]},{"nodeId":"177","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"开关项","sources":[{"type":"contents","value":{"type":"computedString","value":"开关项"}}]},"properties":[],"parentId":"176","childIds":["-1000000038"],"backendDOMNodeId":177},{"nodeId":"179","ignored":false,"role":{"type":"role","value":"generic"},"chromeRole":{"type":"internalRole","value":88},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[{"name":"editable","value":{"type":"token","value":"plaintext"}}],"parentId":"150","childIds":["180"],"backendDOMNodeId":179},{"nodeId":"241","ignored":true,"ignoredReasons":[],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"151","childIds":[],"backendDOMNodeId":241},{"nodeId":"242","ignored":true,"ignoredReasons":[],"role":{"type":"role","value":"none"},"chromeRole":{"type":"internalRole","value":0},"parentId":"151","childIds":["182"],"backendDOMNodeId":242},{"nodeId":"182","ignored":false,"role":{"type":"role","value":"generic"},"chromeRole":{"type":"internalRole","value":88},"name":{"type":"computedString","value":"","sources":[{"type":"relatedElement","attribute":"aria-labelledby"},{"type":"attribute","attribute":"aria-label"}]},"properties":[{"name":"editable","value":{"type":"token","value":"plaintext"}}],"parentId":"242","childIds":[],"backendDOMNodeId":182},{"nodeId":"-1000000025","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"第一段"},"properties":[],"parentId":"159","childIds":[]},{"nodeId":"-1000000026","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"第二段"},"properties":[],"parentId":"161","childIds":[]},{"nodeId":"-1000000027","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"第三段"},"properties":[],"parentId":"163","childIds":[]},{"nodeId":"-1000000028","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"……（长内容制造纵向滚动）"},"properties":[],"parentId":"165","childIds":[]},{"nodeId":"-1000000032","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"• "},"properties":[],"parentId":"-1000000031","childIds":[]},{"nodeId":"-1000000033","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"复制"},"properties":[],"parentId":"172","childIds":[]},{"nodeId":"-1000000035","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"• "},"properties":[],"parentId":"-1000000034","childIds":[]},{"nodeId":"-1000000036","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"粘贴"},"properties":[],"parentId":"174","childIds":[]},{"nodeId":"-1000000038","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"开关项"},"properties":[],"parentId":"177","childIds":[]},{"nodeId":"180","ignored":false,"role":{"type":"internalRole","value":"StaticText"},"chromeRole":{"type":"internalRole","value":158},"name":{"type":"computedString","value":"已填写的值","sources":[{"type":"contents","value":{"type":"computedString","value":"已填写的值"}}]},"properties":[{"name":"editable","value":{"type":"token","value":"plaintext"}}],"parentId":"179","childIds":["-1000000039"],"backendDOMNodeId":180},{"nodeId":"-1000000039","ignored":false,"role":{"type":"internalRole","value":"InlineTextBox"},"chromeRole":{"type":"internalRole","value":101},"name":{"type":"computedString","value":"已填写的值"},"properties":[{"name":"editable","value":{"type":"token","value":"plaintext"}}],"parentId":"180","childIds":[]}]},"dpr":1},"output":{"element_tree_text":"交互梯度页\n覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。\n|scroll element[157]<div id=scroller role=region aria-label=可滚动区域 /> (scroll: 0%, 5.1 pages below, total: 6.1 pages)\n\t第一段\n\t第二段\n\t第三段\n\t……（长内容制造纵向滚动）\n[166]<button />\n\t动态类按钮\n[168]<button expanded=true />\n\t展开菜单\n[171]<li role=menuitem />\n\t复制\n[173]<li role=menuitem />\n\t粘贴\n[217]<div id=editor aria-label=富文本编辑 contenteditable=true />\n\t可直接编辑的文本\n[176]<a checked=true role=switch aria-checked=true />\n\t开关项\n*[178]<input type=range value=40 aria-valuenow=40 min=0 max=100 valuemin=0 valuemax=100 valuetext=40 compound_components=(name=Value,role=slider,min=0.0,max=100.0) />\n[150]<input type=text value=已填写的值 data-state=valid required=true />\n*[151]<input type=number placeholder=数字 min=1 max=10 step=1 valuemin=1 valuemax=10 compound_components=(name=Increment,role=button),(name=Decrement,role=button),(name=Value,role=textbox,min=1.0,max=10.0) />","selector_map":{"150":{"backend_node_id":150,"node_name":"INPUT","node_value":"","attributes":{"type":"text","value":"已填写的值","data-state":"valid","required":""},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[4]/input[2]"},"151":{"backend_node_id":151,"node_name":"INPUT","node_value":"","attributes":{"type":"number","min":"1","max":"10","step":"1","placeholder":"数字"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[4]/input[3]"},"157":{"backend_node_id":157,"node_name":"DIV","node_value":"","attributes":{"id":"scroller","role":"region","aria-label":"可滚动区域"},"is_visible":true,"is_scrollable":true,"has_js_click_listener":false,"xpath":"html/body/div[1]"},"166":{"backend_node_id":166,"node_name":"BUTTON","node_value":"","attributes":{"class":"btn focus active","data-testid":"btn-dyn"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[2]/button[1]"},"168":{"backend_node_id":168,"node_name":"BUTTON","node_value":"","attributes":{"class":"btn primary","aria-expanded":"true","aria-controls":"menu1"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[2]/button[2]"},"171":{"backend_node_id":171,"node_name":"LI","node_value":"","attributes":{"class":"menu-item selected","role":"menuitem"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[2]/ul/li[1]"},"173":{"backend_node_id":173,"node_name":"LI","node_value":"","attributes":{"class":"menu-item","role":"menuitem"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[2]/ul/li[2]"},"176":{"backend_node_id":176,"node_name":"A","node_value":"","attributes":{"href":"#","aria-checked":"true","role":"switch"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[4]/a"},"178":{"backend_node_id":178,"node_name":"INPUT","node_value":"","attributes":{"type":"range","min":"0","max":"100","value":"40","aria-valuenow":"40"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[4]/input[1]"},"217":{"backend_node_id":217,"node_name":"DIV","node_value":"","attributes":{"contenteditable":"true","id":"editor","aria-label":"富文本编辑"},"is_visible":true,"is_scrollable":null,"has_js_click_listener":false,"xpath":"html/body/div[3]"}},"file_input_backend_ids":[],"file_inputs_meta":[],"page_stats":{"links":1,"interactive":10,"iframes":0,"skeleton":false}}}
+{
+ "meta": {
+  "url": "http://localhost:18765/interactive.html",
+  "generated_at": "2026-09-20T04:15:19.119261+00:00",
+  "degradation": "full",
+  "source_statuses": {
+   "dpr": "ok",
+   "ax_tree": "ok",
+   "dom_tree": "ok",
+   "snapshot": "ok"
+  },
+  "element_count": 10,
+  "note": "由 Python dom-snapshot 生成；TS 端对 input 跑管线后须与 output 对拍"
+ },
+ "input": {
+  "dom_tree": {
+   "root": {
+    "nodeId": 1,
+    "backendNodeId": 152,
+    "nodeType": 9,
+    "nodeName": "#document",
+    "localName": "",
+    "nodeValue": "",
+    "childNodeCount": 2,
+    "children": [
+     {
+      "nodeId": 2,
+      "parentId": 1,
+      "backendNodeId": 153,
+      "nodeType": 10,
+      "nodeName": "html",
+      "localName": "",
+      "nodeValue": "",
+      "publicId": "",
+      "systemId": ""
+     },
+     {
+      "nodeId": 3,
+      "parentId": 1,
+      "backendNodeId": 154,
+      "nodeType": 1,
+      "nodeName": "HTML",
+      "localName": "html",
+      "nodeValue": "",
+      "childNodeCount": 2,
+      "children": [
+       {
+        "nodeId": 4,
+        "parentId": 3,
+        "backendNodeId": 155,
+        "nodeType": 1,
+        "nodeName": "HEAD",
+        "localName": "head",
+        "nodeValue": "",
+        "childNodeCount": 3,
+        "children": [
+         {
+          "nodeId": 5,
+          "parentId": 4,
+          "backendNodeId": 157,
+          "nodeType": 1,
+          "nodeName": "META",
+          "localName": "meta",
+          "nodeValue": "",
+          "childNodeCount": 0,
+          "children": [],
+          "attributes": [
+           "charset",
+           "utf-8"
+          ]
+         },
+         {
+          "nodeId": 6,
+          "parentId": 4,
+          "backendNodeId": 159,
+          "nodeType": 1,
+          "nodeName": "TITLE",
+          "localName": "title",
+          "nodeValue": "",
+          "childNodeCount": 1,
+          "children": [
+           {
+            "nodeId": 7,
+            "parentId": 6,
+            "backendNodeId": 160,
+            "nodeType": 3,
+            "nodeName": "#text",
+            "localName": "",
+            "nodeValue": "fixture: interactive 交互页"
+           }
+          ],
+          "attributes": []
+         },
+         {
+          "nodeId": 8,
+          "parentId": 4,
+          "backendNodeId": 162,
+          "nodeType": 1,
+          "nodeName": "STYLE",
+          "localName": "style",
+          "nodeValue": "",
+          "childNodeCount": 1,
+          "children": [
+           {
+            "nodeId": 9,
+            "parentId": 8,
+            "backendNodeId": 163,
+            "nodeType": 3,
+            "nodeName": "#text",
+            "localName": "",
+            "nodeValue": "\n    #scroller {\n      height: 200px;\n      width: 300px;\n      overflow: auto;\n      border: 1px solid #888;\n    }\n    #scroller > div { height: 1200px; }\n    .hidden-display { display: none; }\n    .hidden-visibility { visibility: hidden; }\n    .btn { border: 1px solid #36c; padding: 4px 12px; }\n    .menu-item { cursor: pointer; padding: 2px 6px; }\n  "
+           }
+          ],
+          "attributes": []
+         }
+        ],
+        "attributes": []
+       },
+       {
+        "nodeId": 10,
+        "parentId": 3,
+        "backendNodeId": 166,
+        "nodeType": 1,
+        "nodeName": "BODY",
+        "localName": "body",
+        "nodeValue": "",
+        "childNodeCount": 7,
+        "children": [
+         {
+          "nodeId": 11,
+          "parentId": 10,
+          "backendNodeId": 168,
+          "nodeType": 1,
+          "nodeName": "H2",
+          "localName": "h2",
+          "nodeValue": "",
+          "childNodeCount": 1,
+          "children": [
+           {
+            "nodeId": 12,
+            "parentId": 11,
+            "backendNodeId": 169,
+            "nodeType": 3,
+            "nodeName": "#text",
+            "localName": "",
+            "nodeValue": "交互梯度页"
+           }
+          ],
+          "attributes": []
+         },
+         {
+          "nodeId": 13,
+          "parentId": 10,
+          "backendNodeId": 171,
+          "nodeType": 1,
+          "nodeName": "P",
+          "localName": "p",
+          "nodeValue": "",
+          "childNodeCount": 1,
+          "children": [
+           {
+            "nodeId": 14,
+            "parentId": 13,
+            "backendNodeId": 172,
+            "nodeType": 3,
+            "nodeName": "#text",
+            "localName": "",
+            "nodeValue": "覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。"
+           }
+          ],
+          "attributes": []
+         },
+         {
+          "nodeId": 15,
+          "parentId": 10,
+          "backendNodeId": 174,
+          "nodeType": 1,
+          "nodeName": "DIV",
+          "localName": "div",
+          "nodeValue": "",
+          "childNodeCount": 1,
+          "children": [
+           {
+            "nodeId": 16,
+            "parentId": 15,
+            "backendNodeId": 176,
+            "nodeType": 1,
+            "nodeName": "DIV",
+            "localName": "div",
+            "nodeValue": "",
+            "childNodeCount": 4,
+            "children": [
+             {
+              "nodeId": 17,
+              "parentId": 16,
+              "backendNodeId": 178,
+              "nodeType": 1,
+              "nodeName": "P",
+              "localName": "p",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 18,
+                "parentId": 17,
+                "backendNodeId": 179,
+                "nodeType": 3,
+                "nodeName": "#text",
+                "localName": "",
+                "nodeValue": "第一段"
+               }
+              ],
+              "attributes": []
+             },
+             {
+              "nodeId": 19,
+              "parentId": 16,
+              "backendNodeId": 180,
+              "nodeType": 1,
+              "nodeName": "P",
+              "localName": "p",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 20,
+                "parentId": 19,
+                "backendNodeId": 181,
+                "nodeType": 3,
+                "nodeName": "#text",
+                "localName": "",
+                "nodeValue": "第二段"
+               }
+              ],
+              "attributes": []
+             },
+             {
+              "nodeId": 21,
+              "parentId": 16,
+              "backendNodeId": 182,
+              "nodeType": 1,
+              "nodeName": "P",
+              "localName": "p",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 22,
+                "parentId": 21,
+                "backendNodeId": 183,
+                "nodeType": 3,
+                "nodeName": "#text",
+                "localName": "",
+                "nodeValue": "第三段"
+               }
+              ],
+              "attributes": []
+             },
+             {
+              "nodeId": 23,
+              "parentId": 16,
+              "backendNodeId": 184,
+              "nodeType": 1,
+              "nodeName": "P",
+              "localName": "p",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 24,
+                "parentId": 23,
+                "backendNodeId": 185,
+                "nodeType": 3,
+                "nodeName": "#text",
+                "localName": "",
+                "nodeValue": "……（长内容制造纵向滚动）"
+               }
+              ],
+              "attributes": []
+             }
+            ],
+            "attributes": []
+           }
+          ],
+          "attributes": [
+           "id",
+           "scroller",
+           "role",
+           "region",
+           "aria-label",
+           "可滚动区域"
+          ],
+          "isScrollable": true
+         },
+         {
+          "nodeId": 25,
+          "parentId": 10,
+          "backendNodeId": 189,
+          "nodeType": 1,
+          "nodeName": "DIV",
+          "localName": "div",
+          "nodeValue": "",
+          "childNodeCount": 3,
+          "children": [
+           {
+            "nodeId": 26,
+            "parentId": 25,
+            "backendNodeId": 191,
+            "nodeType": 1,
+            "nodeName": "BUTTON",
+            "localName": "button",
+            "nodeValue": "",
+            "childNodeCount": 1,
+            "children": [
+             {
+              "nodeId": 27,
+              "parentId": 26,
+              "backendNodeId": 192,
+              "nodeType": 3,
+              "nodeName": "#text",
+              "localName": "",
+              "nodeValue": "动态类按钮"
+             }
+            ],
+            "attributes": [
+             "class",
+             "btn focus active",
+             "data-testid",
+             "btn-dyn"
+            ]
+           },
+           {
+            "nodeId": 28,
+            "parentId": 25,
+            "backendNodeId": 194,
+            "nodeType": 1,
+            "nodeName": "BUTTON",
+            "localName": "button",
+            "nodeValue": "",
+            "childNodeCount": 1,
+            "children": [
+             {
+              "nodeId": 29,
+              "parentId": 28,
+              "backendNodeId": 195,
+              "nodeType": 3,
+              "nodeName": "#text",
+              "localName": "",
+              "nodeValue": "展开菜单"
+             }
+            ],
+            "attributes": [
+             "class",
+             "btn primary",
+             "aria-expanded",
+             "true",
+             "aria-controls",
+             "menu1"
+            ]
+           },
+           {
+            "nodeId": 30,
+            "parentId": 25,
+            "backendNodeId": 197,
+            "nodeType": 1,
+            "nodeName": "UL",
+            "localName": "ul",
+            "nodeValue": "",
+            "childNodeCount": 2,
+            "children": [
+             {
+              "nodeId": 31,
+              "parentId": 30,
+              "backendNodeId": 199,
+              "nodeType": 1,
+              "nodeName": "LI",
+              "localName": "li",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 33,
+                "parentId": 31,
+                "backendNodeId": 201,
+                "nodeType": 3,
+                "nodeName": "#text",
+                "localName": "",
+                "nodeValue": "复制"
+               }
+              ],
+              "attributes": [
+               "class",
+               "menu-item selected",
+               "role",
+               "menuitem"
+              ],
+              "pseudoElements": [
+               {
+                "nodeId": 32,
+                "backendNodeId": 200,
+                "nodeType": 1,
+                "nodeName": "::marker",
+                "localName": "::marker",
+                "nodeValue": "",
+                "childNodeCount": 0,
+                "attributes": [],
+                "pseudoType": "marker"
+               }
+              ]
+             },
+             {
+              "nodeId": 34,
+              "parentId": 30,
+              "backendNodeId": 203,
+              "nodeType": 1,
+              "nodeName": "LI",
+              "localName": "li",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 36,
+                "parentId": 34,
+                "backendNodeId": 205,
+                "nodeType": 3,
+                "nodeName": "#text",
+                "localName": "",
+                "nodeValue": "粘贴"
+               }
+              ],
+              "attributes": [
+               "class",
+               "menu-item",
+               "role",
+               "menuitem"
+              ],
+              "pseudoElements": [
+               {
+                "nodeId": 35,
+                "backendNodeId": 204,
+                "nodeType": 1,
+                "nodeName": "::marker",
+                "localName": "::marker",
+                "nodeValue": "",
+                "childNodeCount": 0,
+                "attributes": [],
+                "pseudoType": "marker"
+               }
+              ]
+             }
+            ],
+            "attributes": [
+             "id",
+             "menu1",
+             "role",
+             "menu"
+            ]
+           }
+          ],
+          "attributes": []
+         },
+         {
+          "nodeId": 37,
+          "parentId": 10,
+          "backendNodeId": 209,
+          "nodeType": 1,
+          "nodeName": "DIV",
+          "localName": "div",
+          "nodeValue": "",
+          "childNodeCount": 1,
+          "children": [
+           {
+            "nodeId": 38,
+            "parentId": 37,
+            "backendNodeId": 210,
+            "nodeType": 3,
+            "nodeName": "#text",
+            "localName": "",
+            "nodeValue": "可直接编辑的文本"
+           }
+          ],
+          "attributes": [
+           "contenteditable",
+           "true",
+           "id",
+           "editor",
+           "aria-label",
+           "富文本编辑"
+          ]
+         },
+         {
+          "nodeId": 39,
+          "parentId": 10,
+          "backendNodeId": 212,
+          "nodeType": 1,
+          "nodeName": "DIV",
+          "localName": "div",
+          "nodeValue": "",
+          "childNodeCount": 6,
+          "children": [
+           {
+            "nodeId": 40,
+            "parentId": 39,
+            "backendNodeId": 214,
+            "nodeType": 1,
+            "nodeName": "A",
+            "localName": "a",
+            "nodeValue": "",
+            "childNodeCount": 1,
+            "children": [
+             {
+              "nodeId": 41,
+              "parentId": 40,
+              "backendNodeId": 215,
+              "nodeType": 3,
+              "nodeName": "#text",
+              "localName": "",
+              "nodeValue": "开关项"
+             }
+            ],
+            "attributes": [
+             "href",
+             "#",
+             "aria-checked",
+             "true",
+             "role",
+             "switch"
+            ]
+           },
+           {
+            "nodeId": 42,
+            "parentId": 39,
+            "backendNodeId": 217,
+            "nodeType": 1,
+            "nodeName": "INPUT",
+            "localName": "input",
+            "nodeValue": "",
+            "childNodeCount": 0,
+            "children": [],
+            "attributes": [
+             "type",
+             "range",
+             "min",
+             "0",
+             "max",
+             "100",
+             "value",
+             "40",
+             "aria-valuenow",
+             "40"
+            ],
+            "shadowRoots": [
+             {
+              "nodeId": 43,
+              "backendNodeId": 231,
+              "nodeType": 11,
+              "nodeName": "#document-fragment",
+              "localName": "",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 44,
+                "parentId": 43,
+                "backendNodeId": 232,
+                "nodeType": 1,
+                "nodeName": "DIV",
+                "localName": "div",
+                "nodeValue": "",
+                "childNodeCount": 1,
+                "children": [
+                 {
+                  "nodeId": 45,
+                  "parentId": 44,
+                  "backendNodeId": 233,
+                  "nodeType": 1,
+                  "nodeName": "DIV",
+                  "localName": "div",
+                  "nodeValue": "",
+                  "childNodeCount": 1,
+                  "children": [
+                   {
+                    "nodeId": 46,
+                    "parentId": 45,
+                    "backendNodeId": 234,
+                    "nodeType": 1,
+                    "nodeName": "DIV",
+                    "localName": "div",
+                    "nodeValue": "",
+                    "childNodeCount": 0,
+                    "children": [],
+                    "attributes": [
+                     "id",
+                     "thumb"
+                    ]
+                   }
+                  ],
+                  "attributes": [
+                   "pseudo",
+                   "-webkit-slider-runnable-track",
+                   "id",
+                   "track"
+                  ]
+                 }
+                ],
+                "attributes": []
+               }
+              ],
+              "shadowRootType": "user-agent"
+             }
+            ]
+           },
+           {
+            "nodeId": 47,
+            "parentId": 39,
+            "backendNodeId": 219,
+            "nodeType": 1,
+            "nodeName": "SPAN",
+            "localName": "span",
+            "nodeValue": "",
+            "childNodeCount": 1,
+            "children": [
+             {
+              "nodeId": 48,
+              "parentId": 47,
+              "backendNodeId": 220,
+              "nodeType": 3,
+              "nodeName": "#text",
+              "localName": "",
+              "nodeValue": "display:none 的内容"
+             }
+            ],
+            "attributes": [
+             "class",
+             "hidden-display"
+            ]
+           },
+           {
+            "nodeId": 49,
+            "parentId": 39,
+            "backendNodeId": 222,
+            "nodeType": 1,
+            "nodeName": "SPAN",
+            "localName": "span",
+            "nodeValue": "",
+            "childNodeCount": 1,
+            "children": [
+             {
+              "nodeId": 50,
+              "parentId": 49,
+              "backendNodeId": 223,
+              "nodeType": 3,
+              "nodeName": "#text",
+              "localName": "",
+              "nodeValue": "visibility:hidden 的内容"
+             }
+            ],
+            "attributes": [
+             "class",
+             "hidden-visibility"
+            ]
+           },
+           {
+            "nodeId": 51,
+            "parentId": 39,
+            "backendNodeId": 150,
+            "nodeType": 1,
+            "nodeName": "INPUT",
+            "localName": "input",
+            "nodeValue": "",
+            "childNodeCount": 0,
+            "children": [],
+            "attributes": [
+             "type",
+             "text",
+             "value",
+             "已填写的值",
+             "data-state",
+             "valid",
+             "required",
+             ""
+            ],
+            "shadowRoots": [
+             {
+              "nodeId": 52,
+              "backendNodeId": 235,
+              "nodeType": 11,
+              "nodeName": "#document-fragment",
+              "localName": "",
+              "nodeValue": "",
+              "childNodeCount": 1,
+              "children": [
+               {
+                "nodeId": 53,
+                "parentId": 52,
+                "backendNodeId": 236,
+                "nodeType": 1,
+                "nodeName": "DIV",
+                "localName": "div",
+                "nodeValue": "",
+                "childNodeCount": 1,
+                "children": [
+                 {
+                  "nodeId": 54,
+                  "parentId": 53,
+                  "backendNodeId": 237,
+                  "nodeType": 3,
+                  "nodeName": "#text",
+                  "localName": "",
+                  "nodeValue": "已填写的值"
+                 }
+                ],
+                "attributes": []
+               }
+              ],
+              "shadowRootType": "user-agent"
+             }
+            ]
+           },
+           {
+            "nodeId": 55,
+            "parentId": 39,
+            "backendNodeId": 151,
+            "nodeType": 1,
+            "nodeName": "INPUT",
+            "localName": "input",
+            "nodeValue": "",
+            "childNodeCount": 0,
+            "children": [],
+            "attributes": [
+             "type",
+             "number",
+             "min",
+             "1",
+             "max",
+             "10",
+             "step",
+             "1",
+             "placeholder",
+             "数字"
+            ],
+            "shadowRoots": [
+             {
+              "nodeId": 56,
+              "backendNodeId": 238,
+              "nodeType": 11,
+              "nodeName": "#document-fragment",
+              "localName": "",
+              "nodeValue": "",
+              "childNodeCount": 2,
+              "children": [
+               {
+                "nodeId": 57,
+                "parentId": 56,
+                "backendNodeId": 239,
+                "nodeType": 1,
+                "nodeName": "DIV",
+                "localName": "div",
+                "nodeValue": "",
+                "childNodeCount": 1,
+                "children": [
+                 {
+                  "nodeId": 58,
+                  "parentId": 57,
+                  "backendNodeId": 240,
+                  "nodeType": 3,
+                  "nodeName": "#text",
+                  "localName": "",
+                  "nodeValue": "数字"
+                 }
+                ],
+                "attributes": [
+                 "pseudo",
+                 "-webkit-input-placeholder",
+                 "id",
+                 "placeholder",
+                 "style",
+                 "display: block !important;"
+                ]
+               },
+               {
+                "nodeId": 59,
+                "parentId": 56,
+                "backendNodeId": 241,
+                "nodeType": 1,
+                "nodeName": "DIV",
+                "localName": "div",
+                "nodeValue": "",
+                "childNodeCount": 2,
+                "children": [
+                 {
+                  "nodeId": 60,
+                  "parentId": 59,
+                  "backendNodeId": 242,
+                  "nodeType": 1,
+                  "nodeName": "DIV",
+                  "localName": "div",
+                  "nodeValue": "",
+                  "childNodeCount": 1,
+                  "children": [
+                   {
+                    "nodeId": 61,
+                    "parentId": 60,
+                    "backendNodeId": 243,
+                    "nodeType": 1,
+                    "nodeName": "DIV",
+                    "localName": "div",
+                    "nodeValue": "",
+                    "childNodeCount": 0,
+                    "children": [],
+                    "attributes": []
+                   }
+                  ],
+                  "attributes": [
+                   "id",
+                   "editing-view-port"
+                  ]
+                 },
+                 {
+                  "nodeId": 62,
+                  "parentId": 59,
+                  "backendNodeId": 244,
+                  "nodeType": 1,
+                  "nodeName": "DIV",
+                  "localName": "div",
+                  "nodeValue": "",
+                  "childNodeCount": 0,
+                  "children": [],
+                  "attributes": [
+                   "pseudo",
+                   "-webkit-inner-spin-button",
+                   "id",
+                   "spin"
+                  ]
+                 }
+                ],
+                "attributes": [
+                 "id",
+                 "text-field-container",
+                 "pseudo",
+                 "-webkit-textfield-decoration-container",
+                 "style",
+                 "unicode-bidi: normal;"
+                ]
+               }
+              ],
+              "shadowRootType": "user-agent"
+             }
+            ]
+           }
+          ],
+          "attributes": []
+         },
+         {
+          "nodeId": 63,
+          "parentId": 10,
+          "backendNodeId": 228,
+          "nodeType": 1,
+          "nodeName": "SCRIPT",
+          "localName": "script",
+          "nodeValue": "",
+          "childNodeCount": 1,
+          "children": [
+           {
+            "nodeId": 64,
+            "parentId": 63,
+            "backendNodeId": 229,
+            "nodeType": 3,
+            "nodeName": "#text",
+            "localName": "",
+            "nodeValue": "\n    // JS 监听器：让下方按钮进入交互判定（has_js_click_listener 路径）\n    document.getElementById(\"btn-dyn\").addEventListener(\"click\", () => {});\n  "
+           }
+          ],
+          "attributes": []
+         }
+        ],
+        "attributes": []
+       }
+      ],
+      "attributes": [
+       "lang",
+       "zh-CN"
+      ],
+      "frameId": "725EE869521E2B85801C082435A33A0D"
+     }
+    ],
+    "documentURL": "http://localhost:18765/interactive.html",
+    "baseURL": "http://localhost:18765/interactive.html",
+    "xmlVersion": "",
+    "compatibilityMode": "NoQuirksMode",
+    "isScrollable": true
+   }
+  },
+  "snapshot": {
+   "documents": [
+    {
+     "documentURL": 0,
+     "title": 1,
+     "baseURL": 0,
+     "contentLanguage": -1,
+     "encodingName": 2,
+     "publicId": -1,
+     "systemId": -1,
+     "frameId": 3,
+     "nodes": {
+      "parentIndex": [
+       -1,
+       0,
+       0,
+       2,
+       3,
+       3,
+       3,
+       3,
+       7,
+       3,
+       3,
+       10,
+       3,
+       2,
+       2,
+       14,
+       14,
+       16,
+       14,
+       14,
+       19,
+       14,
+       14,
+       22,
+       22,
+       24,
+       24,
+       26,
+       24,
+       28,
+       24,
+       30,
+       24,
+       32,
+       24,
+       22,
+       14,
+       14,
+       37,
+       37,
+       39,
+       37,
+       37,
+       42,
+       37,
+       37,
+       45,
+       45,
+       47,
+       47,
+       45,
+       45,
+       51,
+       51,
+       45,
+       37,
+       14,
+       14,
+       57,
+       14,
+       14,
+       60,
+       60,
+       62,
+       60,
+       60,
+       60,
+       60,
+       67,
+       60,
+       60,
+       70,
+       60,
+       60,
+       60,
+       60,
+       60,
+       14,
+       14,
+       78,
+       14
+      ],
+      "nodeType": [
+       9,
+       10,
+       1,
+       1,
+       3,
+       1,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       3,
+       3,
+       1,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       1,
+       3,
+       1,
+       3,
+       1,
+       3,
+       1,
+       3,
+       1,
+       3,
+       3,
+       3,
+       3,
+       1,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       1,
+       1,
+       3,
+       3,
+       1,
+       1,
+       3,
+       3,
+       3,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       1,
+       3,
+       3,
+       1,
+       3,
+       3
+      ],
+      "shadowRootType": {
+       "index": [],
+       "value": []
+      },
+      "nodeName": [
+       4,
+       5,
+       6,
+       15,
+       16,
+       18,
+       16,
+       21,
+       16,
+       16,
+       22,
+       16,
+       16,
+       16,
+       25,
+       16,
+       26,
+       16,
+       16,
+       28,
+       16,
+       16,
+       31,
+       16,
+       31,
+       16,
+       28,
+       16,
+       28,
+       16,
+       28,
+       16,
+       28,
+       16,
+       16,
+       16,
+       16,
+       31,
+       16,
+       44,
+       16,
+       16,
+       44,
+       16,
+       16,
+       59,
+       16,
+       61,
+       66,
+       16,
+       16,
+       61,
+       66,
+       16,
+       16,
+       16,
+       16,
+       31,
+       16,
+       16,
+       31,
+       16,
+       76,
+       16,
+       16,
+       83,
+       16,
+       94,
+       16,
+       16,
+       94,
+       16,
+       16,
+       83,
+       16,
+       83,
+       16,
+       16,
+       111,
+       16,
+       16
+      ],
+      "nodeValue": [
+       -1,
+       -1,
+       -1,
+       -1,
+       17,
+       -1,
+       17,
+       -1,
+       1,
+       17,
+       -1,
+       23,
+       24,
+       24,
+       -1,
+       17,
+       -1,
+       27,
+       17,
+       -1,
+       29,
+       30,
+       -1,
+       38,
+       -1,
+       39,
+       -1,
+       40,
+       -1,
+       41,
+       -1,
+       42,
+       -1,
+       43,
+       38,
+       17,
+       30,
+       -1,
+       38,
+       -1,
+       52,
+       38,
+       -1,
+       58,
+       38,
+       -1,
+       39,
+       -1,
+       -1,
+       69,
+       39,
+       -1,
+       -1,
+       71,
+       38,
+       17,
+       30,
+       -1,
+       75,
+       30,
+       -1,
+       38,
+       -1,
+       82,
+       38,
+       -1,
+       38,
+       -1,
+       96,
+       38,
+       -1,
+       99,
+       38,
+       -1,
+       38,
+       -1,
+       17,
+       30,
+       -1,
+       112,
+       113
+      ],
+      "backendNodeId": [
+       152,
+       153,
+       154,
+       155,
+       156,
+       157,
+       158,
+       159,
+       160,
+       161,
+       162,
+       163,
+       164,
+       165,
+       166,
+       167,
+       168,
+       169,
+       170,
+       171,
+       172,
+       173,
+       174,
+       175,
+       176,
+       177,
+       178,
+       179,
+       180,
+       181,
+       182,
+       183,
+       184,
+       185,
+       186,
+       187,
+       188,
+       189,
+       190,
+       191,
+       192,
+       193,
+       194,
+       195,
+       196,
+       197,
+       198,
+       199,
+       200,
+       201,
+       202,
+       203,
+       204,
+       205,
+       206,
+       207,
+       208,
+       209,
+       210,
+       211,
+       212,
+       213,
+       214,
+       215,
+       216,
+       217,
+       218,
+       219,
+       220,
+       221,
+       222,
+       223,
+       224,
+       150,
+       225,
+       151,
+       226,
+       227,
+       228,
+       229,
+       230
+      ],
+      "attributes": [
+       [],
+       [],
+       [
+        7,
+        8
+       ],
+       [],
+       [],
+       [
+        19,
+        20
+       ],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37
+       ],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [
+        45,
+        46,
+        47,
+        48
+       ],
+       [],
+       [],
+       [
+        45,
+        53,
+        54,
+        55,
+        56,
+        57
+       ],
+       [],
+       [],
+       [
+        32,
+        57,
+        34,
+        60
+       ],
+       [],
+       [
+        45,
+        62,
+        34,
+        63
+       ],
+       [],
+       [],
+       [],
+       [
+        45,
+        70,
+        34,
+        63
+       ],
+       [],
+       [],
+       [],
+       [],
+       [],
+       [
+        72,
+        55,
+        32,
+        73,
+        36,
+        74
+       ],
+       [],
+       [],
+       [],
+       [],
+       [
+        77,
+        78,
+        79,
+        55,
+        34,
+        80
+       ],
+       [],
+       [],
+       [
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        91
+       ],
+       [],
+       [
+        45,
+        95
+       ],
+       [],
+       [],
+       [
+        45,
+        97
+       ],
+       [],
+       [],
+       [
+        84,
+        100,
+        90,
+        101,
+        102,
+        103,
+        104,
+        -1
+       ],
+       [],
+       [
+        84,
+        106,
+        86,
+        11,
+        88,
+        107,
+        108,
+        11,
+        109,
+        110
+       ],
+       [],
+       [],
+       [],
+       [],
+       []
+      ],
+      "textValue": {
+       "index": [],
+       "value": []
+      },
+      "inputValue": {
+       "index": [
+        65,
+        73,
+        75
+       ],
+       "value": [
+        91,
+        101,
+        -1
+       ]
+      },
+      "inputChecked": {
+       "index": []
+      },
+      "optionSelected": {
+       "index": []
+      },
+      "contentDocumentIndex": {
+       "index": [],
+       "value": []
+      },
+      "pseudoType": {
+       "index": [
+        48,
+        52
+       ],
+       "value": [
+        68,
+        68
+       ]
+      },
+      "pseudoIdentifier": {
+       "index": [],
+       "value": []
+      },
+      "isClickable": {
+       "index": [
+        57,
+        58,
+        62,
+        65,
+        73,
+        75
+       ]
+      },
+      "currentSourceURL": {
+       "index": [],
+       "value": []
+      },
+      "originURL": {
+       "index": [],
+       "value": []
+      }
+     },
+     "layout": {
+      "nodeIndex": [
+       0,
+       2,
+       14,
+       16,
+       17,
+       19,
+       20,
+       22,
+       24,
+       26,
+       27,
+       28,
+       29,
+       30,
+       31,
+       32,
+       33,
+       37,
+       39,
+       40,
+       41,
+       42,
+       43,
+       44,
+       45,
+       47,
+       48,
+       48,
+       49,
+       51,
+       52,
+       52,
+       53,
+       57,
+       58,
+       60,
+       62,
+       63,
+       64,
+       65,
+       66,
+       70,
+       71,
+       72,
+       73,
+       74,
+       75,
+       76
+      ],
+      "styles": [
+       [],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        12,
+        12,
+        12,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        50,
+        12,
+        10,
+        10,
+        10,
+        13,
+        51
+       ],
+       [
+        49,
+        10,
+        11,
+        50,
+        12,
+        10,
+        10,
+        10,
+        13,
+        51
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        50,
+        12,
+        10,
+        10,
+        10,
+        13,
+        51
+       ],
+       [
+        49,
+        10,
+        11,
+        50,
+        12,
+        10,
+        10,
+        10,
+        13,
+        51
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        64,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        64,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        64,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        64,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        81,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        81,
+        10,
+        11,
+        65,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        50,
+        12,
+        10,
+        10,
+        10,
+        13,
+        93
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        81,
+        98,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        81,
+        98,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        100,
+        12,
+        105,
+        105,
+        105,
+        13,
+        93
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ],
+       [
+        49,
+        10,
+        11,
+        100,
+        12,
+        105,
+        105,
+        105,
+        13,
+        93
+       ],
+       [
+        9,
+        10,
+        11,
+        12,
+        12,
+        10,
+        10,
+        10,
+        13,
+        14
+       ]
+      ],
+      "bounds": [
+       [
+        0,
+        0,
+        762,
+        484
+       ],
+       [
+        0,
+        0,
+        747,
+        490.8125
+       ],
+       [
+        8,
+        19.90625,
+        731,
+        462.90625
+       ],
+       [
+        8,
+        19.90625,
+        731,
+        35
+       ],
+       [
+        8,
+        19.90625,
+        120,
+        35
+       ],
+       [
+        8,
+        74.8125,
+        731,
+        24
+       ],
+       [
+        8,
+        74.8125,
+        712.421875,
+        24
+       ],
+       [
+        8,
+        114.8125,
+        302,
+        202
+       ],
+       [
+        9,
+        131.8125,
+        285,
+        1200
+       ],
+       [
+        9,
+        131.8125,
+        285,
+        24
+       ],
+       [
+        9,
+        131.8125,
+        48,
+        24
+       ],
+       [
+        9,
+        171.8125,
+        285,
+        24
+       ],
+       [
+        9,
+        171.8125,
+        48,
+        24
+       ],
+       [
+        9,
+        211.8125,
+        285,
+        24
+       ],
+       [
+        9,
+        211.8125,
+        48,
+        24
+       ],
+       [
+        9,
+        251.8125,
+        285,
+        24
+       ],
+       [
+        9,
+        251.8125,
+        208,
+        24
+       ],
+       [
+        8,
+        316.8125,
+        731,
+        101
+       ],
+       [
+        8,
+        316.8125,
+        92.65625,
+        29
+       ],
+       [
+        21,
+        324.8125,
+        66.65625,
+        15
+       ],
+       [
+        100.65625,
+        317.8125,
+        3.59375,
+        24
+       ],
+       [
+        104.25,
+        316.8125,
+        79.328125,
+        29
+       ],
+       [
+        117.25,
+        324.8125,
+        53.328125,
+        15
+       ],
+       [
+        0,
+        0,
+        0,
+        0
+       ],
+       [
+        8,
+        361.8125,
+        731,
+        56
+       ],
+       [
+        48,
+        361.8125,
+        691,
+        28
+       ],
+       [
+        28,
+        363.8125,
+        8,
+        24
+       ],
+       [
+        28,
+        363.8125,
+        8,
+        24
+       ],
+       [
+        54,
+        363.8125,
+        32,
+        24
+       ],
+       [
+        48,
+        389.8125,
+        691,
+        28
+       ],
+       [
+        28,
+        391.8125,
+        8,
+        24
+       ],
+       [
+        28,
+        391.8125,
+        8,
+        24
+       ],
+       [
+        54,
+        391.8125,
+        32,
+        24
+       ],
+       [
+        8,
+        433.8125,
+        731,
+        24
+       ],
+       [
+        8,
+        433.8125,
+        128,
+        24
+       ],
+       [
+        8,
+        457.8125,
+        731,
+        25
+       ],
+       [
+        8,
+        457.8125,
+        48,
+        24
+       ],
+       [
+        8,
+        457.8125,
+        48,
+        24
+       ],
+       [
+        56,
+        457.8125,
+        3.59375,
+        24
+       ],
+       [
+        61.59375,
+        460.8125,
+        129,
+        16
+       ],
+       [
+        192.59375,
+        457.8125,
+        3.59375,
+        24
+       ],
+       [
+        196.1875,
+        457.8125,
+        170.84375,
+        24
+       ],
+       [
+        196.1875,
+        457.8125,
+        170.84375,
+        24
+       ],
+       [
+        367.03125,
+        457.8125,
+        3.59375,
+        24
+       ],
+       [
+        370.625,
+        460.8125,
+        177,
+        21
+       ],
+       [
+        547.625,
+        457.8125,
+        3.59375,
+        24
+       ],
+       [
+        551.21875,
+        461.8125,
+        66,
+        21
+       ],
+       [
+        0,
+        0,
+        0,
+        0
+       ]
+      ],
+      "text": [
+       -1,
+       -1,
+       -1,
+       -1,
+       27,
+       -1,
+       29,
+       -1,
+       -1,
+       -1,
+       40,
+       -1,
+       41,
+       -1,
+       42,
+       -1,
+       43,
+       -1,
+       -1,
+       52,
+       38,
+       -1,
+       58,
+       38,
+       -1,
+       -1,
+       -1,
+       67,
+       69,
+       -1,
+       -1,
+       67,
+       71,
+       -1,
+       75,
+       -1,
+       -1,
+       82,
+       38,
+       -1,
+       38,
+       -1,
+       99,
+       38,
+       -1,
+       38,
+       -1,
+       17
+      ],
+      "stackingContexts": {
+       "index": [
+        0,
+        1
+       ]
+      },
+      "paintOrders": [
+       0,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       2,
+       2,
+       2,
+       2,
+       2,
+       2,
+       2,
+       2,
+       2,
+       2,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       1,
+       3,
+       1,
+       5,
+       1
+      ],
+      "offsetRects": [
+       [],
+       [
+        0,
+        0,
+        747,
+        491
+       ],
+       [
+        0,
+        0,
+        731,
+        463
+       ],
+       [
+        8,
+        20,
+        731,
+        35
+       ],
+       [],
+       [
+        8,
+        75,
+        731,
+        24
+       ],
+       [],
+       [
+        8,
+        115,
+        302,
+        202
+       ],
+       [
+        9,
+        132,
+        285,
+        1200
+       ],
+       [
+        9,
+        132,
+        285,
+        24
+       ],
+       [],
+       [
+        9,
+        172,
+        285,
+        24
+       ],
+       [],
+       [
+        9,
+        212,
+        285,
+        24
+       ],
+       [],
+       [
+        9,
+        252,
+        285,
+        24
+       ],
+       [],
+       [
+        8,
+        317,
+        731,
+        101
+       ],
+       [
+        8,
+        317,
+        93,
+        29
+       ],
+       [],
+       [],
+       [
+        104,
+        317,
+        79,
+        29
+       ],
+       [],
+       [],
+       [
+        8,
+        362,
+        731,
+        56
+       ],
+       [
+        48,
+        362,
+        691,
+        28
+       ],
+       [
+        28,
+        364,
+        8,
+        24
+       ],
+       [
+        28,
+        364,
+        8,
+        24
+       ],
+       [],
+       [
+        48,
+        390,
+        691,
+        28
+       ],
+       [
+        28,
+        392,
+        8,
+        24
+       ],
+       [
+        28,
+        392,
+        8,
+        24
+       ],
+       [],
+       [
+        8,
+        434,
+        731,
+        24
+       ],
+       [],
+       [
+        8,
+        458,
+        731,
+        25
+       ],
+       [
+        8,
+        458,
+        48,
+        24
+       ],
+       [],
+       [],
+       [
+        62,
+        461,
+        129,
+        16
+       ],
+       [],
+       [
+        196,
+        458,
+        171,
+        24
+       ],
+       [],
+       [],
+       [
+        371,
+        461,
+        177,
+        21
+       ],
+       [],
+       [
+        551,
+        462,
+        66,
+        21
+       ],
+       []
+      ],
+      "scrollRects": [
+       [],
+       [
+        0,
+        0,
+        747,
+        491
+       ],
+       [
+        0,
+        0,
+        731,
+        463
+       ],
+       [
+        0,
+        0,
+        731,
+        35
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        285,
+        1216
+       ],
+       [
+        0,
+        0,
+        285,
+        1200
+       ],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        101
+       ],
+       [
+        0,
+        0,
+        91,
+        27
+       ],
+       [],
+       [],
+       [
+        0,
+        0,
+        77,
+        27
+       ],
+       [],
+       [],
+       [
+        0,
+        0,
+        731,
+        56
+       ],
+       [
+        0,
+        0,
+        691,
+        28
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        691,
+        28
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        25
+       ],
+       [
+        0,
+        0,
+        0,
+        0
+       ],
+       [],
+       [],
+       [
+        0,
+        0,
+        129,
+        16
+       ],
+       [],
+       [
+        0,
+        0,
+        0,
+        0
+       ],
+       [],
+       [],
+       [
+        0,
+        0,
+        173,
+        17
+       ],
+       [],
+       [
+        0,
+        0,
+        62,
+        17
+       ],
+       []
+      ],
+      "clientRects": [
+       [],
+       [
+        0,
+        0,
+        747,
+        484
+       ],
+       [
+        0,
+        0,
+        731,
+        463
+       ],
+       [
+        0,
+        0,
+        731,
+        35
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        24
+       ],
+       [],
+       [
+        1,
+        1,
+        285,
+        200
+       ],
+       [
+        0,
+        0,
+        285,
+        1200
+       ],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        285,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        101
+       ],
+       [
+        1,
+        1,
+        91,
+        27
+       ],
+       [],
+       [],
+       [
+        1,
+        1,
+        77,
+        27
+       ],
+       [],
+       [],
+       [
+        0,
+        0,
+        731,
+        56
+       ],
+       [
+        0,
+        0,
+        691,
+        28
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        691,
+        28
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [
+        0,
+        0,
+        8,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        24
+       ],
+       [],
+       [
+        0,
+        0,
+        731,
+        25
+       ],
+       [
+        0,
+        0,
+        0,
+        0
+       ],
+       [],
+       [],
+       [
+        0,
+        0,
+        129,
+        16
+       ],
+       [],
+       [
+        0,
+        0,
+        0,
+        0
+       ],
+       [],
+       [],
+       [
+        2,
+        2,
+        173,
+        17
+       ],
+       [],
+       [
+        2,
+        2,
+        62,
+        17
+       ],
+       []
+      ]
+     },
+     "textBoxes": {
+      "layoutIndex": [
+       4,
+       6,
+       10,
+       12,
+       14,
+       16,
+       19,
+       20,
+       22,
+       27,
+       28,
+       31,
+       32,
+       34,
+       37,
+       38,
+       40,
+       42,
+       43,
+       45
+      ],
+      "bounds": [
+       [
+        8,
+        19.90625,
+        120,
+        35
+       ],
+       [
+        8,
+        74.8125,
+        712.421875,
+        24
+       ],
+       [
+        9,
+        131.8125,
+        48,
+        24
+       ],
+       [
+        9,
+        171.8125,
+        48,
+        24
+       ],
+       [
+        9,
+        211.8125,
+        48,
+        24
+       ],
+       [
+        9,
+        251.8125,
+        208,
+        24
+       ],
+       [
+        21,
+        324.8125,
+        66.65625,
+        15
+       ],
+       [
+        100.65625,
+        317.8125,
+        3.59375,
+        24
+       ],
+       [
+        117.25,
+        324.8125,
+        53.328125,
+        15
+       ],
+       [
+        28,
+        363.8125,
+        8,
+        24
+       ],
+       [
+        54,
+        363.8125,
+        32,
+        24
+       ],
+       [
+        28,
+        391.8125,
+        8,
+        24
+       ],
+       [
+        54,
+        391.8125,
+        32,
+        24
+       ],
+       [
+        8,
+        433.8125,
+        128,
+        24
+       ],
+       [
+        8,
+        457.8125,
+        48,
+        24
+       ],
+       [
+        56,
+        457.8125,
+        3.59375,
+        24
+       ],
+       [
+        192.59375,
+        457.8125,
+        3.59375,
+        24
+       ],
+       [
+        196.1875,
+        457.8125,
+        170.84375,
+        24
+       ],
+       [
+        367.03125,
+        457.8125,
+        3.59375,
+        24
+       ],
+       [
+        547.625,
+        457.8125,
+        3.59375,
+        24
+       ]
+      ],
+      "start": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ],
+      "length": [
+       5,
+       66,
+       3,
+       3,
+       3,
+       13,
+       5,
+       1,
+       4,
+       2,
+       2,
+       2,
+       2,
+       8,
+       3,
+       1,
+       1,
+       21,
+       1,
+       1
+      ]
+     },
+     "scrollOffsetX": 0,
+     "scrollOffsetY": 0,
+     "contentWidth": 747,
+     "contentHeight": 491
+    }
+   ],
+   "strings": [
+    "http://localhost:18765/interactive.html",
+    "fixture: interactive 交互页",
+    "UTF-8",
+    "725EE869521E2B85801C082435A33A0D",
+    "#document",
+    "html",
+    "HTML",
+    "lang",
+    "zh-CN",
+    "block",
+    "visible",
+    "1",
+    "auto",
+    "static",
+    "rgba(0, 0, 0, 0)",
+    "HEAD",
+    "#text",
+    "\n  ",
+    "META",
+    "charset",
+    "utf-8",
+    "TITLE",
+    "STYLE",
+    "\n    #scroller {\n      height: 200px;\n      width: 300px;\n      overflow: auto;\n      border: 1px solid #888;\n    }\n    #scroller > div { height: 1200px; }\n    .hidden-display { display: none; }\n    .hidden-visibility { visibility: hidden; }\n    .btn { border: 1px solid #36c; padding: 4px 12px; }\n    .menu-item { cursor: pointer; padding: 2px 6px; }\n  ",
+    "\n",
+    "BODY",
+    "H2",
+    "交互梯度页",
+    "P",
+    "覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。",
+    "\n\n  ",
+    "DIV",
+    "id",
+    "scroller",
+    "role",
+    "region",
+    "aria-label",
+    "可滚动区域",
+    "\n    ",
+    "\n      ",
+    "第一段",
+    "第二段",
+    "第三段",
+    "……（长内容制造纵向滚动）",
+    "BUTTON",
+    "class",
+    "btn focus active",
+    "data-testid",
+    "btn-dyn",
+    "inline-block",
+    "default",
+    "rgb(240, 240, 240)",
+    "动态类按钮",
+    "btn primary",
+    "aria-expanded",
+    "true",
+    "aria-controls",
+    "menu1",
+    "展开菜单",
+    "UL",
+    "menu",
+    "LI",
+    "menu-item selected",
+    "menuitem",
+    "list-item",
+    "pointer",
+    "::marker",
+    "• ",
+    "marker",
+    "复制",
+    "menu-item",
+    "粘贴",
+    "contenteditable",
+    "editor",
+    "富文本编辑",
+    "可直接编辑的文本",
+    "A",
+    "href",
+    "#",
+    "aria-checked",
+    "switch",
+    "inline",
+    "开关项",
+    "INPUT",
+    "type",
+    "range",
+    "min",
+    "0",
+    "max",
+    "100",
+    "value",
+    "40",
+    "aria-valuenow",
+    "rgb(255, 255, 255)",
+    "SPAN",
+    "hidden-display",
+    "display:none 的内容",
+    "hidden-visibility",
+    "hidden",
+    "visibility:hidden 的内容",
+    "text",
+    "已填写的值",
+    "data-state",
+    "valid",
+    "required",
+    "clip",
+    "number",
+    "10",
+    "step",
+    "placeholder",
+    "数字",
+    "SCRIPT",
+    "\n    // JS 监听器：让下方按钮进入交互判定（has_js_click_listener 路径）\n    document.getElementById(\"btn-dyn\").addEventListener(\"click\", () => {});\n  ",
+    "\n\n\n"
+   ]
+  },
+  "ax_tree": {
+   "nodes": [
+    {
+     "nodeId": "152",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "RootWebArea"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 144
+     },
+     "name": {
+      "type": "computedString",
+      "value": "fixture: interactive 交互页",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label",
+        "superseded": true
+       },
+       {
+        "type": "relatedElement",
+        "value": {
+         "type": "computedString",
+         "value": "fixture: interactive 交互页"
+        },
+        "nativeSource": "title"
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "url",
+       "value": {
+        "type": "string",
+        "value": "http://localhost:18765/interactive.html"
+       }
+      }
+     ],
+     "childIds": [
+      "154"
+     ],
+     "backendDOMNodeId": 152,
+     "frameId": "725EE869521E2B85801C082435A33A0D"
+    },
+    {
+     "nodeId": "154",
+     "ignored": true,
+     "ignoredReasons": [
+      {
+       "name": "uninteresting",
+       "value": {
+        "type": "boolean",
+        "value": true
+       }
+      }
+     ],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "152",
+     "childIds": [
+      "166"
+     ],
+     "backendDOMNodeId": 154
+    },
+    {
+     "nodeId": "166",
+     "ignored": true,
+     "ignoredReasons": [
+      {
+       "name": "uninteresting",
+       "value": {
+        "type": "boolean",
+        "value": true
+       }
+      }
+     ],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "154",
+     "childIds": [
+      "168",
+      "171",
+      "174",
+      "189",
+      "209",
+      "212"
+     ],
+     "backendDOMNodeId": 166
+    },
+    {
+     "nodeId": "168",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "heading"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 96
+     },
+     "name": {
+      "type": "computedString",
+      "value": "交互梯度页",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "交互梯度页"
+        }
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "level",
+       "value": {
+        "type": "integer",
+        "value": 2
+       }
+      }
+     ],
+     "parentId": "166",
+     "childIds": [
+      "169"
+     ],
+     "backendDOMNodeId": 168
+    },
+    {
+     "nodeId": "171",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "paragraph"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 133
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "166",
+     "childIds": [
+      "172"
+     ],
+     "backendDOMNodeId": 171
+    },
+    {
+     "nodeId": "174",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "region"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 143
+     },
+     "name": {
+      "type": "computedString",
+      "value": "可滚动区域",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "value": {
+         "type": "computedString",
+         "value": "可滚动区域"
+        },
+        "attribute": "aria-label",
+        "attributeValue": {
+         "type": "string",
+         "value": "可滚动区域"
+        }
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "166",
+     "childIds": [
+      "176"
+     ],
+     "backendDOMNodeId": 174
+    },
+    {
+     "nodeId": "189",
+     "ignored": true,
+     "ignoredReasons": [
+      {
+       "name": "uninteresting",
+       "value": {
+        "type": "boolean",
+        "value": true
+       }
+      }
+     ],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "166",
+     "childIds": [
+      "191",
+      "194",
+      "197"
+     ],
+     "backendDOMNodeId": 189
+    },
+    {
+     "nodeId": "191",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "button"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 9
+     },
+     "name": {
+      "type": "computedString",
+      "value": "动态类按钮",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "relatedElement",
+        "nativeSource": "label"
+       },
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "动态类按钮"
+        }
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "invalid",
+       "value": {
+        "type": "token",
+        "value": "false"
+       }
+      },
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      }
+     ],
+     "parentId": "189",
+     "childIds": [
+      "192"
+     ],
+     "backendDOMNodeId": 191
+    },
+    {
+     "nodeId": "194",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "button"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 9
+     },
+     "name": {
+      "type": "computedString",
+      "value": "展开菜单",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "relatedElement",
+        "nativeSource": "label"
+       },
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "展开菜单"
+        }
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "invalid",
+       "value": {
+        "type": "token",
+        "value": "false"
+       }
+      },
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "expanded",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "controls",
+       "value": {
+        "type": "idrefList",
+        "value": "menu1",
+        "relatedNodes": [
+         {
+          "backendDOMNodeId": 197,
+          "idref": "menu1"
+         }
+        ]
+       }
+      }
+     ],
+     "parentId": "189",
+     "childIds": [
+      "195"
+     ],
+     "backendDOMNodeId": 194
+    },
+    {
+     "nodeId": "197",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "menu"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 122
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "attribute",
+        "attribute": "title"
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "orientation",
+       "value": {
+        "type": "token",
+        "value": "vertical"
+       }
+      }
+     ],
+     "parentId": "189",
+     "childIds": [
+      "199",
+      "203"
+     ],
+     "backendDOMNodeId": 197
+    },
+    {
+     "nodeId": "209",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "generic"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 88
+     },
+     "name": {
+      "type": "computedString",
+      "value": "富文本编辑",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "value": {
+         "type": "computedString",
+         "value": "富文本编辑"
+        },
+        "attribute": "aria-label",
+        "attributeValue": {
+         "type": "string",
+         "value": "富文本编辑"
+        }
+       },
+       {
+        "type": "placeholder",
+        "attribute": "aria-placeholder",
+        "superseded": true
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "value": {
+      "type": "string",
+      "value": "可直接编辑的文本"
+     },
+     "properties": [
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "richtext"
+       }
+      }
+     ],
+     "parentId": "166",
+     "childIds": [
+      "210"
+     ],
+     "backendDOMNodeId": 209
+    },
+    {
+     "nodeId": "212",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "generic"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 88
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "166",
+     "childIds": [
+      "214",
+      "217",
+      "150",
+      "151"
+     ],
+     "backendDOMNodeId": 212
+    },
+    {
+     "nodeId": "169",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "交互梯度页",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "交互梯度页"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "168",
+     "childIds": [
+      "-1000000023"
+     ],
+     "backendDOMNodeId": 169
+    },
+    {
+     "nodeId": "172",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "171",
+     "childIds": [
+      "-1000000024"
+     ],
+     "backendDOMNodeId": 172
+    },
+    {
+     "nodeId": "176",
+     "ignored": true,
+     "ignoredReasons": [
+      {
+       "name": "uninteresting",
+       "value": {
+        "type": "boolean",
+        "value": true
+       }
+      }
+     ],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "174",
+     "childIds": [
+      "178",
+      "180",
+      "182",
+      "184"
+     ],
+     "backendDOMNodeId": 176
+    },
+    {
+     "nodeId": "178",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "paragraph"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 133
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "176",
+     "childIds": [
+      "179"
+     ],
+     "backendDOMNodeId": 178
+    },
+    {
+     "nodeId": "180",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "paragraph"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 133
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "176",
+     "childIds": [
+      "181"
+     ],
+     "backendDOMNodeId": 180
+    },
+    {
+     "nodeId": "182",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "paragraph"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 133
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "176",
+     "childIds": [
+      "183"
+     ],
+     "backendDOMNodeId": 182
+    },
+    {
+     "nodeId": "184",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "paragraph"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 133
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "176",
+     "childIds": [
+      "185"
+     ],
+     "backendDOMNodeId": 184
+    },
+    {
+     "nodeId": "192",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "动态类按钮",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "动态类按钮"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "191",
+     "childIds": [
+      "-1000000029"
+     ],
+     "backendDOMNodeId": 192
+    },
+    {
+     "nodeId": "195",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "展开菜单",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "展开菜单"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "194",
+     "childIds": [
+      "-1000000030"
+     ],
+     "backendDOMNodeId": 195
+    },
+    {
+     "nodeId": "199",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "menuitem"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 124
+     },
+     "name": {
+      "type": "computedString",
+      "value": "复制",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "复制"
+        }
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "197",
+     "childIds": [
+      "200",
+      "201"
+     ],
+     "backendDOMNodeId": 199
+    },
+    {
+     "nodeId": "203",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "menuitem"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 124
+     },
+     "name": {
+      "type": "computedString",
+      "value": "粘贴",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "粘贴"
+        }
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "197",
+     "childIds": [
+      "204",
+      "205"
+     ],
+     "backendDOMNodeId": 203
+    },
+    {
+     "nodeId": "210",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "可直接编辑的文本",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "可直接编辑的文本"
+        }
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "richtext"
+       }
+      }
+     ],
+     "parentId": "209",
+     "childIds": [
+      "-1000000037"
+     ],
+     "backendDOMNodeId": 210
+    },
+    {
+     "nodeId": "214",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "switch"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 163
+     },
+     "name": {
+      "type": "computedString",
+      "value": "开关项",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "开关项"
+        }
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "checked",
+       "value": {
+        "type": "tristate",
+        "value": "true"
+       }
+      }
+     ],
+     "parentId": "212",
+     "childIds": [
+      "215"
+     ],
+     "backendDOMNodeId": 214
+    },
+    {
+     "nodeId": "217",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "slider"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 155
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "relatedElement",
+        "nativeSource": "label"
+       },
+       {
+        "type": "attribute",
+        "attribute": "title"
+       }
+      ]
+     },
+     "value": {
+      "type": "number",
+      "value": 40
+     },
+     "properties": [
+      {
+       "name": "invalid",
+       "value": {
+        "type": "token",
+        "value": "false"
+       }
+      },
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "settable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "orientation",
+       "value": {
+        "type": "token",
+        "value": "horizontal"
+       }
+      },
+      {
+       "name": "valuemin",
+       "value": {
+        "type": "number",
+        "value": 0
+       }
+      },
+      {
+       "name": "valuemax",
+       "value": {
+        "type": "number",
+        "value": 100
+       }
+      },
+      {
+       "name": "valuetext",
+       "value": {
+        "type": "string",
+        "value": "40"
+       }
+      }
+     ],
+     "parentId": "212",
+     "childIds": [],
+     "backendDOMNodeId": 217
+    },
+    {
+     "nodeId": "150",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "textbox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 170
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "relatedElement",
+        "nativeSource": "label"
+       },
+       {
+        "type": "attribute",
+        "attribute": "title"
+       },
+       {
+        "type": "placeholder",
+        "attribute": "placeholder"
+       },
+       {
+        "type": "placeholder",
+        "attribute": "aria-placeholder"
+       },
+       {
+        "type": "attribute",
+        "attribute": "title"
+       }
+      ]
+     },
+     "value": {
+      "type": "string",
+      "value": "已填写的值"
+     },
+     "properties": [
+      {
+       "name": "invalid",
+       "value": {
+        "type": "token",
+        "value": "false"
+       }
+      },
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "plaintext"
+       }
+      },
+      {
+       "name": "settable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "multiline",
+       "value": {
+        "type": "boolean",
+        "value": false
+       }
+      },
+      {
+       "name": "readonly",
+       "value": {
+        "type": "boolean",
+        "value": false
+       }
+      },
+      {
+       "name": "required",
+       "value": {
+        "type": "boolean",
+        "value": true
+       }
+      }
+     ],
+     "parentId": "212",
+     "childIds": [
+      "236"
+     ],
+     "backendDOMNodeId": 150
+    },
+    {
+     "nodeId": "151",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "spinbutton"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 156
+     },
+     "name": {
+      "type": "computedString",
+      "value": "数字",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       },
+       {
+        "type": "relatedElement",
+        "nativeSource": "label"
+       },
+       {
+        "type": "attribute",
+        "attribute": "title"
+       },
+       {
+        "type": "placeholder",
+        "value": {
+         "type": "computedString",
+         "value": "数字"
+        },
+        "attribute": "placeholder",
+        "attributeValue": {
+         "type": "string",
+         "value": "数字"
+        }
+       },
+       {
+        "type": "placeholder",
+        "attribute": "aria-placeholder",
+        "superseded": true
+       },
+       {
+        "type": "attribute",
+        "attribute": "title",
+        "superseded": true
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "invalid",
+       "value": {
+        "type": "token",
+        "value": "false"
+       }
+      },
+      {
+       "name": "focusable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "plaintext"
+       }
+      },
+      {
+       "name": "settable",
+       "value": {
+        "type": "booleanOrUndefined",
+        "value": true
+       }
+      },
+      {
+       "name": "required",
+       "value": {
+        "type": "boolean",
+        "value": false
+       }
+      },
+      {
+       "name": "valuemin",
+       "value": {
+        "type": "number",
+        "value": 1
+       }
+      },
+      {
+       "name": "valuemax",
+       "value": {
+        "type": "number",
+        "value": 10
+       }
+      },
+      {
+       "name": "valuetext",
+       "value": {
+        "type": "string",
+        "value": ""
+       }
+      }
+     ],
+     "parentId": "212",
+     "childIds": [
+      "239",
+      "241"
+     ],
+     "backendDOMNodeId": 151
+    },
+    {
+     "nodeId": "-1000000023",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "交互梯度页"
+     },
+     "properties": [],
+     "parentId": "169",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000024",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。"
+     },
+     "properties": [],
+     "parentId": "172",
+     "childIds": []
+    },
+    {
+     "nodeId": "179",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "第一段",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "第一段"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "178",
+     "childIds": [
+      "-1000000025"
+     ],
+     "backendDOMNodeId": 179
+    },
+    {
+     "nodeId": "181",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "第二段",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "第二段"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "180",
+     "childIds": [
+      "-1000000026"
+     ],
+     "backendDOMNodeId": 181
+    },
+    {
+     "nodeId": "183",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "第三段",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "第三段"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "182",
+     "childIds": [
+      "-1000000027"
+     ],
+     "backendDOMNodeId": 183
+    },
+    {
+     "nodeId": "185",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "……（长内容制造纵向滚动）",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "……（长内容制造纵向滚动）"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "184",
+     "childIds": [
+      "-1000000028"
+     ],
+     "backendDOMNodeId": 185
+    },
+    {
+     "nodeId": "-1000000029",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "动态类按钮"
+     },
+     "properties": [],
+     "parentId": "192",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000030",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "展开菜单"
+     },
+     "properties": [],
+     "parentId": "195",
+     "childIds": []
+    },
+    {
+     "nodeId": "200",
+     "ignored": true,
+     "ignoredReasons": [
+      {
+       "name": "presentationalRole",
+       "value": {
+        "type": "boolean",
+        "value": true
+       }
+      }
+     ],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "199",
+     "childIds": [
+      "-1000000031"
+     ],
+     "backendDOMNodeId": 200
+    },
+    {
+     "nodeId": "-1000000031",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "• ",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "• "
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "200",
+     "childIds": [
+      "-1000000032"
+     ]
+    },
+    {
+     "nodeId": "-1000000032",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "• "
+     },
+     "properties": [],
+     "parentId": "-1000000031",
+     "childIds": []
+    },
+    {
+     "nodeId": "201",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "复制",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "复制"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "199",
+     "childIds": [
+      "-1000000033"
+     ],
+     "backendDOMNodeId": 201
+    },
+    {
+     "nodeId": "204",
+     "ignored": true,
+     "ignoredReasons": [
+      {
+       "name": "presentationalRole",
+       "value": {
+        "type": "boolean",
+        "value": true
+       }
+      }
+     ],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "203",
+     "childIds": [
+      "-1000000034"
+     ],
+     "backendDOMNodeId": 204
+    },
+    {
+     "nodeId": "-1000000034",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "• ",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "• "
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "204",
+     "childIds": [
+      "-1000000035"
+     ]
+    },
+    {
+     "nodeId": "-1000000035",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "• "
+     },
+     "properties": [],
+     "parentId": "-1000000034",
+     "childIds": []
+    },
+    {
+     "nodeId": "205",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "粘贴",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "粘贴"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "203",
+     "childIds": [
+      "-1000000036"
+     ],
+     "backendDOMNodeId": 205
+    },
+    {
+     "nodeId": "-1000000037",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "可直接编辑的文本"
+     },
+     "properties": [
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "richtext"
+       }
+      }
+     ],
+     "parentId": "210",
+     "childIds": []
+    },
+    {
+     "nodeId": "215",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "开关项",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "开关项"
+        }
+       }
+      ]
+     },
+     "properties": [],
+     "parentId": "214",
+     "childIds": [
+      "-1000000038"
+     ],
+     "backendDOMNodeId": 215
+    },
+    {
+     "nodeId": "236",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "generic"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 88
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "plaintext"
+       }
+      }
+     ],
+     "parentId": "150",
+     "childIds": [
+      "237"
+     ],
+     "backendDOMNodeId": 236
+    },
+    {
+     "nodeId": "239",
+     "ignored": true,
+     "ignoredReasons": [],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "151",
+     "childIds": [],
+     "backendDOMNodeId": 239
+    },
+    {
+     "nodeId": "241",
+     "ignored": true,
+     "ignoredReasons": [],
+     "role": {
+      "type": "role",
+      "value": "none"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 0
+     },
+     "parentId": "151",
+     "childIds": [
+      "243"
+     ],
+     "backendDOMNodeId": 241
+    },
+    {
+     "nodeId": "243",
+     "ignored": false,
+     "role": {
+      "type": "role",
+      "value": "generic"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 88
+     },
+     "name": {
+      "type": "computedString",
+      "value": "",
+      "sources": [
+       {
+        "type": "relatedElement",
+        "attribute": "aria-labelledby"
+       },
+       {
+        "type": "attribute",
+        "attribute": "aria-label"
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "plaintext"
+       }
+      }
+     ],
+     "parentId": "241",
+     "childIds": [],
+     "backendDOMNodeId": 243
+    },
+    {
+     "nodeId": "-1000000025",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "第一段"
+     },
+     "properties": [],
+     "parentId": "179",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000026",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "第二段"
+     },
+     "properties": [],
+     "parentId": "181",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000027",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "第三段"
+     },
+     "properties": [],
+     "parentId": "183",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000028",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "……（长内容制造纵向滚动）"
+     },
+     "properties": [],
+     "parentId": "185",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000032",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "• "
+     },
+     "properties": [],
+     "parentId": "-1000000031",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000033",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "复制"
+     },
+     "properties": [],
+     "parentId": "201",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000035",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "• "
+     },
+     "properties": [],
+     "parentId": "-1000000034",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000036",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "粘贴"
+     },
+     "properties": [],
+     "parentId": "205",
+     "childIds": []
+    },
+    {
+     "nodeId": "-1000000038",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "开关项"
+     },
+     "properties": [],
+     "parentId": "215",
+     "childIds": []
+    },
+    {
+     "nodeId": "237",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "StaticText"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 158
+     },
+     "name": {
+      "type": "computedString",
+      "value": "已填写的值",
+      "sources": [
+       {
+        "type": "contents",
+        "value": {
+         "type": "computedString",
+         "value": "已填写的值"
+        }
+       }
+      ]
+     },
+     "properties": [
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "plaintext"
+       }
+      }
+     ],
+     "parentId": "236",
+     "childIds": [
+      "-1000000039"
+     ],
+     "backendDOMNodeId": 237
+    },
+    {
+     "nodeId": "-1000000039",
+     "ignored": false,
+     "role": {
+      "type": "internalRole",
+      "value": "InlineTextBox"
+     },
+     "chromeRole": {
+      "type": "internalRole",
+      "value": 101
+     },
+     "name": {
+      "type": "computedString",
+      "value": "已填写的值"
+     },
+     "properties": [
+      {
+       "name": "editable",
+       "value": {
+        "type": "token",
+        "value": "plaintext"
+       }
+      }
+     ],
+     "parentId": "237",
+     "childIds": []
+    }
+   ]
+  },
+  "dpr": 1.0
+ },
+ "output": {
+  "element_tree_text": "交互梯度页\n覆盖：可滚动容器、隐藏元素（display/visibility）、动态类名、菜单、contenteditable、aria 状态。\n|scroll element[174]<div id=scroller role=region aria-label=可滚动区域 /> (scroll: 0%, 5.1 pages below, total: 6.1 pages)\n\t第一段\n\t第二段\n\t第三段\n\t……（长内容制造纵向滚动）\n[191]<button />\n\t动态类按钮\n[194]<button expanded=true />\n\t展开菜单\n[199]<li role=menuitem />\n\t复制\n[203]<li role=menuitem />\n\t粘贴\n[209]<div id=editor aria-label=富文本编辑 contenteditable=true />\n\t可直接编辑的文本\n[214]<a checked=true role=switch aria-checked=true />\n\t开关项\n*[217]<input type=range value=40 aria-valuenow=40 min=0 max=100 valuemin=0 valuemax=100 valuetext=40 compound_components=(name=Value,role=slider,min=0.0,max=100.0) />\n[150]<input type=text value=已填写的值 data-state=valid required=true />\n*[151]<input type=number placeholder=数字 min=1 max=10 step=1 valuemin=1 valuemax=10 compound_components=(name=Increment,role=button),(name=Decrement,role=button),(name=Value,role=textbox,min=1.0,max=10.0) />",
+  "selector_map": {
+   "174": {
+    "backend_node_id": 174,
+    "node_name": "DIV",
+    "node_value": "",
+    "attributes": {
+     "id": "scroller",
+     "role": "region",
+     "aria-label": "可滚动区域"
+    },
+    "is_visible": true,
+    "is_scrollable": true,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[1]"
+   },
+   "191": {
+    "backend_node_id": 191,
+    "node_name": "BUTTON",
+    "node_value": "",
+    "attributes": {
+     "class": "btn focus active",
+     "data-testid": "btn-dyn"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[2]/button[1]"
+   },
+   "194": {
+    "backend_node_id": 194,
+    "node_name": "BUTTON",
+    "node_value": "",
+    "attributes": {
+     "class": "btn primary",
+     "aria-expanded": "true",
+     "aria-controls": "menu1"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[2]/button[2]"
+   },
+   "199": {
+    "backend_node_id": 199,
+    "node_name": "LI",
+    "node_value": "",
+    "attributes": {
+     "class": "menu-item selected",
+     "role": "menuitem"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[2]/ul/li[1]"
+   },
+   "203": {
+    "backend_node_id": 203,
+    "node_name": "LI",
+    "node_value": "",
+    "attributes": {
+     "class": "menu-item",
+     "role": "menuitem"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[2]/ul/li[2]"
+   },
+   "209": {
+    "backend_node_id": 209,
+    "node_name": "DIV",
+    "node_value": "",
+    "attributes": {
+     "contenteditable": "true",
+     "id": "editor",
+     "aria-label": "富文本编辑"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[3]"
+   },
+   "214": {
+    "backend_node_id": 214,
+    "node_name": "A",
+    "node_value": "",
+    "attributes": {
+     "href": "#",
+     "aria-checked": "true",
+     "role": "switch"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[4]/a"
+   },
+   "217": {
+    "backend_node_id": 217,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "type": "range",
+     "min": "0",
+     "max": "100",
+     "value": "40",
+     "aria-valuenow": "40"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[4]/input[1]"
+   },
+   "150": {
+    "backend_node_id": 150,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "type": "text",
+     "value": "已填写的值",
+     "data-state": "valid",
+     "required": ""
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[4]/input[2]"
+   },
+   "151": {
+    "backend_node_id": 151,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "type": "number",
+     "min": "1",
+     "max": "10",
+     "step": "1",
+     "placeholder": "数字"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/div[4]/input[3]"
+   }
+  },
+  "file_input_backend_ids": [],
+  "file_inputs_meta": [],
+  "page_stats": {
+   "links": 1,
+   "interactive": 10,
+   "iframes": 0,
+   "skeleton": false
+  }
+ }
+}

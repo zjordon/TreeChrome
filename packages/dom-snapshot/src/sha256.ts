@@ -3,9 +3,11 @@
  *
  * 为什么不用 node:crypto 或 crypto.subtle：本包是平台无关核心，
  * 需在 Node / 浏览器扩展 SW 两端同步计算元素哈希（对齐 Python 的
- * hashlib.sha256 同步语义）。正确性由 test/models.test.ts 的
- * 标准测试向量保证（"abc" / 空串）。
+ * hashlib.sha256 同步语义）。正确性由 test/models.test.ts 的标准测试
+ * 向量保证（空串/单分组 "abc"、双分组边界 448-bit 与 896-bit NIST 向量）。
  */
+
+const encoder = new TextEncoder(); // 无状态对象，模块级复用（热路径）
 
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -23,7 +25,7 @@ function rotr(x: number, n: number): number {
 }
 
 export function sha256Hex(input: string): string {
-  const bytes = new TextEncoder().encode(input);
+  const bytes = encoder.encode(input);
   const bitLen = bytes.length * 8;
 
   // 填充：0x80 + 0…0 + 64 位大端位长，总长为 64 的倍数

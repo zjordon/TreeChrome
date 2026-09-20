@@ -8,7 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "pnpm -r --if-present run build",
+    "prepare": "git config core.hooksPath .githooks",
     "test": "pnpm -r run test",
     "test:coverage": "pnpm -r run test:coverage",
     "typecheck": "pnpm -r run typecheck",

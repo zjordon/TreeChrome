@@ -13,7 +13,7 @@
       "**/*.js",
       "**/*.mjs",
       "**/*.json",
-      "!**/test/fixtures/**"
+      "!**/test/fixtures"
     ]
   },
   "formatter": {
