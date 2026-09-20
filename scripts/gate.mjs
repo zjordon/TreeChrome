@@ -259,19 +259,10 @@ const GIT_OPTS_FLAG_ONLY = new Set([
 /** 单段命令是否为 git commit 子命令 */
 function segmentIsGitCommit(segment) {
   const tokens = segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-  // 与 GIT_TOKEN_RE 同口径（裸 git / 带路径 / git.exe），否则 .exe 形态在生产入口被放行
   const head = tokens[0]?.replace(/^["']|["']$/g, "");
   if (!head || !GIT_TOKEN_RE.test(head)) return false;
-  for (let i = 1; i < tokens.length; i++) {
-    const t = tokens[i].replace(/^["']|["']$/g, "");
-    if (GIT_OPTS_WITH_ARG.has(t)) {
-      i++; // 跳过带参选项的参数
-      continue;
-    }
-    if (GIT_OPTS_FLAG_ONLY.has(t) || /^--[\w-]+=/.test(t)) continue; // 纯标志 / --opt=value 内联
-    return t === "commit"; // 首个非选项 token 即子命令，立即判定（git stash push -m "commit" 不误判）
-  }
-  return false;
+  const ci = gitSubcommandIndex(tokens, 0);
+  return ci !== -1 && tokens[ci] === "commit";
 }
 
 /**
@@ -286,8 +277,12 @@ export function isGitCommit(cmd) {
   return shellSegments(s).some(segmentIsGitCommit);
 }
 
-/** 剥除命令中引号包裹的内容，防消息文本里的 -f/-n 等标志误判 */
-const stripQuoted = (cmd) => String(cmd).replace(/"[^"]*"|'[^']*'/g, " ");
+/**
+ * 剥除命令中引号包裹的内容，防消息文本里的 -f/-n 等标志误判。
+ * 替换为占位 token "0"（而非空格）：保持 `-C ".."` 的"消耗一个参数"语义——
+ * 换成空格会让 -C 吞掉后续子命令（评审八轮 #2），且 "0" 不构成任何标志。
+ */
+export const stripQuoted = (cmd) => String(cmd).replace(/"[^"]*"|'[^']*'/g, "0");
 
 /** shell 段切分：&&/||/;/| 分隔符与换行（多行命令同样按段判定） */
 const shellSegments = (s) => String(s).split(/&&|\|\||;|\||\n/);
@@ -296,29 +291,36 @@ const shellSegments = (s) => String(s).split(/&&|\|\||;|\||\n/);
 const GIT_TOKEN_RE = /(^|\/)git(\.exe)?$/;
 
 /**
+ * git 形态 token 之后的首个非全局选项 token 下标（即子命令位置）；无则 -1。
+ * 覆盖：带参选项（-C <dir>）、参数粘连（-Cdir）、纯标志、--opt=value 内联。
+ * segmentIsGitCommit 与 forGitSub 共用本 helper——两处循环曾各自漂移致
+ * git -C.. commit 整体漏判（评审八轮 #1）。
+ */
+function gitSubcommandIndex(tokens, gitIdx) {
+  for (let i = gitIdx + 1; i < tokens.length; i++) {
+    const t = tokens[i].replace(/^["']|["']$/g, "");
+    if (GIT_OPTS_WITH_ARG.has(t)) {
+      i++; // 跳过带参选项的参数
+      continue;
+    }
+    if (/^-[Cc]\S/.test(t) || GIT_OPTS_FLAG_ONLY.has(t) || /^--[\w-]+=/.test(t)) continue;
+    return i;
+  }
+  return -1;
+}
+
+/**
  * 在子命令命中的段上回调 {flags, args}：flags 为子命令后到 "--" 为止的选项 token
  * （其后是 pathspec），args 为子命令后全部 token（含 "--" 之后的 pathspec）。
- * 子命令按"git 形态 token 后的首个非全局选项 token"定位——`git commit -m add -f`
- * 中的 add 是消息文本，不会被误认作子命令。回调返回 true 则整体返回 true。
+ * 子命令定位复用 gitSubcommandIndex——`git commit -m add -f` 中的 add 是消息
+ * 文本，不会被误认作子命令。回调返回 true 则整体返回 true。
  */
 function forGitSub(bare, subs, fn) {
   for (const seg of shellSegments(bare)) {
     const tokens = seg.match(/\S+/g) ?? [];
     const gitIdx = tokens.findIndex((t) => GIT_TOKEN_RE.test(t));
     if (gitIdx === -1) continue;
-    let cmdIdx = -1;
-    for (let i = gitIdx + 1; i < tokens.length; i++) {
-      const t = tokens[i];
-      if (GIT_OPTS_WITH_ARG.has(t)) {
-        i++;
-        continue;
-      }
-      // -C/-c 参数粘连（git -C.. add）：参数内联在 token 中，跳过本 token 即可；
-      // 否则 "-Csub" 会被当作子命令致整段跳过、标志判定全假阴性
-      if (/^-[Cc]\S/.test(t) || GIT_OPTS_FLAG_ONLY.has(t) || /^--[\w-]+=/.test(t)) continue;
-      cmdIdx = i;
-      break;
-    }
+    const cmdIdx = gitSubcommandIndex(tokens, gitIdx);
     if (cmdIdx === -1 || !subs.includes(tokens[cmdIdx])) continue;
     const dd = tokens.indexOf("--", cmdIdx + 1);
     const flags = dd === -1 ? tokens.slice(cmdIdx + 1) : tokens.slice(cmdIdx + 1, dd);
