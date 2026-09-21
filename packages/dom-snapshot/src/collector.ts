@@ -82,7 +82,9 @@ const JS_CLICK_LISTENER_EXPRESSION = `
 
 /** CDP 交替数组 [k1,v1,k2,v2,...] → dict；值截 200 字符（码点语义，对齐 Python [:200]） */
 export function parseAttrs(raw: string[] | undefined): Record<string, string> {
-  const attrs: Record<string, string> = {};
+  // null 原型：`__proto__` 等键名不受 Object.prototype setter 干扰（字符串赋值会被
+  // 静默吞掉致属性消失），与 Python dict 同口径（评审 P1.2 三轮 #2）
+  const attrs = Object.create(null) as Record<string, string>;
   if (!raw) return attrs;
   // 步进 2 且上界 len-1：奇数个元素时最后一个悬空键被丢弃（Python range 同口径）
   for (let i = 0; i < raw.length - 1; i += 2) {
@@ -235,6 +237,19 @@ function nodeHasUploadClass(attrs: Record<string, string>): boolean {
   return cls.includes("upload") || cls.includes("semi-upload");
 }
 
+/**
+ * display/visibility/opacity 的 CSS 隐藏判定。fileInputVisible 与
+ * isVisibleAccordingToAllParents 共用——Python 两处内联但口径等同
+ * （_file_input_visible docstring 自述"判定口径等同前 6 行"），提取为纯等价重构
+ */
+function isHiddenByCssStyles(styles: Record<string, string>): boolean {
+  if ((styles.display ?? "").toLowerCase() === "none") return true;
+  if ((styles.visibility ?? "").toLowerCase() === "hidden") return true;
+  // wire 值来自 Chrome 规范化十进制输出，parseFloat 的解析域与 Python float 一致
+  const opacity = parseFloat(styles.opacity ?? "1");
+  return !Number.isNaN(opacity) && opacity <= 0;
+}
+
 /** 按 computed_styles 判定 file input 可见性；无 snapshot 数据时保守视为可见 */
 function fileInputVisible(
   snapshotLookup: Map<number, EnhancedSnapshotNode> | null,
@@ -243,13 +258,7 @@ function fileInputVisible(
   if (!snapshotLookup) return true;
   const snap = snapshotLookup.get(backendNodeId);
   if (!snap) return true;
-  const styles = snap.computed_styles ?? {};
-  if ((styles.display ?? "").toLowerCase() === "none") return false;
-  if ((styles.visibility ?? "").toLowerCase() === "hidden") return false;
-  // wire 值来自 Chrome 规范化十进制输出，parseFloat 的解析域与 Python float 一致
-  const opacity = parseFloat(styles.opacity ?? "1");
-  if (!Number.isNaN(opacity) && opacity <= 0) return false;
-  return true;
+  return !isHiddenByCssStyles(snap.computed_styles ?? {});
 }
 
 /** 遍历 DOM.getDocument 树收集 file input 元数据（对齐 Python _collect_file_inputs） */
@@ -431,7 +440,11 @@ class NodeFusion {
 
     // html_frames 追踪与 iframe 偏移累积
     const updatedFrames = [...htmlFrames];
-    if (nodeTypeVal === NodeType.ELEMENT_NODE && node.nodeName === "HTML" && node.frameId != null) {
+    if (
+      nodeTypeVal === NodeType.ELEMENT_NODE &&
+      node.nodeName === "HTML" &&
+      node.frameId !== undefined
+    ) {
       updatedFrames.push(domTreeNode);
       if (snapshotData?.scrollRects) {
         frameOffset.x -= snapshotData.scrollRects.x;
@@ -560,11 +573,7 @@ class NodeFusion {
       // Shadow DOM 元素可能缺少 snapshot 数据，不判定为不可见
       return enode.shadowRootType !== null;
     }
-    const styles = enode.snapshotNode.computed_styles ?? {};
-    if ((styles.display ?? "").toLowerCase() === "none") return false;
-    if ((styles.visibility ?? "").toLowerCase() === "hidden") return false;
-    const opacity = parseFloat(styles.opacity ?? "1");
-    if (!Number.isNaN(opacity) && opacity <= 0) return false;
+    if (isHiddenByCssStyles(enode.snapshotNode.computed_styles ?? {})) return false;
 
     const currentBounds = enode.snapshotNode.bounds;
     if (!currentBounds) return false;

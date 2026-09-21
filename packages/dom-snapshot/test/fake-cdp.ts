@@ -3,6 +3,7 @@
  * 对拍口径：fixture 的 input 即 Python 端录下的真实 CDP 响应，原样回放。
  */
 import type { CdpLikeClient } from "../src/protocol.js";
+import type { GoldenFixture } from "./golden-fixture.js";
 
 export type CdpHandler = (params: Record<string, unknown>, sessionId: string | null) => unknown;
 
@@ -29,41 +30,6 @@ export class FakeCdpClient implements CdpLikeClient {
   callsOf(method: string): { params: Record<string, unknown>; sessionId: string | null }[] {
     return this.calls.filter((c) => c.method === method);
   }
-}
-
-/** golden fixture 的 input/output 形状（gen_fixtures.py 产物） */
-export interface GoldenFixture {
-  meta: {
-    url: string;
-    generated_at: string;
-    degradation: string;
-    source_statuses?: Record<string, string>;
-  };
-  input: {
-    dom_tree: Record<string, unknown>;
-    snapshot: Record<string, unknown>;
-    ax_tree: Record<string, unknown>;
-    dpr: number;
-  };
-  output: {
-    element_tree_text: string;
-    selector_map: Record<
-      string,
-      {
-        backend_node_id: number;
-        node_name: string;
-        node_value: string;
-        attributes: Record<string, string>;
-        is_visible: boolean | null;
-        is_scrollable: boolean | null;
-        has_js_click_listener: boolean;
-        xpath: string;
-      }
-    >;
-    file_input_backend_ids?: number[];
-    file_inputs_meta?: Record<string, unknown>[];
-    page_stats?: Record<string, unknown>;
-  };
 }
 
 /**

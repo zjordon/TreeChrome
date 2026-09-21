@@ -4,8 +4,6 @@
  * 2. 降级链（FULL→PARTIAL→MINIMAL→FAILED）逐级单测
  * 3. 跨源 iframe（Target API 递归）、file input 扫描、纯函数工具单测
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildSnapshotLookup,
@@ -15,19 +13,8 @@ import {
 } from "../src/collector.js";
 import type { CdpDomNode, CdpGetDocumentResult } from "../src/protocol.js";
 import { DOMDegradationLevel, type EnhancedDOMTreeNode } from "../src/types.js";
-import { FakeCdpClient, type GoldenFixture, makeGoldenFixtureClient } from "./fake-cdp.js";
-
-const FIXTURES_DIR = join(__dirname, "fixtures");
-
-function loadGoldenFixtures(): { name: string; fixture: GoldenFixture }[] {
-  if (!existsSync(FIXTURES_DIR)) return [];
-  return readdirSync(FIXTURES_DIR)
-    .filter((f) => f.endsWith(".json"))
-    .map((name) => ({
-      name,
-      fixture: JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf-8")) as GoldenFixture,
-    }));
-}
+import { FakeCdpClient, makeGoldenFixtureClient } from "./fake-cdp.js";
+import { loadGoldenFixtures } from "./golden-fixture.js";
 
 /** 深度遍历融合树（children / shadowRoots / contentDocument）建 backendNodeId 索引 */
 function indexByBackendId(root: EnhancedDOMTreeNode): Map<number, EnhancedDOMTreeNode> {
@@ -499,6 +486,13 @@ describe("parseAttrs", () => {
     expect(parseAttrs(["id", "a".repeat(250)]).id).toHaveLength(200);
     // 星面字符按码点截断：250 个 emoji → 200 个（400 个 UTF-16 单元）
     expect(parseAttrs(["id", "😀".repeat(250)]).id).toHaveLength(400);
+    // __proto__ 键名不被 Object.prototype setter 吞掉（评审三轮 #2）：普通 {} 字面量
+    // 会静默丢属性致与 Python dict 分叉
+    const withProto = parseAttrs(["__proto__", "x", "id", "y"]);
+    expect(Object.keys(withProto)).toEqual(["__proto__", "id"]);
+    // 自有属性读取（非 __proto__ 访问器）：普通 {} 字面量会把该键的赋值静默吞掉
+    expect(Object.getOwnPropertyDescriptor(withProto, "__proto__")?.value).toBe("x");
+    expect(Object.getPrototypeOf(withProto)).toBeNull();
   });
 });
 
