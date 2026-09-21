@@ -95,6 +95,10 @@ test("反斜杠转义与粘连参数（评审十二轮 #1/#2/#5 + 十三轮 #1/#
   // 行续接（十三轮 #4）：\ + 换行整体消失，子命令定位不受幽灵 token 干扰
   assert.equal(noVerify("git \\\n commit -n"), true);
   assert.equal(isGitCommit("git comm\\\nit -n"), true);
+  // 行续接的引号内范围（十四轮 #1，实测语义）：双引号内同为续接（与真实 argv 一致）；
+  // 单引号内是字面两字符，前置剔除一并覆盖——token 缩短只更"像标志"，fail-closed
+  assert.equal(noVerify('git commit -m "a\\\nb" -n'), true);
+  assert.equal(isGitCommit("git 'comm\\\nit' -n"), true);
 });
 
 test("词内引号拼接与未闭合引号（评审十一轮 #5/#1）", () => {

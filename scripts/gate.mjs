@@ -278,6 +278,12 @@ export function isGitCommit(cmd) {
 }
 
 /**
+ * 双引号内保留转义语义的四个后继字符（POSIX 2.2.3，实测验证）；
+ * `\<LF>` 在双引号内同样是行续接，仅单引号内是字面两字符。
+ */
+const DQ_ESCAPABLE = new Set(['"', "\\", "$", "`"]);
+
+/**
  * 引号感知分词（状态机）+ 按 shell 拼接语义去除引号与转义，即 git 收到的 argv：
  * - 引号内（含空格/分隔符）保持单 token：`-m "use -f"` 的消息是 argv 的一个
  *   元素，不构成标志；未闭合引号按"引号直到串尾"处理（shell 语法错误形态，
@@ -296,8 +302,12 @@ const tokenize = (s) => {
   let hasTok = false;
   let q = "";
   let esc = false;
-  // 行续接（\ + 换行）在 shell 中两字符整体消失：不构成 token、也不是分隔符。
-  // 必须前置剔除——若在 esc 分支丢换行，hasTok 已被 \ 置位，会 push 出空串
+  // 行续接（\ + 换行）前置整体剔除：引号外与双引号内两字符确实整体消失（POSIX
+  // 双引号内反斜杠仅对 $ ` " \ LF 保留特殊含义，跟 LF 即续接）；单引号内是字面
+  // 两字符，此处一并剔除——只缩短 token 内容、不改变分词与分段（LF 在引号内
+  // 本就不是分隔符，剔除也不跨引号边界），且真实 argv 含 \+LF 的 token 不构成
+  // 任何 git 标志/子命令，剔除后至多更"像标志"，偏差方向 fail-closed。
+  // 必须前置——若在 esc 分支丢换行，hasTok 已被 \ 置位，会 push 出空串
   // token 顶占子命令位（十三轮 #4：`git \<LF> commit -n` 的子命令成了 "\n"）
   const str = String(s).replace(/\\\r?\n/g, "");
   for (let i = 0; i < str.length; i++) {
@@ -311,7 +321,7 @@ const tokenize = (s) => {
       // POSIX：双引号内仅 \" \\ \$ \` 有转义语义，其余反斜杠是字面字符
       // （十三轮 #2："\c" 的 argv 是 \c 两字符，剥掉反斜杠会让 token 比
       // 真实 argv 更"像标志"）；引号外 \x 一律字面化
-      if (q === '"' && !['"', "\\", "$", "`"].includes(str[i + 1] ?? "")) {
+      if (q === '"' && !DQ_ESCAPABLE.has(str[i + 1] ?? "")) {
         cur += ch;
       } else {
         esc = true;
