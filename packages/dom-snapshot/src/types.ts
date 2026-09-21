@@ -812,7 +812,9 @@ export interface DOMCollectionMetrics {
   degradationLevel: DOMDegradationLevel;
   sourceStatuses: Record<string, string>;
   totalMs: number;
+  /** 仅触发 maxIframes 截断时记录原始文档数（Python 同口径；未超限时不赋值） */
   iframeCount: number;
+  /** 序列化层职责：Python 采集路径不赋值，由调用方/gen_fixtures 记 selector_map 规模 */
   elementCount: number;
 }
 

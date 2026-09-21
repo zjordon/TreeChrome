@@ -54,6 +54,9 @@ export class CdpBatchResult {
   }
 }
 
+/** 截止计时器的哨兵错误：按引用比较判超时，避免与底层同名文案的 reject 误判 */
+const TIMEOUT_ERROR = new Error("timed out");
+
 /** 单次调用工厂并施加截止时间；绝不 reject（对齐 Python _extract_result 的容错） */
 async function attempt(
   factory: () => Promise<unknown>,
@@ -74,15 +77,15 @@ async function attempt(
   underlying.catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("timed out")), deadlineMs);
+    timer = setTimeout(() => reject(TIMEOUT_ERROR), deadlineMs);
   });
   try {
     const value = await Promise.race([underlying, deadline]);
     return { status: CdpSourceStatus.Ok, value, error: null };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    // 超时判定看截止计时器是否触发：工厂自身抛错同路径进来是 failed
-    const timedOut = message === "timed out";
+    // 引用比较：只有哨兵对象是超时；底层恰好以同文案 reject 仍是 failed（评审 P1.2 一轮 #8）
+    const timedOut = e === TIMEOUT_ERROR;
     return {
       status: timedOut ? CdpSourceStatus.Timeout : CdpSourceStatus.Failed,
       value: null,
@@ -127,14 +130,17 @@ export async function runCdpBatch(
     return batch;
   }
 
-  // Phase 2：仅失败/超时源用新工厂重试；成功则升级为 retried_ok
+  // Phase 2：仅失败/超时源用新工厂重试；成功则升级为 retried_ok。
+  // 重试耗时相对本阶段实际起点计时：首批 Promise.all 要等最慢源 settle，
+  // 相对 batchStart 计算会把这段空窗错计入快速失败源（评审 P1.2 一轮 #9）
+  const phase2Start = Date.now();
   await Promise.all(
     [...pendingNames].map(async (name) => {
       const factory = factories.get(name);
       if (!factory) return;
       const prev = batch.sources.get(name);
       const r = await attempt(factory, retryMs);
-      const retryAttemptMs = Date.now() - batchStart - (prev?.firstAttemptMs ?? 0);
+      const retryAttemptMs = Date.now() - phase2Start;
       batch.sources.set(
         name,
         new CdpSourceResult(

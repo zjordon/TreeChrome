@@ -133,6 +133,15 @@ function rectOf(r: CdpRectangle | undefined): DOMRect | null {
   return null;
 }
 
+/**
+ * 跨源 iframe 匹配的 URL 归一化（去查询串 + 去全部尾部斜杠，Python rstrip("/") 口径）。
+ * target 侧（buildFrameTargetMap）与 iframe 侧（attachCrossOriginIframe）必须同一
+ * 入口，任一侧单独调整都会让匹配静默失效（评审 P1.2 一轮 #5）。
+ */
+function normalizeUrlForMatch(url: string): string {
+  return url.split("?")[0].replace(/\/+$/, "");
+}
+
 /** DOMSnapshot → backendNodeId → EnhancedSnapshotNode 查找表（对齐 Python _build_snapshot_lookup） */
 export function buildSnapshotLookup(
   snapshot: CdpCaptureSnapshotResult | null,
@@ -142,21 +151,23 @@ export function buildSnapshotLookup(
   if (!snapshot?.documents) return lookup;
   const strings = snapshot.strings ?? [];
   for (const doc of snapshot.documents) {
+    // doc 级 nodes/layout 也容缺失（Python doc.get("nodes", {}) 同口径，评审 P1.2 一轮 #1）：
+    // wire 正常有值；异常/截断响应缺键时按空数据继续，不击穿 buildEnhancedDomTree
     const nodes = doc.nodes;
     const layout = doc.layout;
-    const backendIds = nodes.backendNodeId ?? [];
-    const layoutBounds = layout.bounds ?? [];
-    const layoutStyles = layout.styles ?? [];
-    const layoutPaintOrders = layout.paintOrders ?? [];
-    const layoutClientRects = layout.clientRects ?? [];
-    const layoutScrollRects = layout.scrollRects ?? [];
+    const backendIds = nodes?.backendNodeId ?? [];
+    const layoutBounds = layout?.bounds ?? [];
+    const layoutStyles = layout?.styles ?? [];
+    const layoutPaintOrders = layout?.paintOrders ?? [];
+    const layoutClientRects = layout?.clientRects ?? [];
+    const layoutScrollRects = layout?.scrollRects ?? [];
 
     // isClickable RareBooleanData 稀疏化（O(1) 查找）
-    const clickableSet = new Set<number>(nodes.isClickable?.index ?? []);
+    const clickableSet = new Set<number>(nodes?.isClickable?.index ?? []);
 
     // 布局索引映射（nodeIndex → layout 下标），首次出现优先
     const layoutMap = new Map<number, number>();
-    (layout.nodeIndex ?? []).forEach((ni, li) => {
+    (layout?.nodeIndex ?? []).forEach((ni, li) => {
       if (!layoutMap.has(ni)) layoutMap.set(ni, li);
     });
 
@@ -215,7 +226,10 @@ export function buildSnapshotLookup(
 
 // ── file input 扫描（纯递归，含 shadow DOM / iframe） ───────────────────
 
-/** class 是否含 upload 容器标识（"semi-upload" 含 "upload"，后半检查与 Python 一致保留） */
+/**
+ * class 是否含 upload 容器标识。`||` 右侧恒被左侧覆盖（"semi-upload" 必含
+ * "upload"）——Python 原文 collector.py:347 即如此冗余，保真保留不简化。
+ */
 function nodeHasUploadClass(attrs: Record<string, string>): boolean {
   const cls = (attrs.class ?? "").toLowerCase();
   return cls.includes("upload") || cls.includes("semi-upload");
@@ -340,6 +354,8 @@ class NodeFusion {
     htmlFrames: EnhancedDOMTreeNode[],
     totalFrameOffset: DOMRect,
   ): Promise<EnhancedDOMTreeNode> {
+    // nodeId 缺省兜底 0 是 Python 同口径（collector.py:707 node.get("nodeId", 0)）：
+    // 异常 wire 下多个缺 nodeId 的节点会共用 0 键串树——保真保留（评审 P1.2 一轮 #11 驳回）
     const nid = node.nodeId ?? 0;
     const memoized = this.memo.get(nid);
     if (memoized) return memoized;
@@ -483,7 +499,7 @@ class NodeFusion {
         iframeTargetId = maps.frameToTarget.get(frameId);
       }
       if (!iframeTargetId && attributes.src) {
-        const srcBase = attributes.src.split("?")[0].replace(/\/+$/, "");
+        const srcBase = normalizeUrlForMatch(attributes.src);
         iframeTargetId = maps.urlToTarget.get(srcBase);
       }
     }
@@ -600,8 +616,7 @@ export class DomCollector {
         if (t.parentFrameId) frameToTarget.set(t.parentFrameId, t.targetId);
         const url = t.url ?? "";
         if (url) {
-          // Python rstrip("/")：剥掉全部尾部斜杠
-          const urlBase = url.split("?")[0].replace(/\/+$/, "");
+          const urlBase = normalizeUrlForMatch(url);
           if (urlBase) urlToTarget.set(urlBase, t.targetId);
         }
       }
@@ -634,7 +649,10 @@ export class DomCollector {
       );
       const cssWidth = metrics.cssVisualViewport?.clientWidth ?? 0;
       const deviceWidth = metrics.visualViewport?.clientWidth ?? cssWidth;
-      if (cssWidth > 0) return deviceWidth / cssWidth;
+      // deviceWidth=0（窗口最小化/页面隐藏）时 JS 会产出 Infinity/NaN 坐标静默污染
+      // 整树；Python 此形态在下游 b/dpr 处 ZeroDivisionError 直接抛出（无兜底）。
+      // TS 按探测失败回退 1.0，优于复刻崩溃（评审 P1.2 一轮 #2）
+      if (cssWidth > 0 && deviceWidth > 0) return deviceWidth / cssWidth;
     } catch {
       // Python logger.debug
     }
@@ -655,6 +673,9 @@ export class DomCollector {
     };
     collectFrameIds(frameTree.frameTree);
 
+    // 裸 Promise.all 无逐项容错，是 Python asyncio.gather 同口径（collector.py:162）：
+    // 单 frame 消亡即整个 ax_tree 源失败 → 批级重试 → 仍失败降级 PARTIAL，
+    // 不做"逐 frame 吞错保留其余"的改进以保融合语义与 Python 一致（评审 P1.2 一轮 #3 驳回）
     const axTrees = await Promise.all(
       allFrameIds.map((fid) =>
         this.client.send<CdpFullAxTreeResult>(
@@ -778,7 +799,9 @@ export class DomCollector {
     else degradation = DOMDegradationLevel.FULL;
     metrics.degradationLevel = degradation;
 
-    // iframe 数量限制（原地截断，Python 同样改写 snapshot["documents"]）
+    // iframe 数量限制（原地截断，Python 同样改写 snapshot["documents"]）。
+    // iframeCount 仅在触发截断时记录是 Python 同口径（collector.py:539-549）——
+    // "未超限"与"无 iframe"同为 0；改动会破坏与 Python 的 metrics parity（评审 P1.2 一轮 #7 驳回）
     if (snapshot?.documents && snapshot.documents.length > config.maxIframes) {
       metrics.iframeCount = snapshot.documents.length;
       snapshot.documents = snapshot.documents.slice(0, config.maxIframes);
@@ -826,6 +849,8 @@ export class DomCollector {
       : new Map<number, EnhancedSnapshotNode>();
     const axLookup = axTree ? buildAxLookup(axTree) : new Map<number, CdpAxTreeNode>();
 
+    // root 缺失时以空对象继续建树是 Python 同口径（collector.py:602 dom_tree.get("root", {})，
+    // nodeType 随后兜底 1）——不按 FAILED 显式失败，保真保留（评审 P1.2 一轮 #6 驳回）
     const root = domTree.root ?? ({} as CdpGetDocumentResult["root"]);
     const fileInputInfos = collectFileInputs(root, snapshotLookup);
     const fileInputBackendIds = fileInputInfos.map((fi) => fi.backend_node_id);

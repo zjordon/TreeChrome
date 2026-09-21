@@ -90,6 +90,16 @@ describe("runCdpBatch", () => {
     expect(batch.failedNames).toEqual(["bad"]);
   });
 
+  it("底层恰好以同文案 'timed out' reject → 仍是 failed 非超时（评审 #8）", async () => {
+    const batch = await runCdpBatch(
+      new Map<string, () => Promise<unknown>>([
+        ["mimic", () => Promise.reject(new Error("timed out"))],
+      ]),
+      FAST,
+    );
+    expect(batch.sources.get("mimic")?.status).toBe(CdpSourceStatus.Failed);
+  });
+
   it("成功源不受失败源重试拖累（选择性重试只跑失败者）", async () => {
     let okCalls = 0;
     let flakyCalls = 0;

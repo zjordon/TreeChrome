@@ -70,6 +70,7 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
         const layout = doc.layout;
         // layout 是 CDP DocumentSnapshot 的必需字段：缺失即契约破坏，报警而非跳过
         expect(layout).toBeDefined();
+        if (!layout) continue;
         expect(Array.isArray(layout.bounds)).toBe(true);
         expect(Array.isArray(layout.nodeIndex)).toBe(true);
         expect(layout.bounds).toHaveLength(layout.nodeIndex.length);
@@ -97,7 +98,8 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
         expect(fixture.output.element_tree_text.length).toBeGreaterThan(0);
       }
       for (const [idx, proj] of Object.entries(fixture.output.selector_map)) {
-        expect(String(Number(idx))).toBe(idx); // 键是数字字符串（backendNodeId）
+        // 键是数字字符串（highlight_index，元素树行号）；backend_node_id 是投影里的独立字段
+        expect(String(Number(idx))).toBe(idx);
         expect(proj.backend_node_id).toBeTypeOf("number");
         expect(typeof proj.node_name).toBe("string");
       }

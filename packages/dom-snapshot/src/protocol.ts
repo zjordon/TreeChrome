@@ -94,9 +94,9 @@ export interface CdpSnapshotNodeTree {
 
 export interface CdpSnapshotDocument {
   documentIndex?: number;
-  /** layout.nodeIndex / paintOrders 等数组的下标指向本表的平行数组 */
-  nodes: CdpSnapshotNodeTree;
-  layout: CdpSnapshotLayout;
+  /** layout.nodeIndex / paintOrders 等数组的下标指向本表的平行数组；键容缺失（融合层按空数据降级） */
+  nodes?: CdpSnapshotNodeTree;
+  layout?: CdpSnapshotLayout;
   textBoxes?: {
     layoutIndex: number[];
     bounds: CdpRectangle[];

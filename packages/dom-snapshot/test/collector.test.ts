@@ -113,10 +113,11 @@ describe.skipIf(fixtures.length === 0)("降级链（FULL→PARTIAL→MINIMAL→F
     expect(result.metrics.sourceStatuses.snapshot).toBe("failed");
     expect(result.root).not.toBeNull();
     expect(result.root!.snapshotNode).toBeNull();
-    // MINIMAL 分支：无 snapshot 数据的元素按可见处理
-    const anyElement = indexByBackendId(result.root!).get(
-      Number(Object.keys(basicFixture().fixture.output.selector_map)[0]),
-    );
+    // MINIMAL 分支：无 snapshot 数据的元素按可见处理。
+    // selector_map 键是 highlight_index（元素树行号），定位须取投影的 backend_node_id
+    const firstProj = Object.values(basicFixture().fixture.output.selector_map)[0];
+    const anyElement = indexByBackendId(result.root!).get(firstProj.backend_node_id);
+    expect(anyElement).toBeDefined();
     expect(anyElement?.isVisible).toBe(true);
   });
 
@@ -541,6 +542,16 @@ describe("buildSnapshotLookup", () => {
     expect(lookup.get(11)!.computed_styles).toBeNull(); // 空 styles → null
     expect(buildSnapshotLookup(null)).toEqual(new Map());
   });
+
+  it("document 缺 nodes/layout 键 → 按空数据容忍不抛（评审 #1）", () => {
+    const truncated = {
+      strings: [],
+      documents: [{}, { nodes: { backendNodeId: [3] } }, { layout: {} }],
+    };
+    const lookup = buildSnapshotLookup(truncated as never);
+    expect(lookup.size).toBe(1); // 仅第二条的 backendNodeId 生效，其余按空数据跳过
+    expect(lookup.get(3)!.bounds).toBeNull();
+  });
 });
 
 describe("collectFileInputs", () => {
@@ -637,11 +648,19 @@ describe("collectFileInputs", () => {
 });
 
 describe("DomCollector 其余分支", () => {
-  it("getViewportRatio：css 宽为 0 或调用失败 → 1.0", async () => {
+  it("getViewportRatio：css 宽为 0、device 宽为 0（窗口最小化）或调用失败 → 1.0", async () => {
     const zero = new FakeCdpClient({
       "Page.getLayoutMetrics": () => ({ visualViewport: { clientWidth: 900 } }),
     });
     expect(await new DomCollector(zero).getViewportRatio()).toBe(1.0);
+    // deviceWidth=0 若不回退，bounds/dpr 会产出 NaN/Infinity 静默污染整树（评审 #2）
+    const minimized = new FakeCdpClient({
+      "Page.getLayoutMetrics": () => ({
+        visualViewport: { clientWidth: 0 },
+        cssVisualViewport: { clientWidth: 800 },
+      }),
+    });
+    expect(await new DomCollector(minimized).getViewportRatio()).toBe(1.0);
     const broken = new FakeCdpClient({
       "Page.getLayoutMetrics": () => {
         throw new Error("x");
