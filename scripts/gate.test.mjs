@@ -54,6 +54,33 @@ test("gitSegmentHasFlag / gitAddIsBroad：-C 粘连参数（评审七轮 #2）",
   assert.equal(force("git -C.. add packages"), false);
 });
 
+test("引号内分隔符与标志串消息（评审十轮 #1/#2）", () => {
+  const noVerify = (s) => gitSegmentHasFlag(s, ["commit"], ["n"], "--no-verify");
+  // 引号消息含 ;/&& 不产生幻影段：不误触 broadAdd
+  assert.equal(gitAddIsBroad('git commit -m "docs: cleanup; git add -A is deprecated"'), false);
+  assert.equal(isGitCommit('git commit -m "a && git commit && b"'), true);
+  // 引号外标志 + 引号内分隔符：必须仍被拦截（十一轮 #2 防绕过对偶）
+  assert.equal(noVerify('git commit -m "x; y" -n'), true);
+  assert.equal(noVerify('git commit -m "a && b" --no-verify'), true);
+  // 消息恰为标志串：-m 参数不参与标志扫描
+  assert.equal(noVerify('git commit -m "-n"'), false);
+  assert.equal(noVerify("git commit -m --no-verify"), false);
+  assert.equal(noVerify('git commit -m "use -n here"'), false);
+  // 真实标志仍命中（-m 与标志并存）
+  assert.equal(noVerify("git commit -m ok -n"), true);
+  assert.equal(noVerify("git commit -nm x"), true);
+});
+
+test("词内引号拼接与未闭合引号（评审十一轮 #5/#1）", () => {
+  const force = (s) => gitSegmentHasFlag(s, ["add", "stage"], ["f"], "--force");
+  // 词内引号拼接：shell 中 "comm"it 是单个 argv 元素 commit，不得绕过识别
+  assert.equal(isGitCommit('git "comm"it -m x'), true);
+  assert.equal(force('git add "-"f .env && git commit -m x'), true);
+  // 未闭合引号（shell 语法错误形态）：按引号直到串尾处理，不在引号内切段
+  assert.equal(isGitCommit('git commit -m "unclosed ; tail'), true);
+  assert.equal(force('git add packages "leftover ; rm -rf'), false);
+});
+
 test("引号感知分词（评审八轮 #1/#2 + 九轮 #1/#3 的根治口径）", () => {
   const force = (s) => gitSegmentHasFlag(s, ["add", "stage"], ["f"], "--force");
   const noVerify = (s) => gitSegmentHasFlag(s, ["commit"], ["n"], "--no-verify");

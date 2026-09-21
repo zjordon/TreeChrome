@@ -285,16 +285,100 @@ export function isGitCommit(cmd) {
  *   argv 一致（评审九轮 #1/#3 的根治方案）；
  * - 空引号 `""` 产生空串 token，保留其 argv 占位（`-C ""` 的参数按位消耗）。
  */
-const tokenize = (s) =>
-  (String(s).match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((t) =>
-    t.replaceAll('"', "").replaceAll("'", ""),
-  );
+/**
+ * 引号感知分词（状态机）+ 按 shell 拼接语义去除引号字符，即 git 收到的 argv：
+ * - 引号内（含空格/分隔符）保持单 token：`-m "use -f"` 的消息是 argv 的一个
+ *   元素，不构成标志；未闭合引号按"引号直到串尾"处理（shell 语法错误形态，
+ *   保守起见内容不再散成裸 token——评审十一轮 #1 的实测反例：`"…; rm -rf`
+ *   中的 -rf 会被误判 force）；
+ * - 词内引号拼接（`"comm"it` = commit、`--forc""` = --forc）天然并回同一
+ *   token；空引号 `""` 产生空串 token 保留 argv 占位（`-C ""` 按位消耗）；
+ * - 单引号仅在 token 起点视为引号定界：`don't` 里的撇号是字面字符，不得
+ *   开启引号态吞掉后续 token（如 `-m don't -n` 的 -n 须仍可见）。
+ */
+const tokenize = (s) => {
+  const out = [];
+  let cur = "";
+  let hasTok = false;
+  let q = "";
+  for (const ch of String(s)) {
+    if (q) {
+      if (ch === q) q = "";
+      else cur += ch;
+    } else if (ch === '"' || (ch === "'" && !hasTok)) {
+      q = ch;
+      hasTok = true; // 空引号也构成 argv 占位 token
+    } else if (/\s/.test(ch)) {
+      if (hasTok) out.push(cur);
+      cur = "";
+      hasTok = false;
+    } else {
+      cur += ch;
+      hasTok = true;
+    }
+  }
+  if (hasTok) out.push(cur);
+  return out;
+};
 
-/** shell 段切分：&&/||/;/| 分隔符与换行（多行命令同样按段判定） */
-const shellSegments = (s) => String(s).split(/&&|\|\||;|\||\n/);
+/**
+ * shell 段切分：&&/||/;/| 分隔符与换行；引号内的分隔符不切——
+ * `-m "docs; git add -A"` 的消息含分号不得产生幻影段（评审十轮 #1）。
+ * 状态机实现而非正则：未闭合引号（shell 语法错误，但 agent 会写出来）按
+ * "引号直到串尾"处理，不再在引号内切段（评审十一轮 #1 的残余盲区）。
+ */
+const shellSegments = (s) => {
+  const str = String(s);
+  const segs = [];
+  let cur = "";
+  let q = ""; // 当前引号状态
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    const two = str.slice(i, i + 2);
+    if (q) {
+      cur += ch;
+      if (ch === q) q = "";
+    } else if (ch === '"' || ch === "'") {
+      cur += ch;
+      q = ch;
+    } else if (two === "&&" || two === "||") {
+      segs.push(cur);
+      cur = "";
+      i++;
+    } else if (ch === ";" || ch === "|" || ch === "\n") {
+      segs.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  segs.push(cur);
+  return segs;
+};
 
 /** git 可执行 token 形态：裸 git / 带路径 / Windows git.exe */
 const GIT_TOKEN_RE = /(^|\/)git(\.exe)?$/;
+
+/** 子命令级带参选项：其参数（如 -m 的消息）不参与标志扫描（评审十轮 #2） */
+const SUB_OPTS_WITH_ARG = new Map([
+  [
+    "commit",
+    new Set([
+      "-m",
+      "--message",
+      "-F",
+      "--file",
+      "-t",
+      "--template",
+      "-c",
+      "--reedit-message",
+      "-C",
+      "--reuse-message",
+      "--author",
+      "--date",
+    ]),
+  ],
+]);
 
 /**
  * git 形态 token 之后的首个非全局选项 token 下标（即子命令位置）；无则 -1。
@@ -318,19 +402,27 @@ function gitSubcommandIndex(tokens, gitIdx) {
 /**
  * 在子命令命中的段上回调 {flags, args}：flags 为子命令后到 "--" 为止的选项 token
  * （其后是 pathspec），args 为子命令后全部 token（含 "--" 之后的 pathspec）。
- * 子命令定位复用 gitSubcommandIndex——`git commit -m add -f` 中的 add 是消息
- * 文本，不会被误认作子命令。回调返回 true 则整体返回 true。
+ * 子命令定位复用 gitSubcommandIndex；子命令级带参选项（-m 等）的参数不进
+ * flags——`git commit -m "-n"` 的消息恰为标志串时不误判（评审十轮 #2）。
+ * 回调返回 true 则整体返回 true。
  */
-function forGitSub(bare, subs, fn) {
-  for (const seg of shellSegments(bare)) {
+function forGitSub(cmd, subs, fn) {
+  for (const seg of shellSegments(cmd)) {
     const tokens = tokenize(seg);
     const gitIdx = tokens.findIndex((t) => GIT_TOKEN_RE.test(t));
     if (gitIdx === -1) continue;
     const cmdIdx = gitSubcommandIndex(tokens, gitIdx);
     if (cmdIdx === -1 || !subs.includes(tokens[cmdIdx])) continue;
-    const dd = tokens.indexOf("--", cmdIdx + 1);
-    const flags = dd === -1 ? tokens.slice(cmdIdx + 1) : tokens.slice(cmdIdx + 1, dd);
-    if (fn(flags, tokens.slice(cmdIdx + 1))) return true;
+    const withArg = SUB_OPTS_WITH_ARG.get(tokens[cmdIdx]) ?? new Set();
+    const tail = tokens.slice(cmdIdx + 1);
+    const dd = tail.indexOf("--");
+    const scanTo = dd === -1 ? tail.length : dd;
+    const flags = [];
+    for (let i = 0; i < scanTo; i++) {
+      flags.push(tail[i]);
+      if (withArg.has(tail[i])) i++; // 跳过子命令级带参选项的参数
+    }
+    if (fn(flags, tail)) return true;
   }
   return false;
 }
@@ -343,8 +435,8 @@ const ADD_SUBS = ["add", "stage"];
  * 长参前缀匹配只接受 "--" 开头且非裸 "--"（分隔符）的 token，防 "--all".startsWith("--") 误报。
  * 段级收窄使无关命令的 -f（rm -f / tail -f / git push --force）不误命中。
  */
-export function gitSegmentHasFlag(bare, subs, shortChars, longFull) {
-  return forGitSub(bare, subs, (flags) =>
+export function gitSegmentHasFlag(cmd, subs, shortChars, longFull) {
+  return forGitSub(cmd, subs, (flags) =>
     flags.some(
       (t) =>
         (t.startsWith("--") && t !== "--" && (t.startsWith(longFull) || longFull.startsWith(t))) ||
@@ -358,10 +450,10 @@ export function gitSegmentHasFlag(bare, subs, shortChars, longFull) {
  * pathspec 会把未跟踪文件卷进 index。注意 -u/--update 只更新已跟踪条目
  * （git 语义 adds no new files），不计入。
  */
-export function gitAddIsBroad(bare) {
+export function gitAddIsBroad(cmd) {
   return (
-    gitSegmentHasFlag(bare, ADD_SUBS, ["A"], "--all") ||
-    forGitSub(bare, ADD_SUBS, (_flags, args) =>
+    gitSegmentHasFlag(cmd, ADD_SUBS, ["A"], "--all") ||
+    forGitSub(cmd, ADD_SUBS, (_flags, args) =>
       args.some(
         (t) =>
           t === "." ||

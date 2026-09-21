@@ -13,7 +13,8 @@
       "**/*.js",
       "**/*.mjs",
       "**/*.json",
-      "!**/test/fixtures"
+      "!**/test/fixtures",
+      "!docs"
     ]
   },
   "formatter": {
