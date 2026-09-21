@@ -694,6 +694,20 @@ describe("DomCollector 其余分支", () => {
     expect(tree.nodes.map((n) => n.nodeId)).toEqual(["a", "b"]);
   });
 
+  it("AX 合并不受 spread 实参上限约束（评审二轮 #1）：单 frame 7 万节点", async () => {
+    const nodes = Array.from({ length: 70000 }, (_, i) => ({
+      nodeId: String(i),
+      backendDOMNodeId: i,
+    }));
+    const client = new FakeCdpClient({
+      "Page.getFrameTree": () => ({ frameTree: { frame: { id: "main" } } }),
+      "Accessibility.getFullAXTree": () => ({ nodes }),
+    });
+    const tree = await new DomCollector(client).getAxTreeForAllFrames();
+    expect(tree.nodes).toHaveLength(70000);
+    expect(tree.nodes[69999]).toEqual({ nodeId: "69999", backendDOMNodeId: 69999 });
+  });
+
   it("重复 nodeId 复用 memo 实例（Python 备忘录语义）", async () => {
     const shared = el(4, 4, "DIV", { id: "dup" });
     const { tree, snapshot } = pageWith([shared, shared], [{ bid: 4, bounds: [0, 0, 10, 10] }]);

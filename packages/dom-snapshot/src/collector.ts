@@ -276,14 +276,25 @@ export function collectFileInputs(
   }
   // 后代继承：当前节点自身是 upload 容器则置位
   const childUploadAncestor = uploadAncestor || nodeHasUploadClass(nodeAttrs);
+  // 逐个追加与 AX 合并同口径（规避 spread 实参上限；此处规模小，属统一风格）
   for (const child of node.children ?? []) {
-    results.push(...collectFileInputs(child, snapshotLookup, childUploadAncestor));
+    for (const info of collectFileInputs(child, snapshotLookup, childUploadAncestor)) {
+      results.push(info);
+    }
   }
   for (const shadow of node.shadowRoots ?? []) {
-    results.push(...collectFileInputs(shadow, snapshotLookup, childUploadAncestor));
+    for (const info of collectFileInputs(shadow, snapshotLookup, childUploadAncestor)) {
+      results.push(info);
+    }
   }
   if (node.contentDocument) {
-    results.push(...collectFileInputs(node.contentDocument, snapshotLookup, childUploadAncestor));
+    for (const info of collectFileInputs(
+      node.contentDocument,
+      snapshotLookup,
+      childUploadAncestor,
+    )) {
+      results.push(info);
+    }
   }
   return results;
 }
@@ -685,8 +696,12 @@ export class DomCollector {
         ),
       ),
     );
+    // 逐个追加而非 push(...nodes)：spread 展开受引擎实参上限约束（约 6.5 万~12.4 万），
+    // 重型页面单 frame AX 节点可超限抛 RangeError；Python list.extend 无此限制（评审 P1.2 二轮 #1）
     const merged: CdpAxTreeNode[] = [];
-    for (const tree of axTrees) merged.push(...(tree.nodes ?? []));
+    for (const tree of axTrees) {
+      for (const n of tree.nodes ?? []) merged.push(n);
+    }
     return { nodes: merged };
   }
 
