@@ -8,7 +8,6 @@ import {
   isGitCommit,
   matchStagedForbidden,
   parseStatus,
-  stripQuoted,
 } from "./gate.mjs";
 
 test("识别基础与全局选项变体", () => {
@@ -55,17 +54,25 @@ test("gitSegmentHasFlag / gitAddIsBroad：-C 粘连参数（评审七轮 #2）",
   assert.equal(force("git -C.. add packages"), false);
 });
 
-test("gitSubcommandIndex 共享口径 + stripQuoted 占位 token（评审八轮 #1/#2）", () => {
-  // segmentIsGitCommit 循环此前未同步 -C 粘连跳过：git -C.. commit 整体漏判
+test("引号感知分词（评审八轮 #1/#2 + 九轮 #1/#3 的根治口径）", () => {
+  const force = (s) => gitSegmentHasFlag(s, ["add", "stage"], ["f"], "--force");
+  const noVerify = (s) => gitSegmentHasFlag(s, ["commit"], ["n"], "--no-verify");
+  // -C 粘连 / 带引号参数：子命令定位不被吞（八轮回归）
   assert.equal(isGitCommit("git -C.. commit -m x"), true);
   assert.equal(isGitCommit("git.exe -C.. commit -m x"), true);
   assert.equal(isGitCommit('git -C "d 1" commit -m x'), true);
-  // 引号参数形态：stripQuoted 换 "0" 保持 -C 消耗一个参数的语义
-  const force = (s) => gitSegmentHasFlag(stripQuoted(s), ["add", "stage"], ["f"], "--force");
   assert.equal(force('git -C ".." add -f .env && git commit -m x'), true);
   assert.equal(force('git -C ".." add packages'), false);
-  // 消息文本中的标志仍被引号遮蔽
-  assert.equal(stripQuoted('git commit -m "use -f here"'), "git commit -m 0");
+  // 引号包子命令：shell 引号不改变参数内容，git 收到的就是 commit（九轮 #1）
+  assert.equal(isGitCommit('git "commit" -m x'), true);
+  assert.equal(isGitCommit("git 'commit' -m x"), true);
+  // 空引号与长参前缀粘连：--forc"" 在 shell 中即 --forc（九轮 #3）
+  assert.equal(force('git add --forc"" .env && git commit -m x'), true);
+  // 消息文本中的标志被引号遮蔽（单 token 含空格，不构成标志）
+  assert.equal(noVerify('git commit -m "use -n here"'), false);
+  assert.equal(force('git commit -m "add -f" && git push'), false);
+  // 空引号保持 argv 占位：-C "" 的参数按位消耗，add 不被吞
+  assert.equal(force('git -C "" add -f .env'), true);
 });
 
 test(".env 系列拦截口径（评审四轮 #5 的回归覆盖）", () => {

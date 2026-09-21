@@ -258,8 +258,8 @@ const GIT_OPTS_FLAG_ONLY = new Set([
 
 /** 单段命令是否为 git commit 子命令 */
 function segmentIsGitCommit(segment) {
-  const tokens = segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-  const head = tokens[0]?.replace(/^["']|["']$/g, "");
+  const tokens = tokenize(segment);
+  const head = tokens[0];
   if (!head || !GIT_TOKEN_RE.test(head)) return false;
   const ci = gitSubcommandIndex(tokens, 0);
   return ci !== -1 && tokens[ci] === "commit";
@@ -278,11 +278,17 @@ export function isGitCommit(cmd) {
 }
 
 /**
- * 剥除命令中引号包裹的内容，防消息文本里的 -f/-n 等标志误判。
- * 替换为占位 token "0"（而非空格）：保持 `-C ".."` 的"消耗一个参数"语义——
- * 换成空格会让 -C 吞掉后续子命令（评审八轮 #2），且 "0" 不构成任何标志。
+ * 引号感知分词 + 按 shell 拼接语义去除 token 内引号：
+ * - 带引号段（含空格）保持单 token：`-m "use -f"` 的消息是 argv 的一个元素，
+ *   去引号后含空格不构成标志，天然被遮蔽（取代 stripQuoted 预处理）；
+ * - `git "commit"` / `--forc""` 去引号后即 commit / --forc，与 git 实际收到的
+ *   argv 一致（评审九轮 #1/#3 的根治方案）；
+ * - 空引号 `""` 产生空串 token，保留其 argv 占位（`-C ""` 的参数按位消耗）。
  */
-export const stripQuoted = (cmd) => String(cmd).replace(/"[^"]*"|'[^']*'/g, "0");
+const tokenize = (s) =>
+  (String(s).match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((t) =>
+    t.replaceAll('"', "").replaceAll("'", ""),
+  );
 
 /** shell 段切分：&&/||/;/| 分隔符与换行（多行命令同样按段判定） */
 const shellSegments = (s) => String(s).split(/&&|\|\||;|\||\n/);
@@ -294,11 +300,11 @@ const GIT_TOKEN_RE = /(^|\/)git(\.exe)?$/;
  * git 形态 token 之后的首个非全局选项 token 下标（即子命令位置）；无则 -1。
  * 覆盖：带参选项（-C <dir>）、参数粘连（-Cdir）、纯标志、--opt=value 内联。
  * segmentIsGitCommit 与 forGitSub 共用本 helper——两处循环曾各自漂移致
- * git -C.. commit 整体漏判（评审八轮 #1）。
+ * git -C.. commit 整体漏判（评审八轮 #1）。tokens 须为 tokenize 产物（引号已剥）。
  */
 function gitSubcommandIndex(tokens, gitIdx) {
   for (let i = gitIdx + 1; i < tokens.length; i++) {
-    const t = tokens[i].replace(/^["']|["']$/g, "");
+    const t = tokens[i];
     if (GIT_OPTS_WITH_ARG.has(t)) {
       i++; // 跳过带参选项的参数
       continue;
@@ -317,7 +323,7 @@ function gitSubcommandIndex(tokens, gitIdx) {
  */
 function forGitSub(bare, subs, fn) {
   for (const seg of shellSegments(bare)) {
-    const tokens = seg.match(/\S+/g) ?? [];
+    const tokens = tokenize(seg);
     const gitIdx = tokens.findIndex((t) => GIT_TOKEN_RE.test(t));
     if (gitIdx === -1) continue;
     const cmdIdx = gitSubcommandIndex(tokens, gitIdx);
@@ -376,10 +382,10 @@ export function gitAddIsBroad(bare) {
  * 拦下一切常规提交。git pre-commit 钩子是最终兜底。
  */
 function worktreePrecheck(cmd) {
-  // 引号剥除后按段检测标志：无关命令的 -f 不误启用 --ignored，合并短参 -Af 不漏检
-  const bare = stripQuoted(cmd);
-  const usesForce = gitSegmentHasFlag(bare, ADD_SUBS, ["f"], "--force");
-  const broadAdd = gitAddIsBroad(bare);
+  // tokenize 已按 shell 拼接语义剥引号：无关命令的 -f 不误启用 --ignored，
+  // 合并短参 -Af 不漏检，引号包裹的消息文本不构成标志
+  const usesForce = gitSegmentHasFlag(cmd, ADD_SUBS, ["f"], "--force");
+  const broadAdd = gitAddIsBroad(cmd);
   let out;
   try {
     out = execSync(`git status --porcelain${usesForce ? " --ignored" : ""}`, {
@@ -414,7 +420,7 @@ function hookCommit() {
   const cmd = input?.tool_input?.command ?? "";
   if (!isGitCommit(cmd)) process.exit(0); // 非 commit 命令，放行
   // --no-verify/-n（含 -nm 合并短参、--no-ver 前缀）会跳过 pre-commit 这道最终兜底
-  if (gitSegmentHasFlag(stripQuoted(cmd), ["commit"], ["n"], "--no-verify")) {
+  if (gitSegmentHasFlag(cmd, ["commit"], ["n"], "--no-verify")) {
     exit(2, "git commit 带 --no-verify/-n 会跳过 pre-commit 兜底，门禁拦截");
   }
   worktreePrecheck(cmd);
