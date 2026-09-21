@@ -278,15 +278,7 @@ export function isGitCommit(cmd) {
 }
 
 /**
- * 引号感知分词 + 按 shell 拼接语义去除 token 内引号：
- * - 带引号段（含空格）保持单 token：`-m "use -f"` 的消息是 argv 的一个元素，
- *   去引号后含空格不构成标志，天然被遮蔽（取代 stripQuoted 预处理）；
- * - `git "commit"` / `--forc""` 去引号后即 commit / --forc，与 git 实际收到的
- *   argv 一致（评审九轮 #1/#3 的根治方案）；
- * - 空引号 `""` 产生空串 token，保留其 argv 占位（`-C ""` 的参数按位消耗）。
- */
-/**
- * 引号感知分词（状态机）+ 按 shell 拼接语义去除引号字符，即 git 收到的 argv：
+ * 引号感知分词（状态机）+ 按 shell 拼接语义去除引号与转义，即 git 收到的 argv：
  * - 引号内（含空格/分隔符）保持单 token：`-m "use -f"` 的消息是 argv 的一个
  *   元素，不构成标志；未闭合引号按"引号直到串尾"处理（shell 语法错误形态，
  *   保守起见内容不再散成裸 token——评审十一轮 #1 的实测反例：`"…; rm -rf`
@@ -294,14 +286,27 @@ export function isGitCommit(cmd) {
  * - 词内引号拼接（`"comm"it` = commit、`--forc""` = --forc）天然并回同一
  *   token；空引号 `""` 产生空串 token 保留 argv 占位（`-C ""` 按位消耗）；
  * - 单引号仅在 token 起点视为引号定界：`don't` 里的撇号是字面字符，不得
- *   开启引号态吞掉后续 token（如 `-m don't -n` 的 -n 须仍可见）。
+ *   开启引号态吞掉后续 token（如 `-m don't -n` 的 -n 须仍可见）；
+ * - 反斜杠转义（非单引号态）：`\"` 是字面引号字符，不开合引号态、不切分
+ *   ——否则 `git log \" ; git add -A` 会被吞成单段重开时间差盲区（十二轮 #2）。
  */
 const tokenize = (s) => {
   const out = [];
   let cur = "";
   let hasTok = false;
   let q = "";
+  let esc = false;
   for (const ch of String(s)) {
+    if (esc) {
+      cur += ch; // \x → 字面 x，不触发引号开合/分词
+      esc = false;
+      continue;
+    }
+    if (ch === "\\" && q !== "'") {
+      esc = true; // 单引号内反斜杠是字面字符
+      hasTok = true;
+      continue;
+    }
     if (q) {
       if (ch === q) q = "";
       else cur += ch;
@@ -326,6 +331,8 @@ const tokenize = (s) => {
  * `-m "docs; git add -A"` 的消息含分号不得产生幻影段（评审十轮 #1）。
  * 状态机实现而非正则：未闭合引号（shell 语法错误，但 agent 会写出来）按
  * "引号直到串尾"处理，不再在引号内切段（评审十一轮 #1 的残余盲区）。
+ * 反斜杠转义（非单引号态）：`\"` 是字面引号，不开合引号态、不切分——
+ * 否则 `git log \" ; git add -A` 被吞成单段，时间差盲区重开（十二轮 #1）。
  */
 const shellSegments = (s) => {
   const str = String(s);
@@ -335,7 +342,13 @@ const shellSegments = (s) => {
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
     const two = str.slice(i, i + 2);
-    if (q) {
+    if (q === "'") {
+      cur += ch; // 单引号内无转义语义，反斜杠是字面字符
+      if (ch === q) q = "";
+    } else if (ch === "\\" && i + 1 < str.length) {
+      cur += two; // \" / \' / \; 等：转义消费下一字符
+      i++;
+    } else if (q) {
       cur += ch;
       if (ch === q) q = "";
     } else if (ch === '"' || ch === "'") {
@@ -360,6 +373,7 @@ const shellSegments = (s) => {
 const GIT_TOKEN_RE = /(^|\/)git(\.exe)?$/;
 
 /** 子命令级带参选项：其参数（如 -m 的消息）不参与标志扫描（评审十轮 #2） */
+const NO_OPTS_WITH_ARG = new Set(); // 共享空集合，避免每段每次调用新建（十二轮 #4）
 const SUB_OPTS_WITH_ARG = new Map([
   [
     "commit",
@@ -376,6 +390,9 @@ const SUB_OPTS_WITH_ARG = new Map([
       "--reuse-message",
       "--author",
       "--date",
+      "--fixup",
+      "--squash",
+      "--trailer",
     ]),
   ],
 ]);
@@ -413,14 +430,33 @@ function forGitSub(cmd, subs, fn) {
     if (gitIdx === -1) continue;
     const cmdIdx = gitSubcommandIndex(tokens, gitIdx);
     if (cmdIdx === -1 || !subs.includes(tokens[cmdIdx])) continue;
-    const withArg = SUB_OPTS_WITH_ARG.get(tokens[cmdIdx]) ?? new Set();
+    const withArg = SUB_OPTS_WITH_ARG.get(tokens[cmdIdx]) ?? NO_OPTS_WITH_ARG;
     const tail = tokens.slice(cmdIdx + 1);
     const dd = tail.indexOf("--");
     const scanTo = dd === -1 ? tail.length : dd;
     const flags = [];
     for (let i = 0; i < scanTo; i++) {
-      flags.push(tail[i]);
-      if (withArg.has(tail[i])) i++; // 跳过子命令级带参选项的参数
+      const t = tail[i];
+      // 短标志簇的 getopt 语义（十二轮 #5）：首个带参字母消耗其后所有字符——
+      // 有剩余字符是粘连值形态（-mminor/-Fn：值已内联，不消耗下一 token）；
+      // 带参字母居簇末（-nm/-am：前缀是标志，值取下一 token）；
+      // 单字母恰为带参选项（-m）走通用路径（push + 消耗下一 token）
+      const glued = t.match(/^-([a-zA-Z]+)$/);
+      if (glued) {
+        const letters = glued[1];
+        const argIdx = [...letters].findIndex((c) => withArg.has(`-${c}`));
+        if (argIdx >= 0 && argIdx < letters.length - 1) {
+          if (argIdx > 0) flags.push(`-${letters.slice(0, argIdx)}`);
+          continue; // 粘连值形态：字母后即参数值
+        }
+        if (argIdx === letters.length - 1 && letters.length > 1) {
+          if (argIdx > 0) flags.push(`-${letters.slice(0, argIdx)}`);
+          i++; // 簇末带参字母：值取下一 token
+          continue;
+        }
+      }
+      flags.push(t);
+      if (withArg.has(t)) i++; // 跳过子命令级带参选项的参数
     }
     if (fn(flags, tail)) return true;
   }

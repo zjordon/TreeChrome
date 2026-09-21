@@ -71,6 +71,22 @@ test("引号内分隔符与标志串消息（评审十轮 #1/#2）", () => {
   assert.equal(noVerify("git commit -nm x"), true);
 });
 
+test("反斜杠转义与粘连参数（评审十二轮 #1/#2/#5）", () => {
+  const noVerify = (s) => gitSegmentHasFlag(s, ["commit"], ["n"], "--no-verify");
+  const force = (s) => gitSegmentHasFlag(s, ["add", "stage"], ["f"], "--force");
+  // \" 是字面引号字符：不开引号态、不吞分隔符（时间差盲区不重开）
+  assert.equal(gitAddIsBroad('git log \\" ; git add -A'), true);
+  assert.equal(noVerify('git log \\" ; git commit -n'), true);
+  // 消息内的 \" 转义不产生幻影段
+  assert.equal(gitAddIsBroad('git commit -m "a \\" ; git add -A"'), false);
+  // 粘连参数形态：-mminor 的消息不是标志；-nm 的 -n 仍可见
+  assert.equal(noVerify("git commit -mminor"), false);
+  assert.equal(noVerify("git commit -Fn"), false);
+  assert.equal(noVerify("git commit -nm x"), true);
+  // 新增带参选项：--trailer 的参数不参与标志扫描
+  assert.equal(noVerify('git commit --trailer "-n" -m x'), false);
+});
+
 test("词内引号拼接与未闭合引号（评审十一轮 #5/#1）", () => {
   const force = (s) => gitSegmentHasFlag(s, ["add", "stage"], ["f"], "--force");
   // 词内引号拼接：shell 中 "comm"it 是单个 argv 元素 commit，不得绕过识别
