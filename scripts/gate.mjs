@@ -296,14 +296,26 @@ const tokenize = (s) => {
   let hasTok = false;
   let q = "";
   let esc = false;
-  for (const ch of String(s)) {
+  // 行续接（\ + 换行）在 shell 中两字符整体消失：不构成 token、也不是分隔符。
+  // 必须前置剔除——若在 esc 分支丢换行，hasTok 已被 \ 置位，会 push 出空串
+  // token 顶占子命令位（十三轮 #4：`git \<LF> commit -n` 的子命令成了 "\n"）
+  const str = String(s).replace(/\\\r?\n/g, "");
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
     if (esc) {
       cur += ch; // \x → 字面 x，不触发引号开合/分词
       esc = false;
       continue;
     }
     if (ch === "\\" && q !== "'") {
-      esc = true; // 单引号内反斜杠是字面字符
+      // POSIX：双引号内仅 \" \\ \$ \` 有转义语义，其余反斜杠是字面字符
+      // （十三轮 #2："\c" 的 argv 是 \c 两字符，剥掉反斜杠会让 token 比
+      // 真实 argv 更"像标志"）；引号外 \x 一律字面化
+      if (q === '"' && !['"', "\\", "$", "`"].includes(str[i + 1] ?? "")) {
+        cur += ch;
+      } else {
+        esc = true;
+      }
       hasTok = true;
       continue;
     }
@@ -432,11 +444,13 @@ function forGitSub(cmd, subs, fn) {
     if (cmdIdx === -1 || !subs.includes(tokens[cmdIdx])) continue;
     const withArg = SUB_OPTS_WITH_ARG.get(tokens[cmdIdx]) ?? NO_OPTS_WITH_ARG;
     const tail = tokens.slice(cmdIdx + 1);
-    const dd = tail.indexOf("--");
-    const scanTo = dd === -1 ? tail.length : dd;
     const flags = [];
-    for (let i = 0; i < scanTo; i++) {
+    for (let i = 0; i < tail.length; i++) {
       const t = tail[i];
+      // 未被按位消耗的 "--" 才是选项区终点；作为带参选项实参的 "--"
+      //（git get_arg 不特判 -m -- 的消息就是 "--"）由下方 i++ 消耗，
+      // 否则 git commit -m -- -n 的 -n 会漏检（十三轮 #1）
+      if (t === "--") break;
       // 短标志簇的 getopt 语义（十二轮 #5）：首个带参字母消耗其后所有字符——
       // 有剩余字符是粘连值形态（-mminor/-Fn：值已内联，不消耗下一 token）；
       // 带参字母居簇末（-nm/-am：前缀是标志，值取下一 token）；
