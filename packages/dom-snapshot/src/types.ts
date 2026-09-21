@@ -800,10 +800,29 @@ export interface DOMCollectionConfig {
   heavyPageElementThreshold: number;
 }
 
+/** Python DOMCollectionConfig dataclass 默认值（models.py:732-738） */
+export const DEFAULT_DOM_COLLECTION_CONFIG: DOMCollectionConfig = {
+  cdpFirstTimeout: 10.0,
+  cdpRetryTimeout: 2.0,
+  maxIframes: 100,
+  heavyPageElementThreshold: 10000,
+};
+
 export interface DOMCollectionMetrics {
   degradationLevel: DOMDegradationLevel;
   sourceStatuses: Record<string, string>;
   totalMs: number;
   iframeCount: number;
   elementCount: number;
+}
+
+/** Python DOMCollectionMetrics dataclass 默认值（models.py:742-749） */
+export function createDomCollectionMetrics(): DOMCollectionMetrics {
+  return {
+    degradationLevel: DOMDegradationLevel.FULL,
+    sourceStatuses: {},
+    totalMs: 0,
+    iframeCount: 0,
+    elementCount: 0,
+  };
 }

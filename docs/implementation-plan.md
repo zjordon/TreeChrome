@@ -19,7 +19,7 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 
 ## P1 dom-snapshot 完整移植（当前进行中）
 
-已完成：models 全量移植（types.ts，47 测试全绿含 Python 锚点）、协议类型、serializer 骨架、fixture 生成器。
+已完成：models 全量移植（types.ts，47 测试全绿含 Python 锚点）、协议类型、serializer 骨架、fixture 生成器；P1.2 collector 移植（2026-09-21，`collector.ts` + `cdp-batch.ts`，golden 四页 selector_map 投影全等 + 降级链/跨源 iframe 单测，分支 `feat/p1.2-collector`）。
 
 | # | 工作项 | 内容 | 验收标准 | 预估 |
 |---|---|---|---|---|

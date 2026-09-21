@@ -16,7 +16,7 @@ export interface CdpLikeClient {
   send<T = unknown>(
     method: string,
     params?: Record<string, unknown>,
-    sessionId?: string,
+    sessionId?: string | null,
   ): Promise<T>;
 }
 
@@ -39,11 +39,16 @@ export interface CdpDomNode {
   frameId?: string;
   documentURL?: string;
   baseURL?: string;
+  /** DOM.getDocument 返回的父节点引用（融合期 memo 查找用） */
+  parentId?: number;
+  /** 滚动容器标志（wire 实证：仅滚动容器携带） */
+  isScrollable?: boolean;
+  /** shadow root 节点上的类型标记（open/closed） */
+  shadowRootType?: string;
 }
 
-export interface DomGetDocumentParams {
-  depth: number;
-  pierce: boolean;
+export interface CdpGetDocumentResult {
+  root: CdpDomNode;
 }
 
 // ── 源 2：DOMSnapshot.captureSnapshot ─────────────────────────────────
@@ -66,6 +71,15 @@ export interface CdpSnapshotLayout {
    * 键名对齐 wire 实际（fixture 实证）：CDP 返回 paintOrders（复数）。
    */
   paintOrders?: number[];
+  /**
+   * computedStyles 请求顺序对应的值索引表：styles[li][si] 是 strings 下标，
+   * si 位置对应采集请求 computedStyles 数组的第 si 项（wire 实证）。
+   */
+  styles?: number[][];
+  /** Rectangle[]，仅 includeDOMRects=true 时返回 */
+  clientRects?: CdpRectangle[];
+  scrollRects?: CdpRectangle[];
+  offsetRects?: CdpRectangle[];
   /** CDP RareIntegerData：稀疏双平行数组，value 为 strings 表索引（光标名） */
   cursor?: { index: number[]; value: number[] };
   /** layoutTextInputs 等其余字段按需补充 */
@@ -74,6 +88,8 @@ export interface CdpSnapshotLayout {
 /** 与 layout.nodeIndex 平行的扁平节点表；backendNodeId 为三源融合键 */
 export interface CdpSnapshotNodeTree {
   backendNodeId: number[];
+  /** CDP RareBooleanData：稀疏，index 为可点击节点的 nodeIndex 列表 */
+  isClickable?: { index: number[] };
 }
 
 export interface CdpSnapshotDocument {
@@ -108,8 +124,11 @@ export interface CdpAxValue {
 }
 
 export interface CdpAxTreeNode {
-  /** CDP 协议原名为 nodeId（AXNodeId），此处改名以避免与 CdpDomNode.nodeId 语义混淆 */
-  axNodeId: string;
+  /**
+   * CDP 协议原名 nodeId（AXNodeId，字符串域）；与 CdpDomNode.nodeId（数字域）
+   * 语义不同，此处保持 wire 原名，由使用方按类型区分。
+   */
+  nodeId: string;
   /** 与 DOM 树交叉引用的关键字段；ignored 节点通常缺失，融合需容忍缺失与一对多 */
   backendDOMNodeId?: number;
   ignored?: boolean;
@@ -125,4 +144,54 @@ export interface CdpAxTreeNode {
 
 export interface CdpFullAxTreeResult {
   nodes: CdpAxTreeNode[];
+}
+
+// ── 辅助采集域（viewport / frame 树 / 跨源 iframe / JS 监听器探测） ────
+
+/** Page.getLayoutMetrics：视口物理/CSS 宽度算设备像素比（缺省按 1.0） */
+export interface CdpLayoutMetrics {
+  visualViewport?: { clientWidth?: number };
+  cssVisualViewport?: { clientWidth?: number };
+}
+
+export interface CdpFrameTreeNode {
+  frame: { id: string };
+  childFrames?: CdpFrameTreeNode[];
+}
+
+/** Page.getFrameTree：AX 树按 frame 逐个采集的依据 */
+export interface CdpFrameTreeResult {
+  frameTree: CdpFrameTreeNode;
+}
+
+export interface CdpTargetInfo {
+  type: string;
+  targetId: string;
+  parentFrameId?: string;
+  url?: string;
+}
+
+/** Target.getTargets：构建 frameId→targetId / url→targetId 映射 */
+export interface CdpGetTargetsResult {
+  targetInfos: CdpTargetInfo[];
+}
+
+/** Target.attachToTarget(flatten) */
+export interface CdpAttachResult {
+  sessionId: string;
+}
+
+/** Runtime.evaluate(returnByValue=false)：只关心对象引用句柄 */
+export interface CdpEvaluateResult {
+  result?: { objectId?: string };
+}
+
+/** Runtime.getProperties(ownProperties)：解析数组下标属性 */
+export interface CdpGetPropertiesResult {
+  result?: { name: string; value?: { objectId?: string } }[];
+}
+
+/** DOM.describeNode(objectId)：监听器元素 → backendNodeId */
+export interface CdpDescribeNodeResult {
+  node?: { backendNodeId?: number };
 }
