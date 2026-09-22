@@ -1,0 +1,22 @@
+// LLMProvider 接口：一协议一适配器（Strategy，架构 §3.4）。纯类型文件。
+
+import type { ChatRequest, ChatResponse } from "./types.js";
+
+export type LlmProtocol = "openai-completions" | "anthropic-messages" | "gemini";
+
+/** 能力声明（架构 §3.4：provider 卡片声明，TreeWalker 视觉白名单的泛化） */
+export interface ProviderCapabilities {
+  supportsTools: boolean;
+  supportsVision: boolean;
+  /** false = 端点不支持 forced tool_choice（vLLM 旧版等），走 prompt 约束 + JSON 兜底 */
+  supportsForcedTool: boolean;
+}
+
+export interface LLMProvider {
+  readonly protocol: LlmProtocol;
+  readonly model: string;
+  readonly capabilities: ProviderCapabilities;
+  chat(req: ChatRequest): Promise<ChatResponse>;
+  /** 最小连通性检查（webbrain 形状）：chat("Hi", maxTokens=5) 的成败包装 */
+  testConnection(): Promise<{ ok: boolean; error?: string; model?: string }>;
+}
