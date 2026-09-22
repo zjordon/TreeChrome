@@ -101,7 +101,8 @@ describe.skipIf(fixtures.length === 0)("降级链（FULL→PARTIAL→MINIMAL→F
     expect(result.root).not.toBeNull();
     expect(result.root!.snapshotNode).toBeNull();
     // MINIMAL 分支：无 snapshot 数据的元素按可见处理。
-    // selector_map 键是 highlight_index（元素树行号），定位须取投影的 backend_node_id
+    // selector_map 键 = highlight_index，serializer Step 5 直接赋 backend_node_id；
+    // 定位投影对应节点须取投影的 backend_node_id
     const firstProj = Object.values(basicFixture().fixture.output.selector_map)[0];
     const anyElement = indexByBackendId(result.root!).get(firstProj.backend_node_id);
     expect(anyElement).toBeDefined();

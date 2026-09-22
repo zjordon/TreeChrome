@@ -64,7 +64,7 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
         expect(fixture.output.element_tree_text.length).toBeGreaterThan(0);
       }
       for (const [idx, proj] of Object.entries(fixture.output.selector_map)) {
-        // 键是数字字符串（highlight_index，元素树行号）；backend_node_id 是投影里的独立字段
+        // 键是数字字符串（highlight_index；serializer 将其赋为 backend_node_id）
         expect(String(Number(idx))).toBe(idx);
         expect(proj.backend_node_id).toBeTypeOf("number");
         expect(typeof proj.node_name).toBe("string");

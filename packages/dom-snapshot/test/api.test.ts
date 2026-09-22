@@ -49,19 +49,29 @@ describe("createEmptyDomState", () => {
   });
 });
 
-describe("DOMTreeSerializer（移植占位）", () => {
-  it("构造器保存参数并填充默认选项", () => {
+describe("DOMTreeSerializer 构造器", () => {
+  it("保存根节点并填充默认选项（containment 0 视同未设置，同 Python falsy 语义）", () => {
     const root = el("HTML", 1, 101);
     const s = new DOMTreeSerializer(root);
     expect(s.rootNode).toBe(root);
-    expect(s.options.enableBboxFiltering).toBe(true);
-    expect(s.options.paintOrderFiltering).toBe(true);
-    expect(s.options.sessionId).toBeNull();
+    expect(s.enableBboxFiltering).toBe(true);
+    expect(s.paintOrderFiltering).toBe(true);
+    expect(s.sessionId).toBeNull();
+    expect(s.containmentThreshold).toBe(0.99);
+
+    const custom = new DOMTreeSerializer(root, {
+      enableBboxFiltering: false,
+      containmentThreshold: 0,
+      sessionId: "S1",
+    });
+    expect(custom.enableBboxFiltering).toBe(false);
+    // Python `containment_threshold or DEFAULT`：0 → 默认 0.99
+    expect(custom.containmentThreshold).toBe(0.99);
+    expect(custom.sessionId).toBe("S1");
   });
 
-  it("serializeTree 明确抛出未移植错误", () => {
-    const s = new DOMTreeSerializer(el("HTML", 1, 101));
-    expect(() => s.serializeTree(null, [])).toThrow(/尚未移植/);
+  it("serializeTree(null) 返回空串", () => {
+    expect(DOMTreeSerializer.serializeTree(null, [])).toBe("");
   });
 });
 

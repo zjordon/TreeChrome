@@ -245,7 +245,8 @@ export class DOMRect {
 
 export interface EnhancedAXProperty {
   name: string;
-  value: string | boolean | null;
+  /** wire 值可为字符串/布尔/数值（如 aria-valuemin=0），与 Python 原样透传同口径 */
+  value: string | boolean | number | null;
 }
 
 export interface EnhancedAXNode {
