@@ -91,6 +91,14 @@ function serializeRoot(
   return new DOMTreeSerializer(root, { sessionId }).serializeAccessibleElements();
 }
 
+/** 类型化私有方法访问点：私有签名重构时此处编译失败，改动收敛到一处 */
+type SerializerInternals = {
+  createSimplifiedTree(n: EnhancedDOMTreeNode, depth: number): SimplifiedNode | null;
+  optimizeTree(n: SimplifiedNode | null): SimplifiedNode | null;
+  applyBoundingBoxFiltering(n: SimplifiedNode | null): SimplifiedNode | null;
+};
+const internals = (ser: DOMTreeSerializer) => ser as unknown as SerializerInternals;
+
 /** doc → html → children 的合成文档（子节点挂 parentNode） */
 function docOf(children: EnhancedDOMTreeNode[]): EnhancedDOMTreeNode {
   const doc = el("#document", 1, 1, { nodeType: NodeType.DOCUMENT_NODE });
@@ -145,6 +153,14 @@ describe.skipIf(fixtures.length === 0)("golden 序列化对拍（P1.3 验收）"
   }
 });
 
+// 与 golden.test.ts「未生成时提示」块同口径：fixture 缺失时显式告警而非静默跳过
+describe.skipIf(fixtures.length > 0)("golden 序列化对拍未生成时提示", () => {
+  it("跳过（运行 tools/gen_fixtures.py 生成后自动生效）", () => {
+    console.warn("[serializer] test/fixtures 无 *.json —— P1.3 element_tree_text 逐字节对拍未执行");
+    expect(true).toBe(true);
+  });
+});
+
 // ── isMeaningfulText（单字符噪声过滤，Python 参考值） ─────────────────────
 
 describe("isMeaningfulText", () => {
@@ -182,7 +198,7 @@ describe("Step 1 简化树过滤", () => {
     expect(state.elementTreeText).toBe("");
     // 树根仍可遍历：直接检查简化结构
     const ser = new DOMTreeSerializer(root);
-    const simplified = ser["createSimplifiedTree"](root, 0);
+    const simplified = internals(ser).createSimplifiedTree(root, 0);
     expect(simplified?.children.map((c) => c.originalNode.nodeName)).toEqual(["P"]);
   });
 
@@ -194,7 +210,7 @@ describe("Step 1 简化树过滤", () => {
     const noise = text("•", 5, 5, true);
     p.childrenNodes = [good, hidden, noise];
     doc.childrenNodes = [p];
-    const simplified = new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0);
+    const simplified = internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0);
     expect(simplified?.children.map((c) => c.originalNode.nodeValue)).toEqual(["正文内容"]);
   });
 
@@ -204,7 +220,7 @@ describe("Step 1 简化树过滤", () => {
     const t = text("强制保留", 3, 3, true);
     div.childrenNodes = [t];
     doc.childrenNodes = [div];
-    const simplified = new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0);
+    const simplified = internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0);
     expect(simplified?.originalNode.nodeName).toBe("DIV");
     expect(simplified?.children).toHaveLength(1);
   });
@@ -217,7 +233,7 @@ describe("Step 1 简化树过滤", () => {
       snapshotNode: emptySnap({ computed_styles: { opacity: "0" } }),
     });
     doc.childrenNodes = [input];
-    const simplified = new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0);
+    const simplified = internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0);
     expect(simplified?.originalNode.tagName).toBe("input");
   });
 
@@ -233,7 +249,7 @@ describe("Step 1 简化树过滤", () => {
 
     const doc = el("#document", 1, 1, { nodeType: NodeType.DOCUMENT_NODE });
     doc.childrenNodes = [host];
-    const simplified = new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0);
+    const simplified = internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0);
     expect(simplified?.isShadowHost).toBe(true);
     // 只有 open 片段进入 children（host 的 children = 片段）
     expect(simplified?.children.map((c) => c.originalNode.shadowRootType)).toEqual(["open"]);
@@ -249,7 +265,7 @@ describe("Step 1 简化树过滤", () => {
           snapshotNode: snapWithBounds(0, 0, 5, 5),
         }),
       ];
-      return new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0);
+      return internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0);
     };
     expect(mk({ "data-browser-use-exclude": "true" })).toBeNull();
     expect(mk({ "data-browser-use-exclude": "TRUE" })).toBeNull();
@@ -264,7 +280,7 @@ describe("Step 1 简化树过滤", () => {
       }),
     ];
     expect(
-      new DOMTreeSerializer(doc2, { sessionId: "S1" })["createSimplifiedTree"](doc2, 0),
+      internals(new DOMTreeSerializer(doc2, { sessionId: "S1" })).createSimplifiedTree(doc2, 0),
     ).toBeNull();
   });
 
@@ -272,14 +288,14 @@ describe("Step 1 简化树过滤", () => {
     const doc = el("#document", 1, 1, { nodeType: NodeType.DOCUMENT_NODE });
     const empty = el("IFRAME", 2, 2, { isVisible: true });
     doc.childrenNodes = [empty];
-    expect(new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0)).toBeNull();
+    expect(internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0)).toBeNull();
 
     const withDoc = el("IFRAME", 3, 3, { isVisible: true });
     const inner = el("#document", 4, 4, { nodeType: NodeType.DOCUMENT_NODE });
     inner.childrenNodes = [visible(5, 5, "BUTTON")];
     withDoc.contentDocument = inner;
     doc.childrenNodes = [withDoc];
-    const simplified = new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0);
+    const simplified = internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0);
     expect(simplified?.originalNode.nodeName).toBe("IFRAME");
     expect(simplified?.children.map((c) => c.originalNode.nodeName)).toEqual(["BUTTON"]);
   });
@@ -298,8 +314,8 @@ describe("Step 3 树优化剪枝", () => {
     const withText = el("DIV", 4, 4, { isVisible: false, childrenNodes: [text("内容", 5, 5)] });
     html.childrenNodes = [emptyHidden, withText];
     doc.childrenNodes = [html];
-    const simplified = new DOMTreeSerializer(doc)["createSimplifiedTree"](doc, 0);
-    const optimized = new DOMTreeSerializer(doc)["optimizeTree"](simplified);
+    const simplified = internals(new DOMTreeSerializer(doc)).createSimplifiedTree(doc, 0);
+    const optimized = internals(new DOMTreeSerializer(doc)).optimizeTree(simplified);
     expect(optimized?.children.map((c) => c.originalNode.nodeId)).toEqual([4]);
   });
 });
@@ -324,8 +340,8 @@ describe("Step 4 包围盒过滤", () => {
   /** doc → html → a → children：createSimplifiedTree 返回 html 子树，a 的子节点在第二层 */
   function aChildrenOf(doc: EnhancedDOMTreeNode): SimplifiedNode[] {
     const ser = new DOMTreeSerializer(doc);
-    const simplified = ser["createSimplifiedTree"](doc, 0);
-    ser["applyBoundingBoxFiltering"](simplified!);
+    const simplified = internals(ser).createSimplifiedTree(doc, 0);
+    internals(ser).applyBoundingBoxFiltering(simplified!);
     return simplified!.children[0]!.children;
   }
 
@@ -392,8 +408,8 @@ describe("Step 4 包围盒过滤", () => {
     html.childrenNodes = [divBtn, a];
     doc.childrenNodes = [html];
     const ser = new DOMTreeSerializer(doc);
-    const simplified = ser["createSimplifiedTree"](doc, 0);
-    ser["applyBoundingBoxFiltering"](simplified!);
+    const simplified = internals(ser).createSimplifiedTree(doc, 0);
+    internals(ser).applyBoundingBoxFiltering(simplified!);
     // innerSpan 被 div[role=button] 的包围盒包含 → 排除
     expect(simplified!.children[0].children[0].excludedByParent).toBe(true);
   });
@@ -696,7 +712,7 @@ describe("复合控件（compound_components）", () => {
   /** 非交互复合标签（details/audio/video）：直接检查 Step 1 挂载的 compoundChildren */
   function compoundChildrenOf(node: EnhancedDOMTreeNode): Record<string, unknown>[] {
     const ser = new DOMTreeSerializer(docOf([node]));
-    ser["createSimplifiedTree"](ser.rootNode, 0);
+    internals(ser).createSimplifiedTree(ser.rootNode, 0);
     return node.compoundChildren;
   }
 
@@ -736,6 +752,39 @@ describe("复合控件（compound_components）", () => {
       snapshotNode: snapWithBounds(0, 0, 120, 30),
     });
     expect(compoundLine(noBounds)).toContain("(name=Value,role=textbox)");
+  });
+
+  it("脏 min/max（页面作者串）：全串非法回退默认，与 Python float() 异常口径一致", () => {
+    // range：min="12px" → Python float() 抛异常回退 0.0；parseFloat 会错误采纳 12
+    const dirtyRange = el("INPUT", 4, 44, {
+      attributes: { type: "range", min: "12px", max: "50%" },
+      isVisible: true,
+      snapshotNode: snapWithBounds(0, 0, 120, 30),
+    });
+    expect(compoundLine(dirtyRange)).toContain(
+      "compound_components=(name=Value,role=slider,min=0.0,max=100.0)",
+    );
+    // number：min="10px" → Python 得 None（不渲染 min 段）
+    const dirtyNum = el("INPUT", 5, 55, {
+      attributes: { type: "number", min: "10px", max: "0x10" },
+      isVisible: true,
+      snapshotNode: snapWithBounds(0, 0, 120, 30),
+    });
+    expect(compoundLine(dirtyNum)).toContain("(name=Value,role=textbox)");
+    expect(compoundLine(dirtyNum)).not.toContain("min=10.0");
+  });
+
+  it("重复 serialize 同一实例/同一树：compoundChildren 幂等，不重复渲染", () => {
+    const range = el("INPUT", 4, 44, {
+      attributes: { type: "range", min: "0", max: "100" },
+      isVisible: true,
+      snapshotNode: snapWithBounds(0, 0, 120, 30),
+    });
+    const ser = new DOMTreeSerializer(docOf([range]));
+    const first = ser.serializeAccessibleElements().state.elementTreeText;
+    const second = ser.serializeAccessibleElements().state.elementTreeText;
+    expect(second).toBe(first);
+    expect(second.match(/compound_components=/g)?.length).toBe(1);
   });
 
   it("file：Browse Files + File(s) Selected；valuetext='no file chosen' → current=None；value 取路径末段", () => {

@@ -146,6 +146,57 @@ describe("PaintOrderRemover", () => {
     expect(bg2.ignoredByPaintOrder).toBe(false);
   });
 
+  it("垃圾 opacity：parseFloat → NaN，NaN < 0.8 为 false，仍视为遮挡（对齐 Python except 回退 1.0）", () => {
+    const garbage = nodeWith("DIV", 5, {
+      bounds: new DOMRect(0, 400, 200, 100),
+      paint_order: 10,
+      computed_styles: { "background-color": "rgb(255,255,255)", opacity: "not-a-number" },
+    });
+    const bg3 = nodeWith("SPAN", 6, {
+      bounds: new DOMRect(10, 410, 50, 30),
+      paint_order: 1,
+      computed_styles: { "background-color": "rgb(0,0,0)" },
+    });
+    const root = new SimplifiedNode(
+      new EnhancedDOMTreeNode({
+        nodeId: 0,
+        backendNodeId: 0,
+        nodeType: NodeType.ELEMENT_NODE,
+        nodeName: "HTML",
+        nodeValue: "",
+        attributes: {},
+      }),
+      [garbage, bg3],
+    );
+    new PaintOrderRemover(root).calculatePaintOrder();
+    expect(bg3.ignoredByPaintOrder).toBe(true);
+  });
+
+  it("computed_styles 为 null：跳过透明检查，按不透明遮挡处理（Python if styles: 同口径）", () => {
+    const noStyles = nodeWith("DIV", 7, {
+      bounds: new DOMRect(0, 500, 200, 100),
+      paint_order: 10,
+    });
+    const bg4 = nodeWith("SPAN", 8, {
+      bounds: new DOMRect(10, 510, 50, 30),
+      paint_order: 1,
+      computed_styles: { "background-color": "rgb(0,0,0)" },
+    });
+    const root = new SimplifiedNode(
+      new EnhancedDOMTreeNode({
+        nodeId: 0,
+        backendNodeId: 0,
+        nodeType: NodeType.ELEMENT_NODE,
+        nodeName: "HTML",
+        nodeValue: "",
+        attributes: {},
+      }),
+      [noStyles, bg4],
+    );
+    new PaintOrderRemover(root).calculatePaintOrder();
+    expect(bg4.ignoredByPaintOrder).toBe(true);
+  });
+
   it("部分遮挡不标记；无 paint_order 数据的节点跳过", () => {
     const fg = nodeWith("DIV", 1, {
       bounds: new DOMRect(0, 0, 100, 100),

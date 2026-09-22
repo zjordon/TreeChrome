@@ -10,7 +10,7 @@
  */
 import type { SimplifiedNode } from "./types.js";
 
-/** 轴对齐矩形，(x1,y1) 左下角，(x2,y2) 右上角（Python frozen dataclass）。 */
+/** 轴对齐矩形，DOM 坐标系 y 向下：(x1,y1) 左上角，(x2,y2) 右下角（Python frozen dataclass，其注释沿用数学惯例写左下/右上，AABB 运算不受影响）。 */
 export class Rect {
   constructor(
     public readonly x1: number,
@@ -19,6 +19,7 @@ export class Rect {
     public readonly y2: number,
   ) {}
 
+  /** Python 同名方法在参考实现中亦无调用点（dataclass 方法集完备性保留） */
   area(): number {
     return (this.x2 - this.x1) * (this.y2 - this.y1);
   }
@@ -61,22 +62,31 @@ export class RectUnionPure {
     return parts;
   }
 
+  /**
+   * pieces 中每块对 s 做差集，返回剩余片段（contains/add 共用，
+   * 避免两份差集循环漂移分叉；piece ⊆ s 时该块被消减为空——
+   * splitDiff 对包含关系返回空数组，contains 快速路径仅为省分配）。
+   */
+  private subtractAll(pieces: Rect[], s: Rect): Rect[] {
+    const out: Rect[] = [];
+    for (const piece of pieces) {
+      if (s.contains(piece)) continue;
+      if (piece.intersects(s)) {
+        for (const p of this.splitDiff(piece, s)) out.push(p);
+      } else {
+        out.push(piece);
+      }
+    }
+    return out;
+  }
+
   /** 判定矩形 r 是否被当前并集完全覆盖。栈消减法。 */
   contains(r: Rect): boolean {
     if (this.rects.length === 0) return false;
     let stack: Rect[] = [r];
     for (const s of this.rects) {
-      const newStack: Rect[] = [];
-      for (const piece of stack) {
-        if (s.contains(piece)) continue;
-        if (piece.intersects(s)) {
-          for (const p of this.splitDiff(piece, s)) newStack.push(p);
-        } else {
-          newStack.push(piece);
-        }
-      }
-      if (newStack.length === 0) return true;
-      stack = newStack;
+      stack = this.subtractAll(stack, s);
+      if (stack.length === 0) return true;
     }
     return false;
   }
@@ -88,15 +98,7 @@ export class RectUnionPure {
 
     let pending: Rect[] = [r];
     for (const s of this.rects) {
-      const newPending: Rect[] = [];
-      for (const piece of pending) {
-        if (piece.intersects(s)) {
-          for (const p of this.splitDiff(piece, s)) newPending.push(p);
-        } else {
-          newPending.push(piece);
-        }
-      }
-      pending = newPending;
+      pending = this.subtractAll(pending, s);
     }
     for (const p of pending) this.rects.push(p);
     return true;
@@ -147,12 +149,17 @@ export class PaintOrderRemover {
 
         if (rectUnion.contains(rect)) {
           node.ignoredByPaintOrder = true;
-          // 阶段4：同步回填到 original_node —— selector_map 存的是 original_node，
-          // rerun 侧 _is_actionable 才能直接查静态遮挡（L1）
+          // 阶段4：同步回填到 original_node（Python paint_order.py:176-180 同款）。
+          // 消费方是 TreeWalker rerun 侧 _is_actionable 的静态遮挡判定（P4 移植件）；
+          // EnhancedDOMTreeNode 的 toJson/__json__ 两侧均不含该键，SimplifiedNode.toJson 均含
           node.originalNode.ignoredByPaintOrder = true;
         }
 
-        // 透明或低不透明度的元素不会遮挡下方内容
+        // 透明或低不透明度的元素不会遮挡下方内容。
+        // 已知口径（与 Python paint_order.py:183-192 逐字一致）：computed_styles 为
+        // null 时跳过整个检查、按不透明遮挡处理；background-color 缺键时默认全透明跳过；
+        // 透明判定是整串严格相等——仅命中黑色全透明序列化，带色全透明
+        // rgba(255,0,0,0) 与半透明背景会被视为遮挡，属参考实现既有行为
         const styles = snap.computed_styles;
         if (styles) {
           const bg = styles["background-color"] ?? "rgba(0, 0, 0, 0)";

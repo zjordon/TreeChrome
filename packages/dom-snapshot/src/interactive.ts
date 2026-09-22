@@ -16,6 +16,8 @@ const SEARCH_INDICATORS: ReadonlySet<string> = new Set([
   "lookup",
   "find",
   "query",
+  // 以下 4 个条目均含子串 "search"（首位匹配即短路），逻辑上已被覆盖；
+  // 为与 Python SEARCH_INDICATORS 常量一致原样保留，勿据此推断独立语义
   "search-icon",
   "search-btn",
   "search-button",
@@ -83,12 +85,23 @@ const INTERACTIVE_AX_ROLES: ReadonlySet<string> = new Set([
 ]);
 
 const ICON_ATTRIBUTES: ReadonlySet<string> = new Set([
+  // "class" 属有意为之（Python 同口径）：任意 10-50px 带 class 的元素均判为可交互，
+  // 误报面宽但换取消码率；改动会破坏 golden 逐字节对拍，需同步评估
   "class",
   "role",
   "onclick",
   "data-action",
   "aria-label",
 ]);
+
+/** 规则 8：需真值才命中的 AX 属性名 */
+const FOCUSABLE_AX_PROPS: ReadonlySet<string> = new Set(["focusable", "editable", "settable"]);
+
+/** 规则 8：只看属性名、不看值的 AX 属性名（Python 同口径） */
+const STATE_AX_PROPS: ReadonlySet<string> = new Set(["checked", "expanded", "pressed", "selected"]);
+
+/** 规则 8：需真值才命中的 AX 属性名（第二组） */
+const REQUIRED_AX_PROPS: ReadonlySet<string> = new Set(["required", "autocomplete"]);
 
 /** 规则 5/6：元素在 maxDepth 层内是否包裹表单控件（input/select/textarea） */
 function hasFormControlDescendant(element: EnhancedDOMTreeNode, maxDepth: number): boolean {
@@ -160,10 +173,10 @@ export function isInteractive(node: EnhancedDOMTreeNode): boolean {
     for (const prop of node.axNode.properties) {
       if (prop.name === "disabled" && prop.value) return false;
       if (prop.name === "hidden" && prop.value) return false;
-      if (["focusable", "editable", "settable"].includes(prop.name) && prop.value) return true;
+      if (FOCUSABLE_AX_PROPS.has(prop.name) && prop.value) return true;
       // checked/expanded/pressed/selected 只看属性名，不看值（Python 同口径）
-      if (["checked", "expanded", "pressed", "selected"].includes(prop.name)) return true;
-      if (["required", "autocomplete"].includes(prop.name) && prop.value) return true;
+      if (STATE_AX_PROPS.has(prop.name)) return true;
+      if (REQUIRED_AX_PROPS.has(prop.name) && prop.value) return true;
       if (prop.name === "keyshortcuts" && prop.value) return true;
     }
   }

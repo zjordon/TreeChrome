@@ -121,7 +121,7 @@ describe("isInteractive（Python 参考值锚定）", () => {
   it("规则 8：AX 属性（disabled/hidden 短路；focusable 需真值；checked 只看名；keyshortcuts）", () => {
     expect(isInteractive(mk("INPUT", { axProps: [["disabled", true]] }))).toBe(false);
     expect(isInteractive(mk("INPUT", { axProps: [["hidden", true]] }))).toBe(false);
-    // focusable=False 不命中（需真值）；input 走规则 9 前，规则 8 无真值属性 → False
+    // focusable=False 不命中（需真值）；DIV 非交互标签、规则 8 无真值属性且后续规则均不命中 → False
     expect(isInteractive(mk("DIV", { axProps: [["focusable", false]] }))).toBe(false);
     // checked 即使值为 False 也命中（Python 只查属性名）
     expect(isInteractive(mk("DIV", { axProps: [["checked", false]] }))).toBe(true);

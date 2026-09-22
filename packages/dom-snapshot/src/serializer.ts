@@ -111,16 +111,26 @@ function pyFloatStr(f: number): string {
   return Number.isInteger(f) && Math.abs(f) < 1e16 ? `${f}.0` : String(f);
 }
 
-/** Python float()+except 回退的等价物（wire 值为 Chrome 规范化十进制，解析域一致） */
+/**
+ * Python float()+except 回退的等价物：全串合法才采纳。
+ * 消费域是页面作者可写任意串的 HTML 属性（attrs.min/max，如 "12px"、"50%"），
+ * parseFloat 的前缀解析会采纳 "12px"→12 而 Python float() 抛异常回退默认值，
+ * 破坏 element_tree_text 对拍——须全串严格校验。
+ * 已知罕见分叉（注释存档）：Python float 接受 "1_000"（TS 回退）、"inf"（TS 回退）。
+ */
+const PY_FLOAT_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
 function safeParseNumber(valueStr: string, defaultValue: number): number {
-  const v = parseFloat(valueStr);
-  return Number.isNaN(v) ? defaultValue : v;
+  const t = valueStr.trim();
+  if (!PY_FLOAT_RE.test(t)) return defaultValue;
+  return Number(t);
 }
 
 function safeParseOptionalNumberStr(valueStr: string | undefined): string | null {
   if (!valueStr) return null;
-  const v = parseFloat(valueStr);
-  return Number.isNaN(v) ? null : pyFloatStr(v);
+  const t = valueStr.trim();
+  if (!PY_FLOAT_RE.test(t)) return null;
+  return pyFloatStr(Number(t));
 }
 
 function codePointLength(s: string): number {
@@ -420,6 +430,8 @@ export class DOMTreeSerializer {
   private readonly previousCachedSelectorMap: DOMSelectorMap | null;
   timingInfo: Record<string, number> = {};
   private clickableCache = new Map<number, boolean>();
+  /** 子树级"有交互后代"结论缓存（按 nodeId；Python 无此缓存，输出等价——见 hasInteractiveDescendants） */
+  private interactiveDescendantsCache = new Map<number, boolean>();
   readonly enableBboxFiltering: boolean;
   readonly containmentThreshold: number;
   readonly paintOrderFiltering: boolean;
@@ -442,9 +454,12 @@ export class DOMTreeSerializer {
   serializeAccessibleElements(): { state: SerializedDOMState; timingInfo: Record<string, number> } {
     const startTotal = nowSec();
 
-    // 重置状态
+    // 重置状态（timingInfo 一并重置——有意偏离 Python：clickable_detection_time 为
+    // 累加口径，跨调用残留会失真；timingInfo 不参与对拍，重置无输出影响）
     this.selectorMap = new Map();
     this.clickableCache = new Map();
+    this.interactiveDescendantsCache = new Map();
+    this.timingInfo = {};
 
     // Step 1: 创建简化树
     let start = nowSec();
@@ -604,6 +619,9 @@ export class DOMTreeSerializer {
     let isVisible = node.isVisible === true;
     const isScrollable = node.isActuallyScrollable;
     const hasShadowContent = node.childrenAndShadowRoots.length > 0;
+    // shadow 宿主判定只排除 "user-agent"（null 型片段也计入），与 isInsideShadowDom
+    // 的非 null 前提口径不同——两处不一致在 Python 原样存在（serializer.py:272-274
+    // vs 843-845），忠实移植，勿"修正"引发对拍漂移
     const isShadowHost = node.childrenAndShadowRoots.some(
       (child) =>
         child.nodeType === NodeType.DOCUMENT_FRAGMENT_NODE && child.shadowRootType !== "user-agent",
@@ -679,6 +697,10 @@ export class DOMTreeSerializer {
   /** 为复合控件添加虚拟子组件信息，帮助 LLM 理解控件结构。 */
   private addCompoundComponents(simplified: SimplifiedNode, node: EnhancedDOMTreeNode): void {
     if (!["input", "select", "details", "audio", "video"].includes(node.tagName)) return;
+    // 幂等保护（有意增强，Python 未清空）：compoundChildren 挂在跨 serialize 调用
+    // 持久的 originalNode 上且为 push 追加，重复调用会翻倍并重复渲染 compound_components；
+    // 常规路径每次采集重建融合树，清空对首跑无影响
+    node.compoundChildren.length = 0;
 
     if (node.tagName === "input") {
       const inputType = node.attributes.type ?? "";
@@ -1084,13 +1106,26 @@ export class DOMTreeSerializer {
     return false;
   }
 
-  /** 检查节点是否有交互后代（不含自身）。 */
+  /**
+   * 检查节点是否有交互后代（不含自身）。
+   *
+   * 子树结论按 nodeId 记忆化（Python 无此缓存）：children 在 Step 3/4 已定型、
+   * Step 5 不改树结构，结论稳定且输出与 Python 逐位一致；嵌套滚动容器场景
+   * 避免外层重复扫描内层子树（最坏 O(n·depth)）。
+   */
   private hasInteractiveDescendants(node: SimplifiedNode): boolean {
+    const nodeId = node.originalNode.nodeId;
+    const cached = this.interactiveDescendantsCache.get(nodeId);
+    if (cached !== undefined) return cached;
+    let result = false;
     for (const child of node.children) {
-      if (this.isInteractiveCached(child.originalNode)) return true;
-      if (this.hasInteractiveDescendants(child)) return true;
+      if (this.isInteractiveCached(child.originalNode) || this.hasInteractiveDescendants(child)) {
+        result = true;
+        break;
+      }
     }
-    return false;
+    this.interactiveDescendantsCache.set(nodeId, result);
+    return result;
   }
 
   /** 遍历简化树，为交互元素分配索引并标记新元素。 */
