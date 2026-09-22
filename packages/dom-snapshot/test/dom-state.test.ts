@@ -81,9 +81,9 @@ describe.skipIf(fixtures.length === 0)("golden 端到端对拍（P1.5 验收）"
 describe.skipIf(fixtures.length === 0)("prev_map 轮转接线", () => {
   // skipIf 在收集阶段仍会执行本回调（嵌套用例的发现依赖回调执行），空
   // fixtures 时 fixtures[0] 为 undefined，直接解构会击穿整个文件的收集
-  const first = fixtures[0];
-  if (!first) return;
-  const { name, fixture } = first;
+  const firstFixture = fixtures[0];
+  if (!firstFixture) return;
+  const { name, fixture } = firstFixture;
 
   it(`${name}: 上轮 selector_map 全量传入 → 与基线逐字节一致（compound 星标除外无新增）`, async () => {
     const first = await buildDomState(makeGoldenFixtureClient(fixture), "sess-main");
