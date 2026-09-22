@@ -18,6 +18,8 @@ export interface GoldenFixture {
     generated_at: string;
     degradation: string;
     source_statuses?: Record<string, string>;
+    /** gen_fixtures 以 len(state.selector_map) 落盘（非采集器自身产物） */
+    element_count?: number;
   };
   input: {
     dom_tree: Record<string, unknown>;

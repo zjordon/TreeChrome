@@ -19,7 +19,7 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 
 ## P1 dom-snapshot 完整移植（当前进行中）
 
-已完成：models 全量移植（types.ts，47 测试全绿含 Python 锚点）、协议类型、fixture 生成器；P1.2 collector 移植（2026-09-21，`collector.ts` + `cdp-batch.ts`，golden 四页 selector_map 投影全等 + 降级链/跨源 iframe 单测，分支 `feat/p1.2-collector`）；P1.3 serializer 移植 + P1.4 interactive/paint_order（2026-09-22，`serializer.ts` + `interactive.ts` + `paint-order.ts`，golden 四页 element_tree_text 逐字节对拍全绿 + 14 规则/几何遮挡 Python 锚点单测，分支 `feat/p1.3-serializer`）。
+已完成：models 全量移植（types.ts，47 测试全绿含 Python 锚点）、协议类型、fixture 生成器；P1.2 collector 移植（2026-09-21，`collector.ts` + `cdp-batch.ts`，golden 四页 selector_map 投影全等 + 降级链/跨源 iframe 单测，分支 `feat/p1.2-collector`）；P1.3 serializer 移植 + P1.4 interactive/paint_order（2026-09-22，`serializer.ts` + `interactive.ts` + `paint-order.ts`，golden 四页 element_tree_text 逐字节对拍全绿 + 14 规则/几何遮挡 Python 锚点单测，分支 `feat/p1.3-serializer`）；P1.5 buildDomState 组合入口（2026-09-22，`buildDomState`/`EMPTY_DOM_STATE` 落 `collector.ts`，golden 四页端到端 output 全字段对拍（element_tree_text/selector_map 8 字段投影/file_inputs/page_stats/metrics parity）+ prev_map 轮转与 FAILED 分支单测，分支 `feat/p1.5-build-dom-state`）。P1 代码移植全部完成，余 P1.6 真机 smoke（依赖 P3 cdp-ws）。
 
 | # | 工作项 | 内容 | 验收标准 | 预估 |
 |---|---|---|---|---|

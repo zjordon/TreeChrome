@@ -4,9 +4,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  createEmptyDomState,
   DOMRect,
   DOMTreeSerializer,
+  EMPTY_DOM_STATE,
   EnhancedDOMTreeNode,
   NodeType,
   roundHalfEven,
@@ -38,11 +38,15 @@ function el(
   });
 }
 
-describe("createEmptyDomState", () => {
-  it("空态的 LLM 表述固定", () => {
-    const s = createEmptyDomState();
+describe("EMPTY_DOM_STATE（采集失败空态单例）", () => {
+  it("字段全空，LLM 表述固定", () => {
+    const s = EMPTY_DOM_STATE;
     expect(s.root).toBeNull();
     expect(s.selectorMap.size).toBe(0);
+    expect(s.elementTreeText).toBe("");
+    expect(s.fileInputBackendIds).toEqual([]);
+    expect(s.fileInputsMeta).toEqual([]);
+    expect(s.pageStats).toEqual({});
     expect(s.llmRepresentation()).toBe(
       "Empty DOM tree (you might have to wait for the page to load)",
     );
@@ -299,7 +303,7 @@ describe("SerializedDOMState.llmRepresentation", () => {
     const root = new SimplifiedNode(el("HTML", 1, 101), []);
     const s = new SerializedDOMState(root, new Map(), "[1]<button>OK");
     expect(s.llmRepresentation()).toBe("[1]<button>OK");
-    expect(createEmptyDomState().llmRepresentation()).toContain("Empty DOM tree");
+    expect(EMPTY_DOM_STATE.llmRepresentation()).toContain("Empty DOM tree");
   });
 });
 

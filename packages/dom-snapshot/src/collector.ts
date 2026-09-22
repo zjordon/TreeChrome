@@ -1,5 +1,7 @@
 /**
  * 三源并行 CDP 采集与融合 —— dom-snapshot collector.py 的 TS 移植（P1.2）。
+ * 组合入口 buildDomState（采集 + 序列化 + prev_map 轮转）为 P1.5 增补，对齐
+ * collector.py:911-969 的 build_dom_state。
  *
  * 三源（以 backendNodeId 交叉引用融合为 EnhancedDOMTreeNode 树）：
  *   1. DOM.getDocument(depth=-1, pierce=true) —— 权威树 + shadow DOM
@@ -31,6 +33,7 @@ import type {
   CdpLikeClient,
   CdpRectangle,
 } from "./protocol.js";
+import { DOMTreeSerializer } from "./serializer.js";
 import {
   createDomCollectionMetrics,
   DEFAULT_DOM_COLLECTION_CONFIG,
@@ -38,11 +41,13 @@ import {
   type DOMCollectionMetrics,
   DOMDegradationLevel,
   DOMRect,
+  type DOMSelectorMap,
   type EnhancedAXNode,
   EnhancedDOMTreeNode,
   type EnhancedSnapshotNode,
   type FileInputInfo,
   NodeType,
+  SerializedDOMState,
 } from "./types.js";
 
 /** captureSnapshot 请求的 computedStyles 列表；styles[li][si] 的 si 按此顺序解值 */
@@ -907,4 +912,67 @@ export class DomCollector {
 
     return { root: treeRoot, fileInputBackendIds, fileInputInfos, metrics };
   }
+}
+
+// ── 组合入口：build_dom_state（collector.py:911-969） ─────────────────────
+
+/** buildDomState 的可选项（对齐 Python build_dom_state 的关键字参数） */
+export interface BuildDomStateOptions {
+  viewportThreshold?: number | null;
+  /** 上一轮 selector_map（键 = highlight_index = backendNodeId）；非空时启用新元素 `*` 标记 */
+  previousSelectorMap?: DOMSelectorMap | null;
+  config?: DOMCollectionConfig;
+}
+
+/** buildDomState 的产物（Python 返回 (SerializedDOMState, DOMCollectionMetrics) 二元组） */
+export interface DomStateResult {
+  state: SerializedDOMState;
+  metrics: DOMCollectionMetrics;
+}
+
+/**
+ * 采集失败时的空态单例（对齐 Python EMPTY_DOM_STATE，collector.py:55）。
+ * FAILED 分支原样返回本实例不做防御性拷贝——Python 同为共享单例；调用方不得改写。
+ */
+export const EMPTY_DOM_STATE = new SerializedDOMState(null, new Map(), "", [], [], {});
+
+/**
+ * 组合入口：frame 映射 → 增强树构建 → 五步序列化 → file_input 挂载。
+ *
+ * previousSelectorMap 传入上一轮 selector_map 时，本轮新出现的可交互元素在
+ * element_tree_text 中带 `*` 前缀（Step 5 prev_map 轮转）。
+ */
+export async function buildDomState(
+  client: CdpLikeClient,
+  sessionId: string | null = null,
+  opts: BuildDomStateOptions = {},
+): Promise<DomStateResult> {
+  const collector = new DomCollector(client);
+  const frameTargetMaps = await collector.buildFrameTargetMap();
+
+  const { root, fileInputBackendIds, fileInputInfos, metrics } =
+    await collector.buildEnhancedDomTree(sessionId, {
+      viewportThreshold: opts.viewportThreshold,
+      frameTargetMaps,
+      config: opts.config,
+    });
+
+  if (!root) {
+    metrics.degradationLevel = DOMDegradationLevel.FAILED;
+    return { state: EMPTY_DOM_STATE, metrics };
+  }
+
+  // Python `if previous_selector_map`：空 dict 为 falsy → previous_state=None（无 `*` 标记）。
+  // JS 对象/Map 恒真值，须显式查 size 才等价（Python 其后 `or {}` 在真值分支内无效果）
+  const previousState =
+    opts.previousSelectorMap && opts.previousSelectorMap.size > 0
+      ? new SerializedDOMState(null, opts.previousSelectorMap, "", [], [])
+      : null;
+
+  const serializer = new DOMTreeSerializer(root, { previousCachedState: previousState, sessionId });
+  const { state } = serializer.serializeAccessibleElements();
+  state.fileInputBackendIds = fileInputBackendIds;
+  state.fileInputsMeta = fileInputInfos;
+
+  return { state, metrics };
 }
