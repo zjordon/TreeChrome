@@ -1,0 +1,335 @@
+// openai-completions 适配器单测（04 §5 覆盖矩阵 O 列）。重点专项：
+// maxTokens 双轨（新契约前缀/卡片覆盖）、arguments guard-parse（截断样本丢弃）、
+// 纯文本 user 走字符串 content、toolResult 独立消息 + [error] 前缀约定。
+import { describe, expect, it } from "vitest";
+import type { ChatRequest, ProviderConfig } from "../../src/index.js";
+import { createOpenAICompletionsProvider } from "../../src/llm/adapters/openai-completions.js";
+import { LLMAuthError, LLMProtocolViolationError } from "../../src/llm/errors.js";
+import { MockFetch, type MockResponseSpec } from "./mock-fetch.js";
+
+const CARD: ProviderConfig = {
+  name: "glm-openai",
+  protocol: "openai-completions",
+  baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+  apiKey: "sk-test",
+  model: "glm-4.7",
+  maxTokens: 8192,
+};
+
+const TOOL = {
+  name: "agent_response",
+  description: "respond",
+  parameters: { type: "object", properties: { action: { type: "object" } } },
+};
+
+function setup(over: Partial<ProviderConfig> = {}) {
+  const mock = new MockFetch();
+  const provider = createOpenAICompletionsProvider(
+    { ...CARD, ...over },
+    { fetch: mock.fetch, now: () => 0, sleep: async () => {} },
+  );
+  return { mock, provider };
+}
+
+const toolOk = (args: string): MockResponseSpec => ({
+  status: 200,
+  body: {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "agent_response", arguments: args },
+            },
+          ],
+        },
+        finish_reason: "tool_calls",
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 20 },
+  },
+});
+
+describe("请求构造（canonical → wire）", () => {
+  it("全量映射：system 首条、纯文本 user 字符串、含图 user 数组 data-URL、tool_calls 字符串化、toolResult 独立消息", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk("{}"));
+    await provider.chat({
+      systemPrompt: "You are an agent.",
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "hi" }] },
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", mimeType: "image/png", base64: "AAAA" },
+          ],
+        },
+        {
+          role: "assistant",
+          blocks: [{ kind: "text", text: "ok" }],
+          toolCalls: [
+            { id: "t1", name: "agent_response", args: { action: "click" } },
+            { id: "t2", name: "agent_response", args: { action: "type" } },
+          ],
+        },
+        {
+          role: "toolResult",
+          toolCallId: "t1",
+          toolName: "agent_response",
+          text: "done",
+          isError: true,
+        },
+        { role: "toolResult", toolCallId: "t2", toolName: "agent_response", text: "done2" },
+      ],
+      tools: [TOOL],
+      toolChoice: { kind: "forced", name: "agent_response" },
+    });
+
+    expect(mock.calls[0].url).toBe("https://open.bigmodel.cn/api/paas/v4/chat/completions");
+    expect(mock.calls[0].init.headers).toMatchObject({
+      "content-type": "application/json",
+      authorization: "Bearer sk-test",
+    });
+    expect(mock.lastBody()).toEqual({
+      model: "glm-4.7",
+      messages: [
+        { role: "system", content: "You are an agent." },
+        { role: "user", content: "hi" },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "look" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+          ],
+        },
+        {
+          role: "assistant",
+          content: "ok",
+          tool_calls: [
+            {
+              id: "t1",
+              type: "function",
+              function: { name: "agent_response", arguments: '{"action":"click"}' },
+            },
+            {
+              id: "t2",
+              type: "function",
+              function: { name: "agent_response", arguments: '{"action":"type"}' },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "t1", content: "[error] done" },
+        { role: "tool", tool_call_id: "t2", content: "done2" },
+      ],
+      max_tokens: 8192,
+      tools: [
+        {
+          type: "function",
+          function: { name: "agent_response", description: "respond", parameters: TOOL.parameters },
+        },
+      ],
+      tool_choice: { type: "function", function: { name: "agent_response" } },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("temperature");
+    expect(mock.lastBody()).not.toHaveProperty("max_completion_tokens");
+  });
+
+  it("纯工具调用回合：assistant content 为 null", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk("{}"));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        {
+          role: "assistant",
+          blocks: [],
+          toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+        },
+        { role: "toolResult", toolCallId: "t1", toolName: "agent_response", text: "r" },
+      ],
+      tools: [TOOL],
+    });
+    const messages = mock.lastBody().messages as Array<Record<string, unknown>>;
+    expect(messages[1]).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id: "t1", type: "function", function: { name: "agent_response", arguments: "{}" } },
+      ],
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice"); // auto 缺省不发
+  });
+
+  it("maxTokens 双轨：新契约前缀自动切 max_completion_tokens；卡片声明优先；兼容模型用 max_tokens", async () => {
+    const legacy = setup({ model: "gpt-4o" });
+    legacy.mock.queueMany(toolOk("{}"));
+    await legacy.provider.chat(baseReq());
+    expect(legacy.mock.lastBody()).toHaveProperty("max_tokens");
+    expect(legacy.mock.lastBody()).not.toHaveProperty("max_completion_tokens");
+
+    const newContract = setup({ model: "gpt-5" });
+    newContract.mock.queueMany(toolOk("{}"));
+    await newContract.provider.chat(baseReq());
+    expect(newContract.mock.lastBody()).toHaveProperty("max_completion_tokens");
+    expect(newContract.mock.lastBody()).not.toHaveProperty("max_tokens");
+
+    // 本地/网关新契约模型：前缀命中但卡片显式声明旧字段（webbrain local/lmstudio 场景）
+    const declared = setup({ model: "gpt-5", maxTokensField: "max_tokens" });
+    declared.mock.queueMany(toolOk("{}"));
+    await declared.provider.chat(baseReq());
+    expect(declared.mock.lastBody()).toHaveProperty("max_tokens");
+  });
+
+  it("tools null / temperature 显式 / maxTokens 请求级覆盖", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk("{}"));
+    await provider.chat({ ...baseReq(), tools: null, temperature: 0.3, maxTokens: 99 });
+    const body = mock.lastBody();
+    expect(body).not.toHaveProperty("tools");
+    expect(body).not.toHaveProperty("tool_choice");
+    expect(body.temperature).toBe(0.3);
+    expect(body.max_tokens).toBe(99);
+  });
+});
+
+function baseReq(): ChatRequest {
+  return {
+    systemPrompt: null,
+    messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+    tools: [TOOL],
+  };
+}
+
+describe("响应解析（wire → canonical）", () => {
+  it("arguments guard-parse：字符串/对象形态直收；截断 JSON 丢弃该调用（不带病 args 进 canonical）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk('{"action": {"name": "click"}}'), {
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "c1",
+                  type: "function",
+                  function: { name: "agent_response", arguments: { direct: 1 } },
+                },
+                {
+                  id: "c2",
+                  type: "function",
+                  function: { name: "agent_response", arguments: '{"trunc' },
+                },
+                { id: "c3", type: "function", function: { name: "other_tool", arguments: "{}" } },
+              ],
+            },
+            finish_reason: "length",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const ok = await provider.chat(baseReq());
+    expect(ok.toolCalls).toEqual([
+      { id: "call_1", name: "agent_response", args: { action: { name: "click" } } },
+    ]);
+    expect(ok.stopReason).toBe("tool_call");
+
+    const guarded = await provider.chat(baseReq());
+    expect(guarded.toolCalls).toEqual([{ id: "c1", name: "agent_response", args: { direct: 1 } }]);
+    expect(guarded.stopReason).toBe("length"); // finish_reason 仍归一，不因丢弃变形
+  });
+
+  it("content 文本 + reasoning_content 捕获；usage cached_tokens 可选", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: { role: "assistant", content: "answer", reasoning_content: "thinking..." },
+            finish_reason: "stop",
+          },
+        ],
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 2,
+          prompt_tokens_details: { cached_tokens: 3 },
+        },
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res).toEqual({
+      text: "answer",
+      reasoningText: "thinking...",
+      toolCalls: [],
+      stopReason: "stop",
+      usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3 },
+    });
+  });
+
+  it.each([
+    ["stop", "stop"],
+    ["length", "length"],
+    ["content_filter", "other"], // 不抛 LLMBlockedError，文本照常返回
+  ] as const)("finish_reason %s → %s", async (raw, expected) => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [{ message: { role: "assistant", content: "t" }, finish_reason: raw }],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.stopReason).toBe(expected);
+    expect(res.text).toBe("t");
+  });
+
+  it("choices 缺失容错为空响应；响应非对象抛违例", async () => {
+    const tolerant = setup();
+    tolerant.mock.queueMany({ status: 200, body: {} });
+    const res = await tolerant.provider.chat(baseReq());
+    expect(res).toEqual({ text: "", toolCalls: [], stopReason: "other", usage: null });
+
+    const bad = setup();
+    bad.mock.queueMany({ status: 200, body: "str" });
+    await expect(bad.provider.chat(baseReq())).rejects.toBeInstanceOf(LLMProtocolViolationError);
+  });
+});
+
+describe("错误映射与 testConnection", () => {
+  it("401 openai 错误体 → LLMAuthError（error.message 提取）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 401,
+      body: { error: { message: "Incorrect API key", type: "invalid_request_error" } },
+    });
+    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMAuthError);
+    expect((err as Error).message).toContain("Incorrect API key");
+  });
+
+  it("testConnection 两态", async () => {
+    const ok = setup();
+    ok.mock.queueMany({
+      status: 200,
+      body: { choices: [{ message: { content: "hi" }, finish_reason: "stop" }] },
+    });
+    await expect(ok.provider.testConnection()).resolves.toEqual({ ok: true, model: "glm-4.7" });
+
+    const bad = setup();
+    bad.mock.queueMany({ status: 401, body: { error: { message: "no" } } });
+    const r = await bad.provider.testConnection();
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("401");
+  });
+});

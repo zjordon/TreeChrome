@@ -31,6 +31,15 @@ const FALLBACK: ProviderConfig = {
   maxTokens: 2048,
 };
 
+const OPENAI_FALLBACK: ProviderConfig = {
+  name: "fallback-openai",
+  protocol: "openai-completions",
+  baseUrl: "https://fallback.example/v1",
+  apiKey: "k3",
+  model: "glm-4.7",
+  maxTokens: 4096,
+};
+
 const TOOL = {
   name: "agent_response",
   description: "d",
@@ -330,6 +339,51 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
     expect(mock.calls[1].url).toContain("fallback.example");
+  });
+
+  it("跨协议切换：主 anthropic + fallback openai（完整卡片组合的独有测试点）", async () => {
+    const mock = new MockFetch();
+    const clock = new FakeClock();
+    const client = createLLMClient(
+      { ...CARD, fallback: OPENAI_FALLBACK },
+      { fetch: mock.fetch, now: clock.now, sleep: clock.sleep },
+    );
+    mock.queueMany(r429(), {
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "c1",
+                  type: "function",
+                  function: { name: "agent_response", arguments: '{"via":"openai"}' },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 2 },
+      },
+    });
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0); // 429 → 切换 → 立即以 openai wire 重发
+    const r = await p;
+    expect(r).toEqual({
+      kind: "ok",
+      toolInput: { via: "openai" },
+      usage: { inputTokens: 1, outputTokens: 2 },
+    });
+    expect(mock.calls[0].url).toContain("primary.example/v1/messages");
+    expect(mock.calls[1].url).toContain("fallback.example/v1/chat/completions");
+    const fb = mock.bodyAt(1);
+    expect(fb.model).toBe("glm-4.7");
+    expect(fb.tool_choice).toEqual({ type: "function", function: { name: "agent_response" } });
+    expect(fb.max_tokens).toBe(4096);
   });
 
   it("单向锁：已切换后二次 429 走纯退避（1 次主 + 6 次 fallback 后抛）", async () => {

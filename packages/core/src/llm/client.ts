@@ -4,6 +4,7 @@
 
 import { createAnthropicProvider } from "./adapters/anthropic-messages.js";
 import { isAbortError } from "./adapters/http.js";
+import { createOpenAICompletionsProvider } from "./adapters/openai-completions.js";
 import type { ProviderConfig } from "./config.js";
 import type { LlmDeps } from "./deps.js";
 import { isInfraError, LLMError, LLMInvalidRequestError, LLMTimeoutError } from "./errors.js";
@@ -81,11 +82,13 @@ function resolveDeps(deps?: LlmDeps): Required<LlmDeps> {
   };
 }
 
-/** 协议 → 适配器工厂（2.2 仅 anthropic；openai/gemini 随 2.3/2.4 接入） */
+/** 协议 → 适配器工厂（2.2 anthropic / 2.3 openai；gemini 随 2.4 接入） */
 export function createProvider(config: ProviderConfig, deps: Required<LlmDeps>): LLMProvider {
   switch (config.protocol) {
     case "anthropic-messages":
       return createAnthropicProvider(config, deps);
+    case "openai-completions":
+      return createOpenAICompletionsProvider(config, deps);
     default:
       throw new LLMInvalidRequestError(`协议适配器未实现：${config.protocol}`, {
         provider: config.name,
