@@ -108,8 +108,7 @@ export function buildEnhancedAxNode(axNode: CdpAxTreeNode): EnhancedAXNode {
       if (prop.name === undefined) continue;
       properties.push({
         name: prop.name,
-        // Python 注解为 str|bool|None，wire 实际可出数值（AXNumericValue），原样透传
-        value: (prop.value?.value ?? null) as string | boolean | null,
+        value: (prop.value?.value ?? null) as string | boolean | number | null,
       });
     }
   }
