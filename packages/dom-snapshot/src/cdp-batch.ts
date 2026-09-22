@@ -100,8 +100,7 @@ async function attempt(
  * 按名字并发调用 CDP 工厂，带两阶段超时与选择性重试（对齐 Python run_cdp_batch）。
  *
  * @param factories 源名 → 每次调用创建新 Promise 的工厂（首批与重试共用）
- * @param firstTimeout 首批统一截止时间（秒）
- * @param retryTimeout 重试截止时间（秒）
+ * @param opts 含 firstTimeout（首批统一截止时间，秒）与 retryTimeout（重试截止时间，秒）
  */
 export async function runCdpBatch(
   factories: ReadonlyMap<string, () => Promise<unknown>>,
@@ -148,7 +147,9 @@ export async function runCdpBatch(
           r.status === CdpSourceStatus.Ok ? CdpSourceStatus.RetriedOk : r.status,
           r.value,
           r.error,
-          prev?.firstAttemptMs ?? firstMs,
+          // 回退 0 是"未测量"的诚实语义：pendingNames 必有 Phase 1 记录，分支不可达；
+          // 超时配置值是时长预算不是耗时，不可冒充度量（评审 P1.2 四轮 #3）
+          prev?.firstAttemptMs ?? 0,
           retryAttemptMs,
         ),
       );
@@ -163,7 +164,8 @@ export async function runCdpBatch(
 export async function withTimeoutMs<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("timed out")), timeoutMs);
+    // 复用 attempt 的哨兵对象：调用方按引用即可区分超时与底层同文案 reject（评审 P1.2 四轮 #4）
+    timer = setTimeout(() => reject(TIMEOUT_ERROR), timeoutMs);
   });
   promise.catch(() => {}); // 超时丢弃后不产生 unhandledRejection
   try {

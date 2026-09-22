@@ -6,7 +6,12 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** golden fixture 的 input/output 形状（gen_fixtures.py 产物） */
+/** golden fixture 的 input/output 形状（gen_fixtures.py 产物）。
+ *
+ * input 三源非空是产物契约：生成器在落盘前校验 snapshot 含 documents、dom_tree
+ * 含 root（失败形态在生成期抛错，不会产出 fixture）。schema 测试保留空值防御，
+ * 以便未来支持 failed 降级样本落盘时报警而非崩溃（评审 P1.2 四轮 #5）。
+ */
 export interface GoldenFixture {
   meta: {
     url: string;

@@ -59,7 +59,11 @@ export const REQUIRED_COMPUTED_STYLES: readonly string[] = [
   "background-color",
 ];
 
-/** JS 点击监听器探测表达式（Python 原文逐字符一致；getEventListeners 需命令行 API） */
+/**
+ * JS 点击监听器探测表达式（Python 原文逐字符一致；getEventListeners 需命令行 API）。
+ * 保真说明：10000 是 Python 原文字面量，与 DOMCollectionConfig.heavyPageElementThreshold
+ * 默认值同值但未接线——该配置项在 Python/TS 采集层都不生效，保留仅为对齐 dataclass 形状
+ */
 const JS_CLICK_LISTENER_EXPRESSION = `
 (() => {
     if (typeof getEventListeners !== 'function') return null;
@@ -759,11 +763,18 @@ export class DomCollector {
       const result = new Set<number>();
       for (const bid of ids) if (bid !== null) result.add(bid);
 
-      try {
-        await this.client.send("Runtime.releaseObject", { objectId }, sessionId);
-      } catch {
-        // 释放失败不影响结果
-      }
+      // 数组句柄与逐元素句柄都释放（有意增强：Python 只释放数组句柄，collector.py:241）。
+      // 远程对象句柄在 debuggee 存活至上下文销毁，扩展形态长驻页面反复采集，
+      // 全监听器页每轮至多 1 万句柄会持续累积（评审 P1.2 四轮 #1）
+      await Promise.all(
+        [objectId, ...elementObjectIds].map(async (oidToRelease) => {
+          try {
+            await this.client.send("Runtime.releaseObject", { objectId: oidToRelease }, sessionId);
+          } catch {
+            // 释放失败不影响结果
+          }
+        }),
+      );
       return result;
     } catch {
       return new Set();

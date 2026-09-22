@@ -13,7 +13,7 @@ import {
 } from "../src/collector.js";
 import type { CdpDomNode, CdpGetDocumentResult } from "../src/protocol.js";
 import { DOMDegradationLevel, type EnhancedDOMTreeNode } from "../src/types.js";
-import { FakeCdpClient, makeGoldenFixtureClient } from "./fake-cdp.js";
+import { type CdpHandler, FakeCdpClient, makeGoldenFixtureClient } from "./fake-cdp.js";
 import { loadGoldenFixtures } from "./golden-fixture.js";
 
 /** 深度遍历融合树（children / shadowRoots / contentDocument）建 backendNodeId 索引 */
@@ -230,6 +230,24 @@ function pageWith(children: CdpDomNode[], extraEls: { bid: number; bounds: numbe
   return { tree: domTreeOf(html), snapshot: synthSnapshot(elements) };
 }
 
+/** 合成场景的默认 7 handler：必给 DOM 树，快照缺省为空文档，其余默认空形状；用例只声明差异项 */
+function synthClient(
+  tree: CdpGetDocumentResult,
+  snapshot: unknown = { strings: [""], documents: [] },
+  overrides: Record<string, CdpHandler> = {},
+): FakeCdpClient {
+  return new FakeCdpClient({
+    "DOM.getDocument": () => tree,
+    "DOMSnapshot.captureSnapshot": () => snapshot,
+    "Page.getFrameTree": () => ({ frameTree: { frame: { id: "f" } } }),
+    "Accessibility.getFullAXTree": () => ({ nodes: [] }),
+    "Page.getLayoutMetrics": () => ({}),
+    "Runtime.evaluate": () => ({}),
+    "Target.getTargets": () => ({ targetInfos: [] }),
+    ...overrides,
+  });
+}
+
 describe("跨源 iframe 递归（Target API）", () => {
   it("frameId 命中与 src URL 回退均附加子树；小尺寸 iframe 不处理；用后 detach", async () => {
     const big = el(4, 4, "IFRAME", { src: "http://other/page?x=1" }, { frameId: "IF1" });
@@ -263,17 +281,17 @@ describe("跨源 iframe 递归（Target API）", () => {
       ),
     );
 
-    const client = new FakeCdpClient({
-      "DOM.getDocument": (_p, sid) => (sid === "S2" ? innerA : sid === "S3" ? innerB : tree),
+    // 主树按 sessionId 路由：S2/S3 是跨源 iframe 递归采集的独立 session
+    const domTreeFor = (sid: string | null) => {
+      if (sid === "S2") return innerA;
+      if (sid === "S3") return innerB;
+      return tree;
+    };
+
+    const client = synthClient(tree, snapshot, {
+      "DOM.getDocument": (_p, sid) => domTreeFor(sid),
       "DOMSnapshot.captureSnapshot": (_p, sid) =>
         sid === null ? snapshot : { strings: [""], documents: [] },
-      "Page.getFrameTree": () => ({ frameTree: { frame: { id: "f" } } }),
-      "Accessibility.getFullAXTree": () => ({ nodes: [] }),
-      "Page.getLayoutMetrics": () => ({
-        visualViewport: { clientWidth: 800 },
-        cssVisualViewport: { clientWidth: 800 },
-      }),
-      "Runtime.evaluate": () => ({}),
       "Target.getTargets": () => ({
         targetInfos: [
           // big：frameId 路径（parentFrameId = iframe 元素 frameId）
@@ -315,13 +333,7 @@ describe("跨源 iframe 递归（Target API）", () => {
   it("attach 失败返回 null → 不抛错、不挂子树", async () => {
     const frame = el(4, 4, "IFRAME", { src: "http://other/page" }, { frameId: "IF1" });
     const { tree, snapshot } = pageWith([frame], [{ bid: 4, bounds: [0, 0, 200, 200] }]);
-    const client = new FakeCdpClient({
-      "DOM.getDocument": () => tree,
-      "DOMSnapshot.captureSnapshot": () => snapshot,
-      "Page.getFrameTree": () => ({ frameTree: { frame: { id: "f" } } }),
-      "Accessibility.getFullAXTree": () => ({ nodes: [] }),
-      "Page.getLayoutMetrics": () => ({}),
-      "Runtime.evaluate": () => ({}),
+    const client = synthClient(tree, snapshot, {
       "Target.getTargets": () => ({
         targetInfos: [
           { type: "iframe", parentFrameId: "IF1", targetId: "T1", url: "http://other/page" },
@@ -343,16 +355,7 @@ describe("可见性判定（视口交集 + CSS 可见性）", () => {
     viewportThreshold?: number | null,
   ) {
     const { tree, snapshot } = pageWith(children, els);
-    const client = new FakeCdpClient({
-      "DOM.getDocument": () => tree,
-      "DOMSnapshot.captureSnapshot": () => snapshot,
-      "Page.getFrameTree": () => ({ frameTree: { frame: { id: "f" } } }),
-      "Accessibility.getFullAXTree": () => ({ nodes: [] }),
-      "Page.getLayoutMetrics": () => ({}),
-      "Runtime.evaluate": () => ({}),
-      "Target.getTargets": () => ({ targetInfos: [] }),
-    });
-    const collector = new DomCollector(client);
+    const collector = new DomCollector(synthClient(tree, snapshot));
     return collector.buildEnhancedDomTree(null, { viewportThreshold });
   }
 
@@ -406,15 +409,7 @@ describe("可见性判定（视口交集 + CSS 可见性）", () => {
           },
         ],
       };
-      const client = new FakeCdpClient({
-        "DOM.getDocument": () => tree,
-        "DOMSnapshot.captureSnapshot": () => snapshot,
-        "Page.getFrameTree": () => ({ frameTree: { frame: { id: "f" } } }),
-        "Accessibility.getFullAXTree": () => ({ nodes: [] }),
-        "Page.getLayoutMetrics": () => ({}),
-        "Runtime.evaluate": () => ({}),
-        "Target.getTargets": () => ({ targetInfos: [] }),
-      });
+      const client = synthClient(tree, snapshot);
       const result = await new DomCollector(client).buildEnhancedDomTree(null);
       expect(indexByBackendId(result.root!).get(4)!.isVisible, label).toBe(false);
     }
@@ -439,7 +434,12 @@ describe("JS 点击监听器探测", () => {
     });
     const ids = await new DomCollector(client).detectJsClickListeners("s");
     expect([...ids].sort()).toEqual([11, 12]);
-    expect(client.callsOf("Runtime.releaseObject")).toHaveLength(1);
+    // 数组句柄 + 逐元素句柄都释放（评审四轮 #1）
+    expect(client.callsOf("Runtime.releaseObject").map((c) => c.params.objectId)).toEqual([
+      "arr1",
+      "o1",
+      "o2",
+    ]);
   });
 
   it("evaluate 无 objectId → 空集；探测链路异常 → 空集不抛", async () => {
@@ -705,16 +705,7 @@ describe("DomCollector 其余分支", () => {
   it("重复 nodeId 复用 memo 实例（Python 备忘录语义）", async () => {
     const shared = el(4, 4, "DIV", { id: "dup" });
     const { tree, snapshot } = pageWith([shared, shared], [{ bid: 4, bounds: [0, 0, 10, 10] }]);
-    const client = new FakeCdpClient({
-      "DOM.getDocument": () => tree,
-      "DOMSnapshot.captureSnapshot": () => snapshot,
-      "Page.getFrameTree": () => ({ frameTree: { frame: { id: "f" } } }),
-      "Accessibility.getFullAXTree": () => ({ nodes: [] }),
-      "Page.getLayoutMetrics": () => ({}),
-      "Runtime.evaluate": () => ({}),
-      "Target.getTargets": () => ({ targetInfos: [] }),
-    });
-    const result = await new DomCollector(client).buildEnhancedDomTree(null);
+    const result = await new DomCollector(synthClient(tree, snapshot)).buildEnhancedDomTree(null);
     const body = indexByBackendId(result.root!).get(3)!;
     expect(body.childrenNodes).toHaveLength(2);
     expect(body.childrenNodes![0]).toBe(body.childrenNodes![1]);
