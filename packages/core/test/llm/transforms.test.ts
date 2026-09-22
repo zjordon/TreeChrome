@@ -1,0 +1,221 @@
+// transforms 单测。期望值锚定 Python 实跑（AGENTS.md 铁律），生成命令与输出如下
+//（evals venv，tree_walker editable 安装，2026-09-23）：
+//
+//   D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe - <<'PYEOF'
+//   from tree_walker.llm.client import _try_parse_json, _infra_backoff_delay, LLMClient
+//   cases = ['{"a": 1}', '```json\n{"a": 1}\n```', '```json\n{"a": {"b": 2}}\n```',
+//            'no json here', '', 'Sure! Here it is: {"x": 1} hope it helps',
+//            '{"bad json', '{}', '```{"k": [1,2]}```']
+//   for c in cases: print(repr(c), "->", repr(_try_parse_json(c)))
+//   # shorten/sensitive/backoff 节的实跑脚本同头部说明，输出见下面对应断言
+//   PYEOF
+//
+// 输出：
+//   '{"a": 1}' -> {'a': 1}
+//   '```json\n{"a": 1}\n```' -> {'a': 1}
+//   '```json\n{"a": {"b": 2}}\n```' -> {'a': {'b': 2}}   ← 围栏非贪婪截断失败后靠首尾大括号救回
+//   'no json here' -> None
+//   '' -> None
+//   'Sure! Here it is: {"x": 1} hope it helps' -> {'x': 1}
+//   '{"bad json' -> None
+//   '{}' -> {}
+//   '```{"k": [1,2]}```' -> {'k': [1, 2]}
+//   shorten_urls：texts → ["see [u0] and [u1]", "i saw [u0]", "https://example.com/short stays, [u1] too"]
+//                 map   → {"[u0]": "https://example.com/aaaa…(90a)", "[u1]": "https://example.org/bbbb…(90b)"}
+//   sensitive：filter "my key sk-abc-def and sk-abc both" → "my key <KEY1> and <KEY2> both"
+//              restore {"v": "<KEY2> and <KEY1>"} → {"v": "sk-abc and sk-abc-def"}（插入序）
+//   backoff：attempt 0..6 → [2.0, 4.0, 8.0, 16.0, 30.0, 30.0, 30.0]
+//            retry-after "5"→5.0 / "120"→60.0 / "1e2"→60.0 / "0"/"-3"/"abc"/None→回落指数 2.0
+//   （backoff 的延迟消费路径在 client.test.ts 退避组覆盖；本文件锚定纯函数。）
+import { describe, expect, it } from "vitest";
+import type { ChatMessage, TextBlock, UserMessage } from "../../src/index.js";
+import { LLMProtocolViolationError } from "../../src/llm/errors.js";
+import {
+  applySensitiveInMessages,
+  cloneWorkMessages,
+  restoreSensitiveInOutput,
+  restoreUrlsInOutput,
+  shortenUrlsInMessages,
+  stripImageBlocks,
+  tryParseJson,
+  URL_MIN_LENGTH,
+} from "../../src/llm/transforms.js";
+
+const U0 = `https://example.com/${"a".repeat(90)}`; // 110 字符 ≥ 100
+const U1 = `https://example.org/${"b".repeat(90)}`;
+const SHORT = "https://example.com/short";
+
+const firstText = (m: ChatMessage): string => {
+  if (m.role === "toolResult") {
+    return m.text;
+  }
+  const block = m.blocks[0];
+  return block.kind === "text" ? block.text : "";
+};
+
+const userMsg = (text: string): UserMessage => ({ role: "user", blocks: [{ kind: "text", text }] });
+
+describe("tryParseJson（Python 锚定 9 例）", () => {
+  const cases: Array<[string, Record<string, unknown> | undefined]> = [
+    ['{"a": 1}', { a: 1 }],
+    ['```json\n{"a": 1}\n```', { a: 1 }],
+    ['```json\n{"a": {"b": 2}}\n```', { a: { b: 2 } }],
+    ["no json here", undefined],
+    ["", undefined],
+    ['Sure! Here it is: {"x": 1} hope it helps', { x: 1 }],
+    ['{"bad json', undefined],
+    ["{}", {}], // 解析成功返回空对象；Python `if parsed:` 在调用方按 falsy 处理
+    ['```{"k": [1,2]}```', { k: [1, 2] }],
+  ];
+  it.each(cases)("%j → %j", (input, expected) => {
+    expect(tryParseJson(input)).toEqual(expected);
+  });
+
+  it("URL_MIN_LENGTH 锚定 Python _URL_MIN_LENGTH=100", () => {
+    expect(URL_MIN_LENGTH).toBe(100);
+  });
+});
+
+describe("shortenUrlsInMessages（Python 锚定：tag 分配顺序 = 首次出现顺序）", () => {
+  const buildMessages = (): ChatMessage[] => [
+    userMsg(`see ${U0} and ${U1}`),
+    { role: "assistant", blocks: [{ kind: "text", text: `i saw ${U0}` }] },
+    userMsg(`${SHORT} stays, ${U1} too`),
+  ];
+
+  it("长 URL 换 [uN]、同 URL 复用 tag、短 URL 不动、跨消息共享 tag（锚定 texts 与 map）", () => {
+    const messages = buildMessages();
+    const map = shortenUrlsInMessages(messages);
+    expect(map).toEqual(
+      new Map([
+        ["[u0]", U0],
+        ["[u1]", U1],
+      ]),
+    );
+    expect(messages.map(firstText)).toEqual([
+      "see [u0] and [u1]",
+      "i saw [u0]",
+      "https://example.com/short stays, [u1] too",
+    ]);
+  });
+
+  it("toolResult.text 不缩写（Python 只处理 type=text block 的对齐）", () => {
+    const messages: ChatMessage[] = [
+      userMsg("q"),
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: "agent_response", text: `result ${U0}` },
+    ];
+    const map = shortenUrlsInMessages(messages);
+    expect(map.size).toBe(0);
+    expect(firstText(messages[2])).toContain(U0);
+  });
+});
+
+describe("敏感值占位/还原（Python 锚定：包含关系键按插入序）", () => {
+  const map = { "sk-abc-def": "<KEY1>", "sk-abc": "<KEY2>" };
+
+  it("filter：长键在前先替换（锚定输出）", () => {
+    const messages: ChatMessage[] = [userMsg("my key sk-abc-def and sk-abc both")];
+    applySensitiveInMessages(messages, map);
+    expect(firstText(messages[0])).toBe("my key <KEY1> and <KEY2> both");
+  });
+
+  it("restore：占位符还原真实值（锚定输出）", () => {
+    expect(restoreSensitiveInOutput({ v: "<KEY2> and <KEY1>" }, map)).toEqual({
+      v: "sk-abc and sk-abc-def",
+    });
+  });
+
+  it("map 为空/undefined 时两侧都不动", () => {
+    const messages: ChatMessage[] = [userMsg("sk-abc")];
+    applySensitiveInMessages(messages, undefined);
+    expect(firstText(messages[0])).toBe("sk-abc");
+    expect(restoreSensitiveInOutput({ v: "x" }, undefined)).toEqual({ v: "x" });
+  });
+});
+
+describe("restoreUrlsInOutput", () => {
+  it("嵌套对象/数组递归还原，非字符串值原样", () => {
+    const map = new Map([
+      ["[u0]", U0],
+      ["[u1]", U1],
+    ]);
+    const out = restoreUrlsInOutput(
+      { next_goal: "open [u0]", steps: ["see [u1]", { url: "[u0] and [u1]", n: 3, nil: null }] },
+      map,
+    );
+    expect(out).toEqual({
+      next_goal: `open ${U0}`,
+      steps: [`see ${U1}`, { url: `${U0} and ${U1}`, n: 3, nil: null }],
+    });
+  });
+
+  it("空 map 原样返回", () => {
+    expect(restoreUrlsInOutput({ a: "[u0]" }, new Map())).toEqual({ a: "[u0]" });
+  });
+});
+
+describe("stripImageBlocks", () => {
+  it("移除 ImageBlock 保留文本块", () => {
+    const messages: ChatMessage[] = [
+      {
+        role: "user",
+        blocks: [
+          { kind: "text", text: "screenshot:" },
+          { kind: "image", mimeType: "image/png", base64: "AAAA" },
+        ],
+      },
+    ];
+    stripImageBlocks(messages, "test");
+    expect(messages[0].role === "user" && messages[0].blocks).toEqual([
+      { kind: "text", text: "screenshot:" },
+    ]);
+  });
+
+  it("块被滤空 → LLMProtocolViolationError（canonical 不变量，违例暴露）", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }] },
+    ];
+    expect(() => stripImageBlocks(messages, "test")).toThrow(LLMProtocolViolationError);
+  });
+
+  it("toolResult 消息不受滤图影响", () => {
+    const messages: ChatMessage[] = [
+      { role: "toolResult", toolCallId: "t", toolName: "n", text: "ok" },
+    ];
+    stripImageBlocks(messages, "test");
+    expect(messages[0]).toEqual({ role: "toolResult", toolCallId: "t", toolName: "n", text: "ok" });
+  });
+});
+
+describe("cloneWorkMessages", () => {
+  it("变换落在副本上，调用方消息不被改动（03 偏离 1）", () => {
+    const original: ChatMessage[] = [userMsg(`see ${U0}`)];
+    const work = cloneWorkMessages(original);
+    shortenUrlsInMessages(work);
+    applySensitiveInMessages(work, { see: "[SEE]" });
+    expect(firstText(original[0])).toBe(`see ${U0}`);
+    expect(firstText(work[0])).toBe("[SEE] [u0]");
+  });
+
+  it("副本不共享 blocks 数组与文本块（改副本不泄漏回原消息）", () => {
+    const original: ChatMessage[] = [userMsg("a")];
+    const work = cloneWorkMessages(original);
+    const workUser = work[0];
+    if (workUser.role !== "user") {
+      throw new Error("unreachable");
+    }
+    workUser.blocks.push({ kind: "text", text: "b" } satisfies TextBlock);
+    (workUser.blocks[0] as TextBlock).text = "mutated";
+    const originalUser = original[0];
+    if (originalUser.role !== "user") {
+      throw new Error("unreachable");
+    }
+    expect(originalUser.blocks.length).toBe(1);
+    expect(originalUser.blocks[0]).toEqual({ kind: "text", text: "a" });
+  });
+});

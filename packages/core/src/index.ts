@@ -1,4 +1,7 @@
-// @tw/core 公共导出面（docs/implement-plan/p2/01 §7）。P2 阶段逐步扩面：2.2 起补 client/适配器入口。
+// @tw/core 公共导出面（docs/implement-plan/p2/01 §7）。P2 阶段逐步扩面。
+
+export type { GetActionOptions, GetActionResult } from "./llm/client.js";
+export { createLLMClient, createProvider, LLMClient } from "./llm/client.js";
 
 export { DEFAULT_MAX_TOKENS, modelSupportsVision, resolveCapabilities } from "./llm/config.js";
 export type { LlmDeps } from "./llm/deps.js";
