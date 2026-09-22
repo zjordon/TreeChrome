@@ -1,0 +1,90 @@
+{
+  "status": "complete",
+  "llm": {
+    "model": "glm-5.3"
+  },
+  "message": "Review complete: 0 finding(s) across 2 selected item(s).",
+  "summary": {
+    "files_reviewed": 2,
+    "comments": 0,
+    "total_tokens": 37631,
+    "input_tokens": 27020,
+    "output_tokens": 10611,
+    "cache_read_tokens": 4992,
+    "elapsed": "2m58s"
+  },
+  "tool_calls": {
+    "total": 3,
+    "by_tool": {
+      "file_read": 3
+    },
+    "failure": 0,
+    "failure_by_tool": {},
+    "failure_details": []
+  },
+  "comments": [],
+  "groups": [
+    {
+      "label": "small change set",
+      "files": [
+        "scripts/gate.mjs",
+        "scripts/gate.test.mjs"
+      ]
+    }
+  ],
+  "session_id": "01f31198-5abc-46f3-8850-8237f1b8a2c0",
+  "manifest": {
+    "schema_version": "ocr.run-manifest/v1",
+    "run_id": "01f31198-5abc-46f3-8850-8237f1b8a2c0",
+    "operation": "review",
+    "terminal_state": "complete",
+    "repository": {
+      "identity_sha256": "240b60c627c0727ff9a03a785964593edf71544b072499819d7f368a963d5e9f"
+    },
+    "input": {
+      "mode": "commit",
+      "requested_head": "HEAD",
+      "resolved_base": "795c0d57b36686caf5fa540d85c20e4eddce5c6b",
+      "resolved_head": "43f79a9745c5e3db35b379bd34d8489d61479f42",
+      "exact_range": "795c0d57b36686caf5fa540d85c20e4eddce5c6b..43f79a9745c5e3db35b379bd34d8489d61479f42",
+      "source_artifact_sha256": "e23cf1fc3c88870763958d1a9c7554ff229fc56f34caf8c4ee4b035591b39c65"
+    },
+    "execution": {
+      "ocr_version": "v1.12.7",
+      "model": "glm-5.3",
+      "configured_concurrency": 8,
+      "rule_config_sha256": "5706c351c8e31ed13c8a1056971f23ba1ef14f4c27b84d6914ad778bebb17c98",
+      "runtime_config_sha256": "841fe9ad288d2dd9efc84c443193c492ef06b26edf31ff5f5a1b01637fef2b0c"
+    },
+    "coverage": {
+      "selected": [
+        {
+          "item_id": "d402ebd0819bc33295e99515a0547ef104f8537b93aa0ec258a552ef4f185911",
+          "path": "scripts/gate.mjs",
+          "fingerprint": "ba6026f373c2534e68849ad2c8af606aeea0b066fb429f075f7e2508a359224c"
+        },
+        {
+          "item_id": "e623673458eba72bc6015a9749c0750bd86343154022a64f61b5374f68915c04",
+          "path": "scripts/gate.test.mjs",
+          "fingerprint": "9980e2a480d2f20b7862fe33a4b100b96cf79b516dffd100c6a2067e44ffeb7d"
+        }
+      ],
+      "completed": [
+        {
+          "item_id": "d402ebd0819bc33295e99515a0547ef104f8537b93aa0ec258a552ef4f185911",
+          "path": "scripts/gate.mjs",
+          "fingerprint": "ba6026f373c2534e68849ad2c8af606aeea0b066fb429f075f7e2508a359224c"
+        },
+        {
+          "item_id": "e623673458eba72bc6015a9749c0750bd86343154022a64f61b5374f68915c04",
+          "path": "scripts/gate.test.mjs",
+          "fingerprint": "9980e2a480d2f20b7862fe33a4b100b96cf79b516dffd100c6a2067e44ffeb7d"
+        }
+      ],
+      "reused": [],
+      "failed": [],
+      "waived": []
+    },
+    "elapsed_ms": 178234
+  }
+}

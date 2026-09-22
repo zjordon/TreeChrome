@@ -90,7 +90,7 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
 
 ## 代码评审工作流
 
-- open-code-review 的结果（`docs/code-review/<n>-review.json`，含大体积 thinking，勿直接 Read）用 `node scripts/review-dump.mjs <file> [--out _r.md]` 读取。
+- open-code-review 的结果（`docs/code-review/<n>-review.json`，含大体积 thinking，勿直接 Read）用 `node scripts/review-dump.mjs <file> --out docs/code-review/_<name>.md` 读取——dump 文件统一放 `docs/code-review/`，不放仓库根目录。
 - review 扫描范围由 `.opencodereview/rule.json` 限制（include=真实代码，exclude=docs/运行时产物）——改顶层目录结构时同步维护。
 
 ## Git 提交规则

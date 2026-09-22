@@ -1,0 +1,136 @@
+{
+  "status": "complete",
+  "llm": {
+    "model": "glm-5.3"
+  },
+  "message": "Review complete: 0 finding(s) across 6 selected item(s).",
+  "summary": {
+    "files_reviewed": 6,
+    "comments": 0,
+    "total_tokens": 471401,
+    "input_tokens": 456618,
+    "output_tokens": 14783,
+    "cache_read_tokens": 330752,
+    "elapsed": "2m56s"
+  },
+  "tool_calls": {
+    "total": 12,
+    "by_tool": {
+      "code_search": 7,
+      "file_read": 5
+    },
+    "failure": 0,
+    "failure_by_tool": {},
+    "failure_details": []
+  },
+  "comments": [],
+  "groups": [
+    {
+      "label": "dom-snapshot collector and test updates",
+      "files": [
+        "packages/dom-snapshot/src/collector.ts",
+        "packages/dom-snapshot/src/index.ts",
+        "packages/dom-snapshot/test/api.test.ts",
+        "packages/dom-snapshot/test/dom-state.test.ts",
+        "packages/dom-snapshot/test/golden-fixture.ts",
+        "packages/dom-snapshot/test/serializer.test.ts"
+      ]
+    }
+  ],
+  "session_id": "6cea2c36-55d5-4ea1-a5ca-241f70d601ea",
+  "manifest": {
+    "schema_version": "ocr.run-manifest/v1",
+    "run_id": "6cea2c36-55d5-4ea1-a5ca-241f70d601ea",
+    "operation": "review",
+    "terminal_state": "complete",
+    "repository": {
+      "identity_sha256": "240b60c627c0727ff9a03a785964593edf71544b072499819d7f368a963d5e9f"
+    },
+    "input": {
+      "mode": "range",
+      "requested_from": "main",
+      "requested_head": "feat/p1.5-build-dom-state",
+      "resolved_base": "3cf89c2a3814924b41d8cb806612b6ded157fc07",
+      "resolved_head": "a4ec95968fff2f604934845a9fe91be7040d72aa",
+      "exact_range": "3cf89c2a3814924b41d8cb806612b6ded157fc07..a4ec95968fff2f604934845a9fe91be7040d72aa",
+      "source_artifact_sha256": "8ac8d0a2d4ee1e2b391d034edb6c36bf59d730b407d9cbfd4ac5b5981d5fd033"
+    },
+    "execution": {
+      "ocr_version": "v1.12.9",
+      "model": "glm-5.3",
+      "configured_concurrency": 8,
+      "rule_config_sha256": "ebba5edd502a7ff5f906eb606b8b63fa2099d3d48deaf0ae2785f492ccd4609a",
+      "runtime_config_sha256": "841fe9ad288d2dd9efc84c443193c492ef06b26edf31ff5f5a1b01637fef2b0c"
+    },
+    "coverage": {
+      "selected": [
+        {
+          "item_id": "232de9d7c8dc2c962bbbb44fef1a14733580e18038dfae73999cce306c2d601f",
+          "path": "packages/dom-snapshot/test/api.test.ts",
+          "fingerprint": "a6de3daa905dc351cd5d56c532880b273cc5b00fb376413d164bdd6a6b1f334a"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "8ee65ce9db52d5083c865eb82c6272440bb20f741b5c79713a91a4432f71a221"
+        },
+        {
+          "item_id": "bcf9fbf221784dce6e48492ae07c26938f888791947921c6a24379a60a2e26ce",
+          "path": "packages/dom-snapshot/test/serializer.test.ts",
+          "fingerprint": "66c7936538ac2c2cce7d22865740c350c5b8fa320d5c980c88c28feb14fd7fad"
+        },
+        {
+          "item_id": "d93be8e1438ab8f3fbfc3ad2823b3e0624cd7ec928f46c1f4bf4aa1b121d2877",
+          "path": "packages/dom-snapshot/test/dom-state.test.ts",
+          "fingerprint": "e161c675a8ec6c8b76717b9afaef714f25d9d8be75122fd082730948dd998f19"
+        },
+        {
+          "item_id": "ea3a04ff67680a3b5537db6b6efe51cafdae8d9294dbf1620da39b2bfde09279",
+          "path": "packages/dom-snapshot/test/golden-fixture.ts",
+          "fingerprint": "205a64080bc139399fab61b2164363d3fbab3e30d43168c91c209de97402fb61"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "570909e027c867f6dfffd3f41327a761078c4fb545fde57c9edf37ac6bd21bfb"
+        }
+      ],
+      "completed": [
+        {
+          "item_id": "232de9d7c8dc2c962bbbb44fef1a14733580e18038dfae73999cce306c2d601f",
+          "path": "packages/dom-snapshot/test/api.test.ts",
+          "fingerprint": "a6de3daa905dc351cd5d56c532880b273cc5b00fb376413d164bdd6a6b1f334a"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "8ee65ce9db52d5083c865eb82c6272440bb20f741b5c79713a91a4432f71a221"
+        },
+        {
+          "item_id": "bcf9fbf221784dce6e48492ae07c26938f888791947921c6a24379a60a2e26ce",
+          "path": "packages/dom-snapshot/test/serializer.test.ts",
+          "fingerprint": "66c7936538ac2c2cce7d22865740c350c5b8fa320d5c980c88c28feb14fd7fad"
+        },
+        {
+          "item_id": "d93be8e1438ab8f3fbfc3ad2823b3e0624cd7ec928f46c1f4bf4aa1b121d2877",
+          "path": "packages/dom-snapshot/test/dom-state.test.ts",
+          "fingerprint": "e161c675a8ec6c8b76717b9afaef714f25d9d8be75122fd082730948dd998f19"
+        },
+        {
+          "item_id": "ea3a04ff67680a3b5537db6b6efe51cafdae8d9294dbf1620da39b2bfde09279",
+          "path": "packages/dom-snapshot/test/golden-fixture.ts",
+          "fingerprint": "205a64080bc139399fab61b2164363d3fbab3e30d43168c91c209de97402fb61"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "570909e027c867f6dfffd3f41327a761078c4fb545fde57c9edf37ac6bd21bfb"
+        }
+      ],
+      "reused": [],
+      "failed": [],
+      "waived": []
+    },
+    "elapsed_ms": 176402
+  }
+}

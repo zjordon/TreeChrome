@@ -1,0 +1,214 @@
+{
+  "status": "complete",
+  "llm": {
+    "model": "glm-5.3"
+  },
+  "message": "Review complete: 0 finding(s) across 12 selected item(s).",
+  "summary": {
+    "files_reviewed": 12,
+    "comments": 0,
+    "total_tokens": 1215812,
+    "input_tokens": 1148289,
+    "output_tokens": 67523,
+    "cache_read_tokens": 441088,
+    "elapsed": "6m25s"
+  },
+  "tool_calls": {
+    "total": 46,
+    "by_tool": {
+      "code_search": 24,
+      "file_find": 6,
+      "file_read": 15,
+      "file_read_diff": 1
+    },
+    "failure": 0,
+    "failure_by_tool": {},
+    "failure_details": []
+  },
+  "comments": [],
+  "groups": [
+    {
+      "label": "dom-snapshot serializer extraction refactor (core, types, and existing tests)",
+      "files": [
+        "packages/dom-snapshot/src/collector.ts",
+        "packages/dom-snapshot/src/index.ts",
+        "packages/dom-snapshot/src/serializer.ts",
+        "packages/dom-snapshot/src/types.ts",
+        "packages/dom-snapshot/test/api.test.ts",
+        "packages/dom-snapshot/test/collector.test.ts",
+        "packages/dom-snapshot/test/golden.test.ts",
+        "packages/dom-snapshot/test/serializer.test.ts"
+      ]
+    },
+    {
+      "label": "new interactive element detection feature with tests",
+      "files": [
+        "packages/dom-snapshot/src/interactive.ts",
+        "packages/dom-snapshot/test/interactive.test.ts"
+      ]
+    },
+    {
+      "label": "new paint ordering feature with tests",
+      "files": [
+        "packages/dom-snapshot/src/paint-order.ts",
+        "packages/dom-snapshot/test/paint-order.test.ts"
+      ]
+    }
+  ],
+  "session_id": "283b3fba-78c1-4163-8522-5b63394d49f5",
+  "manifest": {
+    "schema_version": "ocr.run-manifest/v1",
+    "run_id": "283b3fba-78c1-4163-8522-5b63394d49f5",
+    "operation": "review",
+    "terminal_state": "complete",
+    "repository": {
+      "identity_sha256": "240b60c627c0727ff9a03a785964593edf71544b072499819d7f368a963d5e9f"
+    },
+    "input": {
+      "mode": "range",
+      "requested_from": "main",
+      "requested_head": "feat/p1.3-serializer",
+      "resolved_base": "f4e81f44035892611795ae13ae4eb5517b2d4e01",
+      "resolved_head": "be72b31ca805f16c438d9892c473f29ff4f7378f",
+      "exact_range": "f4e81f44035892611795ae13ae4eb5517b2d4e01..be72b31ca805f16c438d9892c473f29ff4f7378f",
+      "source_artifact_sha256": "bd0fc8320cf46eb8f6d19a9a4917df369762b8592fbe92731762bd231b09790b"
+    },
+    "execution": {
+      "ocr_version": "v1.12.8",
+      "model": "glm-5.3",
+      "configured_concurrency": 8,
+      "rule_config_sha256": "ebba5edd502a7ff5f906eb606b8b63fa2099d3d48deaf0ae2785f492ccd4609a",
+      "runtime_config_sha256": "841fe9ad288d2dd9efc84c443193c492ef06b26edf31ff5f5a1b01637fef2b0c"
+    },
+    "coverage": {
+      "selected": [
+        {
+          "item_id": "1c302d84af42a720d3f3d389f91f963dc6543678e2e828e40bf69e88baf64fbd",
+          "path": "packages/dom-snapshot/src/types.ts",
+          "fingerprint": "32bd53c6b88ab886db051c650e762b8e4307972c19c7eeab02b4005a9021483d"
+        },
+        {
+          "item_id": "232de9d7c8dc2c962bbbb44fef1a14733580e18038dfae73999cce306c2d601f",
+          "path": "packages/dom-snapshot/test/api.test.ts",
+          "fingerprint": "22ea057222a65185b93cbccda8b51c2b713efe641adbd49d8cae8b86b283c468"
+        },
+        {
+          "item_id": "3da108be28e94a40b1497af1dea61453e1f77ea856353a38408cd674a10ba605",
+          "path": "packages/dom-snapshot/src/paint-order.ts",
+          "fingerprint": "668e8a664bc7a2a68f3e321b275454a7b6e04571c78e023cde43216f809586e8"
+        },
+        {
+          "item_id": "3f23e5efac8b153ff031411376df372bc990d49696676ff95ee98318a67ceb2f",
+          "path": "packages/dom-snapshot/test/interactive.test.ts",
+          "fingerprint": "ea219db7f799beba42e794b91361febaf380fbfac8a2c04ede876625288a6d1e"
+        },
+        {
+          "item_id": "43471c29f95701d1212a06525ab8cdeb2eb54c8060df3041ebd1479bafa2c806",
+          "path": "packages/dom-snapshot/src/serializer.ts",
+          "fingerprint": "02133af9050b658a5aed69aa46583ad43b7081ef8af14466b195c385383f9566"
+        },
+        {
+          "item_id": "74bbfe6b658a75f615f2e29d5673f7a9d1332fd6e9bf7c58a4b6a6ef82f11325",
+          "path": "packages/dom-snapshot/test/collector.test.ts",
+          "fingerprint": "070d8134c02214f6ad9e1eacb2d212eda502f7ca6a53c40d7c3e79bc7d430ac9"
+        },
+        {
+          "item_id": "9afcf4eafba360eb37dd9526ac672bdba706013e9dc6a14ef925a35d28cc9db3",
+          "path": "packages/dom-snapshot/test/golden.test.ts",
+          "fingerprint": "498be65cf419aba9b461ed50ca1b69bf4bb462abd75ab46cefe9096271293064"
+        },
+        {
+          "item_id": "9dc7fd9d9dd699490717da759ccde4a42674fe141f40fcf3aa25cd35fa070d56",
+          "path": "packages/dom-snapshot/test/paint-order.test.ts",
+          "fingerprint": "a28baa123d6c4261ef052354e93fcda87d57d7fbac9265b95f1c24ad959886c8"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "7109a92f106dcbd655737b423856ae1b5dcf12d2054038d275f556f4584282cb"
+        },
+        {
+          "item_id": "bcf9fbf221784dce6e48492ae07c26938f888791947921c6a24379a60a2e26ce",
+          "path": "packages/dom-snapshot/test/serializer.test.ts",
+          "fingerprint": "fe3e1d5e1fe9bb5f03076c555ac15a306556faefca567289c9a4b14791e388b9"
+        },
+        {
+          "item_id": "d01a9ed4503926de0dd6e88322bf192b1181482b464ba856a0f50fb1c660036b",
+          "path": "packages/dom-snapshot/src/interactive.ts",
+          "fingerprint": "5b571d8503e63104922ab9d6063f5d537bcd26052b4576973f5143f2db6b2fb1"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "308bfe14228e4dd31ddac67d8ad5cb48997bb23db27465b9ae66aadfae4e0c99"
+        }
+      ],
+      "completed": [
+        {
+          "item_id": "1c302d84af42a720d3f3d389f91f963dc6543678e2e828e40bf69e88baf64fbd",
+          "path": "packages/dom-snapshot/src/types.ts",
+          "fingerprint": "32bd53c6b88ab886db051c650e762b8e4307972c19c7eeab02b4005a9021483d"
+        },
+        {
+          "item_id": "232de9d7c8dc2c962bbbb44fef1a14733580e18038dfae73999cce306c2d601f",
+          "path": "packages/dom-snapshot/test/api.test.ts",
+          "fingerprint": "22ea057222a65185b93cbccda8b51c2b713efe641adbd49d8cae8b86b283c468"
+        },
+        {
+          "item_id": "3da108be28e94a40b1497af1dea61453e1f77ea856353a38408cd674a10ba605",
+          "path": "packages/dom-snapshot/src/paint-order.ts",
+          "fingerprint": "668e8a664bc7a2a68f3e321b275454a7b6e04571c78e023cde43216f809586e8"
+        },
+        {
+          "item_id": "3f23e5efac8b153ff031411376df372bc990d49696676ff95ee98318a67ceb2f",
+          "path": "packages/dom-snapshot/test/interactive.test.ts",
+          "fingerprint": "ea219db7f799beba42e794b91361febaf380fbfac8a2c04ede876625288a6d1e"
+        },
+        {
+          "item_id": "43471c29f95701d1212a06525ab8cdeb2eb54c8060df3041ebd1479bafa2c806",
+          "path": "packages/dom-snapshot/src/serializer.ts",
+          "fingerprint": "02133af9050b658a5aed69aa46583ad43b7081ef8af14466b195c385383f9566"
+        },
+        {
+          "item_id": "74bbfe6b658a75f615f2e29d5673f7a9d1332fd6e9bf7c58a4b6a6ef82f11325",
+          "path": "packages/dom-snapshot/test/collector.test.ts",
+          "fingerprint": "070d8134c02214f6ad9e1eacb2d212eda502f7ca6a53c40d7c3e79bc7d430ac9"
+        },
+        {
+          "item_id": "9afcf4eafba360eb37dd9526ac672bdba706013e9dc6a14ef925a35d28cc9db3",
+          "path": "packages/dom-snapshot/test/golden.test.ts",
+          "fingerprint": "498be65cf419aba9b461ed50ca1b69bf4bb462abd75ab46cefe9096271293064"
+        },
+        {
+          "item_id": "9dc7fd9d9dd699490717da759ccde4a42674fe141f40fcf3aa25cd35fa070d56",
+          "path": "packages/dom-snapshot/test/paint-order.test.ts",
+          "fingerprint": "a28baa123d6c4261ef052354e93fcda87d57d7fbac9265b95f1c24ad959886c8"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "7109a92f106dcbd655737b423856ae1b5dcf12d2054038d275f556f4584282cb"
+        },
+        {
+          "item_id": "bcf9fbf221784dce6e48492ae07c26938f888791947921c6a24379a60a2e26ce",
+          "path": "packages/dom-snapshot/test/serializer.test.ts",
+          "fingerprint": "fe3e1d5e1fe9bb5f03076c555ac15a306556faefca567289c9a4b14791e388b9"
+        },
+        {
+          "item_id": "d01a9ed4503926de0dd6e88322bf192b1181482b464ba856a0f50fb1c660036b",
+          "path": "packages/dom-snapshot/src/interactive.ts",
+          "fingerprint": "5b571d8503e63104922ab9d6063f5d537bcd26052b4576973f5143f2db6b2fb1"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "308bfe14228e4dd31ddac67d8ad5cb48997bb23db27465b9ae66aadfae4e0c99"
+        }
+      ],
+      "reused": [],
+      "failed": [],
+      "waived": []
+    },
+    "elapsed_ms": 385499
+  }
+}

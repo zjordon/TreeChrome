@@ -1,0 +1,181 @@
+{
+  "status": "complete",
+  "llm": {
+    "model": "glm-5.3"
+  },
+  "message": "Review complete: 0 finding(s) across 10 selected item(s).",
+  "summary": {
+    "files_reviewed": 10,
+    "comments": 0,
+    "total_tokens": 561365,
+    "input_tokens": 529180,
+    "output_tokens": 32185,
+    "cache_read_tokens": 308864,
+    "elapsed": "7m21s"
+  },
+  "tool_calls": {
+    "total": 11,
+    "by_tool": {
+      "code_search": 8,
+      "file_find": 1,
+      "file_read": 2
+    },
+    "failure": 0,
+    "failure_by_tool": {},
+    "failure_details": []
+  },
+  "comments": [],
+  "groups": [
+    {
+      "label": "dom-snapshot CDP batch collector feature (source, exports, protocol, types, and tests)",
+      "files": [
+        "packages/dom-snapshot/src/cdp-batch.ts",
+        "packages/dom-snapshot/src/collector.ts",
+        "packages/dom-snapshot/src/index.ts",
+        "packages/dom-snapshot/src/protocol.ts",
+        "packages/dom-snapshot/src/types.ts",
+        "packages/dom-snapshot/test/cdp-batch.test.ts",
+        "packages/dom-snapshot/test/collector.test.ts",
+        "packages/dom-snapshot/test/fake-cdp.ts",
+        "packages/dom-snapshot/test/golden-fixture.ts",
+        "packages/dom-snapshot/test/golden.test.ts"
+      ]
+    }
+  ],
+  "session_id": "cca0e210-ff6f-4cea-bd13-cdca623bb757",
+  "manifest": {
+    "schema_version": "ocr.run-manifest/v1",
+    "run_id": "cca0e210-ff6f-4cea-bd13-cdca623bb757",
+    "operation": "review",
+    "terminal_state": "complete",
+    "repository": {
+      "identity_sha256": "240b60c627c0727ff9a03a785964593edf71544b072499819d7f368a963d5e9f"
+    },
+    "input": {
+      "mode": "range",
+      "requested_from": "main",
+      "requested_head": "feat/p1.2-collector",
+      "resolved_base": "43f79a9745c5e3db35b379bd34d8489d61479f42",
+      "resolved_head": "78c50d5a94cddbf860d4aab6f159032a58a6bb1b",
+      "exact_range": "43f79a9745c5e3db35b379bd34d8489d61479f42..78c50d5a94cddbf860d4aab6f159032a58a6bb1b",
+      "source_artifact_sha256": "c5d56124acef66ef49cb325765fbdf48c6fff18c47729dd78ce82f992040a383"
+    },
+    "execution": {
+      "ocr_version": "v1.12.8",
+      "model": "glm-5.3",
+      "configured_concurrency": 8,
+      "rule_config_sha256": "ebba5edd502a7ff5f906eb606b8b63fa2099d3d48deaf0ae2785f492ccd4609a",
+      "runtime_config_sha256": "841fe9ad288d2dd9efc84c443193c492ef06b26edf31ff5f5a1b01637fef2b0c"
+    },
+    "coverage": {
+      "selected": [
+        {
+          "item_id": "083cab61539bb70a696b076de28a4be95e60bac36fe403a1fd5b5d09b61b3b8e",
+          "path": "packages/dom-snapshot/test/fake-cdp.ts",
+          "fingerprint": "28618f442666a27dbba880aab8e7a3429f75192f8f66dae18288ee9ea90e7ae0"
+        },
+        {
+          "item_id": "1500aa4ec5484a03c43731949c40f7b1eacf7eabf98cbcaac2305986c2dc5a68",
+          "path": "packages/dom-snapshot/src/cdp-batch.ts",
+          "fingerprint": "2fa8662eeda6dad08e49112680c6650e575cab81c3225a09308f2d3b61b73da2"
+        },
+        {
+          "item_id": "1c302d84af42a720d3f3d389f91f963dc6543678e2e828e40bf69e88baf64fbd",
+          "path": "packages/dom-snapshot/src/types.ts",
+          "fingerprint": "468711893a725580690a7910e0659c42c8e7ccdc924b8f9b4de32884bc2a0f46"
+        },
+        {
+          "item_id": "74bbfe6b658a75f615f2e29d5673f7a9d1332fd6e9bf7c58a4b6a6ef82f11325",
+          "path": "packages/dom-snapshot/test/collector.test.ts",
+          "fingerprint": "0b6a0bfadae39f84c538e85b72c55732c9394578b9b2dc9a9dc83a115edab476"
+        },
+        {
+          "item_id": "990159ae0b7a93c00bf82ff61b87f21066e0302859be518cd61423c6133b5bee",
+          "path": "packages/dom-snapshot/src/protocol.ts",
+          "fingerprint": "f17e9970dd0cfc507c8d26e5c3f07aa8df151a10cb9b55d55f0af680202780fa"
+        },
+        {
+          "item_id": "9afcf4eafba360eb37dd9526ac672bdba706013e9dc6a14ef925a35d28cc9db3",
+          "path": "packages/dom-snapshot/test/golden.test.ts",
+          "fingerprint": "da204f213ac37914aeb6ee7c589bde409289efd1f699e5361b3bc167dd108a7a"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "98326f57a87d24fc217cfc90e572530e01c27690b6e9b021973ccced51b1ebb3"
+        },
+        {
+          "item_id": "d97f4a9af921c04753af514d6f6b0b1582e3e298e3c28aa752c14d95ce3cf7bd",
+          "path": "packages/dom-snapshot/test/cdp-batch.test.ts",
+          "fingerprint": "5cf0855b907e8bdc965d30ce920cf1ef2dd66fbca7cef96b2e295f859ef32048"
+        },
+        {
+          "item_id": "ea3a04ff67680a3b5537db6b6efe51cafdae8d9294dbf1620da39b2bfde09279",
+          "path": "packages/dom-snapshot/test/golden-fixture.ts",
+          "fingerprint": "05f4313be0289ef503b04621c1363d07b3144a7a92e8c9653eb8f4df92e89acc"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "409ba55eeaae4378c93a7d504c794bb9aeb1016088adbae1a8c8306c40d41fba"
+        }
+      ],
+      "completed": [
+        {
+          "item_id": "083cab61539bb70a696b076de28a4be95e60bac36fe403a1fd5b5d09b61b3b8e",
+          "path": "packages/dom-snapshot/test/fake-cdp.ts",
+          "fingerprint": "28618f442666a27dbba880aab8e7a3429f75192f8f66dae18288ee9ea90e7ae0"
+        },
+        {
+          "item_id": "1500aa4ec5484a03c43731949c40f7b1eacf7eabf98cbcaac2305986c2dc5a68",
+          "path": "packages/dom-snapshot/src/cdp-batch.ts",
+          "fingerprint": "2fa8662eeda6dad08e49112680c6650e575cab81c3225a09308f2d3b61b73da2"
+        },
+        {
+          "item_id": "1c302d84af42a720d3f3d389f91f963dc6543678e2e828e40bf69e88baf64fbd",
+          "path": "packages/dom-snapshot/src/types.ts",
+          "fingerprint": "468711893a725580690a7910e0659c42c8e7ccdc924b8f9b4de32884bc2a0f46"
+        },
+        {
+          "item_id": "74bbfe6b658a75f615f2e29d5673f7a9d1332fd6e9bf7c58a4b6a6ef82f11325",
+          "path": "packages/dom-snapshot/test/collector.test.ts",
+          "fingerprint": "0b6a0bfadae39f84c538e85b72c55732c9394578b9b2dc9a9dc83a115edab476"
+        },
+        {
+          "item_id": "990159ae0b7a93c00bf82ff61b87f21066e0302859be518cd61423c6133b5bee",
+          "path": "packages/dom-snapshot/src/protocol.ts",
+          "fingerprint": "f17e9970dd0cfc507c8d26e5c3f07aa8df151a10cb9b55d55f0af680202780fa"
+        },
+        {
+          "item_id": "9afcf4eafba360eb37dd9526ac672bdba706013e9dc6a14ef925a35d28cc9db3",
+          "path": "packages/dom-snapshot/test/golden.test.ts",
+          "fingerprint": "da204f213ac37914aeb6ee7c589bde409289efd1f699e5361b3bc167dd108a7a"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "98326f57a87d24fc217cfc90e572530e01c27690b6e9b021973ccced51b1ebb3"
+        },
+        {
+          "item_id": "d97f4a9af921c04753af514d6f6b0b1582e3e298e3c28aa752c14d95ce3cf7bd",
+          "path": "packages/dom-snapshot/test/cdp-batch.test.ts",
+          "fingerprint": "5cf0855b907e8bdc965d30ce920cf1ef2dd66fbca7cef96b2e295f859ef32048"
+        },
+        {
+          "item_id": "ea3a04ff67680a3b5537db6b6efe51cafdae8d9294dbf1620da39b2bfde09279",
+          "path": "packages/dom-snapshot/test/golden-fixture.ts",
+          "fingerprint": "05f4313be0289ef503b04621c1363d07b3144a7a92e8c9653eb8f4df92e89acc"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "409ba55eeaae4378c93a7d504c794bb9aeb1016088adbae1a8c8306c40d41fba"
+        }
+      ],
+      "reused": [],
+      "failed": [],
+      "waived": []
+    },
+    "elapsed_ms": 440811
+  }
+}
