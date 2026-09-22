@@ -11,26 +11,19 @@ import { describe, expect, it } from "vitest";
 import { buildDomState, EMPTY_DOM_STATE } from "../src/collector.js";
 import { DOMDegradationLevel, EnhancedDOMTreeNode, NodeType } from "../src/types.js";
 import { FakeCdpClient, makeGoldenFixtureClient } from "./fake-cdp.js";
-import { loadGoldenFixtures } from "./golden-fixture.js";
+import { expectByteEqual, loadGoldenFixtures } from "./golden-fixture.js";
 
 const fixtures = loadGoldenFixtures();
 
-/** 逐字节对拍失败时打印首个差异窗口（与 serializer.test.ts 同款辅助） */
-function expectByteEqual(actual: string, expected: string): void {
-  if (actual === expected) return;
-  let i = 0;
-  while (i < expected.length && i < actual.length && expected[i] === actual[i]) {
-    i += 1;
-  }
-  const win = (s: string) => JSON.stringify(s.slice(Math.max(0, i - 60), i + 80));
-  throw new Error(
-    `element_tree_text 首个差异 @${i}:\n  py: ${win(expected)}\n  ts: ${win(actual)}`,
-  );
-}
+/**
+ * 新元素星标的两种形态：`*[N]<tag` 与 `*|scroll element[N]<tag`——
+ * serializer.ts:1286-1288 的拼接顺序是 newPf 在 scrollPf 之前
+ */
+const NEW_ELEMENT_STAR_RE = /\*(?:\|scroll element)?\[(\d+)\]/g;
 
-/** element_tree_text 中 `*[<backendNodeId>]` 新元素星标计数 */
+/** element_tree_text 中新元素星标计数 */
 function starCount(text: string): number {
-  return [...text.matchAll(/\*\[\d+\]</g)].length;
+  return [...text.matchAll(NEW_ELEMENT_STAR_RE)].length;
 }
 
 // ── P1.5 验收：golden 端到端全字段对拍 ──────────────────────────────────
@@ -73,8 +66,12 @@ describe.skipIf(fixtures.length === 0)("golden 端到端对拍（P1.5 验收）"
       // metrics parity：可复现字段（degradation 与逐源状态；时间量不对拍）
       expect(metrics.degradationLevel).toBe(DOMDegradationLevel.FULL);
       expect(metrics.sourceStatuses).toEqual(fixture.meta.source_statuses ?? {});
-      // gen_fixtures 以 len(selector_map) 落盘 element_count
-      expect(state.selectorMap.size).toBe(fixture.meta.element_count ?? -1);
+      // gen_fixtures 以 len(selector_map) 落盘 element_count；缺失说明 fixture 过旧
+      expect(
+        fixture.meta.element_count,
+        "meta.element_count 缺失：fixture 由旧版生成器产出，需重新生成",
+      ).toBeDefined();
+      expect(state.selectorMap.size).toBe(fixture.meta.element_count);
     });
   }
 });
@@ -82,8 +79,11 @@ describe.skipIf(fixtures.length === 0)("golden 端到端对拍（P1.5 验收）"
 // ── prev_map 轮转（`*` 标记的入口接线；compound 恒新由 P1.3 单测覆盖） ─────
 
 describe.skipIf(fixtures.length === 0)("prev_map 轮转接线", () => {
-  // 回放是确定性的：同一 fixture 两次 buildDomState 产出逐字节相同基线
-  const { name, fixture } = fixtures[0];
+  // skipIf 在收集阶段仍会执行本回调（嵌套用例的发现依赖回调执行），空
+  // fixtures 时 fixtures[0] 为 undefined，直接解构会击穿整个文件的收集
+  const first = fixtures[0];
+  if (!first) return;
+  const { name, fixture } = first;
 
   it(`${name}: 上轮 selector_map 全量传入 → 与基线逐字节一致（compound 星标除外无新增）`, async () => {
     const first = await buildDomState(makeGoldenFixtureClient(fixture), "sess-main");
@@ -97,7 +97,7 @@ describe.skipIf(fixtures.length === 0)("prev_map 轮转接线", () => {
     const first = await buildDomState(makeGoldenFixtureClient(fixture), "sess-main");
     // 选一个基线无星标的键（有星标的 compound 元素恒新，删了也测不出差异）
     const starred = new Set(
-      [...first.state.elementTreeText.matchAll(/\*\[(\d+)\]</g)].map((m) => Number(m[1])),
+      [...first.state.elementTreeText.matchAll(NEW_ELEMENT_STAR_RE)].map((m) => Number(m[1])),
     );
     const targetKey = [...first.state.selectorMap.keys()].find((k) => !starred.has(k));
     if (targetKey === undefined) throw new Error("fixture 无非星标可交互元素，轮转用例不成立");
@@ -107,7 +107,10 @@ describe.skipIf(fixtures.length === 0)("prev_map 轮转接线", () => {
     const second = await buildDomState(makeGoldenFixtureClient(fixture), "sess-main", {
       previousSelectorMap: partial,
     });
-    expect(second.state.elementTreeText).toContain(`*[${targetKey}]<`);
+    // 覆盖普通 `*[N]<` 与可滚动交互 `*|scroll element[N]<` 两种星标形态
+    expect(second.state.elementTreeText).toMatch(
+      new RegExp(`\\*(?:\\|scroll element)?\\[${targetKey}]<`),
+    );
     expect(starCount(second.state.elementTreeText)).toBe(
       starCount(first.state.elementTreeText) + 1,
     );

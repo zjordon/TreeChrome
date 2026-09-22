@@ -932,9 +932,14 @@ export interface DomStateResult {
 
 /**
  * 采集失败时的空态单例（对齐 Python EMPTY_DOM_STATE，collector.py:55）。
- * FAILED 分支原样返回本实例不做防御性拷贝——Python 同为共享单例；调用方不得改写。
+ * FAILED 分支原样返回本实例不做防御性拷贝——Python 同为共享单例。有意增强
+ * （评审 P1.5 一轮 #2）：顶层 Object.freeze 把字段改写从静默污染单例变为
+ * 显性 TypeError；内部数组/Map 仍可变更方法（完全拦截需逐层冻结，Python
+ * 亦为可变 dataclass，不额外加码）。
  */
-export const EMPTY_DOM_STATE = new SerializedDOMState(null, new Map(), "", [], [], {});
+export const EMPTY_DOM_STATE = Object.freeze(
+  new SerializedDOMState(null, new Map(), "", [], [], {}),
+);
 
 /**
  * 组合入口：frame 映射 → 增强树构建 → 五步序列化 → file_input 挂载。

@@ -2,6 +2,7 @@
  * golden fixture 的 schema 与加载器——gen_fixtures.py 产物形状的单一来源。
  * golden.test.ts（schema 校验）、collector.test.ts（融合对拍）、fake-cdp.ts
  * （回放客户端）共用，防止三处口径漂移（评审 P1.2 三轮 #4）。
+ * expectByteEqual 供 serializer/dom-state 测试的逐字节对拍共用（评审 P1.5 一轮 #3）。
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -59,4 +60,17 @@ export function loadGoldenFixtures(): { name: string; fixture: GoldenFixture }[]
       name,
       fixture: JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf-8")) as GoldenFixture,
     }));
+}
+
+/** 逐字节对拍，失败时打印首个差异窗口辅助定位 */
+export function expectByteEqual(actual: string, expected: string): void {
+  if (actual === expected) return;
+  let i = 0;
+  while (i < expected.length && i < actual.length && expected[i] === actual[i]) {
+    i += 1;
+  }
+  const win = (s: string) => JSON.stringify(s.slice(Math.max(0, i - 60), i + 80));
+  throw new Error(
+    `element_tree_text 首个差异 @${i}:\n  py: ${win(expected)}\n  ts: ${win(actual)}`,
+  );
 }

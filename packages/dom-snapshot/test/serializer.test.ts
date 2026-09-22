@@ -18,7 +18,7 @@ import {
   SimplifiedNode,
 } from "../src/types.js";
 import { makeGoldenFixtureClient } from "./fake-cdp.js";
-import { loadGoldenFixtures } from "./golden-fixture.js";
+import { expectByteEqual, loadGoldenFixtures } from "./golden-fixture.js";
 
 const fixtures = loadGoldenFixtures();
 
@@ -124,21 +124,7 @@ describe.skipIf(fixtures.length === 0)("golden 序列化对拍（P1.3 验收）"
       const { state } = serializeRoot(built.root!, "sess-main");
 
       // 逐字节对拍（失败时打印首个差异窗口辅助定位）
-      const expected = fixture.output.element_tree_text;
-      if (state.elementTreeText !== expected) {
-        let i = 0;
-        while (
-          i < expected.length &&
-          i < state.elementTreeText.length &&
-          expected[i] === state.elementTreeText[i]
-        ) {
-          i += 1;
-        }
-        const win = (s: string) => JSON.stringify(s.slice(Math.max(0, i - 60), i + 80));
-        throw new Error(
-          `element_tree_text 首个差异 @${i}:\n  py: ${win(expected)}\n  ts: ${win(state.elementTreeText)}`,
-        );
-      }
+      expectByteEqual(state.elementTreeText, fixture.output.element_tree_text);
 
       // selector_map 键集合（键 = highlight_index = backendNodeId）
       const pyKeys = Object.keys(fixture.output.selector_map)
