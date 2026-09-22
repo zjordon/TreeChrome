@@ -93,4 +93,18 @@
 
 ## 7. 完成记录
 
-（实施时追加：各工作项完成日期、分支/提交、验收证据、smoke 产物摘要。）
+实施（分支 `feat/p2-llm-client`，一项一提交，2026-09-23）：
+
+| # | 工作项 | 提交 | 验收证据 |
+|---|---|---|---|
+| 2.0 | core 包脚手架 | bd43dbf | `pnpm -r typecheck/test` 绿；biome 核心包边界（禁 chrome.*/process.*）对 `packages/core/src/**` 验证生效 |
+| 2.1 | 规范类型 + Provider 接口 + 错误分类 | a4bac60 | 47 测试全绿（不变量/视觉白名单 Python 锚定/isInfraError 矩阵），覆盖率 100% |
+| 2.2 | anthropic + http + transforms + client 行为层 | a984e64 | 119 测试全绿（96.76%）；Python 锚定值烤入（tryParseJson 9 例/URL 缩写 tag 序/敏感值插入序/退避 2,4,8,16,30,30 + retry-after 容错/R4·R1 文案）——evals venv 实跑，命令与输出存 `transforms.test.ts` 头部 |
+| 2.3 | openai-completions | a0fdfef | 132 测试全绿（97.06%）；maxTokens 双轨/arguments guard-parse 专项；跨协议 fallback（主 anthropic + fallback openai）专项 |
+| 2.4 | gemini + schema-sanitize | 2522d12 | 146 测试全绿（96.72%）；断言锚定 02 冻结规格——无内部参考，真机差异待有 key 实测修订（风险 3 顺延） |
+| 2.5 | smoke 脚本 | （本提交） | `node packages/core/tools/llm-smoke.mjs`（需 GLM_API_KEY）；链路验证见下 |
+
+smoke 产物摘要：
+
+- **2026-09-23 假 key 链路验证**（无费用，验证打包与 wire，不发真 LLM 调用）：esbuild 打包 src/index.ts → 两端点真实 401 → `LLMAuthError`；智谱错误体 `{"error":{"message":"令牌已过期或验证不正确"}}` 走通通用 message 提取；URL/headers 与 02 规格一致——openai 端点 `POST /api/paas/v4/chat/completions`（Bearer）、anthropic 端点 `POST /api/anthropic/v1/messages`（x-api-key + anthropic-version + dangerous-direct-browser-access）。
+- **真机 agent_response 往返**：待 `GLM_API_KEY` 实跑（模型可用 `SMOKE_OPENAI_MODEL`/`SMOKE_ANTHROPIC_MODEL` 覆盖，以账号可用为准）；产物贴回此处，端点与官方文档的偏差 → 修订 fixtures 时提交信息注明（风险 1 的闭环动作）。

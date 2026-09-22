@@ -42,6 +42,8 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 | 2.4 | gemini 适配器 | generateContent + functionConfig mode=ANY 归一化 | 同上 | 1d |
 | 2.5 | 真机 smoke 脚本 | `tools/llm-smoke.mjs`：对智谱 OpenAI 端点 / Anthropic 端点各发一次最小 agent_response 调用 | 手工跑通即可，不入 CI（费用与密钥纪律） | 0.5d |
 
+**P2 完成（2026-09-23，分支 `feat/p2-llm-client`）**：2.0~2.5 全项落地，`pnpm test` 146 例全绿（@tw/core 覆盖率 96.72%）；Python 锚定值（tryParseJson / URL 缩写 / 敏感值 / 退避序列 / R4·R1 文案 / 视觉白名单）经 evals venv 实跑烤入测试。真机 smoke 脚本就绪（`node packages/core/tools/llm-smoke.mjs`，需 GLM_API_KEY）：假 key 链路验证通过（两端点 wire 形态与 401 分罪正确），agent_response 真机往返待带 key 实跑。逐项记录与产物摘要见 `docs/implement-plan/p2/README.md` §7。
+
 ## P3 cdp-ws transport（packages/cdp-ws）
 
 | # | 工作项 | 内容 | 验收标准 | 预估 |
