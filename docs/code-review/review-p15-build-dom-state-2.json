@@ -1,0 +1,150 @@
+{
+  "status": "complete",
+  "llm": {
+    "model": "glm-5.3"
+  },
+  "message": "Review complete: 1 finding(s) across 6 selected item(s).",
+  "summary": {
+    "files_reviewed": 6,
+    "comments": 1,
+    "total_tokens": 1109996,
+    "input_tokens": 1073539,
+    "output_tokens": 36457,
+    "cache_read_tokens": 397440,
+    "elapsed": "7m50s"
+  },
+  "tool_calls": {
+    "total": 47,
+    "by_tool": {
+      "code_comment": 1,
+      "code_search": 31,
+      "file_find": 2,
+      "file_read": 13
+    },
+    "failure": 0,
+    "failure_by_tool": {},
+    "failure_details": []
+  },
+  "comments": [
+    {
+      "path": "packages/dom-snapshot/test/golden-fixture.ts",
+      "content": "expectByteEqual 提升为共享工具后错误信息仍硬编码 \"element_tree_text 首个差异\"：helper 签名是通用的 (actual, expected)，且文件头注释明确预期供 serializer/dom-state 多处对拍复用——一旦未来用于对拍其他字段（如 page_stats、file_inputs_meta 的序列化文本），报错信息会误导排障方向。建议增加 label 参数并给默认值，现有两处调用零改动、后续复用可显式传字段名。",
+      "suggestion_code": "/** 逐字节对拍，失败时打印首个差异窗口辅助定位 */\nexport function expectByteEqual(actual: string, expected: string, label = \"element_tree_text\"): void {\n  if (actual === expected) return;\n  let i = 0;\n  while (i \u003c expected.length \u0026\u0026 i \u003c actual.length \u0026\u0026 expected[i] === actual[i]) {\n    i += 1;\n  }\n  const win = (s: string) =\u003e JSON.stringify(s.slice(Math.max(0, i - 60), i + 80));\n  throw new Error(\n    `${label} 首个差异 @${i}:\\n  py: ${win(expected)}\\n  ts: ${win(actual)}`,\n  );\n}",
+      "existing_code": "/** 逐字节对拍，失败时打印首个差异窗口辅助定位 */\nexport function expectByteEqual(actual: string, expected: string): void {\n  if (actual === expected) return;\n  let i = 0;\n  while (i \u003c expected.length \u0026\u0026 i \u003c actual.length \u0026\u0026 expected[i] === actual[i]) {\n    i += 1;\n  }\n  const win = (s: string) =\u003e JSON.stringify(s.slice(Math.max(0, i - 60), i + 80));\n  throw new Error(\n    `element_tree_text 首个差异 @${i}:\\n  py: ${win(expected)}\\n  ts: ${win(actual)}`,\n  );\n}",
+      "start_line": 65,
+      "end_line": 76,
+      "thinking": "Line 347 `viewportThreshold?: number | null;`（BuildEnhancedTreeOptions）与 line 921（BuildDomStateOptions）一致，864 行 `=== undefined ? 1000 : ...` 正确区分缺省与显式 null。类型链无问题。\n\n全部核查完毕。汇总：\n\n**清单 #1 [high] buildDomState 缺顶层异常防护** → 不成立：\n- buildFrameTargetMap 内部 try/catch（651-653），永不抛\n- detectJsClickListeners 有 try/catch + 5s 超时（869-873）\n- collectCdpSources 经 runCdpBatch（cdp-batch.ts 69/85 catch + 77/170 防 unhandledRejection），每源失败降级记录，不抛\n- domTree 失败 → 881-883 root=null → EMPTY_DOM_STATE + FAILED（835 行已置 FAILED）\n- Python 同为无顶层 try 的实现，且 Python 原文件不在仓库，代码库 parity 政策明确（多处评审\"驳回\"记录）\n- 现有测试已覆盖 FAILED 路径\n\n**#2 createEmptyDomState 破坏性删除** → 残留引用仅在 docs/code-review 历史记录 JSON 中（非代码），api.test.ts 已同步更新，无其他包引用。不成立。\n\n**#3 浅冻结共享单例** → 注释已显式声明取舍（\"评审 P1.5 一轮 #2\" 的落地），全消费方只读。重新提出即重复已评审决策。不报。\n\n**#4 5参/6参构造** → SerializedDOMState 后三参有默认值，5 参合法；serializer 对 previousCachedState.selectorMap 只 `.has()` 只读。不成立。\n\n**#5 FAILED 覆写 degradationLevel** → root=null 的唯一出口（881 行）前置条件是 collectCdpSources 已把 degradation 置为 FAILED（835/839 行），赋值是冗余但无害的防御，不存在 PARTIAL→FAILED 的改写路径。不成立。\n\n**#6 类型 Readonly** → 成功路径返回可变 state、失败路径返回冻结单例，TS readonly 不影响可赋值性，无法用类型区分；注释已声明运行期 TypeError 保障意图。过于吹毛求疵，不报。\n\n**#7 expectByteEqual 硬编码字段名** → 成立（low）：helper 已提升为 golden-fixture.ts 共享工具，签名是通用 (actual, expected)，但错误信息固定打印 \"element_tree_text 首个差异\"。当前两个消费方恰好都只对拍 element_tree_text，但注释明确预期\"供 serializer/dom-state 测试共用\"，未来复用到其他字段时报错信息误导排障。建议加 label 参数（默认值保持向后兼容）。\n\n**#8 FakeCdpClient 隐式契约** → fake-cdp.ts:26 显式 throw，测试注释已固化该契约（\"FakeCdpClient 对未注册调用直接抛错（瞬时拒绝，无超时等待）\"）。计划建议的\"注释固化\"已落实。不成立。\n\n再自查一遍我有没有遗漏的新问题：\n\ncollector.ts buildDomState 主体：\n- previousState 复用调用方 Map 引用，serializer 只读 `.has()`，无污染 ✓\n- viewportThreshold 类型链 ✓（347/921 都是 `?: number | null`，864 正确区分 undefined/null）\n- fileInput 挂载仅成功路径 ✓\n\ndom-state.test.ts：\n- 收集期 guard ✓（`if (!first) return;`）\n- 星标正则双形态 ✓\n- targetKey 缺失显式 throw ✓\n- `new RegExp(...)` 中 `]` 不在字符类内无需转义 ✓\n- FAILED 分支断言单例同一性 + 字段未被污染 ✓\n\ngolden-fixture.ts expectByteEqual：差异窗口定位逻辑正确 ✓\n\nserializer.test.ts / api.test.ts / index.ts：纯替换/删除，无新逻辑 ✓\n\n最终：只报 #7 一条 low 评论。",
+      "category": "maintainability",
+      "severity": "low"
+    }
+  ],
+  "groups": [
+    {
+      "label": "dom-snapshot dom-state feature: collector, exports, and tests",
+      "files": [
+        "packages/dom-snapshot/src/collector.ts",
+        "packages/dom-snapshot/src/index.ts",
+        "packages/dom-snapshot/test/api.test.ts",
+        "packages/dom-snapshot/test/dom-state.test.ts",
+        "packages/dom-snapshot/test/golden-fixture.ts",
+        "packages/dom-snapshot/test/serializer.test.ts"
+      ]
+    }
+  ],
+  "session_id": "de70b8f9-c1cd-449e-b160-960973bc5988",
+  "manifest": {
+    "schema_version": "ocr.run-manifest/v1",
+    "run_id": "de70b8f9-c1cd-449e-b160-960973bc5988",
+    "operation": "review",
+    "terminal_state": "complete",
+    "repository": {
+      "identity_sha256": "240b60c627c0727ff9a03a785964593edf71544b072499819d7f368a963d5e9f"
+    },
+    "input": {
+      "mode": "range",
+      "requested_from": "main",
+      "requested_head": "feat/p1.5-build-dom-state",
+      "resolved_base": "3cf89c2a3814924b41d8cb806612b6ded157fc07",
+      "resolved_head": "cc89684696edd589a27bcf634b2f139d2f269d90",
+      "exact_range": "3cf89c2a3814924b41d8cb806612b6ded157fc07..cc89684696edd589a27bcf634b2f139d2f269d90",
+      "source_artifact_sha256": "1931ce97c5b1acf1d44558f7a6aa8ca0ab46544c2e4b14321c4ea129a1d75989"
+    },
+    "execution": {
+      "ocr_version": "v1.12.9",
+      "model": "glm-5.3",
+      "configured_concurrency": 8,
+      "rule_config_sha256": "ebba5edd502a7ff5f906eb606b8b63fa2099d3d48deaf0ae2785f492ccd4609a",
+      "runtime_config_sha256": "841fe9ad288d2dd9efc84c443193c492ef06b26edf31ff5f5a1b01637fef2b0c"
+    },
+    "coverage": {
+      "selected": [
+        {
+          "item_id": "232de9d7c8dc2c962bbbb44fef1a14733580e18038dfae73999cce306c2d601f",
+          "path": "packages/dom-snapshot/test/api.test.ts",
+          "fingerprint": "a6de3daa905dc351cd5d56c532880b273cc5b00fb376413d164bdd6a6b1f334a"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "8ee65ce9db52d5083c865eb82c6272440bb20f741b5c79713a91a4432f71a221"
+        },
+        {
+          "item_id": "bcf9fbf221784dce6e48492ae07c26938f888791947921c6a24379a60a2e26ce",
+          "path": "packages/dom-snapshot/test/serializer.test.ts",
+          "fingerprint": "66c7936538ac2c2cce7d22865740c350c5b8fa320d5c980c88c28feb14fd7fad"
+        },
+        {
+          "item_id": "d93be8e1438ab8f3fbfc3ad2823b3e0624cd7ec928f46c1f4bf4aa1b121d2877",
+          "path": "packages/dom-snapshot/test/dom-state.test.ts",
+          "fingerprint": "ba6e319851ea38cd68459347eabb5633f8e9bb0c45b610e87ceca997597d8fd5"
+        },
+        {
+          "item_id": "ea3a04ff67680a3b5537db6b6efe51cafdae8d9294dbf1620da39b2bfde09279",
+          "path": "packages/dom-snapshot/test/golden-fixture.ts",
+          "fingerprint": "ff6ea8f3c07185f8fb8341a5c97a8105f4a020dece1d4fcdc321692fb763b8f1"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "570909e027c867f6dfffd3f41327a761078c4fb545fde57c9edf37ac6bd21bfb"
+        }
+      ],
+      "completed": [
+        {
+          "item_id": "232de9d7c8dc2c962bbbb44fef1a14733580e18038dfae73999cce306c2d601f",
+          "path": "packages/dom-snapshot/test/api.test.ts",
+          "fingerprint": "a6de3daa905dc351cd5d56c532880b273cc5b00fb376413d164bdd6a6b1f334a"
+        },
+        {
+          "item_id": "b60aeabf9235511935d0bb33900fa6643c7aa1534e4cb1d411e2e8de62aaf7a3",
+          "path": "packages/dom-snapshot/src/collector.ts",
+          "fingerprint": "8ee65ce9db52d5083c865eb82c6272440bb20f741b5c79713a91a4432f71a221"
+        },
+        {
+          "item_id": "bcf9fbf221784dce6e48492ae07c26938f888791947921c6a24379a60a2e26ce",
+          "path": "packages/dom-snapshot/test/serializer.test.ts",
+          "fingerprint": "66c7936538ac2c2cce7d22865740c350c5b8fa320d5c980c88c28feb14fd7fad"
+        },
+        {
+          "item_id": "d93be8e1438ab8f3fbfc3ad2823b3e0624cd7ec928f46c1f4bf4aa1b121d2877",
+          "path": "packages/dom-snapshot/test/dom-state.test.ts",
+          "fingerprint": "ba6e319851ea38cd68459347eabb5633f8e9bb0c45b610e87ceca997597d8fd5"
+        },
+        {
+          "item_id": "ea3a04ff67680a3b5537db6b6efe51cafdae8d9294dbf1620da39b2bfde09279",
+          "path": "packages/dom-snapshot/test/golden-fixture.ts",
+          "fingerprint": "ff6ea8f3c07185f8fb8341a5c97a8105f4a020dece1d4fcdc321692fb763b8f1"
+        },
+        {
+          "item_id": "fe2636955e2f8b5a7805c92bc1054d801692824af1fc78b6255a8ac845fcd9dc",
+          "path": "packages/dom-snapshot/src/index.ts",
+          "fingerprint": "570909e027c867f6dfffd3f41327a761078c4fb545fde57c9edf37ac6bd21bfb"
+        }
+      ],
+      "reused": [],
+      "failed": [],
+      "waived": []
+    },
+    "elapsed_ms": 470059
+  }
+}

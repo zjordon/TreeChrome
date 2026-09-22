@@ -62,15 +62,17 @@ export function loadGoldenFixtures(): { name: string; fixture: GoldenFixture }[]
     }));
 }
 
-/** 逐字节对拍，失败时打印首个差异窗口辅助定位 */
-export function expectByteEqual(actual: string, expected: string): void {
+/** 逐字节对拍，失败时打印首个差异窗口辅助定位；label 为对拍字段名，复用于其他字段时显式传入 */
+export function expectByteEqual(
+  actual: string,
+  expected: string,
+  label = "element_tree_text",
+): void {
   if (actual === expected) return;
   let i = 0;
   while (i < expected.length && i < actual.length && expected[i] === actual[i]) {
     i += 1;
   }
   const win = (s: string) => JSON.stringify(s.slice(Math.max(0, i - 60), i + 80));
-  throw new Error(
-    `element_tree_text 首个差异 @${i}:\n  py: ${win(expected)}\n  ts: ${win(actual)}`,
-  );
+  throw new Error(`${label} 首个差异 @${i}:\n  py: ${win(expected)}\n  ts: ${win(actual)}`);
 }
