@@ -800,10 +800,31 @@ export interface DOMCollectionConfig {
   heavyPageElementThreshold: number;
 }
 
+/** Python DOMCollectionConfig dataclass 默认值（models.py:732-738） */
+export const DEFAULT_DOM_COLLECTION_CONFIG: DOMCollectionConfig = {
+  cdpFirstTimeout: 10.0,
+  cdpRetryTimeout: 2.0,
+  maxIframes: 100,
+  heavyPageElementThreshold: 10000,
+};
+
 export interface DOMCollectionMetrics {
   degradationLevel: DOMDegradationLevel;
   sourceStatuses: Record<string, string>;
   totalMs: number;
+  /** 仅触发 maxIframes 截断时记录原始文档数（Python 同口径；未超限时不赋值） */
   iframeCount: number;
+  /** 序列化层职责：Python 采集路径不赋值，由调用方/gen_fixtures 记 selector_map 规模 */
   elementCount: number;
+}
+
+/** Python DOMCollectionMetrics dataclass 默认值（models.py:742-749） */
+export function createDomCollectionMetrics(): DOMCollectionMetrics {
+  return {
+    degradationLevel: DOMDegradationLevel.FULL,
+    sourceStatuses: {},
+    totalMs: 0,
+    iframeCount: 0,
+    elementCount: 0,
+  };
 }

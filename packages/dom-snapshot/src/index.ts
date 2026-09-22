@@ -1,9 +1,12 @@
 /**
  * @tw/dom-snapshot 公共入口。
  *
- * 当前状态：models（types.ts）与协议（protocol.ts）已移植并通过 Python 参考值
- * 对拍；collector / serializer 尚未移植（见 docs/architecture.md §10 移植地图）。
+ * 当前状态：models（types.ts）、协议（protocol.ts）、采集融合（collector.ts，
+ * P1.2）与 CDP 批调用（cdp-batch.ts）已移植；serializer（P1.3）与 buildDomState
+ * 组合入口待移植（见 docs/architecture.md §10 移植地图）。
  */
+export * from "./cdp-batch.js";
+export * from "./collector.js";
 export * from "./protocol.js";
 export * from "./types.js";
 

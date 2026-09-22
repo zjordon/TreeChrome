@@ -5,45 +5,11 @@
  * collector/serializer 移植完成后，本文件升级为「input 喂 TS 管线 →
  * output.element_tree_text 逐字节对拍」的验收测试（见 test/fixtures/README.md）。
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CdpCaptureSnapshotResult } from "../src/protocol.js";
+import { loadGoldenFixtures } from "./golden-fixture.js";
 
-const FIXTURES_DIR = join(__dirname, "fixtures");
-
-interface Fixture {
-  meta: {
-    url: string;
-    generated_at: string;
-    degradation: string;
-    source_statuses?: Record<string, string>;
-  };
-  input: {
-    dom_tree: Record<string, unknown> | null;
-    snapshot: Record<string, unknown> | null;
-    ax_tree: Record<string, unknown> | null;
-  };
-  output: {
-    element_tree_text: string;
-    selector_map: Record<string, Record<string, unknown>>;
-    file_input_backend_ids?: number[];
-    file_inputs_meta?: Record<string, unknown>[];
-    page_stats?: Record<string, unknown>;
-  };
-}
-
-function loadFixtures(): { name: string; fixture: Fixture }[] {
-  if (!existsSync(FIXTURES_DIR)) return [];
-  return readdirSync(FIXTURES_DIR)
-    .filter((f) => f.endsWith(".json"))
-    .map((name) => ({
-      name,
-      fixture: JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf-8")) as Fixture,
-    }));
-}
-
-const fixtures = loadFixtures();
+const fixtures = loadGoldenFixtures();
 
 describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
   it("至少一个 fixture 可加载", () => {
@@ -70,6 +36,7 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
         const layout = doc.layout;
         // layout 是 CDP DocumentSnapshot 的必需字段：缺失即契约破坏，报警而非跳过
         expect(layout).toBeDefined();
+        if (!layout) continue;
         expect(Array.isArray(layout.bounds)).toBe(true);
         expect(Array.isArray(layout.nodeIndex)).toBe(true);
         expect(layout.bounds).toHaveLength(layout.nodeIndex.length);
@@ -97,7 +64,8 @@ describe.skipIf(fixtures.length === 0)("golden fixtures schema", () => {
         expect(fixture.output.element_tree_text.length).toBeGreaterThan(0);
       }
       for (const [idx, proj] of Object.entries(fixture.output.selector_map)) {
-        expect(String(Number(idx))).toBe(idx); // 键是数字字符串（backendNodeId）
+        // 键是数字字符串（highlight_index，元素树行号）；backend_node_id 是投影里的独立字段
+        expect(String(Number(idx))).toBe(idx);
         expect(proj.backend_node_id).toBeTypeOf("number");
         expect(typeof proj.node_name).toBe("string");
       }
