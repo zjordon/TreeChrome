@@ -25,6 +25,11 @@ import { postJson } from "./http.js";
  * _isNewOpenAIContract）：拒收 max_tokens 要 max_completion_tokens，且只接受默认
  * temperature。本地/网关端点（lmstudio 等）即使模型名相似也多用旧契约——由卡片
  * maxTokensField 显式声明覆盖。
+ *
+ * 维护提示：前缀清单随 OpenAI 新模型发布**必然漂移**（gpt-6/o5 等不在此列的新
+ * 契约模型会被误判走 max_tokens → 端点 400，纠正手段是卡片 maxTokensField）；
+ * `o1|o3|o4` 也会误匹配同前缀的自定义模型名（如 o1-finetune）。新增模型时同步
+ * 此正则。
  */
 const NEW_CONTRACT_PREFIX = /^(gpt-5|gpt-4\.1|o1|o3|o4)/;
 
@@ -114,9 +119,10 @@ function parseArguments(raw: unknown): Record<string, unknown> | undefined {
   if (isRecord(raw)) {
     return raw; // 个别端点返回对象形态——直收
   }
-  // 缺失/空串兜底 {}：兼容端点（vLLM/Ollama 等）对无参工具的合法形态，
-  // 与 anthropic input / gemini args 的口径对齐；仅「有内容但解析失败/非对象」才丢弃
-  if (raw === undefined || raw === "") {
+  // 缺失/null/空串兜底 {}：兼容端点（vLLM/Ollama/自建网关等）对无参工具的合法
+  // 形态——null 与缺失语义相同；与 anthropic input / gemini args 的口径对齐；
+  // 仅「有内容但解析失败/非对象」才丢弃
+  if (raw === undefined || raw === null || raw === "") {
     return {};
   }
   if (typeof raw !== "string") {
@@ -134,12 +140,13 @@ function parseResponse(
   json: unknown,
   requestedNames: ReadonlySet<string>,
   log: (message: string) => void,
+  providerName: string,
 ): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(
       `openai 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
       {
-        provider: "openai-completions",
+        provider: providerName,
       },
     );
   }
@@ -238,7 +245,7 @@ export function createOpenAICompletionsProvider(
       timeoutMs: req.timeoutMs,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames, deps.log);
+    return parseResponse(json, requestedNames, deps.log, config.name);
   };
 
   return {

@@ -2,7 +2,6 @@
 // 移植自 tree_walker/llm/client.py 同名私有方法（03 §3.2-3.4）；期望值锚定 Python 实跑，
 // 见 test/llm/transforms.test.ts 头部命令与输出。
 
-import { LLMProtocolViolationError } from "./errors.js";
 import type { ChatMessage } from "./types.js";
 
 /** URL 缩写阈值（Python _URL_MIN_LENGTH=100） */
@@ -104,6 +103,12 @@ function restoreInStrings(
     return obj.map((item) => restoreInStrings(item, replacements));
   }
   if (isRecord(obj)) {
+    // 仅递归普通对象：Map/Set/Date 等非普通对象的 entries 为空，按原逻辑重建会
+    // 静默清空成 {}（现调用点只喂纯 JSON 产物，此处防御未来复用踩坑）
+    const proto = Object.getPrototypeOf(obj);
+    if (proto !== Object.prototype && proto !== null) {
+      return obj;
+    }
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
       out[k] = restoreInStrings(v, replacements);
@@ -184,10 +189,11 @@ export function tryParseJson(text: string): Record<string, unknown> | undefined 
 /**
  * 滤图（fallback 切到无视觉模型后调用，Python _strip_image_blocks）：
  * 从 work 消息移除全部 ImageBlock。智谱端点对「文本模型+图」静默致盲不报错
- * （P0 实测），不滤只会得到困惑回答。块移空 = canonical 违例，抛
- * LLMProtocolViolationError 暴露（Python 退化为空串；TS canonical 无空块语义）。
+ * （P0 实测），不滤只会得到困惑回答。块滤空 = image-only 历史（截图型 agent
+ * 常见）——降级为占位文本块继续而非抛错（Python 同款降级为空串；一次瞬时 429
+ * 触发 fallback 切换不该被放大成步级硬失败）。
  */
-export function stripImageBlocks(messages: ChatMessage[], providerName: string): void {
+export function stripImageBlocks(messages: ChatMessage[]): void {
   for (const msg of messages) {
     if (msg.role === "toolResult") {
       continue;
@@ -195,10 +201,8 @@ export function stripImageBlocks(messages: ChatMessage[], providerName: string):
     const kept = msg.blocks.filter((b) => b.kind !== "image");
     if (kept.length !== msg.blocks.length) {
       if (kept.length === 0) {
-        throw new LLMProtocolViolationError(
-          "滤图后消息块为空（canonical 要求 user/assistant 消息恒有非 image 块）",
-          { provider: providerName },
-        );
+        msg.blocks = [{ kind: "text", text: "[image omitted]" }];
+        continue;
       }
       msg.blocks = kept;
     }

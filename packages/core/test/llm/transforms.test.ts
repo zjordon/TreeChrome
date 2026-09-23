@@ -30,7 +30,7 @@
 //   （backoff 的延迟消费路径在 client.test.ts 退避组覆盖；本文件锚定纯函数。）
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, TextBlock, UserMessage } from "../../src/index.js";
-import { LLMProtocolViolationError } from "../../src/llm/errors.js";
+
 import {
   applySensitiveInMessages,
   cloneWorkMessages,
@@ -186,6 +186,17 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     expect(restoreUrlsInOutput({ u: "[u0]" }, urlMap)).toEqual({ u: "https://ex.com/$&/a" });
   });
 
+  it("非普通对象（Map/Set/Date）原样保留，不被递归重建静默清空成 {}", () => {
+    const m = new Map([["k", "v-<KEY1>"]]);
+    const s = new Set(["<KEY1>"]);
+    const d = new Date(0);
+    const out = restoreSensitiveInOutput({ m, s, d }, { "sk-abc": "<KEY1>" });
+    // 同一实例原样返回——按 entries 递归会把这些对象清空成 {}（数据损坏）
+    expect(out.m).toBe(m);
+    expect(out.s).toBe(s);
+    expect(out.d).toBe(d);
+  });
+
   it("map 为空/undefined 时两侧都不动", () => {
     const messages: ChatMessage[] = [userMsg("sk-abc")];
     applySensitiveInMessages(messages, undefined);
@@ -226,24 +237,27 @@ describe("stripImageBlocks", () => {
         ],
       },
     ];
-    stripImageBlocks(messages, "test");
+    stripImageBlocks(messages);
     expect(messages[0].role === "user" && messages[0].blocks).toEqual([
       { kind: "text", text: "screenshot:" },
     ]);
   });
 
-  it("块被滤空 → LLMProtocolViolationError（canonical 不变量，违例暴露）", () => {
+  it("image-only 历史块被滤空 → 降级占位文本块继续（Python 降级空串同精神，不放大成步级硬失败）", () => {
     const messages: ChatMessage[] = [
       { role: "user", blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }] },
     ];
-    expect(() => stripImageBlocks(messages, "test")).toThrow(LLMProtocolViolationError);
+    stripImageBlocks(messages);
+    expect(messages[0].role === "user" && messages[0].blocks).toEqual([
+      { kind: "text", text: "[image omitted]" },
+    ]);
   });
 
   it("toolResult 消息不受滤图影响", () => {
     const messages: ChatMessage[] = [
       { role: "toolResult", toolCallId: "t", toolName: "n", text: "ok" },
     ];
-    stripImageBlocks(messages, "test");
+    stripImageBlocks(messages);
     expect(messages[0]).toEqual({ role: "toolResult", toolCallId: "t", toolName: "n", text: "ok" });
   });
 });

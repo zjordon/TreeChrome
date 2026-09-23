@@ -138,6 +138,8 @@ export class LLMClient {
   private provider: LLMProvider;
   private readonly fallbackConfig: ProviderConfig | null;
   private usingFallback = false;
+  /** 滤图 WARNING 的实例级去重（首次真正滤到图片时告警一次） */
+  private loggedImageFilter = false;
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
@@ -216,6 +218,22 @@ export class LLMClient {
       const urlMap = shortenUrlsInMessages(work);
       const sensitive = opts.sensitiveMap;
       applySensitiveInMessages(work, sensitive);
+      // toolResult 文本不在占位范围（P5 parity，见 applySensitiveInMessages 注释）——
+      // 命中敏感 real 值时留 WARNING：明文出站的暴露必须可观测，不再静默（P4 收口）
+      if (sensitive !== undefined) {
+        const reals = Object.keys(sensitive).filter((real) => real !== "");
+        const leaking: string[] = [];
+        for (const m of work) {
+          if (m.role === "toolResult" && reals.some((real) => m.text.includes(real))) {
+            leaking.push(m.toolName);
+          }
+        }
+        if (leaking.length > 0) {
+          this.deps.log(
+            `[llm] WARNING: toolResult(${leaking.join(", ")}) 文本包含敏感值，将以明文出站（toolResult 不在占位范围，P4 接 SecretProvider 时收口）`,
+          );
+        }
+      }
 
       let textRetries = 0;
       let noActionRetried = false;
@@ -314,7 +332,20 @@ export class LLMClient {
       this.config.capabilities?.supportsVision === false ||
       (this.usingFallback && !this.provider.capabilities.supportsVision)
     ) {
-      stripImageBlocks(work, this.config.name);
+      // 滤图零观测会掩盖能力静默降级：图片确实被滤时留一次 WARNING（实例级去重，
+      // 截图型 agent 逐步带图不逐请求刷屏）——白名单外真视觉卡误滤时宿主有迹可循
+      if (!this.loggedImageFilter) {
+        const hasImage = work.some(
+          (m) => m.role !== "toolResult" && m.blocks.some((b) => b.kind === "image"),
+        );
+        if (hasImage) {
+          this.loggedImageFilter = true;
+          this.deps.log(
+            `[llm] WARNING: 滤图生效（${this.config.name} 判定无视觉能力）——图片块将不出站，若为真视觉卡请显式声明 supportsVision:true`,
+          );
+        }
+      }
+      stripImageBlocks(work);
     }
     const caps = this.provider.capabilities;
     let sys = systemPrompt;

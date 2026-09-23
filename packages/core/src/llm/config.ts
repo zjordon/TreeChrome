@@ -21,7 +21,9 @@ export interface ProviderConfig {
   /** 输出上限；缺省值参考 DEFAULT_MAX_TOKENS=16384 */
   maxTokens: number;
   temperature?: number;
-  /** 缺省走启发式（resolveCapabilities） */
+  /** 缺省走启发式（resolveCapabilities）。注意：fallback 卡未声明时按白名单推导
+   *  supportsVision——白名单外的真视觉卡（gpt-4o/qwen-vl/gemini 等）作 fallback
+   *  会被推导为 false 而滤图，须显式声明 supportsVision:true（滤图生效有 WARNING） */
   capabilities?: Partial<ProviderCapabilities>;
   /** 观测用（P4 消息裁剪消费），本阶段透传 */
   contextWindow?: number;

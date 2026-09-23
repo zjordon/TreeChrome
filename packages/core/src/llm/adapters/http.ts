@@ -178,8 +178,13 @@ export async function postJson(
     } catch (e) {
       // 错误体读取阶段的超时仍按超时分型（LLMTimeoutError/infra 可重试）——吞成
       // 空体会把超时误报为状态码错误（4xx 不可重试且会触发 fallback 切换）。
-      // 非超时的读体失败（连接中断等）保持状态码错误优先、空体兜底
+      // 外部取消与成功体路径（classifyFailure）同口径原样上抛，不被状态码错误
+      // 吞掉（取消误报为 429 还会误触发 fallback 单向切换）；其余读体失败
+      //（连接中断等）保持状态码错误优先、空体兜底
       throwIfTimedOut(e);
+      if (isAbortError(e)) {
+        throw e;
+      }
     }
     throw statusToError(resp.status, raw, resp.headers.get("retry-after"), init.provider);
   }

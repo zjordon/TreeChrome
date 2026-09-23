@@ -285,7 +285,7 @@ describe("响应解析（wire → canonical）", () => {
     expect(res.stopReason).toBe("other"); // 全部被丢弃：不置 tool_call（与 gemini 口径一致）
   });
 
-  it("arguments 缺失/空串兜底 {}（兼容端点无参工具形态，与 anthropic/gemini 口径对齐）", async () => {
+  it("arguments 缺失/null/空串兜底 {}（兼容端点无参工具形态，与 anthropic/gemini 口径对齐）", async () => {
     const { mock, provider } = setup();
     mock.queueMany({
       status: 200,
@@ -298,6 +298,11 @@ describe("响应解析（wire → canonical）", () => {
               tool_calls: [
                 { id: "c1", type: "function", function: { name: "agent_response" } },
                 { id: "c2", type: "function", function: { name: "agent_response", arguments: "" } },
+                {
+                  id: "c3",
+                  type: "function",
+                  function: { name: "agent_response", arguments: null },
+                },
               ],
             },
             finish_reason: "tool_calls",
@@ -310,8 +315,17 @@ describe("响应解析（wire → canonical）", () => {
     expect(res.toolCalls).toEqual([
       { id: "c1", name: "agent_response", args: {} },
       { id: "c2", name: "agent_response", args: {} },
+      { id: "c3", name: "agent_response", args: {} },
     ]);
     expect(res.stopReason).toBe("tool_call");
+  });
+
+  it("响应不是对象 → LLMProtocolViolationError（provider 归因到卡片 name，fallback 双卡可区分）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({ status: 200, body: "not-an-object" });
+    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMProtocolViolationError);
+    expect((err as LLMProtocolViolationError).provider).toBe("glm-openai");
   });
 
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {

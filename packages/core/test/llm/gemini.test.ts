@@ -5,7 +5,11 @@ import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createGeminiProvider } from "../../src/llm/adapters/gemini.js";
 import { sanitizeGeminiSchema } from "../../src/llm/adapters/schema-sanitize.js";
-import { LLMBlockedError, LLMRateLimitError } from "../../src/llm/errors.js";
+import {
+  LLMBlockedError,
+  LLMProtocolViolationError,
+  LLMRateLimitError,
+} from "../../src/llm/errors.js";
 import { stubDeps } from "./fixtures.js";
 import { MockFetch } from "./mock-fetch.js";
 
@@ -99,6 +103,15 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
 
   it("边界 type: ['null'] → 兜底合法 type 枚举（不产出无 type 的 schema）", () => {
     expect(sanitizeGeminiSchema({ type: ["null"] })).toEqual({ type: "string", nullable: true });
+  });
+
+  it("单值 type:'null' 与数组含非字符串病态元素 → 同一兜底路径收口（'null' 不在 Gemini 枚举内）", () => {
+    expect(sanitizeGeminiSchema({ type: "null" })).toEqual({ type: "string", nullable: true });
+    expect(sanitizeGeminiSchema({ type: ["null", 5] })).toEqual({ type: "string", nullable: true });
+    expect(sanitizeGeminiSchema({ type: [5, "object", "null"] })).toEqual({
+      type: "object",
+      nullable: true,
+    });
   });
 
   it("非对象子项原样透传；原始 schema 不被改动", () => {
@@ -477,14 +490,20 @@ describe("响应解析（wire → canonical）", () => {
     expect(res.stopReason).toBe("stop"); // 从保留的调用推导（toolCalls 空不报 tool_call）
   });
 
-  it("无参 functionCall（args 被 proto3 JSON 省略）→ 兜底 {} 保留（与 anthropic input 口径对齐）", async () => {
+  it("无参 functionCall（args 被 proto3 JSON 省略 / 转换型网关 args:null）→ 兜底 {} 保留（与 anthropic input 口径对齐）", async () => {
     const { mock, provider } = setup();
     mock.queueMany({
       status: 200,
       body: {
         candidates: [
           {
-            content: { role: "model", parts: [{ functionCall: { name: "agent_response" } }] },
+            content: {
+              role: "model",
+              parts: [
+                { functionCall: { name: "agent_response" } },
+                { functionCall: { name: "agent_response", args: null } },
+              ],
+            },
             finishReason: "STOP",
           },
         ],
@@ -492,7 +511,18 @@ describe("响应解析（wire → canonical）", () => {
       },
     });
     const res = await provider.chat(baseReq());
-    expect(res.toolCalls).toEqual([{ id: "gemini-call-0", name: "agent_response", args: {} }]);
+    expect(res.toolCalls).toEqual([
+      { id: "gemini-call-0", name: "agent_response", args: {} },
+      { id: "gemini-call-1", name: "agent_response", args: {} },
+    ]);
+  });
+
+  it("响应不是对象 → LLMProtocolViolationError（provider 归因到卡片 name，fallback 双卡可区分）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({ status: 200, body: "not-an-object" });
+    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMProtocolViolationError);
+    expect((err as LLMProtocolViolationError).provider).toBe("gemini-card");
   });
 
   it.each([

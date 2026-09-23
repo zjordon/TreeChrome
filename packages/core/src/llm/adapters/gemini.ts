@@ -133,12 +133,13 @@ function parseResponse(
   requestedNames: ReadonlySet<string>,
   log: (message: string) => void,
   nextCallId: () => string,
+  providerName: string,
 ): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(
       `gemini 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
       {
-        provider: "gemini",
+        provider: providerName,
       },
     );
   }
@@ -181,9 +182,10 @@ function parseResponse(
         continue;
       }
       const rawArgs: unknown = part.functionCall.args;
-      // args 缺失兜底 {}：proto3 JSON 会省略空 Struct，无参工具的合法形态是 {name}
+      // args 缺失/null 兜底 {}：proto3 JSON 会省略空 Struct，无参工具的合法形态是
+      // {name}；经 OpenAI→Gemini 转换型网关还可能出现 args:null（与缺失语义相同）。
       //（与 anthropic input / openai arguments 的口径对齐）
-      if (rawArgs !== undefined && !isRecord(rawArgs)) {
+      if (rawArgs !== undefined && rawArgs !== null && !isRecord(rawArgs)) {
         log(`[llm] gemini 丢弃 args 非对象的 functionCall：${name}`);
         continue;
       }
@@ -279,7 +281,13 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
       timeoutMs: req.timeoutMs,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames, deps.log, () => `gemini-call-${synthSeq++}`);
+    return parseResponse(
+      json,
+      requestedNames,
+      deps.log,
+      () => `gemini-call-${synthSeq++}`,
+      config.name,
+    );
   };
 
   return {

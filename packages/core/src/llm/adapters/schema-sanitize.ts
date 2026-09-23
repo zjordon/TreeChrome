@@ -33,17 +33,15 @@ export function sanitizeGeminiSchema(
       onDroppedKey?.(normalized);
       continue;
     }
-    if (normalized === "type" && Array.isArray(value)) {
-      // JSON Schema 联合类型 type: ["string","null"] → 取首个非 null + nullable
-      //（Gemini Schema.type 只收单个字符串枚举，数组形态会被拒收）
-      const first = value.find((t) => t !== "null");
-      if (first !== undefined) {
-        out.type = first;
-      } else {
-        // type: ["null"] 边界（值只允许 null）：兜底合法枚举，避免产出无 type 的 schema
-        out.type = "string";
-      }
-      if (value.includes("null")) {
+    if (normalized === "type" && (Array.isArray(value) || value === "null")) {
+      // JSON Schema 联合类型 type: ["string","null"] / 单值 "null" → 取首个非 null
+      // 字符串 + nullable（Gemini Schema.type 只收单个字符串枚举，"null" 不在枚举
+      // 内、数组形态会被拒收——三种形态统一收口，元素非字符串的病态值跳过取兜底）
+      const list = Array.isArray(value) ? value : [value];
+      const first = list.find((t) => typeof t === "string" && t !== "null");
+      // 全 null/病态元素：兜底合法枚举，避免产出无 type 或非法 type 的 schema
+      out.type = first ?? "string";
+      if (list.includes("null")) {
         out.nullable = true;
       }
       continue;

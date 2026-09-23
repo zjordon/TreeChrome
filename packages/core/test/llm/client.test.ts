@@ -230,6 +230,30 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     const r = await client.getAction("sys", messages, TOOL);
     expect(r).toEqual({ kind: "empty" });
   });
+
+  it("toolResult 文本命中敏感值 → WARNING 可观测（明文出站不静默；P5 parity 只告警不改 wire）", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const client = createLLMClient(CARD, {
+      fetch: mock.fetch,
+      now: () => 0,
+      sleep: async () => {},
+      log: (m) => logs.push(m),
+    });
+    mock.queueMany(toolOk({ done: 1 }));
+    const messages: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "text", text: "q" }] },
+      { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args: {} }] },
+      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "echoed sk-secret" },
+    ];
+    const r = await client.getAction("sys", messages, TOOL, {
+      sensitiveMap: { "sk-secret": "<KEY>" },
+    });
+    expect(r.kind).toBe("ok");
+    // wire 仍明文（P5 parity 不动）；但暴露必须可观测
+    expect(JSON.stringify(mock.lastBody())).toContain("echoed sk-secret");
+    expect(logs.some((m) => m.includes("WARNING") && m.includes(TOOL.name))).toBe(true);
+  });
 });
 
 describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30,30）", () => {
@@ -436,6 +460,27 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     undeclared.mock.queueMany(toolOk({ done: 1 }));
     await undeclared.client.getAction("sys", withImage, TOOL);
     expect(JSON.stringify(undeclared.mock.lastBody().messages)).toContain('"image"');
+  });
+
+  it("滤图生效留一次 WARNING（实例级去重）；image-only 历史降级占位文本块不放大成步级失败", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const client = createLLMClient(
+      { ...CARD, capabilities: { supportsVision: false } },
+      { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: (m) => logs.push(m) },
+    );
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
+    const imageOnly: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }] },
+    ];
+    const r = await client.getAction("sys", imageOnly, TOOL);
+    expect(r.kind).toBe("ok");
+    // image-only 历史降级为占位文本块继续（Python 降级空串同精神，一次瞬时 429
+    // 触发 fallback 切换不被放大成步级硬失败）
+    expect(JSON.stringify(mock.bodyAt(0).messages)).toContain("[image omitted]");
+    // 首次真正滤到图片才告警；无图的后续调用不重复刷屏
+    await client.getAction("sys", msgs(), TOOL);
+    expect(logs.filter((m) => m.includes("滤图生效")).length).toBe(1);
   });
 });
 

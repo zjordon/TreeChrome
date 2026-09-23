@@ -370,10 +370,12 @@ describe("响应解析（wire → canonical）", () => {
     expect(res.toolCalls).toEqual([]);
   });
 
-  it("响应不是对象 → LLMProtocolViolationError", async () => {
+  it("响应不是对象 → LLMProtocolViolationError（provider 归因到卡片 name，fallback 双卡可区分）", async () => {
     const { mock, provider } = setup();
     mock.queueMany({ status: 200, body: "not-an-object" });
-    await expect(provider.chat(baseReq())).rejects.toBeInstanceOf(LLMProtocolViolationError);
+    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMProtocolViolationError);
+    expect((err as LLMProtocolViolationError).provider).toBe("glm-anthropic");
   });
 });
 

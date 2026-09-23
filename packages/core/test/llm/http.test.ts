@@ -114,6 +114,28 @@ describe("postJson 状态→错误类与错误体提取", () => {
     const err = await post(mock).catch((e: unknown) => e);
     expect((err as LLMServerError).message).toBe("HTTP 502");
   });
+
+  it("错误体读取阶段的外部中止 → AbortError 原样上抛（不被状态码错误吞掉误触 fallback）", async () => {
+    // 状态行 429 已返回、body 读取以 AbortError 拒绝（外部取消恰逢读体）——
+    // 修复前会照常抛 statusToError，把取消误报成真 429（可重试 + 触发单向切换）
+    const abortErr = new DOMException("Aborted", "AbortError");
+    const fetchFn = (async () => {
+      return {
+        ok: false,
+        status: 429,
+        headers: new Headers({ "retry-after": "5" }),
+        text: () => Promise.reject(abortErr),
+      } as unknown as Response;
+    }) as typeof fetch;
+    const err = await postJson(
+      fetchFn,
+      "https://unit.example/api",
+      { "content-type": "application/json" },
+      { ping: 1 },
+      { provider: "unit" },
+    ).catch((e: unknown) => e);
+    expect(err).toBe(abortErr);
+  });
 });
 
 describe("postJson 成功与网络层", () => {

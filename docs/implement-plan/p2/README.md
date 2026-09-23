@@ -198,3 +198,16 @@ smoke 产物摘要：
 - **#8 行为扩展子项**（请求侧 sensitiveMap 扩展到 toolResult.text）：P5 parity 裁决在案（transforms.test 锁定，轮 1 #17 同源驳回），P4 接 SecretProvider 时一并裁决；其文档诉求已在位——GetActionOptions.sensitiveMap JSDoc 已明示"工具输出中的敏感值会明文出站"。
 
 测试 211 例全绿（覆盖率 97.28%）；smoke 假 key 链路复验（exitCode 1，脱敏生效）。
+
+### 评审轮 7（review-p2-llm-client-7.json，2026-09-24，12 条）
+
+采纳 12 条。要点：
+
+- **stripImageBlocks 滤空改降级（#5，本轮唯一行为翻转）**：image-only 历史 + 滤图条件（fallback 切换或显式 supportsVision:false）此前抛 LLMProtocolViolationError——一次瞬时 429 触发 fallback 切换会被放大成步级硬失败。Python 原实现降级为空串继续（已核实源码），TS 降级为占位文本块 `[image omitted]`（满足 canonical 非空不变量，保住"继续而非失败"的 parity 精神）；锚定测试同步翻转。
+- **错误体读取的外部取消穿透（#8，轮 5 #12 同族收口）**：外部 signal 恰逢**错误体读取**时 AbortError 被 statusToError 吞掉——取消误报为真 429（可重试 + 误触 fallback 单向切换）。此前靠 callWithBackoff 的 signal 预检兜底，现 http 层本地即原样上抛（与成功体路径 classifyFailure 对称），「取消必须穿透」不变量在层内自洽。
+- **观测补洞（#4/#6）**：toolResult 文本命中敏感 real 值 → WARNING（明文出站的暴露可观测；wire 形态不动、维持 P5 parity，P4 收口）；滤图首次真正生效 → WARNING 一次（实例级去重）——白名单外真视觉卡被误滤时宿主有迹可循，ProviderConfig.capabilities 注释补 fallback 未声明按白名单推导的提示。
+- **无参调用兜底口径统一（#1/#9）**：openai `arguments:null`、gemini `args:null` 并入缺失/空串兜底 {}——null 与缺失语义相同（无参工具），个别兼容网关/转换型网关以此形态表示无参，此前整调用被静默丢弃。
+- **schema type 清洗闭环（#3）**：单值 `type:"null"` 此前原样透传（不在 Gemini 枚举内仍会被拒收，与文件头"清洗必须闭环"矛盾）；数组元素非字符串的病态值同样漏过——统一并入 `["null"]` 同款兜底路径并按 typeof 收紧。
+- **归因与防御（#10/#11/#12/#7/#2）**：三适配器 parseResponse 的"响应不是对象"违例 provider 从协议字面量改为卡片 name（errors.ts 契约，fallback 同协议双卡可归因）；restoreInStrings 对 Map/Set/Date 等非普通对象原样保留（按 entries 递归会静默清空成 {}——现调用点只喂纯 JSON 产物，防御未来复用）；NEW_CONTRACT_PREFIX 注释登记前缀清单随新模型发布漂移的维护义务与 o1/o3/o4 误匹配场景。
+
+测试 218 例全绿（覆盖率 97.93%）。

@@ -139,12 +139,13 @@ function parseResponse(
   json: unknown,
   requestedNames: ReadonlySet<string>,
   log: (message: string) => void,
+  providerName: string,
 ): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(
       `anthropic 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
       {
-        provider: "anthropic-messages",
+        provider: providerName,
       },
     );
   }
@@ -236,7 +237,7 @@ export function createAnthropicProvider(
       timeoutMs: req.timeoutMs,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames, deps.log);
+    return parseResponse(json, requestedNames, deps.log, config.name);
   };
 
   return {
