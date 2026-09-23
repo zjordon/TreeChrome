@@ -128,6 +128,7 @@ function parseResponse(
   json: unknown,
   requestedNames: ReadonlySet<string>,
   log: (message: string) => void,
+  nextCallId: () => string,
 ): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(
@@ -176,15 +177,17 @@ function parseResponse(
         continue;
       }
       const rawArgs: unknown = part.functionCall.args;
+      // args 缺失兜底 {}：proto3 JSON 会省略空 Struct，无参工具的合法形态是 {name}
+      //（与 anthropic input / openai arguments 的口径对齐）
       if (rawArgs !== undefined && !isRecord(rawArgs)) {
         log(`[llm] gemini 丢弃 args 非对象的 functionCall：${name}`);
         continue;
       }
       // 无调用 id——合成，保证 canonical 不变量；同回合多 functionCall 即并行调用。
-      // args 缺失兜底 {}：proto3 JSON 会省略空 Struct，无参工具的合法形态是 {name}（与
-      // anthropic 的 input 口径对齐）
+      // 序号是 provider 实例级自增：跨回合/跨响应唯一（宿主可能以 toolCallId 作跨回合
+      // 键，与 anthropic/openai 真实端点的全局唯一 id 行为对齐）
       toolCalls.push({
-        id: `gemini-call-${toolCalls.length}`,
+        id: nextCallId(),
         name,
         args: (rawArgs as Record<string, unknown>) ?? {},
       });
@@ -208,6 +211,8 @@ function parseResponse(
 
 export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmDeps>): LLMProvider {
   const capabilities = resolveCapabilities(config);
+  // 合成 id 的实例级自增序号（跨响应唯一；每 provider 从 0 起）
+  let synthSeq = 0;
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
@@ -255,7 +260,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
       timeoutMs: req.timeoutMs,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames, deps.log);
+    return parseResponse(json, requestedNames, deps.log, () => `gemini-call-${synthSeq++}`);
   };
 
   return {

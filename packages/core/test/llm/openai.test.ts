@@ -48,6 +48,14 @@ const toolOk = (args: string): MockResponseSpec => ({
   },
 });
 
+function baseReq(): ChatRequest {
+  return {
+    systemPrompt: null,
+    messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+    tools: [TOOL],
+  };
+}
+
 describe("请求构造（canonical → wire）", () => {
   it("全量映射：system 首条、纯文本 user 字符串、含图 user 数组 data-URL、tool_calls 字符串化、toolResult 独立消息", async () => {
     const { mock, provider } = setup();
@@ -206,14 +214,6 @@ describe("请求构造（canonical → wire）", () => {
   });
 });
 
-function baseReq(): ChatRequest {
-  return {
-    systemPrompt: null,
-    messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
-    tools: [TOOL],
-  };
-}
-
 describe("响应解析（wire → canonical）", () => {
   it("arguments guard-parse：字符串/对象形态直收；截断 JSON 丢弃该调用（不带病 args 进 canonical）", async () => {
     const { mock, provider } = setup();
@@ -253,7 +253,8 @@ describe("响应解析（wire → canonical）", () => {
 
     const guarded = await provider.chat(baseReq());
     expect(guarded.toolCalls).toEqual([{ id: "c1", name: "agent_response", args: { direct: 1 } }]);
-    expect(guarded.stopReason).toBe("length"); // finish_reason 仍归一，不因丢弃变形
+    // 保留的调用推导优先（三协议统一）：c1 在 → tool_call 压过 finish_reason=length
+    expect(guarded.stopReason).toBe("tool_call");
   });
 
   it('tool_call 缺失/空 id → 丢弃（回传历史 tool_call_id="" 会被官方端点 400）', async () => {
@@ -279,6 +280,36 @@ describe("响应解析（wire → canonical）", () => {
     });
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([]);
+    expect(res.stopReason).toBe("other"); // 全部被丢弃：不置 tool_call（与 gemini 口径一致）
+  });
+
+  it("arguments 缺失/空串兜底 {}（兼容端点无参工具形态，与 anthropic/gemini 口径对齐）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                { id: "c1", type: "function", function: { name: "agent_response" } },
+                { id: "c2", type: "function", function: { name: "agent_response", arguments: "" } },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([
+      { id: "c1", name: "agent_response", args: {} },
+      { id: "c2", name: "agent_response", args: {} },
+    ]);
+    expect(res.stopReason).toBe("tool_call");
   });
 
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {

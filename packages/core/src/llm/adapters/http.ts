@@ -55,31 +55,34 @@ export function parseRetryAfterMs(raw: string | null): number | undefined {
 
 /**
  * 错误体 detail：优先 {error:{message}}（三协议官方形态），宽松兼容第三方网关的
- * {error:"纯字符串"} 与顶层 {message}；都不可用则原文前 500 字符。
+ * {error:"纯字符串"} 与顶层 {message}；都不可用则原文。**全部路径统一截断 500 字符**
+ *（网关把整页 HTML 塞进 error.message 时异常消息不无上限膨胀）。
  */
+const ERROR_DETAIL_MAX = 500;
+
 function extractErrorMessage(raw: string): string {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed === "object" && parsed !== null) {
       const err = (parsed as { error?: unknown }).error;
       if (typeof err === "string" && err.length > 0) {
-        return err;
+        return err.slice(0, ERROR_DETAIL_MAX);
       }
       if (typeof err === "object" && err !== null) {
         const message = (err as { message?: unknown }).message;
         if (typeof message === "string" && message.length > 0) {
-          return message;
+          return message.slice(0, ERROR_DETAIL_MAX);
         }
       }
       const top = (parsed as { message?: unknown }).message;
       if (typeof top === "string" && top.length > 0) {
-        return top;
+        return top.slice(0, ERROR_DETAIL_MAX);
       }
     }
   } catch {
     // 非 JSON 错误体：原文截断
   }
-  return raw.slice(0, 500);
+  return raw.slice(0, ERROR_DETAIL_MAX);
 }
 
 function statusToError(
@@ -131,16 +134,22 @@ export async function postJson(
       ? AbortSignal.any([init.signal, timeoutSignal])
       : (init.signal ?? timeoutSignal);
 
-  // 状态优先：timeoutSignal 已到点即按超时分型——真实 fetch 被超时 signal 中止时
-  // 以 reason（name="TimeoutError"）拒绝，靠错误名判别不可靠；外部中止（AbortError）
-  // 原样上抛由 client 分类；其余按网络层失败
-  const classifyFailure: (e: unknown) => never = (e) => {
+  // 超时分型统一入口（classifyFailure 与错误体读取 catch 共用，防两处模板漂移）：
+  // timeoutSignal 已到点即按超时分型——真实 fetch 被超时 signal 中止时以 reason
+  //（name="TimeoutError"）拒绝，靠错误名判别不可靠
+  const throwIfTimedOut = (e: unknown): void => {
     if (timeoutSignal?.aborted) {
       throw new LLMTimeoutError(`请求超时（${init.timeoutMs}ms）：${url}`, {
         provider: init.provider,
         cause: e,
       });
     }
+  };
+
+  // 状态优先：先超时分型；外部中止（AbortError）原样上抛由 client 分类；
+  // 其余按网络层失败
+  const classifyFailure: (e: unknown) => never = (e) => {
+    throwIfTimedOut(e);
     if (isAbortError(e)) {
       throw e;
     }
@@ -169,14 +178,8 @@ export async function postJson(
     } catch (e) {
       // 错误体读取阶段的超时仍按超时分型（LLMTimeoutError/infra 可重试）——吞成
       // 空体会把超时误报为状态码错误（4xx 不可重试且会触发 fallback 切换）。
-      // 状态优先判超时（超时 reason 是 TimeoutError，非 AbortError）；非超时的
-      // 读体失败（连接中断等）保持状态码错误优先、空体兜底
-      if (timeoutSignal?.aborted) {
-        throw new LLMTimeoutError(`请求超时（${init.timeoutMs}ms）：${url}`, {
-          provider: init.provider,
-          cause: e,
-        });
-      }
+      // 非超时的读体失败（连接中断等）保持状态码错误优先、空体兜底
+      throwIfTimedOut(e);
     }
     throw statusToError(resp.status, raw, resp.headers.get("retry-after"), init.provider);
   }

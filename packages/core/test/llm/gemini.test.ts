@@ -26,7 +26,8 @@ const TOOL = {
     type: "object",
     additionalProperties: false,
     properties: {
-      action: { type: "object", description: "the action", additionalProperties: true },
+      // minimum 数值约束键：第三方 JSON Schema 常见携带项，白名单外删除的覆盖点
+      action: { type: "object", description: "the action", additionalProperties: true, minimum: 1 },
       tags: { type: "array", items: { type: "string", enum: ["a", "b"] } },
     },
     required: ["action"],
@@ -94,6 +95,10 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       nullable: true,
       properties: { opt: { type: "object", nullable: true, description: "d" } },
     });
+  });
+
+  it("边界 type: ['null'] → 兜底合法 type 枚举（不产出无 type 的 schema）", () => {
+    expect(sanitizeGeminiSchema({ type: ["null"] })).toEqual({ type: "string", nullable: true });
   });
 
   it("非对象子项原样透传；原始 schema 不被改动", () => {

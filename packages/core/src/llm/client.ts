@@ -291,7 +291,9 @@ export class LLMClient {
     sensitive: Record<string, string> | undefined,
     usage: TokenUsage | null,
   ): GetActionResult {
-    // 还原顺序与请求侧互逆：先 URL 后敏感值（Python get_action 同序）
+    // 还原顺序与请求侧**同序**（先 URL 后敏感值）——对齐 Python get_action（:612-617），
+    // 刻意不取严格互逆：若占位符恰为某已映射长 URL 的子串，同序会把 URL 内的占位符
+    // 片段二次替换（URL 污染），但该碰撞极罕见且 Python 同款行为是 P5 parity 基准
     const restored = restoreSensitiveInOutput(restoreUrlsInOutput(toolInput, urlMap), sensitive);
     return { kind: "ok", toolInput: restored, usage };
   }
@@ -351,6 +353,13 @@ export class LLMClient {
       try {
         return await this.provider.chat(req);
       } catch (e) {
+        // ladder/外部 signal 已中止：下层任何分型（如错误响应体读取阶段的 abort 被
+        // http 层吞成状态码 LLMError——429 假象会误触发 fallback 单向切换并多发一次
+        // 注定失败的请求）都还原为取消原样上抛（#186 取消穿透契约）；ladder deadline
+        // 场景由 getAction 的 catch 统一转 LLMTimeoutError，类型不变
+        if (req.signal?.aborted) {
+          throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
+        }
         if (!(e instanceof LLMError)) {
           throw e; // 外部取消（AbortError）/ 编程错误原样穿透
         }

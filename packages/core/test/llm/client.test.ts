@@ -289,8 +289,11 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30,30）", () => {
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0); // 35000: 429 → 2000 → 37000 ≤ 41000 → sleep
     await clock.advance(2000); // 37000: 429 → 4000 → 41000 ≤ 41000 → sleep
-    await clock.advance(4000); // 41000: 429 → 8000 → 49000 > 41000 → 抛
-    await expect(p).rejects.toBeInstanceOf(LLMRateLimitError);
+    await clock.advance(4000); // 41000: 窗口 deadline 到点（watcher abort 恰逢 r3 失败）
+    // 到点恒 LLMTimeoutError（03 偏离 5）：callWithBackoff 的 signal 预检把"窗口到期
+    // 恰逢失败响应"还原为取消，不再以最后错误（RateLimit）变形掩蔽到点事实；
+    // "预算 gate 抛最后错误"路径由预算耗尽用例覆盖（预算 < 窗口时 gate 先触发）
+    await expect(p).rejects.toBeInstanceOf(LLMTimeoutError);
     expect(mock.calls.length).toBe(3);
   });
 
@@ -524,6 +527,54 @@ describe("deadline 与取消", () => {
     cleared.mock.queueMany(toolOk({ ok: 1 }));
     const r = await cleared.client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
+  });
+
+  it("外部 signal 恰逢错误响应体读取 → AbortError 穿透且不消耗 fallback 单向锁（评审轮 5 #12）", async () => {
+    // 首请求返回 429 状态行但 body 读取挂起（真实流式读体形态）；外部取消时 http 层
+    // 会把它吞成 LLMRateLimitError——修复前该假性 429 会误触发 fallback 单向切换
+    const hanging429BodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+      return {
+        ok: false,
+        status: 429,
+        headers: new Headers({ "retry-after": "5" }),
+        text: () =>
+          new Promise<string>((_resolve, reject) => {
+            const onAbort = () =>
+              reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+            if (init?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            init?.signal?.addEventListener("abort", onAbort, { once: true });
+          }),
+      } as unknown as Response;
+    }) as typeof fetch;
+    const normal = new MockFetch();
+    normal.queueMany(toolOk({ ok: 1 }));
+    let firstCall = true;
+    const fetchFn = (async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (firstCall) {
+        firstCall = false;
+        return hanging429BodyFetch(url, init);
+      }
+      return normal.fetch(url, init);
+    }) as typeof fetch;
+    const client = createLLMClient(
+      { ...CARD, fallback: FALLBACK },
+      { fetch: fetchFn, now: () => 0, sleep: async () => {}, log: () => {} },
+    );
+    const ctrl = new AbortController();
+    const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
+    await new Promise((resolve) => setTimeout(resolve, 10)); // 让链跑到错误体读取挂起
+    ctrl.abort();
+    const err = await p.catch((e: unknown) => e);
+    expect((err as DOMException).name).toBe("AbortError");
+    expect(err).not.toBeInstanceOf(LLMError);
+    expect(normal.calls.length).toBe(0); // 切换未发生：没有以 fallback 名义补发请求
+    // 单向锁未被消耗：后续 getAction 仍走主卡
+    const r = await client.getAction("sys", msgs(), TOOL);
+    expect(r.kind).toBe("ok");
+    expect(normal.calls[0].url).toContain("primary.example");
   });
 
   it("外部 signal 在退避 sleep 期间 abort → AbortError 原样穿透（不吞、不变形、不重试）", async () => {

@@ -321,6 +321,7 @@ describe("响应解析（wire → canonical）", () => {
     });
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([]);
+    expect(res.stopReason).toBe("other"); // 全部被丢弃：不置 tool_call（与 gemini 口径一致）
   });
 
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {

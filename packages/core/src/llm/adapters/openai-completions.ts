@@ -77,9 +77,12 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
   return out;
 }
 
-function mapFinishReason(raw: unknown): StopReason {
+function mapFinishReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
+  if (hasKeptToolCall) {
+    return "tool_call"; // 从保留的调用推导（与 anthropic/gemini 口径一致）
+  }
   if (raw === "tool_calls") {
-    return "tool_call";
+    return "other"; // 调用全部被丢弃：不置 tool_call，避免 toolCalls 空却报 tool_call 误导排障
   }
   if (raw === "stop") {
     return "stop";
@@ -110,6 +113,11 @@ function mapUsage(raw: unknown): TokenUsage | null {
 function parseArguments(raw: unknown): Record<string, unknown> | undefined {
   if (isRecord(raw)) {
     return raw; // 个别端点返回对象形态——直收
+  }
+  // 缺失/空串兜底 {}：兼容端点（vLLM/Ollama 等）对无参工具的合法形态，
+  // 与 anthropic input / gemini args 的口径对齐；仅「有内容但解析失败/非对象」才丢弃
+  if (raw === undefined || raw === "") {
+    return {};
   }
   if (typeof raw !== "string") {
     return undefined;
@@ -169,7 +177,10 @@ function parseResponse(
   const response: ChatResponse = {
     text,
     toolCalls,
-    stopReason: mapFinishReason(isRecord(first) ? first.finish_reason : undefined),
+    stopReason: mapFinishReason(
+      isRecord(first) ? first.finish_reason : undefined,
+      toolCalls.length > 0,
+    ),
     usage: mapUsage(json.usage),
   };
   if (reasoningText.length > 0) {

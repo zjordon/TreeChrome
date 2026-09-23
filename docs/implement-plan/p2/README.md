@@ -162,3 +162,21 @@ smoke 产物摘要：
 - **测试口径统一与去重（#1/#2/#5/#11/#12/#13/#14/#18）**：headers 断言统一 toEqual 全量锁定（三文件）；temperature 回退链抽 common.temperatureEntry；跨协议用例复用 setup；LONG_URL/drainBackoffLadder 提入 fixtures/helper；两处 queueMany 多余响应删除（保住队列耗尽 fail-fast）。
 
 测试 197 例全绿（覆盖率 97.35%）；smoke 假 key 链路复验。
+
+### 评审轮 5（review-p2-llm-client-5.json，2026-09-23，19 条）
+
+采纳 17 条 / 驳回 2 条（均因事实前提不成立）。要点：
+
+- **取消穿透补洞（#12，本轮最重要）**：外部取消/窗口 deadline 恰逢**错误响应体读取**时，http 层把 abort 吞成状态码 LLMError（如假性 429）→ 误触发 fallback 单向切换（不可逆）+ 以已中止 signal 补发注定失败的请求。callWithBackoff 在错误分类（含切换）前先查 `req.signal.aborted`，已中止即还原为取消原样上抛。附带语义修正：窗口 deadline 恰逢失败响应的终点从"最后错误"变为 LLMTimeoutError——正符合偏离 5「到点恒 Timeout」（原行为是 abort 无人消费的竞态产物）；回归用例锁"穿透 + 单向锁未消耗"。
+- **stopReason 三协议统一（#5/#6）**：anthropic/openai 补 hasKeptToolCall 守卫（与 gemini 轮 4 口径一致）——调用全部被丢弃时不置 tool_call（避免 toolCalls 空却报 tool_call 误导排障）；保留调用推导优先于 finish_reason（openai 用例 length→tool_call 随之更新）。
+- **无参工具调用三协议对齐（#16 + 轮 4 #17 收口）**：openai arguments 缺失/空串兜底 {}（vLLM/Ollama 对无参工具的合法形态），仅"有内容但解析失败"才丢弃。
+- **gemini 合成 id 跨响应唯一（#17）**：provider 实例级自增序号（宿主可能以 toolCallId 作跨回合键，对齐真实端点全局唯一行为；每实例从 0 起保持测试确定性）。
+- **http 层打磨**：错误体三条 JSON 提取路径统一截断 500（#7）；超时分型抽 throwIfTimedOut 防两处模板漂移（#8）；testConnection maxTokens 5→16（o 系/gpt-5 的 max_completion_tokens 最小值 16，5 会 400 假阴性，#9）。
+- **smoke**：兜底 catch 显式遍历 cause 链（Error.stack 不含 cause，#2）；SMOKE_TIMEOUT_MS 覆盖（#3）；串行意图注释（#4）；ok 路径校验 toolInput.action.name（防 text-JSON 兜底假通过，#13）；redact 追加 URL query 值掩码（网关令牌非 GLM key 本身，#14）。
+- **schema/测试**：type:["null"] 边界兜底 "string"（#10）；gemini fixture 补 minimum 使标题声称的删除路径真实执行（#15）；openai baseReq 上移（#11）；okResult 注释修正——还原顺序与请求侧**同序**（Python parity，刻意不取严格互逆，碰撞窗口注释记录，#19 折中）。
+
+驳回 2 条（事实前提不成立）：
+- **#1**（test:coverage 死入口）：根 package.json `test:coverage` 与 gate.mjs quality 步骤均按名调用 `pnpm -r run test:coverage`，删除即让 core 在提交门失去覆盖率校验；"dom-snapshot 不跑覆盖率"亦不实（其 config enabled:true 恒开）。两脚本同文保留。
+- **#18**（package.json 未声明 engines）：packages/core 的 `engines: node >=22` 已在轮 1 声明（>20.3 满足 AbortSignal.any），前提不成立，不做运行时降级。
+
+测试 200 例全绿（覆盖率 97.24%）；smoke 假 key 链路复验（exitCode 1）。

@@ -14,8 +14,11 @@ export function stripTrailingSlash(url: string): string {
 }
 
 /**
- * 连通性检查的公共实现（webbrain 形状）：chat("Hi", maxTokens=5) 的成败包装。
- * 携带 10s 兜底超时——端点半开/黑洞（baseUrl 配错、代理挂起）时探测请求不能永久 pending。
+ * 连通性检查的公共实现（webbrain 形状）：chat("Hi", maxTokens=16) 的成败包装。
+ * maxTokens 取 16（非 webbrain 原形的 5）：OpenAI 推理型模型（o 系/gpt-5，
+ * max_completion_tokens）输出上限最小值是 16，传 5 会被端点 400 拒绝——
+ * 配置正确的卡片在探测中假性不可用。16 是全协议安全的最小值。
+ * 携带 10s 兜底超时——端点半开/黑洞（baseUrl 配错、代理挂起）时探测不能永久 pending。
  */
 export async function defaultTestConnection(
   chat: (req: ChatRequest) => Promise<ChatResponse>,
@@ -26,7 +29,7 @@ export async function defaultTestConnection(
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "Hi" }] }],
       tools: null,
-      maxTokens: 5,
+      maxTokens: 16,
       timeoutMs: 10_000,
     });
     return { ok: true, model };

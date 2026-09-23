@@ -32,6 +32,9 @@ export function sanitizeGeminiSchema(schema: Record<string, unknown>): Record<st
       const first = value.find((t) => t !== "null");
       if (first !== undefined) {
         out.type = first;
+      } else {
+        // type: ["null"] 边界（值只允许 null）：兜底合法枚举，避免产出无 type 的 schema
+        out.type = "string";
       }
       if (value.includes("null")) {
         out.nullable = true;

@@ -102,9 +102,12 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
   return out;
 }
 
-function mapStopReason(raw: unknown): StopReason {
+function mapStopReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
+  if (hasKeptToolCall) {
+    return "tool_call"; // 从保留的调用推导（与 gemini/openai 口径一致）
+  }
   if (raw === "tool_use") {
-    return "tool_call";
+    return "other"; // 调用全部被丢弃：不置 tool_call，避免 toolCalls 空却报 tool_call 误导排障
   }
   if (raw === "end_turn" || raw === "stop_sequence") {
     return "stop";
@@ -177,7 +180,7 @@ function parseResponse(
   const response: ChatResponse = {
     text,
     toolCalls,
-    stopReason: mapStopReason(json.stop_reason),
+    stopReason: mapStopReason(json.stop_reason, toolCalls.length > 0),
     usage: mapUsage(json.usage),
   };
   if (reasoningText.length > 0) {

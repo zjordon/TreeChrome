@@ -160,11 +160,20 @@ async function main() {
     },
   ];
 
+  // 梯子墙钟预算（解析梯子含 R4/R1 重试与退避，慢网络/慢模型 60s 可能不够）
+  const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS ?? 60_000) || 60_000;
+
   let failed = false;
+  // 两端点独立但刻意串行：请求/响应日志逐卡成段输出，并行会交错打乱；
+  // 最坏 2×timeoutMs（各卡独立预算），手工 smoke 可接受
   for (const card of cards) {
-    // 统一脱敏：任何输出面（URL/body/headers/异常消息）里的 apiKey 一律替换——
-    // http 层的超时/网络错误消息内嵌完整 URL，网关 URL 的 query/path 也可能带令牌
-    const redact = (s) => String(s).replaceAll(apiKey, "<REDACTED>");
+    // 统一脱敏：apiKey 逐字替换 + URL query 值掩码（任何输出面）——http 层的超时/
+    // 网络错误消息内嵌完整 URL；网关令牌往往不是 GLM_API_KEY 本身
+    //（SMOKE_*_BASE_URL 携带 ?token=… 时同样不能明文出现在任何输出面）
+    const redact = (s) =>
+      String(s)
+        .replaceAll(apiKey, "<REDACTED>")
+        .replaceAll(/([?&][\w-]+=)[^&"'\s]+/g, "$1<MASKED>");
     // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LlmDeps 注入口。
     // header 脱敏双保险：已知敏感头名（大小写不敏感）+ 值包含 apiKey 即整体替换
     //（extraHeaders 可注入任意名字的网关认证头，按名字拦不住）
@@ -190,13 +199,22 @@ async function main() {
         "You are a web agent. Always respond via the agent_response tool with a single next action.",
         MESSAGES,
         TOOL,
-        { timeoutMs: 60_000 },
+        { timeoutMs },
       );
       const ms = Date.now() - t0;
       console.log(
         `\n== ${card.label} (${card.protocol}, model=${card.model}) → kind=${result.kind} (${ms}ms)`,
       );
       if (result.kind === "ok") {
+        // ok 有两条路径：toolCalls 命中，或模型返回纯文本恰为非空 JSON（text-JSON
+        // 兜底）——后者意味着端点忽略了强制 tool_choice，对 smoke 同样是失败
+        const action = result.toolInput?.action;
+        if (typeof action !== "object" || action === null || typeof action.name !== "string") {
+          failed = true;
+          console.error(
+            `   ${card.label} ok 但 toolInput 缺 action.name（疑似 text-JSON 兜底，非工具调用）`,
+          );
+        }
         console.log("toolInput:");
         console.log(JSON.stringify(result.toolInput, null, 2));
         console.log(`usage: ${JSON.stringify(result.usage)}`);
@@ -218,10 +236,20 @@ async function main() {
 }
 
 main().catch((e) => {
-  // 兜底输出同样过脱敏：stack/cause 可能内嵌 URL 或网关回显的错误详情
-  //（循环内 catch 只打 e.message，这里会展开整条 cause 链）
+  // 兜底输出同样过脱敏，并显式遍历 cause 链（Error.stack 不含 cause——核心层
+  // LLMTimeoutError/LLMConnectionError 都以 cause 挂底层网络错误，丢失即丢失最
+  // 关键的排障信息）；链上 stack/cause 可能内嵌 URL 或网关回显的错误详情
   const apiKey = process.env.GLM_API_KEY;
-  const text = e instanceof Error ? (e.stack ?? e.message) : String(e);
-  console.error(apiKey ? text.replaceAll(apiKey, "<REDACTED>") : text);
+  const redact = (s) =>
+    apiKey
+      ? String(s)
+          .replaceAll(apiKey, "<REDACTED>")
+          .replaceAll(/([?&][\w-]+=)[^&"'\s]+/g, "$1<MASKED>")
+      : String(s);
+  const parts = [];
+  for (let cur = e; cur instanceof Error && parts.length < 5; cur = cur.cause) {
+    parts.push(cur.stack ?? cur.message);
+  }
+  console.error(redact(parts.join("\n[cause] ")));
   process.exitCode = 1;
 });
