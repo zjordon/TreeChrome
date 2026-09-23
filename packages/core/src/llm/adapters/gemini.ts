@@ -147,7 +147,7 @@ function parseResponse(
   const feedback = isRecord(json.promptFeedback) ? json.promptFeedback : undefined;
   if (feedback !== undefined && feedback.blockReason !== undefined) {
     throw new LLMBlockedError(`gemini promptFeedback 拦截：${String(feedback.blockReason)}`, {
-      provider: "gemini",
+      provider: providerName,
     });
   }
   const candidates = Array.isArray(json.candidates) ? json.candidates : [];

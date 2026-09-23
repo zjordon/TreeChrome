@@ -170,6 +170,7 @@ user: "Your previous response contained no action. Respond now with the
 | 7 | **temperature 缺省不发** | 不发（create kwargs 无 temperature） | 同（webbrain 的 0.7 默认不采纳） | 非偏离，写明防"顺手补默认值" |
 | 8 | **单文件非递归实现** | 梯子靠递归 get_action | 循环 + 计数器 | 语义同（防递归标志即计数器），可读性/栈深更优 |
 | 9 | **滤图条件**（评审轮 2 登记、轮 4 修订） | `_strip_image_blocks` 仅在 fallback 切到无视觉模型时执行（主卡隐含恒为 claude 视觉模型） | 当前卡**显式声明** `capabilities.supportsVision=false` → 恒滤（声明即生效，文本主卡显式配 false 即受保护）；**未声明** → 仅 fallback 切换后按白名单推导滤 | 未声明时改纯能力驱动有反向风险：白名单外真视觉模型（qwen-vl/gpt-4o）缺省推导 false，恒滤图会把图从视觉模型上静默剥掉。声明/未声明分流后两个目标兼得 |
+| 10 | **URL 缩写尾界**（评审轮 8 登记） | `https?://\S+` 尾界贪婪到空白，中文书写 URL 后紧跟全角标点（无空白）会把后续中文吞进「URL」整体换 tag | 尾界排除常见全角标点/引号/括号（，。；：、！？“”‘’（）「」『』【】《》）；ASCII 标点保持同款吞入 | 中文语境（本项目宿主的常态）下 \S+ 是静默数据损坏：请求侧删中文、还原侧产出带中文尾巴的损坏 URL。与视觉白名单 `(?![a-z0-9])`（types.ts）同类的登记式收紧，英文/空格锚定用例不受影响 |
 
 ## 5. 不移植项（Python 有、P2 明确不要）
 

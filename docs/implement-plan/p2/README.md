@@ -211,3 +211,15 @@ smoke 产物摘要：
 - **归因与防御（#10/#11/#12/#7/#2）**：三适配器 parseResponse 的"响应不是对象"违例 provider 从协议字面量改为卡片 name（errors.ts 契约，fallback 同协议双卡可归因）；restoreInStrings 对 Map/Set/Date 等非普通对象原样保留（按 entries 递归会静默清空成 {}——现调用点只喂纯 JSON 产物，防御未来复用）；NEW_CONTRACT_PREFIX 注释登记前缀清单随新模型发布漂移的维护义务与 o1/o3/o4 误匹配场景。
 
 测试 218 例全绿（覆盖率 97.93%）。
+
+### 评审轮 8（review-p2-llm-client-8.json，2026-09-24，12 条）
+
+采纳 11 条（#3 代码统一采纳、其补测子项按事实驳回）/ 驳回 1 条子项。要点：
+
+- **URL 缩写尾界排除全角标点（#10，本轮唯一行为改动，03 §4 偏离 10 登记）**：Python `https?://\S+` 尾界贪婪到空白——中文书写 URL 后紧跟「，。」等全角标点（无空白）会把后续中文吞进「URL」整体换 [uN] tag：请求侧静默删中文、还原侧产出带中文尾巴的损坏 URL。中文语境是本项目宿主常态，按视觉白名单 `(?![a-z0-9])` 同款纪律做登记式收紧（ASCII 标点保持 Python 同款吞入，英文/空格锚定用例不受影响）。
+- **LLMBlockedError provider 归因（#2/#8）**：gemini promptFeedback 拦截的 provider 硬编码 "gemini" → 卡片 name（轮 7 #10-12 同族漏网；fallback 双 gemini 卡可区分），用例补 provider 断言。
+- **观测与一致性（#3/#11）**：client 层丢弃非目标调用的告警统一为「目标命中与否都按 dropped 判定」（原目标缺失分支才算、命中分支静默）；openai 非请求工具名的 tool_call 丢弃补告警（anthropic/gemini 已有，三适配器口径一致）。**#3 的补测子项驳回**：经 getAction 恒发 tools=[tool]，适配器层已按 requestedNames 上游过滤+告警——client 层 dropped 恒空，该分支是防未来适配器不过滤的纵深防御（已注释写明），评审建议的用例在现有注入面下不可编写；可观测路径的锁定在适配器层用例。
+- **注释与文档（#4/#5）**：退避序列注释修正为 2,4,8,16,30 共 5 次睡眠（Python 注释即五值；RETRY_MAX=5 下第 6 次睡眠不存在，describe 标题同步）；LLMClient 类文档声明非并发安全约束（串行 agent loop 设计；fallback 单向切换变异实例状态、窗口登记跨步复用须重登记）。
+- **测试打磨（#1/#6/#7/#9/#12）**：schema 告警断言与文案解耦（只锁键名序列：去重/归一化/首现序）；client.test 抽 setupWithLogs/setupRealClock 变体收敛 5 处手工样板；补 r500 镜像用例（无 fallback 直抛 LLMServerError 1 次请求 / 有 fallback 触发切换——5xx 独立分类在行为层锁定）；anthropic 六状态矩阵改 instanceof-only + 429 单点 message 抽样（message 提取属 http 层职责，与 http.test 分工对齐）；滤图去重用例第二次调用改用带图消息（原无图调用测不到去重，删掉 loggedImageFilter 也能通过）。
+
+测试 222 例全绿（覆盖率 97.94%）。

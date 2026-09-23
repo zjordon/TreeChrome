@@ -293,13 +293,13 @@ describe("请求构造（canonical → wire）", () => {
     mock.queueMany(fnCallOk({}), fnCallOk({}));
     await provider.chat(req);
     await provider.chat(req);
-    // TOOL.parameters 的白名单外键按首现序各告警一次（键名以归一化口径上报）：
+    // 契约：白名单外键按首现序各告警一次、键名以归一化（小写）口径上报——
+    // 只断言键名序列，与告警文案解耦（措辞属可自由调整的实现细节）：
     // $schema（顶层）、additionalproperties（顶层+嵌套 action 同名）、minimum（嵌套 action）
-    expect(logs.filter((m) => m.includes("白名单外键"))).toEqual([
-      "[llm] gemini schema 清洗删除白名单外键「$schema」（该键约束丢失）",
-      "[llm] gemini schema 清洗删除白名单外键「additionalproperties」（该键约束丢失）",
-      "[llm] gemini schema 清洗删除白名单外键「minimum」（该键约束丢失）",
-    ]);
+    const droppedKeys = logs
+      .filter((m) => m.includes("白名单外键"))
+      .map((m) => m.match(/「([^」]+)」/)?.[1] ?? "");
+    expect(droppedKeys).toEqual(["$schema", "additionalproperties", "minimum"]);
   });
 
   it("maxTokens 请求级覆盖与 temperature 显式", async () => {
@@ -550,10 +550,12 @@ describe("响应解析（wire → canonical）", () => {
     expect(res).toEqual({ text: "", toolCalls: [], stopReason: "other", usage: null });
   });
 
-  it("promptFeedback.blockReason → LLMBlockedError（全局拦截，无候选内容）", async () => {
+  it("promptFeedback.blockReason → LLMBlockedError（全局拦截，无候选内容；provider 归因到卡片 name）", async () => {
     const { mock, provider } = setup();
     mock.queueMany({ status: 200, body: { promptFeedback: { blockReason: "SAFETY" } } });
-    await expect(provider.chat(baseReq())).rejects.toBeInstanceOf(LLMBlockedError);
+    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMBlockedError);
+    expect((err as LLMBlockedError).provider).toBe("gemini-card");
   });
 
   it("429 gemini 错误体（error.code/message/status）→ LLMRateLimitError", async () => {

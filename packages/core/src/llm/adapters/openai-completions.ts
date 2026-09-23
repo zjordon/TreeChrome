@@ -165,7 +165,9 @@ function parseResponse(
       }
       const fn = item.function;
       if (typeof fn.name !== "string" || !requestedNames.has(fn.name)) {
-        continue; // 忽略非请求工具名的调用（02 §2.3 泛化规则）
+        // 与 anthropic/gemini 同款观测：忽略的调用留证据（02 §2.3 泛化规则）
+        log(`[llm] openai 忽略非请求工具名的 tool_call：${JSON.stringify(fn.name)}`);
+        continue;
       }
       const args = parseArguments(fn.arguments);
       if (args === undefined) {

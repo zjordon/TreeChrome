@@ -21,8 +21,12 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
   const urlMap = new Map<string, string>(); // tag → 原 URL
   const urlToTag = new Map<string, string>(); // 原 URL → tag
   let counter = 0;
+  // 尾界排除常见全角标点/引号/括号（有意偏离 Python 的 \S+，03 §4 偏离 10）：
+  // 中文书写里 URL 后紧跟「，。」等无空白，\S+ 会把后续中文吞进「URL」整体换
+  // tag——请求侧静默删中文、还原侧产出带中文尾巴的损坏 URL。ASCII 标点保持
+  // Python 同款吞入（尾随句点等，锚定不破坏）。
   const shorten = (text: string): string =>
-    text.replace(/https?:\/\/\S+/g, (url) => {
+    text.replace(/https?:\/\/[^\s，。；：、！？“”‘’（）「」『』【】《》]+/g, (url) => {
       if (url.length < URL_MIN_LENGTH) {
         return url;
       }

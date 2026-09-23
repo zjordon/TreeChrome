@@ -34,7 +34,8 @@ import { assertValidMessages } from "./types.js";
 const TEXT_RETRY_MAX = 2;
 /** 基建错误退避重试上限（Python _RATE_LIMIT_RETRY_MAX；含首呼共 6 次请求） */
 const INFRA_RETRY_MAX = 5;
-/** 指数退避首次秒数（Python _RATE_LIMIT_BACKOFF_BASE：2,4,8,16,30,30…） */
+/** 指数退避首次秒数（Python _RATE_LIMIT_BACKOFF_BASE；实际可达序列 2,4,8,16,30 共
+ *  5 次睡眠——INFRA_RETRY_MAX=5 下第 4 次起封顶 30s，含首呼共 6 次请求，无第 6 次睡眠） */
 const INFRA_BACKOFF_BASE_SEC = 2.0;
 /** 指数退避单次上限（Python _RATE_LIMIT_BACKOFF_CAP） */
 const INFRA_BACKOFF_CAP_SEC = 30.0;
@@ -133,6 +134,12 @@ const forcedToolConstraint = (toolName: string): string =>
 const noToolsConstraint = (tool: ToolDefinition): string =>
   `\n\nIMPORTANT: You must respond with only a JSON object matching this schema:\n${JSON.stringify(tool.parameters, null, 2)}\nDo not reply with plain text.`;
 
+/**
+ * 使用约束：实例按**串行 agent loop** 设计，不支持并发 getAction——fallback 单向
+ * 切换会变异 config/provider/usingFallback；windowDeadline/windowBudgetCapMs 是
+ * 跨 getAction 的步级登记，跨步复用实例时每步 setCallWindow 重登记（或显式传
+ * null 清除）。多 tab 等并发场景应每会话独立实例。
+ */
 export class LLMClient {
   private config: ProviderConfig;
   private provider: LLMProvider;
@@ -245,10 +252,13 @@ export class LLMClient {
 
         // 4. 解析优先级：目标工具调用 → 文本 JSON 兜底 → R4 → R1
         const call = response.toolCalls.find((c) => c.name === tool.name);
-        if (call === undefined && response.toolCalls.length > 0) {
-          // 与 deps.log 声明的观测契约一致：丢弃的调用留 WARNING 证据（名字列表）
-          const dropped = response.toolCalls.map((c) => c.name).join(", ");
-          this.deps.log(`[llm] getAction 丢弃非目标工具调用：${dropped}（目标 ${tool.name}）`);
+        // 纵深防御（评审轮 8 注明）：getAction 恒发 tools=[tool]，适配器层已按
+        // requestedNames 过滤+告警非请求名调用——正常路径 dropped 恒空；此处兜
+        // 未来适配器不做上游过滤的形态，多调用响应只取其一时留 WARNING 证据
+        const dropped = response.toolCalls.filter((c) => c.name !== tool.name);
+        if (dropped.length > 0) {
+          const names = dropped.map((c) => c.name).join(", ");
+          this.deps.log(`[llm] getAction 丢弃非目标工具调用：${names}（目标 ${tool.name}）`);
         }
         if (call !== undefined) {
           return this.okResult(call.args, urlMap, sensitive, response.usage);

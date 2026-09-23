@@ -115,6 +115,15 @@ describe("shortenUrlsInMessages（Python 锚定：tag 分配顺序 = 首次出�
     expect(map.size).toBe(0);
     expect(firstText(messages[2])).toContain(U0);
   });
+
+  it("URL 后紧跟全角标点 → 尾界截断不吞中文（有意偏离 Python \\S+，03 §4 偏离 10）", () => {
+    const messages = [userMsg(`打开 ${U0}，然后点击按钮。`)];
+    const map = shortenUrlsInMessages(messages);
+    // Python \S+ 会把「，然后点击按钮。」吞进 URL 整体换 tag（中文静默删除）；
+    // TS 尾界排除全角标点：URL 干净截断，后续中文保留
+    expect(map).toEqual(new Map([["[u0]", U0]]));
+    expect(firstText(messages[0])).toBe("打开 [u0]，然后点击按钮。");
+  });
 });
 
 describe("敏感值占位/还原（Python 锚定：包含关系键按插入序）", () => {

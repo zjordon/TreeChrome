@@ -11,6 +11,7 @@ import {
   LLMError,
   LLMInvalidRequestError,
   LLMRateLimitError,
+  LLMServerError,
   LLMTimeoutError,
 } from "../../src/index.js";
 import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
@@ -68,6 +69,7 @@ const r429 = (retryAfter?: string): MockResponseSpec => ({
   body: { error: { message: "rate limited" } },
 });
 const r401 = (): MockResponseSpec => ({ status: 401, body: { error: { message: "bad key" } } });
+const r500 = (): MockResponseSpec => ({ status: 500, body: { error: { message: "boom" } } });
 
 const msgs = (): ChatMessage[] => [{ role: "user", blocks: [{ kind: "text", text: "hello" }] }];
 
@@ -79,6 +81,29 @@ function setup(over: Partial<ProviderConfig> = {}) {
     { fetch: mock.fetch, now: clock.now, sleep: clock.sleep, log: () => {} },
   );
   return { mock, clock, client };
+}
+
+/** setup 的日志捕获变体（冻结时钟 + logs 数组）——WARNING 类观测断言共用 */
+function setupWithLogs(over: Partial<ProviderConfig> = {}) {
+  const mock = new MockFetch();
+  const logs: string[] = [];
+  const client = createLLMClient(
+    { ...CARD, ...over },
+    {
+      fetch: mock.fetch,
+      now: () => 0,
+      sleep: async () => {},
+      log: (m) => logs.push(m),
+    },
+  );
+  return { mock, logs, client };
+}
+
+/** setup 的真时钟变体（缺省 deps：now=performance.now，sleep=setTimeout 包装） */
+function setupRealClock(over: Partial<ProviderConfig> = {}) {
+  const mock = new MockFetch();
+  const client = createLLMClient({ ...CARD, ...over }, { fetch: mock.fetch });
+  return { mock, client };
 }
 
 /** 退避梯子推进（锚定常量 2,4,8,16,30）：完整走完 5 次退避的用例共享此时钟序列 */
@@ -232,14 +257,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
   });
 
   it("toolResult 文本命中敏感值 → WARNING 可观测（明文出站不静默；P5 parity 只告警不改 wire）", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const client = createLLMClient(CARD, {
-      fetch: mock.fetch,
-      now: () => 0,
-      sleep: async () => {},
-      log: (m) => logs.push(m),
-    });
+    const { mock, logs, client } = setupWithLogs();
     mock.queueMany(toolOk({ done: 1 }));
     const messages: ChatMessage[] = [
       { role: "user", blocks: [{ kind: "text", text: "q" }] },
@@ -256,7 +274,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
   });
 });
 
-describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30,30）", () => {
+describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠）", () => {
   it("429 ×5 → 第 6 次成功（指数退避序列推进时钟）", async () => {
     const { mock, clock, client } = setup();
     mock.queueMany(r429(), r429(), r429(), r429(), r429(), toolOk({ done: 1 }));
@@ -328,6 +346,13 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30,30）", () => {
     expect(mock.calls.length).toBe(1);
   });
 
+  it("非 infra（500）不退避：无 fallback 直接抛 LLMServerError，1 次请求", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(r500());
+    await expect(client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(LLMServerError);
+    expect(mock.calls.length).toBe(1);
+  });
+
   it("网络层失败同样走退避（ConnectionError 是 infra 谓词成员）", async () => {
     const { mock, clock, client } = setup();
     mock.queueMany({ networkError: new TypeError("fetch failed") }, toolOk({ done: 1 }));
@@ -358,6 +383,14 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
   it("401（非 infra）也触发切换（Python 外层 APIError 同语义）", async () => {
     const { mock, client } = setup({ fallback: FALLBACK });
     mock.queueMany(r401(), toolOk({ via: "fb" }));
+    const r = await client.getAction("sys", msgs(), TOOL);
+    expect(r.kind).toBe("ok");
+    expect(mock.calls[1].url).toContain("fallback.example");
+  });
+
+  it("500（非 infra，5xx 独立分类）同样触发切换", async () => {
+    const { mock, client } = setup({ fallback: FALLBACK });
+    mock.queueMany(r500(), toolOk({ via: "fb" }));
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
     expect(mock.calls[1].url).toContain("fallback.example");
@@ -463,12 +496,9 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
   });
 
   it("滤图生效留一次 WARNING（实例级去重）；image-only 历史降级占位文本块不放大成步级失败", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const client = createLLMClient(
-      { ...CARD, capabilities: { supportsVision: false } },
-      { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: (m) => logs.push(m) },
-    );
+    const { mock, logs, client } = setupWithLogs({
+      capabilities: { supportsVision: false },
+    });
     mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
     const imageOnly: ChatMessage[] = [
       { role: "user", blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }] },
@@ -478,16 +508,16 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     // image-only 历史降级为占位文本块继续（Python 降级空串同精神，一次瞬时 429
     // 触发 fallback 切换不被放大成步级硬失败）
     expect(JSON.stringify(mock.bodyAt(0).messages)).toContain("[image omitted]");
-    // 首次真正滤到图片才告警；无图的后续调用不重复刷屏
-    await client.getAction("sys", msgs(), TOOL);
+    // 实例级去重的关键场景：第二次调用**仍带图**——已告警过不再重复刷屏
+    //（无图调用本来就不告警，测不到去重）
+    await client.getAction("sys", imageOnly, TOOL);
     expect(logs.filter((m) => m.includes("滤图生效")).length).toBe(1);
   });
 });
 
 describe("deadline 与取消", () => {
   it("opts.timeoutMs 到点强杀在飞请求 → LLMTimeoutError（03 偏离 5，真实时钟）", async () => {
-    const mock = new MockFetch();
-    const client = createLLMClient(CARD, { fetch: mock.fetch });
+    const { mock, client } = setupRealClock();
     mock.queueMany({ hangUntilAbort: true });
     await expect(client.getAction("sys", msgs(), TOOL, { timeoutMs: 60 })).rejects.toBeInstanceOf(
       LLMTimeoutError,
@@ -644,8 +674,7 @@ describe("deadline 与取消", () => {
 
 describe("缺省 deps（真时钟：now=performance.now，sleep=setTimeout 包装）", () => {
   it("retry-after 20ms 快速路径：缺省 sleep 到点 resolve 后第二次请求成功", async () => {
-    const mock = new MockFetch();
-    const client = createLLMClient(CARD, { fetch: mock.fetch });
+    const { mock, client } = setupRealClock();
     mock.queueMany(r429("0.02"), toolOk({ done: 1 }));
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
@@ -653,8 +682,7 @@ describe("缺省 deps（真时钟：now=performance.now，sleep=setTimeout 包�
   });
 
   it("缺省 sleep 期间外部 abort → AbortError 穿透（可中止性）", async () => {
-    const mock = new MockFetch();
-    const client = createLLMClient(CARD, { fetch: mock.fetch });
+    const { mock, client } = setupRealClock();
     mock.queueMany(r429("5")); // 5s 退避 → 缺省 sleep 挂起
     const ctrl = new AbortController();
     const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });

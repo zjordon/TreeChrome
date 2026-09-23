@@ -328,6 +328,42 @@ describe("响应解析（wire → canonical）", () => {
     expect((err as LLMProtocolViolationError).provider).toBe("glm-openai");
   });
 
+  it("非请求工具名的 tool_call 丢弃并留告警（与 anthropic/gemini 观测口径一致）", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const provider = createOpenAICompletionsProvider(CARD, {
+      ...stubDeps(mock),
+      log: (m) => logs.push(m),
+    });
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "h1",
+                  type: "function",
+                  function: { name: "hallucinated_tool", arguments: "{}" },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([]);
+    expect(
+      logs.some((m) => m.includes("忽略非请求工具名") && m.includes("hallucinated_tool")),
+    ).toBe(true);
+  });
+
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
     const { mock, provider } = setup();
     mock.queueMany({

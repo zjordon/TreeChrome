@@ -386,6 +386,9 @@ describe("错误映射（状态 → 错误类 + error.message 提取 + Retry-Aft
     tools: null,
   });
 
+  // 状态→分类矩阵与 http.test.ts 的 postJson 矩阵同源——适配器层只锁定
+  // 「状态→类型经适配器走通」（instanceof）；message 提取属 http 层职责，
+  // 仅在 429 单点抽样验证经适配器走通（与 gemini/openai 的单点抽样形态对齐）
   it.each([
     [429, LLMRateLimitError],
     [401, LLMAuthError],
@@ -393,7 +396,7 @@ describe("错误映射（状态 → 错误类 + error.message 提取 + Retry-Aft
     [400, LLMInvalidRequestError],
     [500, LLMServerError],
     [503, LLMServerError],
-  ] as const)("HTTP %s → %s（anthropic 错误体 message 进异常）", async (status, klass) => {
+  ] as const)("HTTP %s → %s", async (status, klass) => {
     const { mock, provider } = setup();
     mock.queueMany({
       status,
@@ -401,7 +404,9 @@ describe("错误映射（状态 → 错误类 + error.message 提取 + Retry-Aft
     });
     const err = await provider.chat(baseReq()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(klass);
-    expect((err as Error).message).toContain(`boom ${status}`);
+    if (status === 429) {
+      expect((err as Error).message).toContain(`boom ${status}`);
+    }
   });
   // http 层单测（parseRetryAfterMs/Retry-After 头/错误体形态/截断）已抽离到 http.test.ts
 
