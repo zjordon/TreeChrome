@@ -16,7 +16,7 @@ import type {
   ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
-import { defaultTestConnection, isRecord, stripTrailingSlash } from "./common.js";
+import { defaultTestConnection, isRecord, stripTrailingSlash, temperatureEntry } from "./common.js";
 import { postJson } from "./http.js";
 
 /** canonical 内容块 → anthropic content 块 */
@@ -223,10 +223,8 @@ export function createAnthropicProvider(
           }
         : {}),
       ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
-      // 回退链与 maxTokens 同款：请求级 ?? 卡片级；两级都缺省则不发
-      ...((req.temperature ?? config.temperature) !== undefined
-        ? { temperature: req.temperature ?? config.temperature }
-        : {}),
+      // temperature 回退链：请求级 ?? 卡片级（common.temperatureEntry）；两级缺省不发
+      ...temperatureEntry(req, config),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

@@ -149,3 +149,16 @@ smoke 产物摘要：
 - **测试组织**：新增 test/llm/http.test.ts 集中覆盖 http.ts 导出面（parseRetryAfterMs 矩阵、状态→错误类、错误体三形态、500 截断、2xx 非 JSON、网络层），anthropic.test.ts 撤走重复的 http 层用例（保留 provider 集成矩阵）。
 
 测试 192 例全绿（覆盖率 97.39%）；smoke 假 key 链路复验（max_tokens=16384 上 wire、401 分罪、exitCode 1）。
+
+### 评审轮 4（review-p2-llm-client-4.json，2026-09-23，18 条）
+
+采纳 18 条。要点：
+
+- **真 bug（#6/#7）超时分型在真实运行时失效**：`AbortSignal.timeout` 到点时 fetch 以 abort reason（name="TimeoutError" 的 DOMException，DOM 规范行为）拒绝——isAbortError 只认 AbortError，真实超时被误分型为 LLMConnectionError（infra 可重试，与到点强杀语义相反）；错误体读取阶段同因被吞成状态码错误。测试从未暴露是因为 mock 全用 AbortError 形态构造。修复：classifyFailure/错误体读取改**状态优先**（timeoutSignal.aborted 即按超时分型）+ isAbortError 兼收 TimeoutError + mock 改 reject(signal.reason) 复刻真实形态 + 真实超时回归用例。
+- **gemini 两处（#16/#17）**：stopReason 改从**保留**的调用推导（被丢弃的幻觉调用不再置位，toolCalls 空不误报 tool_call）；无参 functionCall 的 args 缺失兜底 {}（proto3 JSON 省略空 Struct，与 anthropic input 口径对齐）。
+- **滤图条件修订（#15，承接轮 2 登记）**：当前卡显式声明 `supportsVision=false` → 恒滤（声明即生效）；未声明 → 保留原取舍（仅 fallback 后按推导滤）——文本主卡显式配 false 即受静默致盲保护，白名单外视觉主卡不被误滤。03 §4 偏离 9 已同步修订。
+- **观测补齐（#9）**：getAction 丢弃非目标 toolCall 时留 WARNING（名字列表），兑现 deps.log 声明的观测契约；sensitiveMap 的 JSDoc 标注 toolResult 不在替换范围 + 补对应锚定用例（与 URL 侧对称，#8）。
+- **smoke（#3/#4/#10）**：esbuild 显式入 devDependencies（借道 vitest 闭包降级为兜底——vitest rolldown 化后闭包会消失）；rmSync 清理 best-effort（Windows 文件锁）；顶层兜底 catch 输出过 redact（stack/cause 链）。
+- **测试口径统一与去重（#1/#2/#5/#11/#12/#13/#14/#18）**：headers 断言统一 toEqual 全量锁定（三文件）；temperature 回退链抽 common.temperatureEntry；跨协议用例复用 setup；LONG_URL/drainBackoffLadder 提入 fixtures/helper；两处 queueMany 多余响应删除（保住队列耗尽 fail-fast）。
+
+测试 197 例全绿（覆盖率 97.35%）；smoke 假 key 链路复验。

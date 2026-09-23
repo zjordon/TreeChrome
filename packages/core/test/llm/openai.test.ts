@@ -85,7 +85,7 @@ describe("请求构造（canonical → wire）", () => {
     });
 
     expect(mock.calls[0].url).toBe("https://open.bigmodel.cn/api/paas/v4/chat/completions");
-    expect(mock.calls[0].init.headers).toMatchObject({
+    expect(mock.calls[0].init.headers).toEqual({
       "content-type": "application/json",
       authorization: "Bearer sk-test",
     });

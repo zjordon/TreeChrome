@@ -18,10 +18,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-/** 从 vitest 的依赖闭包里解析 esbuild（pnpm 严格 node_modules，直连 "esbuild" 解析不到） */
+/**
+ * 解析 esbuild：首选本包 devDependencies 显式声明的实例；借道 vitest 依赖闭包
+ * 仅作旧布局兜底（esbuild 是 vitest 的传递依赖，vitest rolldown 化后会从闭包
+ * 消失——显式声明才是长期稳定来源）
+ */
 function resolveEsbuild() {
-  const vitestPkgPath = require.resolve("vitest/package.json");
-  return require.resolve("esbuild", { paths: [dirname(vitestPkgPath)] });
+  try {
+    return require.resolve("esbuild");
+  } catch {
+    const vitestPkgPath = require.resolve("vitest/package.json");
+    return require.resolve("esbuild", { paths: [dirname(vitestPkgPath)] });
+  }
 }
 
 async function loadCore() {
@@ -48,7 +56,11 @@ async function loadCore() {
     });
     return await import(pathToFileURL(out).href);
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    try {
+      rmSync(tmp, { recursive: true, force: true });
+    } catch {
+      // 清理失败不影响主流程/真实错误（Windows 杀毒/索引器的瞬时文件锁 EBUSY/EPERM）
+    }
   }
 }
 
@@ -206,6 +218,10 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e);
+  // 兜底输出同样过脱敏：stack/cause 可能内嵌 URL 或网关回显的错误详情
+  //（循环内 catch 只打 e.message，这里会展开整条 cause 链）
+  const apiKey = process.env.GLM_API_KEY;
+  const text = e instanceof Error ? (e.stack ?? e.message) : String(e);
+  console.error(apiKey ? text.replaceAll(apiKey, "<REDACTED>") : text);
   process.exitCode = 1;
 });

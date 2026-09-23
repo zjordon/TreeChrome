@@ -1,7 +1,8 @@
-// 三适配器共享的小件：isRecord / stripTrailingSlash / defaultTestConnection。
-// 折叠连续 toolResult、块形状转换等协议差异逻辑不在此抽象（改一漏二的风险主要来自
-// 逐字重复的小件与完全同构的探测逻辑）。
+// 三适配器共享的小件：isRecord / stripTrailingSlash / defaultTestConnection /
+// temperatureEntry。折叠连续 toolResult、块形状转换等协议差异逻辑不在此抽象
+//（改一漏二的风险主要来自逐字重复的小件与完全同构的探测逻辑）。
 
+import type { ProviderConfig } from "../config.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
@@ -32,4 +33,16 @@ export async function defaultTestConnection(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * temperature 回退链（请求级 ?? 卡片级，与 maxTokens 同款；两级都缺省则不发——
+ * 新契约模型 400 地雷的缺省口径）。三适配器同构语义，非协议差异，收敛于此。
+ */
+export function temperatureEntry(
+  req: ChatRequest,
+  config: ProviderConfig,
+): Record<string, unknown> {
+  const temperature = req.temperature ?? config.temperature;
+  return temperature !== undefined ? { temperature } : {};
 }

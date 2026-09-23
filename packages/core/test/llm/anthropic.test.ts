@@ -179,7 +179,7 @@ describe("请求构造（canonical → wire）", () => {
 
   it("temperature 回退链：请求级缺省用卡片级，两级都缺省不发", async () => {
     const { mock, provider } = setup({ temperature: 0.4 });
-    mock.queueMany(toolOk({}), toolOk({}), toolOk({}));
+    mock.queueMany(toolOk({}), toolOk({}));
     await provider.chat({
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
@@ -256,7 +256,13 @@ describe("请求构造（canonical → wire）", () => {
       tools: null,
     });
     expect(mock.calls[0].url).toBe("https://api.anthropic.com/v1/messages");
-    expect(mock.calls[0].init.headers).toMatchObject({ "x-api-key": "override", "x-custom": "1" });
+    expect(mock.calls[0].init.headers).toEqual({
+      "content-type": "application/json",
+      "x-api-key": "override",
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+      "x-custom": "1",
+    });
   });
 });
 

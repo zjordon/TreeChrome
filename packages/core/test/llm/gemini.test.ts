@@ -148,7 +148,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.calls[0].url).toBe(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
     );
-    expect(mock.calls[0].init.headers).toMatchObject({
+    expect(mock.calls[0].init.headers).toEqual({
       "content-type": "application/json",
       "x-goog-api-key": "g-key",
     });
@@ -243,7 +243,7 @@ describe("请求构造（canonical → wire）", () => {
 
   it("temperature 回退链：请求级缺省用卡片级；两级缺省不发", async () => {
     const { mock, provider } = setup({ temperature: 0.3 });
-    mock.queueMany(fnCallOk({}), fnCallOk({}), fnCallOk({}));
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
     await provider.chat({
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
@@ -339,6 +339,43 @@ describe("响应解析（wire → canonical）", () => {
       stopReason: "tool_call",
       usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3 },
     });
+  });
+
+  it("只有被丢弃的 functionCall（非请求名）→ stopReason 按 finishReason 归一，不因丢弃变形", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: { role: "model", parts: [{ functionCall: { name: "other", args: {} } }] },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([]);
+    expect(res.stopReason).toBe("stop"); // 从保留的调用推导（toolCalls 空不报 tool_call）
+  });
+
+  it("无参 functionCall（args 被 proto3 JSON 省略）→ 兜底 {} 保留（与 anthropic input 口径对齐）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: { role: "model", parts: [{ functionCall: { name: "agent_response" } }] },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([{ id: "gemini-call-0", name: "agent_response", args: {} }]);
   });
 
   it.each([

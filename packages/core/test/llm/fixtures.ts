@@ -10,6 +10,9 @@ export const AGENT_TOOL: ToolDefinition = {
   parameters: { type: "object", properties: { action: { type: "object" } } },
 };
 
+/** ≥100 字符的长 URL（URL 缩写/还原测试共用；transform 契约阈值 URL_MIN_LENGTH=100） */
+export const LONG_URL = `https://example.com/${"a".repeat(90)}`;
+
 /** 适配器单测的缺省 deps：mock fetch + 零耗时 sleep + 静音日志（缺省 console.warn 会刷屏） */
 export function stubDeps(mock: MockFetch): Required<LlmDeps> {
   return { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: () => {} };

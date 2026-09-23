@@ -16,7 +16,10 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
   }
   if ("hangUntilAbort" in spec) {
     return new Promise((_resolve, reject) => {
-      const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+      // reject(signal.reason)：真实 fetch 按 signal 的 abort reason 拒绝——
+      // AbortSignal.timeout 到点的 reason 是 name="TimeoutError" 的 DOMException
+      //（非 AbortError），mock 必须复刻该形态，否则分型测试与真实运行时脱节
+      const onAbort = () => reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
       if (signal?.aborted) {
         onAbort();
         return;

@@ -10,6 +10,7 @@ import {
   LLMProtocolViolationError,
   LLMRateLimitError,
   LLMServerError,
+  LLMTimeoutError,
 } from "../../src/llm/errors.js";
 import { MockFetch } from "./mock-fetch.js";
 
@@ -42,6 +43,9 @@ describe("parseRetryAfterMs（Python 锚定容错集）", () => {
 describe("isAbortError", () => {
   it("按 name 鸭子判别（DOMException 与各宿主形态）", () => {
     expect(isAbortError(new DOMException("Aborted", "AbortError"))).toBe(true);
+    // AbortSignal.timeout 到点的 abort reason 是 name="TimeoutError" 的 DOMException
+    //（DOM 规范行为）——真实 fetch 超时以此形态拒绝，必须一并识别
+    expect(isAbortError(new DOMException("signal timed out", "TimeoutError"))).toBe(true);
     expect(isAbortError(new Error("x", { cause: new DOMException("a", "AbortError") }))).toBe(
       false,
     );
@@ -143,5 +147,23 @@ describe("postJson 成功与网络层", () => {
     await post(mock);
     expect(mock.calls[0].init.method).toBe("POST");
     expect(mock.calls[0].init.body).toBe(JSON.stringify({ ping: 1 }));
+  });
+
+  it("真实超时形态回归：AbortSignal.timeout 到点 → LLMTimeoutError（reason 是 TimeoutError 非 AbortError，评审轮 4 修）", async () => {
+    // hangUntilAbort 桩已改为 reject(signal.reason)——超时 signal 触发时以
+    // name="TimeoutError" 的 DOMException 拒绝，复刻真实 fetch 形态；修复前
+    // 此路径会被误分型为 LLMConnectionError（infra 可重试）
+    const mock = new MockFetch();
+    mock.queueMany({ hangUntilAbort: true });
+    const err = await postJson(
+      mock.fetch,
+      "https://unit.example/api",
+      {},
+      {},
+      { provider: "unit", timeoutMs: 40 },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMTimeoutError);
+    expect((err as LLMTimeoutError).cause).toBeInstanceOf(DOMException);
+    expect((err as LLMTimeoutError).cause).toMatchObject({ name: "TimeoutError" });
   });
 });

@@ -17,7 +17,7 @@ import type {
   ToolCall,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
-import { defaultTestConnection, isRecord, stripTrailingSlash } from "./common.js";
+import { defaultTestConnection, isRecord, stripTrailingSlash, temperatureEntry } from "./common.js";
 import { postJson } from "./http.js";
 
 /**
@@ -215,11 +215,9 @@ export function createOpenAICompletionsProvider(
       ...(req.toolChoice?.kind === "forced" && req.tools !== null
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
-      // 回退链与 maxTokens 同款（请求级 ?? 卡片级）；两级都缺省不发。新契约模型
+      // temperature 回退链（common.temperatureEntry）；两级缺省不发。新契约模型
       //（NEW_CONTRACT_PREFIX）只接受默认温度——卡片显式配置属宿主自担的选择
-      ...((req.temperature ?? config.temperature) !== undefined
-        ? { temperature: req.temperature ?? config.temperature }
-        : {}),
+      ...temperatureEntry(req, config),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

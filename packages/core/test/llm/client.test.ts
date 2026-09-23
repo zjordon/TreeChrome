@@ -13,7 +13,7 @@ import {
   LLMRateLimitError,
   LLMTimeoutError,
 } from "../../src/index.js";
-import { AGENT_TOOL } from "./fixtures.js";
+import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
 import { FakeClock, MockFetch, type MockResponseSpec } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -44,8 +44,7 @@ const OPENAI_FALLBACK: ProviderConfig = {
 };
 
 const TOOL = AGENT_TOOL;
-
-const U0 = `https://example.com/${"a".repeat(90)}`;
+const U0 = LONG_URL;
 
 const toolOk = (input: Record<string, unknown>): MockResponseSpec => ({
   status: 200,
@@ -81,6 +80,13 @@ function setup(over: Partial<ProviderConfig> = {}) {
   );
   return { mock, clock, client };
 }
+
+/** 退避梯子推进（锚定常量 2,4,8,16,30）：完整走完 5 次退避的用例共享此时钟序列 */
+const drainBackoffLadder = async (clock: FakeClock): Promise<void> => {
+  for (const ms of [2000, 4000, 8000, 16000, 30000]) {
+    await clock.advance(ms);
+  }
+};
 
 describe("解析优先级与公共面", () => {
   it("createLLMClient 导出可用；强制工具调用直通 toolInput + usage", async () => {
@@ -232,11 +238,7 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30,30）", () => {
     mock.queueMany(r429(), r429(), r429(), r429(), r429(), toolOk({ done: 1 }));
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0); // 冲刷微任务：首请求 429 → sleep(2000)
-    await clock.advance(2000);
-    await clock.advance(4000);
-    await clock.advance(8000);
-    await clock.advance(16000);
-    await clock.advance(30000);
+    await drainBackoffLadder(clock);
     const r = await p;
     expect(r.kind).toBe("ok");
     expect(mock.calls.length).toBe(6);
@@ -247,11 +249,7 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30,30）", () => {
     mock.queueMany(r429(), r429(), r429(), r429(), r429(), r429());
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0);
-    await clock.advance(2000);
-    await clock.advance(4000);
-    await clock.advance(8000);
-    await clock.advance(16000);
-    await clock.advance(30000);
+    await drainBackoffLadder(clock);
     await expect(p).rejects.toBeInstanceOf(LLMRateLimitError);
     expect(mock.calls.length).toBe(6);
   });
@@ -339,12 +337,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
   });
 
   it("跨协议切换：主 anthropic + fallback openai（完整卡片组合的独有测试点）", async () => {
-    const mock = new MockFetch();
-    const clock = new FakeClock();
-    const client = createLLMClient(
-      { ...CARD, fallback: OPENAI_FALLBACK },
-      { fetch: mock.fetch, now: clock.now, sleep: clock.sleep, log: () => {} },
-    );
+    const { mock, clock, client } = setup({ fallback: OPENAI_FALLBACK });
     mock.queueMany(r429(), {
       status: 200,
       body: {
@@ -388,11 +381,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     mock.queueMany(r429(), r429(), r429(), r429(), r429(), r429(), r429());
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0); // 主 429 → 切换 → fallback 429 → sleep(2000)
-    await clock.advance(2000);
-    await clock.advance(4000);
-    await clock.advance(8000);
-    await clock.advance(16000);
-    await clock.advance(30000);
+    await drainBackoffLadder(clock);
     await expect(p).rejects.toBeInstanceOf(LLMRateLimitError);
     expect(mock.calls.length).toBe(7);
     expect(mock.calls.filter((c) => c.url.includes("fallback.example")).length).toBe(6);
@@ -422,6 +411,29 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     }
     expect(callerMsg.blocks.length).toBe(2); // 原消息未被就地改动（03 偏离 1）
   });
+
+  it("主卡显式声明 supportsVision=false → 恒滤图（声明即生效）；未声明主卡不滤（偏离 9 取舍）", async () => {
+    const declared = setup({ capabilities: { supportsVision: false } });
+    const withImage: ChatMessage[] = [
+      {
+        role: "user",
+        blocks: [
+          { kind: "text", text: "look" },
+          { kind: "image", mimeType: "image/png", base64: "AAAA" },
+        ],
+      },
+    ];
+    declared.mock.queueMany(toolOk({ done: 1 }));
+    const r = await declared.client.getAction("sys", withImage, TOOL);
+    expect(r.kind).toBe("ok");
+    expect(JSON.stringify(declared.mock.lastBody().messages)).not.toContain('"image"');
+
+    // 未声明（白名单外主卡，缺省推导 false）不滤——防 qwen-vl 等真视觉模型被误滤
+    const undeclared = setup({ model: "glm-5.1" }); // 白名单外，未声明
+    undeclared.mock.queueMany(toolOk({ done: 1 }));
+    await undeclared.client.getAction("sys", withImage, TOOL);
+    expect(JSON.stringify(undeclared.mock.lastBody().messages)).toContain('"image"');
+  });
 });
 
 describe("deadline 与取消", () => {
@@ -435,7 +447,8 @@ describe("deadline 与取消", () => {
   });
 
   // 「状态行已返回、body 读取挂起至 abort」的同型 fetch 桩（MockFetch 的真实
-  // Response 无法构造此形态）——覆盖 postJson 的 resp.text() 分类路径
+  // Response 无法构造此形态）——覆盖 postJson 的 resp.text() 分类路径。
+  // reject(signal.reason)：复刻真实 fetch 形态（超时 reason 是 TimeoutError）
   const hangingBodyFetch = (ok: boolean, status = 200): typeof fetch =>
     (async (_url: unknown, init?: { signal?: AbortSignal }) => {
       return {
@@ -444,7 +457,8 @@ describe("deadline 与取消", () => {
         headers: new Headers(),
         text: () =>
           new Promise<string>((_resolve, reject) => {
-            const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+            const onAbort = () =>
+              reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
             if (init?.signal?.aborted) {
               onAbort();
               return;
@@ -538,11 +552,7 @@ describe("deadline 与取消", () => {
     );
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0);
-    await clock.advance(2000);
-    await clock.advance(4000);
-    await clock.advance(8000);
-    await clock.advance(16000);
-    await clock.advance(30000);
+    await drainBackoffLadder(clock);
     await expect(p).rejects.toBeInstanceOf(LLMConnectionError);
     expect(mock.calls.length).toBe(6); // 与 429 恒败用例对称：退避名额被完整消耗
   });

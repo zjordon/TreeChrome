@@ -44,7 +44,12 @@ const INFRA_BUDGET_DEFAULT_SEC = 90.0;
 const WINDOW_BUDGET_FLOOR_MS = 30_000;
 
 export interface GetActionOptions {
-  /** 敏感值表：真实值 → 占位符。请求侧替换、响应 toolInput 还原（03 §3.3） */
+  /**
+   * 敏感值表：真实值 → 占位符。请求侧替换、响应 toolInput 还原（03 §3.3）。
+   * 注意：**toolResult 文本当前不在替换范围**（对齐 Python 只处理 text block 的
+   * 取舍，见 applySensitiveInMessages 注释）——工具输出中的敏感值会明文出站，
+   * P4 接 SecretProvider 时一并裁决
+   */
   sensitiveMap?: Record<string, string>;
   /**
    * 本次 getAction 的墙钟预算（毫秒）。梯子内全部请求与 sleep 共享。
@@ -222,6 +227,11 @@ export class LLMClient {
 
         // 4. 解析优先级：目标工具调用 → 文本 JSON 兜底 → R4 → R1
         const call = response.toolCalls.find((c) => c.name === tool.name);
+        if (call === undefined && response.toolCalls.length > 0) {
+          // 与 deps.log 声明的观测契约一致：丢弃的调用留 WARNING 证据（名字列表）
+          const dropped = response.toolCalls.map((c) => c.name).join(", ");
+          this.deps.log(`[llm] getAction 丢弃非目标工具调用：${dropped}（目标 ${tool.name}）`);
+        }
         if (call !== undefined) {
           return this.okResult(call.args, urlMap, sensitive, response.usage);
         }
@@ -293,11 +303,15 @@ export class LLMClient {
     tool: ToolDefinition,
     signal: AbortSignal,
   ): ChatRequest {
-    // 仅 fallback 切换后滤图（Python _strip_image_blocks 同款），主卡不滤——有意取舍：
-    // 白名单外的主卡（如 qwen-vl/gpt-4o 等真视觉模型缺省 supportsVision=false）恒滤图
-    // 会把图从视觉模型上静默剥掉，比"文本主卡带图静默致盲"更糟；主卡文本模型应显式
-    // 配 capabilities.supportsVision=false 之外的路径由宿主决策（03 §3.5 登记取舍）
-    if (this.usingFallback && !this.provider.capabilities.supportsVision) {
+    // 滤图条件（评审轮 4 修订，03 §4 偏离 9）：
+    // - 当前卡（主/fallback 皆可）**显式声明** supportsVision=false → 恒滤——声明即生效，
+    //   文本主卡（glm-5.1 等）显式配 false 即受静默致盲保护；
+    // - 未声明 → 仅 fallback 切换后按白名单推导滤（Python _strip_image_blocks 同款）——
+    //   白名单外主卡（qwen-vl/gpt-4o 等真视觉模型缺省推导 false）不被误滤
+    if (
+      this.config.capabilities?.supportsVision === false ||
+      (this.usingFallback && !this.provider.capabilities.supportsVision)
+    ) {
       stripImageBlocks(work, this.config.name);
     }
     const caps = this.provider.capabilities;

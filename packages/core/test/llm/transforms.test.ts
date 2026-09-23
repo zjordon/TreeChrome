@@ -41,8 +41,9 @@ import {
   tryParseJson,
   URL_MIN_LENGTH,
 } from "../../src/llm/transforms.js";
+import { LONG_URL } from "./fixtures.js";
 
-const U0 = `https://example.com/${"a".repeat(90)}`; // 110 字符 ≥ 100
+const U0 = LONG_URL; // 110 字符 ≥ 100（fixtures.LONG_URL）
 const U1 = `https://example.org/${"b".repeat(90)}`;
 const SHORT = "https://example.com/short";
 
@@ -125,6 +126,24 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     expect(firstText(messages[0])).toBe("my key <KEY1> and <KEY2> both");
   });
 
+  it("toolResult.text 不占位（Python 只处理 type=text block 的取舍——与 URL 缩写侧锚定对称；P5 裁决时此用例感知漂移）", () => {
+    const messages: ChatMessage[] = [
+      userMsg("q"),
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "t1",
+        toolName: "agent_response",
+        text: "tool echoed sk-abc-def",
+      },
+    ];
+    applySensitiveInMessages(messages, map);
+    expect(firstText(messages[2])).toBe("tool echoed sk-abc-def"); // 明文保留（已知取舍）
+  });
   it("空字符串键跳过（replaceAll('', x) 会逐字符插入占位符损坏全文）；还原侧对称滤除", () => {
     const messages: ChatMessage[] = [userMsg("keep this intact")];
     applySensitiveInMessages(messages, { "": "<BAD>", keep: "<K>" });

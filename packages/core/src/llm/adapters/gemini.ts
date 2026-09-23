@@ -19,7 +19,7 @@ import type {
   ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
-import { defaultTestConnection, isRecord, stripTrailingSlash } from "./common.js";
+import { defaultTestConnection, isRecord, stripTrailingSlash, temperatureEntry } from "./common.js";
 import { postJson } from "./http.js";
 import { sanitizeGeminiSchema } from "./schema-sanitize.js";
 
@@ -97,9 +97,9 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
   return out;
 }
 
-function mapFinishReason(raw: unknown, sawFunctionCall: boolean): StopReason {
-  if (sawFunctionCall) {
-    return "tool_call"; // finishReason 仍为 STOP——从 parts 推导优先（02 §4.3）
+function mapFinishReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
+  if (hasKeptToolCall) {
+    return "tool_call"; // finishReason 仍为 STOP——从保留的调用推导优先（02 §4.3）
   }
   if (raw === "STOP") {
     return "stop";
@@ -153,7 +153,6 @@ function parseResponse(
   let text = "";
   let reasoningText = "";
   const toolCalls: ToolCall[] = [];
-  let sawFunctionCall = false;
   for (const part of content) {
     if (!isRecord(part)) {
       continue;
@@ -167,7 +166,6 @@ function parseResponse(
       continue;
     }
     if (isRecord(part.functionCall)) {
-      sawFunctionCall = true;
       const name = part.functionCall.name;
       if (typeof name !== "string") {
         log(`[llm] gemini 丢弃形态异常的 functionCall：${JSON.stringify(name)}`);
@@ -177,22 +175,29 @@ function parseResponse(
         log(`[llm] gemini 忽略非请求工具名的 functionCall：${name}`);
         continue;
       }
-      if (!isRecord(part.functionCall.args)) {
+      const rawArgs: unknown = part.functionCall.args;
+      if (rawArgs !== undefined && !isRecord(rawArgs)) {
         log(`[llm] gemini 丢弃 args 非对象的 functionCall：${name}`);
         continue;
       }
-      // 无调用 id——合成，保证 canonical 不变量；同回合多 functionCall 即并行调用
+      // 无调用 id——合成，保证 canonical 不变量；同回合多 functionCall 即并行调用。
+      // args 缺失兜底 {}：proto3 JSON 会省略空 Struct，无参工具的合法形态是 {name}（与
+      // anthropic 的 input 口径对齐）
       toolCalls.push({
         id: `gemini-call-${toolCalls.length}`,
         name,
-        args: part.functionCall.args,
+        args: (rawArgs as Record<string, unknown>) ?? {},
       });
     }
   }
   const response: ChatResponse = {
     text,
     toolCalls,
-    stopReason: mapFinishReason(isRecord(first) ? first.finishReason : undefined, sawFunctionCall),
+    // 从保留的调用推导（丢弃的幻觉调用不置位，否则 toolCalls 空却报 tool_call 误导排障）
+    stopReason: mapFinishReason(
+      isRecord(first) ? first.finishReason : undefined,
+      toolCalls.length > 0,
+    ),
     usage: mapUsage(json.usageMetadata),
   };
   if (reasoningText.length > 0) {
@@ -240,10 +245,8 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
         : {}),
       generationConfig: {
         maxOutputTokens: req.maxTokens ?? config.maxTokens,
-        // 回退链与 maxTokens 同款（请求级 ?? 卡片级）；两级都缺省不发
-        ...((req.temperature ?? config.temperature) !== undefined
-          ? { temperature: req.temperature ?? config.temperature }
-          : {}),
+        // temperature 回退链（common.temperatureEntry）；两级缺省不发
+        ...temperatureEntry(req, config),
       },
     };
     const json = await postJson(deps.fetch, url, headers, body, {

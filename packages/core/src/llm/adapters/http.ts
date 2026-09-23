@@ -24,9 +24,18 @@ export interface PostJsonInit {
   timeoutMs?: number;
 }
 
-/** AbortError 判别（DOMException/各宿主 fetch 的中止形态，按 name 鸭子判别） */
+/**
+ * AbortError 判别（DOMException/各宿主 fetch 的中止形态，按 name 鸭子判别）。
+ * AbortSignal.timeout 到点时 fetch 以 abort reason（name="TimeoutError" 的
+ * DOMException，DOM 规范行为）拒绝——需一并识别，否则超时被误分型为
+ * LLMConnectionError（infra 可重试），与 timeoutMs 的到点强杀语义相反
+ */
 export function isAbortError(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { name?: unknown }).name === "AbortError";
+  if (typeof e !== "object" || e === null) {
+    return false;
+  }
+  const name = (e as { name?: unknown }).name;
+  return name === "AbortError" || name === "TimeoutError";
 }
 
 /**
@@ -122,15 +131,17 @@ export async function postJson(
       ? AbortSignal.any([init.signal, timeoutSignal])
       : (init.signal ?? timeoutSignal);
 
-  // 显式变量类型注解：never 返回函数的控流收窄（TS 对 const 箭头的 CFA 要求）
+  // 状态优先：timeoutSignal 已到点即按超时分型——真实 fetch 被超时 signal 中止时
+  // 以 reason（name="TimeoutError"）拒绝，靠错误名判别不可靠；外部中止（AbortError）
+  // 原样上抛由 client 分类；其余按网络层失败
   const classifyFailure: (e: unknown) => never = (e) => {
+    if (timeoutSignal?.aborted) {
+      throw new LLMTimeoutError(`请求超时（${init.timeoutMs}ms）：${url}`, {
+        provider: init.provider,
+        cause: e,
+      });
+    }
     if (isAbortError(e)) {
-      if (timeoutSignal?.aborted) {
-        throw new LLMTimeoutError(`请求超时（${init.timeoutMs}ms）：${url}`, {
-          provider: init.provider,
-          cause: e,
-        });
-      }
       throw e;
     }
     throw new LLMConnectionError(`网络层失败：${e instanceof Error ? e.message : String(e)}`, {
@@ -158,8 +169,9 @@ export async function postJson(
     } catch (e) {
       // 错误体读取阶段的超时仍按超时分型（LLMTimeoutError/infra 可重试）——吞成
       // 空体会把超时误报为状态码错误（4xx 不可重试且会触发 fallback 切换）。
-      // 非超时的读体失败（连接中断等）保持状态码错误优先、空体兜底
-      if (isAbortError(e) && timeoutSignal?.aborted) {
+      // 状态优先判超时（超时 reason 是 TimeoutError，非 AbortError）；非超时的
+      // 读体失败（连接中断等）保持状态码错误优先、空体兜底
+      if (timeoutSignal?.aborted) {
         throw new LLMTimeoutError(`请求超时（${init.timeoutMs}ms）：${url}`, {
           provider: init.provider,
           cause: e,
