@@ -4,8 +4,6 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
-    // 脚手架阶段（2.0）尚无测试文件；2.1 起删除此前勿提交实质测试
-    passWithNoTests: true,
     coverage: {
       provider: "v8",
       // 默认开启：让 `pnpm test` 也执行覆盖率门禁（不依赖调用方记得加 --coverage）

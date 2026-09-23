@@ -1,8 +1,11 @@
-// 测试注入夹具：MockFetch（按序/按模式回放 + 调用记录）与 FakeClock（冻结时钟）。
-// 设计见 docs/implement-plan/p2/04 §2；Response 用真实 Response 构造（status/headers/body 走真解析路径）。
+// 测试注入夹具：MockFetch（按序回放 + 调用记录）与 FakeClock（冻结时钟）。
+// 设计见 docs/implement-plan/p2/04 §2；Response 用真实 Response 构造（status/headers/body
+// 走真解析路径）。rawBody 形态用于构造非 JSON 纯文本错误体（截断断言）。
 
 export type MockResponseSpec =
   | { status: number; headers?: Record<string, string>; body?: unknown }
+  /** 非 JSON 原文响应体（如 text/plain 错误页）：不做 JSON.stringify */
+  | { status: number; headers?: Record<string, string>; rawBody: string }
   | { networkError: Error }
   /** 永不 resolve，直到 signal 中止才 reject AbortError（测 deadline 强杀在飞请求） */
   | { hangUntilAbort: true };
@@ -22,8 +25,10 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
     });
   }
   const headers = new Headers(spec.headers ?? { "content-type": "application/json" });
+  const bodyText =
+    "rawBody" in spec ? spec.rawBody : spec.body === undefined ? "" : JSON.stringify(spec.body);
   return Promise.resolve(
-    new Response(spec.body === undefined ? "" : JSON.stringify(spec.body), {
+    new Response(bodyText, {
       status: spec.status,
       headers,
     }),
@@ -33,34 +38,22 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
 export class MockFetch {
   readonly calls: Array<{ url: string; init: RequestInit }> = [];
   private readonly queue: MockResponseSpec[] = [];
-  private readonly expects: Array<{ pattern: RegExp; spec: MockResponseSpec }> = [];
 
   readonly fetch = (url: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     const u = String(url);
     this.calls.push({ url: u, init: init ?? ({} as RequestInit) });
     const next = this.queue.shift();
-    const spec = next !== undefined ? next : this.expectFor(u);
-    return applySpec(spec, init?.signal);
+    if (next === undefined) {
+      // 队列耗尽即测试编排错误（不是被测行为）：立即失败并给出请求线索
+      throw new Error(`MockFetch: unexpected request ${u}`);
+    }
+    return applySpec(next, init?.signal);
   };
 
   /** 顺序消费（耗尽后再有请求即失败） */
   queueMany(...specs: MockResponseSpec[]): this {
     this.queue.push(...specs);
     return this;
-  }
-
-  /** 模式匹配兜底（队列空时使用） */
-  expect(pattern: RegExp, spec: MockResponseSpec): this {
-    this.expects.push({ pattern, spec });
-    return this;
-  }
-
-  private expectFor(url: string): MockResponseSpec {
-    const match = this.expects.find((e) => e.pattern.test(url));
-    if (match === undefined) {
-      throw new Error(`MockFetch: unexpected request ${url}`);
-    }
-    return match.spec;
   }
 
   bodyAt(index: number): Record<string, unknown> {
@@ -78,6 +71,10 @@ interface FakeTimer {
   reject: (e: unknown) => void;
   off?: () => void;
 }
+
+/** 收敛参数：轮数上限与每轮微任务冲刷深度（具名便于调档；超限 warn 而非静默跳过） */
+const MAX_ROUNDS = 6;
+const MICROTASK_FLUSH = 50;
 
 /** 假时钟：now() 手动推进；sleep 登记为可推进定时器，signal 中止立即 reject */
 export class FakeClock {
@@ -117,13 +114,13 @@ export class FakeClock {
    */
   async advance(ms: number): Promise<void> {
     this.t += ms;
-    for (let round = 0; round < 6; round += 1) {
-      for (let i = 0; i < 50; i += 1) {
+    for (let round = 0; round < MAX_ROUNDS; round += 1) {
+      for (let i = 0; i < MICROTASK_FLUSH; i += 1) {
         await Promise.resolve();
       }
       const due = this.timers.filter((tm) => tm.due <= this.t);
       if (due.length === 0) {
-        break;
+        return;
       }
       for (const tm of due) {
         const i = this.timers.indexOf(tm);
@@ -133,6 +130,11 @@ export class FakeClock {
         tm.off?.();
         tm.resolve();
       }
+    }
+    if (this.timers.some((tm) => tm.due <= this.t)) {
+      console.warn(
+        `FakeClock.advance: ${MAX_ROUNDS} 轮内未收敛，仍有到期 sleep 未触发（调大 MAX_ROUNDS/MICROTASK_FLUSH 或检查链路）`,
+      );
     }
   }
 }

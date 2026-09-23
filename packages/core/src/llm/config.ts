@@ -1,7 +1,7 @@
 // Provider 卡片（ProviderConfig）与能力解析：TreeWalker 视觉白名单的泛化（架构 §3.4）。
 // 移植自 tree_walker/config.py 的 model_supports_vision（:25-43）与 LLMSettings 默认值。
 
-import type { ProviderCapabilities } from "./provider.js";
+import type { LlmProtocol, ProviderCapabilities } from "./provider.js";
 
 /**
  * TreeWalker 教训（config.py:279-283）：max_tokens=4096 时 thinking 可写满输出额度，
@@ -13,7 +13,7 @@ export const DEFAULT_MAX_TOKENS = 16384;
 export interface ProviderConfig {
   /** 卡片名（展示/日志用，如 "glm-anthropic"） */
   name: string;
-  protocol: "openai-completions" | "anthropic-messages" | "gemini";
+  protocol: LlmProtocol;
   /** 无尾斜杠；openai 形态含 /v1 前缀 */
   baseUrl: string;
   apiKey: string;

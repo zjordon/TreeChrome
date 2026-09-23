@@ -108,3 +108,20 @@ smoke 产物摘要：
 
 - **2026-09-23 假 key 链路验证**（无费用，验证打包与 wire，不发真 LLM 调用）：esbuild 打包 src/index.ts → 两端点真实 401 → `LLMAuthError`；智谱错误体 `{"error":{"message":"令牌已过期或验证不正确"}}` 走通通用 message 提取；URL/headers 与 02 规格一致——openai 端点 `POST /api/paas/v4/chat/completions`（Bearer）、anthropic 端点 `POST /api/anthropic/v1/messages`（x-api-key + anthropic-version + dangerous-direct-browser-access）。
 - **真机 agent_response 往返**：待 `GLM_API_KEY` 实跑（模型可用 `SMOKE_OPENAI_MODEL`/`SMOKE_ANTHROPIC_MODEL` 覆盖，以账号可用为准）；产物贴回此处，端点与官方文档的偏差 → 修订 fixtures 时提交信息注明（风险 1 的闭环动作）。
+
+### 评审轮 1（review-p2-llm-client-1.json，2026-09-23，35 条）
+
+采纳 31 条 / 驳回 4 条，修复提交见 git log。要点与契约修订：
+
+**三组实质缺陷**：
+- `ProviderConfig.temperature` 死配置（#24/29/31）：三适配器补回退链 `req.temperature ?? config.temperature`（与 maxTokens 同款；两级缺省仍不发）。
+- 连续同角色消息不折叠（#25/30）：canonical 允许 `[user, user]`，而 anthropic/gemini 要求角色交替会 400——与 toolResult 折叠同族地雷，02 计划时遗漏。适配器层 `pushMerged` 折叠（含"toolResult 折叠出的 user 消息 + 紧随 user 观察"的相邻场景）。**附带收益：R1 梯子追加的 user 指令不再产生连续 user wire 消息**（严格交替端点上的潜在 400 由折叠消除）。
+- `resp.text()` 不在错误分类内（#4）：超时若发生在 body 读取阶段会裸抛 AbortError 被误判为外部取消——fetch 与 resp.text() 共用 `classifyFailure`。
+
+**契约修订**（同步进 01/03）：LlmDeps 增 `log?: (message) => void`（缺省 console.warn，#22）；`setCallWindow(timeoutMs | null)` 支持清除（#16）；`createProvider` 签名放宽为 `LlmDeps = {}`（#35）；schema-sanitize 键名归一化写入 + `type: ["string","null"]` 联合类型拆 nullable（#6/32）；gemini 补 `cachedContentTokenCount → cacheReadTokens`（#28）；`assertValidMessages` 拒绝重复 toolCall id（#23）；http 错误体兼容 `{error:"str"}`/顶层 `{message}`（#9）；testConnection 公共化进 adapters/common.ts 且带 10s 兜底超时（#7/18/27）。
+
+**驳回 4 条**：
+- #15 梯子缺省超时——Python get_action 同样无内部上界（外层 wait_for 提供，P4 step 恒传），按 03 冻结契约仅在 GetActionOptions 文档写明调用契约。
+- #17 敏感值占位扩展到 toolResult.text——Python `_filter_sensitive_in_messages` 明确只处理 text block（P5 parity），修改属上游契约变更；已在函数注释记录取舍，P4 接 SecretProvider 时一并裁决。
+- #7 的"折叠骨架参数化共享"子项——两协议折叠的块形状/排序语义不同，抽象收益低于可读性损失；仅抽公共小件（isRecord/stripTrailingSlash/defaultTestConnection）。
+- #12 仅部分采纳：MockFetch 删除未用的 expect/expectFor；queueMany 耗尽抛错保留为编排失败信号。

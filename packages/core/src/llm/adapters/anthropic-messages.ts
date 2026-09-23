@@ -1,5 +1,5 @@
 // anthropic-messages 协议适配器（02 §2；parity 主通道——TreeWalker 现役默认智谱兼容端点）。
-// 请求：canonical → wire 映射 + 连续 toolResult 折叠（400 地雷）；响应：content 块解析。
+// 请求：canonical → wire 映射 + 连续 toolResult/同角色折叠（400 地雷）；响应：content 块解析。
 
 import { type ProviderConfig, resolveCapabilities } from "../config.js";
 import type { LlmDeps } from "../deps.js";
@@ -16,15 +16,8 @@ import type {
   ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
+import { defaultTestConnection, isRecord, stripTrailingSlash } from "./common.js";
 import { postJson } from "./http.js";
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function stripTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, "");
-}
 
 /** canonical 内容块 → anthropic content 块 */
 function blocksToContent(blocks: ContentBlock[]): Array<Record<string, unknown>> {
@@ -43,18 +36,28 @@ function blocksToContent(blocks: ContentBlock[]): Array<Record<string, unknown>>
 }
 
 /**
- * canonical → wire 消息。两条硬规则：
+ * canonical → wire 消息。硬规则：
  * - 连续 toolResult 折叠进**一条** user 消息（Anthropic 对分散的多条 user 报 400，
  *   webbrain 已踩），块序按前置 assistant.toolCalls 顺序重排；
+ * - 连续同角色消息折叠（canonical 不校验交替，Anthropic 要求角色交替——同族 400
+ *   地雷；也覆盖 [toolResult 折叠出的 user 消息] 与紧随的 user 观察消息相邻）；
  * - 纯工具调用回合的 assistant 发空 content 数组 + tool_use 块。
  */
 function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
+  const pushMerged = (role: "user" | "assistant", content: Array<Record<string, unknown>>) => {
+    const prev = out[out.length - 1];
+    if (prev !== undefined && prev.role === role) {
+      (prev.content as Array<Record<string, unknown>>).push(...content);
+    } else {
+      out.push({ role, content });
+    }
+  };
   let i = 0;
   while (i < messages.length) {
     const msg = messages[i];
     if (msg.role === "user") {
-      out.push({ role: "user", content: blocksToContent(msg.blocks) });
+      pushMerged("user", blocksToContent(msg.blocks));
       i += 1;
       continue;
     }
@@ -63,7 +66,7 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       for (const call of msg.toolCalls ?? []) {
         content.push({ type: "tool_use", id: call.id, name: call.name, input: call.args });
       }
-      out.push({ role: "assistant", content });
+      pushMerged("assistant", content);
       // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排）
       const results = new Map<string, ToolResultMessage>();
       let j = i + 1;
@@ -88,7 +91,7 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
             });
           }
         }
-        out.push({ role: "user", content: resultBlocks });
+        pushMerged("user", resultBlocks);
       }
       i = j;
       continue;
@@ -128,8 +131,12 @@ function mapUsage(raw: unknown): TokenUsage | null {
   };
 }
 
-/** wire 响应 → canonical。thinking 块跳过进 reasoningText；忽略非请求工具名的 tool_use */
-function parseResponse(json: unknown, requestedNames: ReadonlySet<string>): ChatResponse {
+/** wire 响应 → canonical。thinking 块跳过进 reasoningText；忽略非请求工具名的 tool_use（warn） */
+function parseResponse(
+  json: unknown,
+  requestedNames: ReadonlySet<string>,
+  log: (message: string) => void,
+): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(
       `anthropic 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
@@ -150,16 +157,16 @@ function parseResponse(json: unknown, requestedNames: ReadonlySet<string>): Chat
       text += item.text;
     } else if (item.type === "thinking" && typeof item.thinking === "string") {
       reasoningText += item.thinking;
-    } else if (
-      item.type === "tool_use" &&
-      typeof item.name === "string" &&
-      requestedNames.has(item.name)
-    ) {
-      toolCalls.push({
-        id: typeof item.id === "string" ? item.id : "",
-        name: item.name,
-        args: isRecord(item.input) ? item.input : {},
-      });
+    } else if (item.type === "tool_use") {
+      if (typeof item.name === "string" && requestedNames.has(item.name)) {
+        toolCalls.push({
+          id: typeof item.id === "string" ? item.id : "",
+          name: item.name,
+          args: isRecord(item.input) ? item.input : {},
+        });
+      } else {
+        log(`[llm] anthropic 忽略非请求工具名的 tool_use：${JSON.stringify(item.name)}`);
+      }
     }
   }
   const response: ChatResponse = {
@@ -208,7 +215,10 @@ export function createAnthropicProvider(
           }
         : {}),
       ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
-      ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+      // 回退链与 maxTokens 同款：请求级 ?? 卡片级；两级都缺省则不发
+      ...((req.temperature ?? config.temperature) !== undefined
+        ? { temperature: req.temperature ?? config.temperature }
+        : {}),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,
@@ -216,7 +226,7 @@ export function createAnthropicProvider(
       timeoutMs: req.timeoutMs,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames);
+    return parseResponse(json, requestedNames, deps.log);
   };
 
   return {
@@ -224,18 +234,6 @@ export function createAnthropicProvider(
     model: config.model,
     capabilities,
     chat,
-    async testConnection() {
-      try {
-        await chat({
-          systemPrompt: null,
-          messages: [{ role: "user", blocks: [{ kind: "text", text: "Hi" }] }],
-          tools: null,
-          maxTokens: 5,
-        });
-        return { ok: true, model: config.model };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-    },
+    testConnection: () => defaultTestConnection(chat, config.model),
   };
 }

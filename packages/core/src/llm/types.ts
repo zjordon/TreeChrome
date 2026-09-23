@@ -139,6 +139,11 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       }
       if (calls.length > 0) {
         const expected = new Set(calls.map((c) => c.id));
+        // Set 按 id 去重会让重复 id 的 toolCalls 一条结果即"恰好配对"假性通过，
+        // 而适配器折叠同样按 id 建 Map——重复 id 下校验结论与 wire 输出会不一致
+        if (expected.size !== calls.length) {
+          throw violation("assistant 的 toolCalls 存在重复 id");
+        }
         const seen = new Set<string>();
         let j = i + 1;
         while (j < messages.length) {

@@ -2,7 +2,9 @@
 // JSON Schema 的 $schema/$id/additionalProperties/examples 等键会被端点拒收或忽略，
 // 适配器对 parameters 做递归白名单清洗（只删不报），原始 schema 不动（其余两协议透传）。
 // 白名单首版按 02 冻结：type/format/description/nullable/items/properties/required/enum
-//（含 type 的大小写变体）；真机差异等有 key 实测后修订（README 风险 3）。
+//；真机差异等有 key 实测后修订（README 风险 3）。
+// 键名与 type 值做归一化（小写键写入、联合类型拆 nullable）——只清洗 schema 键，
+// properties 下的属性名原样保留。
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -26,16 +28,30 @@ export function sanitizeGeminiSchema(schema: Record<string, unknown>): Record<st
     if (!ALLOWED_KEYS.has(normalized)) {
       continue; // 白名单外一律删（$schema/additionalProperties/examples/minimum…）
     }
+    if (normalized === "type" && Array.isArray(value)) {
+      // JSON Schema 联合类型 type: ["string","null"] → 取首个非 null + nullable
+      //（Gemini Schema.type 只收单个字符串枚举，数组形态会被拒收）
+      const first = value.find((t) => t !== "null");
+      if (first !== undefined) {
+        out.type = first;
+      }
+      if (value.includes("null")) {
+        out.nullable = true;
+      }
+      continue;
+    }
     if (normalized === "properties" && isRecord(value)) {
       const props: Record<string, unknown> = {};
       for (const [name, sub] of Object.entries(value)) {
         props[name] = isRecord(sub) ? sanitizeGeminiSchema(sub) : sub;
       }
-      out[key] = props;
+      out[normalized] = props;
     } else if (normalized === "items") {
-      out[key] = isRecord(value) ? sanitizeGeminiSchema(value) : value;
+      out[normalized] = isRecord(value) ? sanitizeGeminiSchema(value) : value;
     } else {
-      out[key] = value;
+      // 写入统一用归一化（小写）键——"Type"/"Required" 等变体放行但原样透传
+      // 仍会被端点拒收，清洗必须闭环
+      out[normalized] = value;
     }
   }
   return out;

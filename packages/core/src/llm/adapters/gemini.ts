@@ -19,16 +19,9 @@ import type {
   ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
+import { defaultTestConnection, isRecord, stripTrailingSlash } from "./common.js";
 import { postJson } from "./http.js";
 import { sanitizeGeminiSchema } from "./schema-sanitize.js";
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function stripTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, "");
-}
 
 function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
   return blocks.map((b) =>
@@ -37,17 +30,28 @@ function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
 }
 
 /**
- * canonical → wire contents。角色只有 user/model；连续 toolResult 折叠为一条 user
- * turn 的 functionResponse part 并置（同 anthropic 逻辑），按前置 assistant.toolCalls
- * 顺序重排，response 包装为官方推荐的 {"result": text} 形状（按 name 关联）。
+ * canonical → wire contents。角色只有 user/model。硬规则：
+ * - 连续 toolResult 折叠为一条 user turn 的 functionResponse part 并置（同 anthropic
+ *   逻辑），按前置 assistant.toolCalls 顺序重排，response 包装为官方推荐的
+ *   {"result": text} 形状（按 name 关联）；
+ * - 连续同角色 turn 折叠（Gemini 要求 user/model 交替，400 地雷——canonical 不校验
+ *   交替；也覆盖 [toolResult 折叠出的 user turn] 与紧随的 user 观察消息相邻）。
  */
 function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
+  const pushMerged = (role: "user" | "model", parts: Array<Record<string, unknown>>) => {
+    const prev = out[out.length - 1];
+    if (prev !== undefined && prev.role === role) {
+      (prev.parts as Array<Record<string, unknown>>).push(...parts);
+    } else {
+      out.push({ role, parts });
+    }
+  };
   let i = 0;
   while (i < messages.length) {
     const msg = messages[i];
     if (msg.role === "user") {
-      out.push({ role: "user", parts: blocksToParts(msg.blocks) });
+      pushMerged("user", blocksToParts(msg.blocks));
       i += 1;
       continue;
     }
@@ -57,7 +61,7 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
       for (const call of msg.toolCalls ?? []) {
         parts.push({ functionCall: { name: call.name, args: call.args } });
       }
-      out.push({ role: "model", parts });
+      pushMerged("model", parts);
       const results = new Map<string, ToolResultMessage>();
       let j = i + 1;
       while (j < messages.length) {
@@ -82,7 +86,7 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
             });
           }
         }
-        out.push({ role: "user", parts: resultParts });
+        pushMerged("user", resultParts);
       }
       i = j;
       continue;
@@ -114,10 +118,17 @@ function mapUsage(raw: unknown): TokenUsage | null {
   return {
     inputTokens: typeof raw.promptTokenCount === "number" ? raw.promptTokenCount : 0,
     outputTokens: typeof raw.candidatesTokenCount === "number" ? raw.candidatesTokenCount : 0,
+    ...(typeof raw.cachedContentTokenCount === "number"
+      ? { cacheReadTokens: raw.cachedContentTokenCount }
+      : {}),
   };
 }
 
-function parseResponse(json: unknown, requestedNames: ReadonlySet<string>): ChatResponse {
+function parseResponse(
+  json: unknown,
+  requestedNames: ReadonlySet<string>,
+  log: (message: string) => void,
+): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(
       `gemini 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
@@ -158,18 +169,24 @@ function parseResponse(json: unknown, requestedNames: ReadonlySet<string>): Chat
     if (isRecord(part.functionCall)) {
       sawFunctionCall = true;
       const name = part.functionCall.name;
-      if (
-        typeof name === "string" &&
-        requestedNames.has(name) &&
-        isRecord(part.functionCall.args)
-      ) {
-        // 无调用 id——合成，保证 canonical 不变量；同回合多 functionCall 即并行调用
-        toolCalls.push({
-          id: `gemini-call-${toolCalls.length}`,
-          name,
-          args: part.functionCall.args,
-        });
+      if (typeof name !== "string") {
+        log(`[llm] gemini 丢弃形态异常的 functionCall：${JSON.stringify(name)}`);
+        continue;
       }
+      if (!requestedNames.has(name)) {
+        log(`[llm] gemini 忽略非请求工具名的 functionCall：${name}`);
+        continue;
+      }
+      if (!isRecord(part.functionCall.args)) {
+        log(`[llm] gemini 丢弃 args 非对象的 functionCall：${name}`);
+        continue;
+      }
+      // 无调用 id——合成，保证 canonical 不变量；同回合多 functionCall 即并行调用
+      toolCalls.push({
+        id: `gemini-call-${toolCalls.length}`,
+        name,
+        args: part.functionCall.args,
+      });
     }
   }
   const response: ChatResponse = {
@@ -222,7 +239,10 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
         : {}),
       generationConfig: {
         maxOutputTokens: req.maxTokens ?? config.maxTokens,
-        ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+        // 回退链与 maxTokens 同款（请求级 ?? 卡片级）；两级都缺省不发
+        ...((req.temperature ?? config.temperature) !== undefined
+          ? { temperature: req.temperature ?? config.temperature }
+          : {}),
       },
     };
     const json = await postJson(deps.fetch, url, headers, body, {
@@ -231,7 +251,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
       timeoutMs: req.timeoutMs,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames);
+    return parseResponse(json, requestedNames, deps.log);
   };
 
   return {
@@ -239,18 +259,6 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
     model: config.model,
     capabilities,
     chat,
-    async testConnection() {
-      try {
-        await chat({
-          systemPrompt: null,
-          messages: [{ role: "user", blocks: [{ kind: "text", text: "Hi" }] }],
-          tools: null,
-          maxTokens: 5,
-        });
-        return { ok: true, model: config.model };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-    },
+    testConnection: () => defaultTestConnection(chat, config.model),
   };
 }

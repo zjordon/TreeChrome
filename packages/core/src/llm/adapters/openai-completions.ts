@@ -17,15 +17,8 @@ import type {
   ToolCall,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
+import { defaultTestConnection, isRecord, stripTrailingSlash } from "./common.js";
 import { postJson } from "./http.js";
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function stripTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, "");
-}
 
 /**
  * OpenAI 新契约模型前缀（gpt-5 / gpt-4.1 / o1 / o3 / o4 系，借 webbrain
@@ -129,7 +122,11 @@ function parseArguments(raw: unknown): Record<string, unknown> | undefined {
   }
 }
 
-function parseResponse(json: unknown, requestedNames: ReadonlySet<string>): ChatResponse {
+function parseResponse(
+  json: unknown,
+  requestedNames: ReadonlySet<string>,
+  log: (message: string) => void,
+): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(
       `openai 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
@@ -157,7 +154,7 @@ function parseResponse(json: unknown, requestedNames: ReadonlySet<string>): Chat
       }
       const args = parseArguments(fn.arguments);
       if (args === undefined) {
-        console.warn(`[llm] openai tool_call arguments 解析失败，丢弃调用：${fn.name}`);
+        log(`[llm] openai tool_call arguments 解析失败，丢弃调用：${fn.name}`);
         continue; // 截断容错：不带病 args 进 canonical，消费侧自然落入文本兜底
       }
       toolCalls.push({ id: typeof item.id === "string" ? item.id : "", name: fn.name, args });
@@ -212,7 +209,11 @@ export function createOpenAICompletionsProvider(
       ...(req.toolChoice?.kind === "forced"
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
-      ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+      // 回退链与 maxTokens 同款（请求级 ?? 卡片级）；两级都缺省不发。新契约模型
+      //（NEW_CONTRACT_PREFIX）只接受默认温度——卡片显式配置属宿主自担的选择
+      ...((req.temperature ?? config.temperature) !== undefined
+        ? { temperature: req.temperature ?? config.temperature }
+        : {}),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,
@@ -220,7 +221,7 @@ export function createOpenAICompletionsProvider(
       timeoutMs: req.timeoutMs,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames);
+    return parseResponse(json, requestedNames, deps.log);
   };
 
   return {
@@ -228,18 +229,6 @@ export function createOpenAICompletionsProvider(
     model: config.model,
     capabilities,
     chat,
-    async testConnection() {
-      try {
-        await chat({
-          systemPrompt: null,
-          messages: [{ role: "user", blocks: [{ kind: "text", text: "Hi" }] }],
-          tools: null,
-          maxTokens: 5,
-        });
-        return { ok: true, model: config.model };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-    },
+    testConnection: () => defaultTestConnection(chat, config.model),
   };
 }

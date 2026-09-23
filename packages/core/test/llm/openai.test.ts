@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createOpenAICompletionsProvider } from "../../src/llm/adapters/openai-completions.js";
 import { LLMAuthError, LLMProtocolViolationError } from "../../src/llm/errors.js";
+import { AGENT_TOOL, stubDeps } from "./fixtures.js";
 import { MockFetch, type MockResponseSpec } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -16,18 +17,11 @@ const CARD: ProviderConfig = {
   maxTokens: 8192,
 };
 
-const TOOL = {
-  name: "agent_response",
-  description: "respond",
-  parameters: { type: "object", properties: { action: { type: "object" } } },
-};
+const TOOL = AGENT_TOOL;
 
 function setup(over: Partial<ProviderConfig> = {}) {
   const mock = new MockFetch();
-  const provider = createOpenAICompletionsProvider(
-    { ...CARD, ...over },
-    { fetch: mock.fetch, now: () => 0, sleep: async () => {} },
-  );
+  const provider = createOpenAICompletionsProvider({ ...CARD, ...over }, stubDeps(mock));
   return { mock, provider };
 }
 
@@ -195,6 +189,20 @@ describe("请求构造（canonical → wire）", () => {
     expect(body).not.toHaveProperty("tool_choice");
     expect(body.temperature).toBe(0.3);
     expect(body.max_tokens).toBe(99);
+  });
+
+  it("temperature 回退链：请求级缺省用卡片级；两级缺省不发（新契约模型由宿主自担）", async () => {
+    const { mock, provider } = setup({ temperature: 0.6 });
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat(baseReq());
+    expect(mock.lastBody().temperature).toBe(0.6);
+    await provider.chat({ ...baseReq(), temperature: 0.1 });
+    expect(mock.lastBody().temperature).toBe(0.1);
+
+    const noCard = setup();
+    noCard.mock.queueMany(toolOk("{}"));
+    await noCard.provider.chat(baseReq());
+    expect(noCard.mock.lastBody()).not.toHaveProperty("temperature");
   });
 });
 

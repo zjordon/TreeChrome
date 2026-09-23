@@ -13,7 +13,7 @@
 // 输出：
 //   '{"a": 1}' -> {'a': 1}
 //   '```json\n{"a": 1}\n```' -> {'a': 1}
-//   '```json\n{"a": {"b": 2}}\n```' -> {'a': {'b': 2}}   ← 围栏非贪婪截断失败后靠首尾大括号救回
+//   '```json\n{"a": {"b": 2}}\n```' -> {'a': {'b': 2}}   ← 围栏懒惰量词整体回溯后捕获完整对象，二级即命中（Python re.search 同语义）
 //   'no json here' -> None
 //   '' -> None
 //   'Sure! Here it is: {"x": 1} hope it helps' -> {'x': 1}
@@ -122,6 +122,16 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     const messages: ChatMessage[] = [userMsg("my key sk-abc-def and sk-abc both")];
     applySensitiveInMessages(messages, map);
     expect(firstText(messages[0])).toBe("my key <KEY1> and <KEY2> both");
+  });
+
+  it("空字符串键跳过（replaceAll('', x) 会逐字符插入占位符损坏全文）；空占位符还原侧同理", () => {
+    const messages: ChatMessage[] = [userMsg("keep this intact")];
+    applySensitiveInMessages(messages, { "": "<BAD>", keep: "<K>" });
+    expect(firstText(messages[0])).toBe("<K> this intact");
+    // 还原侧：空 real 键与空占位符键都被滤除，文本原样
+    expect(restoreSensitiveInOutput({ v: "x secret" }, { "": "<BAD>", secret: "" })).toEqual({
+      v: "x secret",
+    });
   });
 
   it("restore：占位符还原真实值（锚定输出）", () => {

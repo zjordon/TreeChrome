@@ -46,7 +46,11 @@ const WINDOW_BUDGET_FLOOR_MS = 30_000;
 export interface GetActionOptions {
   /** 敏感值表：真实值 → 占位符。请求侧替换、响应 toolInput 还原（03 §3.3） */
   sensitiveMap?: Record<string, string>;
-  /** 本次 getAction 的墙钟预算（毫秒）。梯子内全部请求与 sleep 共享 */
+  /**
+   * 本次 getAction 的墙钟预算（毫秒）。梯子内全部请求与 sleep 共享。
+   * 调用契约：无 timeoutMs 且未 setCallWindow 时梯子**无内部时长上界**（对齐
+   * Python get_action——上界由 step 层的外层 wait_for 提供）；P4 step 恒传。
+   */
   timeoutMs?: number;
   /** 外部取消（step 停止）。穿透所有内部调用，不被吞（#186 教训） */
   signal?: AbortSignal;
@@ -59,11 +63,15 @@ export type GetActionResult =
 /** 可中止睡眠（AbortSignal-aware）。reject 形态为 AbortError，由上层分类 */
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    // 先声明后赋值：onAbort 引用 timer，声明顺序不依赖调用时序（TDZ 前向引用脆弱）
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const onAbort = () => {
-      clearTimeout(timer);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
       reject(new DOMException("Aborted", "AbortError"));
     };
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
@@ -80,18 +88,23 @@ function resolveDeps(deps?: LlmDeps): Required<LlmDeps> {
     fetch: deps?.fetch ?? ((input, init) => fetch(input, init)),
     now: deps?.now ?? (() => performance.now()),
     sleep: deps?.sleep ?? defaultSleep,
+    log: deps?.log ?? ((message) => console.warn(message)),
   };
 }
 
-/** 协议 → 适配器工厂（2.2 anthropic / 2.3 openai / 2.4 gemini） */
-export function createProvider(config: ProviderConfig, deps: Required<LlmDeps>): LLMProvider {
+/**
+ * 协议 → 适配器工厂（2.2 anthropic / 2.3 openai / 2.4 gemini）。
+ * deps 可部分省略（缺省实现与 createLLMClient 同源），与包根导出的注入口径一致。
+ */
+export function createProvider(config: ProviderConfig, deps: LlmDeps = {}): LLMProvider {
+  const resolved = resolveDeps(deps);
   switch (config.protocol) {
     case "anthropic-messages":
-      return createAnthropicProvider(config, deps);
+      return createAnthropicProvider(config, resolved);
     case "openai-completions":
-      return createOpenAICompletionsProvider(config, deps);
+      return createOpenAICompletionsProvider(config, resolved);
     case "gemini":
-      return createGeminiProvider(config, deps);
+      return createGeminiProvider(config, resolved);
     default:
       throw new LLMInvalidRequestError(`协议适配器未实现：${config.protocol}`, {
         provider: config.name,
@@ -135,8 +148,15 @@ export class LLMClient {
   /**
    * P4 step 在 wait_for 起点登记的步级共享窗口（Python set_llm_window）：
    * deadline = now + timeoutMs（梯子内所有调用共享）；单次预算上限 = max(30s, 0.75×t)。
+   * 传 null 清除登记——过期的 windowDeadline 若不清除，后续 getAction 会立即
+   * 到点恒抛 LLMTimeoutError（静默全量失败）；跨步复用实例时每步重登记或显式清除。
    */
-  setCallWindow(timeoutMs: number): void {
+  setCallWindow(timeoutMs: number | null): void {
+    if (timeoutMs === null) {
+      this.windowDeadline = undefined;
+      this.windowBudgetCapMs = undefined;
+      return;
+    }
     this.windowDeadline = this.deps.now() + timeoutMs;
     this.windowBudgetCapMs = Math.max(WINDOW_BUDGET_FLOOR_MS, timeoutMs * 0.75);
   }
@@ -207,20 +227,20 @@ export class LLMClient {
             return this.okResult(parsed, urlMap, sensitive, response.usage);
           }
           if (textRetries >= TEXT_RETRY_MAX) {
-            console.warn(
+            this.deps.log(
               `[llm] LLM returned text (not tool_use) ${textRetries + 1} times — returning empty for step-level retry ladder`,
             );
             return { kind: "empty" };
           }
           textRetries += 1;
-          console.warn(
+          this.deps.log(
             `[llm] LLM returned text (not tool_use), retrying with directive prompt (${textRetries}/${TEXT_RETRY_MAX})`,
           );
           work.push({ role: "assistant", blocks: [{ kind: "text", text: response.text }] });
           work.push({ role: "user", blocks: [{ kind: "text", text: r4Directive(tool.name) }] });
           continue;
         }
-        console.warn(
+        this.deps.log(
           `[llm] LLM returned no parseable response (stopReason=${response.stopReason}, outputTokens=${response.usage?.outputTokens ?? "n/a"}, toolCalls=${response.toolCalls.length})`,
         );
         if (!noActionRetried) {
@@ -228,20 +248,17 @@ export class LLMClient {
           work.push({ role: "user", blocks: [{ kind: "text", text: r1Directive(tool.name) }] });
           continue;
         }
-        console.warn("[llm] LLM still returned no parseable response after retry");
+        this.deps.log("[llm] LLM still returned no parseable response after retry");
         return { kind: "empty" };
       }
     } catch (e) {
-      if (isAbortError(e)) {
-        if (windowExpired) {
-          throw new LLMTimeoutError(
-            `getAction 窗口预算到期（deadline=${deadlineAt !== undefined ? Math.round(deadlineAt) : "?"}ms）`,
-            { provider: this.config.name, cause: e },
-          );
-        }
-        throw e; // 外部取消穿透，不吞、不变形（#186 教训）
+      if (isAbortError(e) && windowExpired) {
+        throw new LLMTimeoutError(
+          `getAction 窗口预算到期（deadline=${deadlineAt !== undefined ? Math.round(deadlineAt) : "?"}ms）`,
+          { provider: this.config.name, cause: e },
+        );
       }
-      throw e;
+      throw e; // 外部取消穿透，不吞、不变形（#186 教训）；其余异常原样上抛
     } finally {
       if (timer !== undefined) {
         clearTimeout(timer);
@@ -250,18 +267,9 @@ export class LLMClient {
     }
   }
 
-  async testConnection(): Promise<{ ok: boolean; error?: string; model?: string }> {
-    try {
-      await this.provider.chat({
-        systemPrompt: null,
-        messages: [{ role: "user", blocks: [{ kind: "text", text: "Hi" }] }],
-        tools: null,
-        maxTokens: 5,
-      });
-      return { ok: true, model: this.provider.model };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
+  testConnection(): Promise<{ ok: boolean; error?: string; model?: string }> {
+    // 委托当前 provider（含 10s 探测兜底超时与统一的成败包装）；fallback 切换后跟随新卡
+    return this.provider.testConnection();
   }
 
   private okResult(
@@ -338,12 +346,12 @@ export class LLMClient {
           e.retryAfterMs ??
           Math.min(INFRA_BACKOFF_CAP_SEC, INFRA_BACKOFF_BASE_SEC * 2 ** retries) * 1000;
         if (this.deps.now() + delayMs > deadline) {
-          console.warn(
+          this.deps.log(
             `[llm] LLM infra backoff budget (${Math.round(capMs / 1000)}s wall-clock incl. requests) exhausted after ${retries} retry(ies) — raising ${e.name}`,
           );
           throw e;
         }
-        console.warn(
+        this.deps.log(
           `[llm] LLM ${e.name} (retry ${retries + 1}/${INFRA_RETRY_MAX}) — backing off ${(delayMs / 1000).toFixed(1)}s`,
         );
         retries += 1;
@@ -360,7 +368,7 @@ export class LLMClient {
     this.config = this.fallbackConfig;
     this.provider = createProvider(this.config, this.deps);
     this.usingFallback = true;
-    console.warn(
+    this.deps.log(
       `[llm] Switched to fallback LLM: ${this.config.model} (due to ${err.name}: ${err.message})`,
     );
     return true;

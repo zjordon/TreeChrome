@@ -55,6 +55,10 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
  * 敏感值占位：TextBlock 文本内 real→placeholder（多键按对象插入序替换——
  * 键有包含关系时顺序影响结果，Python dict 序等价，锚定测试覆盖）。
  * 就地改写 work 消息；map 为空/undefined 时不动。
+ *
+ * 已知取舍（对齐 Python `_filter_sensitive_in_messages` 只处理 type=text block）：
+ * toolResult.text **不占位**——工具输出中的敏感值会明文发往端点。Python 原实现
+ * 如此（P5 parity），修约属上游契约变更；P4 接 SecretProvider 时一并裁决。
  */
 export function applySensitiveInMessages(
   messages: ChatMessage[],
@@ -63,7 +67,8 @@ export function applySensitiveInMessages(
   if (!sensitiveMap) {
     return;
   }
-  const entries = Object.entries(sensitiveMap);
+  // 空字符串键会让 replaceAll 逐字符插入占位符（无声损坏全文）——宿主侧失误防御
+  const entries = Object.entries(sensitiveMap).filter(([real]) => real !== "");
   for (const msg of messages) {
     if (msg.role === "toolResult") {
       continue;
@@ -119,10 +124,11 @@ export function restoreSensitiveInOutput<T>(
   if (!sensitiveMap) {
     return output;
   }
-  // entries 是 real→placeholder，还原方向取反（顺序仍按插入序，与 Python dict 一致）
-  const reversed = Object.entries(sensitiveMap).map(
-    ([real, placeholder]) => [placeholder, real] as const,
-  );
+  // entries 是 real→placeholder，还原方向取反（顺序仍按插入序，与 Python dict 一致）；
+  // 滤空键（空占位符同样会让 replaceAll 逐字符插入，损坏全文）
+  const reversed = Object.entries(sensitiveMap)
+    .filter(([, placeholder]) => placeholder !== "")
+    .map(([real, placeholder]) => [placeholder, real] as const);
   return restoreInStrings(output, reversed) as T;
 }
 

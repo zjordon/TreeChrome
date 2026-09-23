@@ -118,6 +118,22 @@ describe("assertValidMessages · 违例序列", () => {
     );
   });
 
+  it("assistant 的 toolCalls 存在重复 id → 拒绝（Set 去重会假性通过恰好配对）", () => {
+    expectViolation(
+      [
+        user("q"),
+        assistant({
+          toolCalls: [
+            { id: "t1", name: "agent_response", args: {} },
+            { id: "t1", name: "agent_response", args: {} },
+          ],
+        }),
+        toolResult("t1"),
+      ],
+      "重复 id",
+    );
+  });
+
   it("toolCall 缺结果（2 个调用只回 1 条）", () => {
     expectViolation(
       [

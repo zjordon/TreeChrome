@@ -44,13 +44,28 @@ export function parseRetryAfterMs(raw: string | null): number | undefined {
   return Math.min(n * 1000, RETRY_AFTER_CAP_MS);
 }
 
-/** 错误体 detail：三家协议都是 {error:{message}} 形态；解析失败用原文前 500 字符 */
+/**
+ * 错误体 detail：优先 {error:{message}}（三协议官方形态），宽松兼容第三方网关的
+ * {error:"纯字符串"} 与顶层 {message}；都不可用则原文前 500 字符。
+ */
 function extractErrorMessage(raw: string): string {
   try {
     const parsed: unknown = JSON.parse(raw);
-    const message = (parsed as { error?: { message?: unknown } })?.error?.message;
-    if (typeof message === "string" && message.length > 0) {
-      return message;
+    if (typeof parsed === "object" && parsed !== null) {
+      const err = (parsed as { error?: unknown }).error;
+      if (typeof err === "string" && err.length > 0) {
+        return err;
+      }
+      if (typeof err === "object" && err !== null) {
+        const message = (err as { message?: unknown }).message;
+        if (typeof message === "string" && message.length > 0) {
+          return message;
+        }
+      }
+      const top = (parsed as { message?: unknown }).message;
+      if (typeof top === "string" && top.length > 0) {
+        return top;
+      }
     }
   } catch {
     // 非 JSON 错误体：原文截断
@@ -90,6 +105,8 @@ function statusToError(
  *   （client 区分外部取消与窗口 deadline，取消必须穿透不被吞）；
  * - 非 2xx → 状态分型（429/401/403/4xx/5xx），error.message 进异常消息；
  * - 2xx 但非 JSON → LLMProtocolViolationError。
+ * fetch 与响应体读取（resp.text）共用同一套 abort/网络错误分类——超时若发生在
+ * body 读取阶段同样分型为 LLMTimeoutError，不会漏成裸 AbortError。
  */
 export async function postJson(
   fetchFn: typeof fetch,
@@ -105,15 +122,8 @@ export async function postJson(
       ? AbortSignal.any([init.signal, timeoutSignal])
       : (init.signal ?? timeoutSignal);
 
-  let resp: Response;
-  try {
-    resp = await fetchFn(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
-  } catch (e) {
+  // 显式变量类型注解：never 返回函数的控流收窄（TS 对 const 箭头的 CFA 要求）
+  const classifyFailure: (e: unknown) => never = (e) => {
     if (isAbortError(e)) {
       if (timeoutSignal?.aborted) {
         throw new LLMTimeoutError(`请求超时（${init.timeoutMs}ms）：${url}`, {
@@ -127,13 +137,30 @@ export async function postJson(
       provider: init.provider,
       cause: e,
     });
+  };
+
+  let resp: Response;
+  try {
+    resp = await fetchFn(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    classifyFailure(e);
   }
 
   if (!resp.ok) {
     const raw = await resp.text().catch(() => "");
     throw statusToError(resp.status, raw, resp.headers.get("retry-after"), init.provider);
   }
-  const text = await resp.text();
+  let text: string;
+  try {
+    text = await resp.text();
+  } catch (e) {
+    classifyFailure(e);
+  }
   try {
     return JSON.parse(text);
   } catch {

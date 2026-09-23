@@ -1,7 +1,8 @@
 // P2 真机 smoke（docs/implement-plan/p2/04 §7）：对智谱 OpenAI 端点 + Anthropic 端点
 // 各发一次最小 agent_response 强制调用，打印请求体摘要（key 脱敏）/响应 toolInput/usage/耗时。
 // 手动跑，不入 CI（费用与密钥纪律）：GLM_API_KEY=xxx node tools/llm-smoke.mjs
-// 模型可用 SMOKE_OPENAI_MODEL / SMOKE_ANTHROPIC_MODEL 覆盖（以账号可用模型为准）。
+// 模型/端点可用 SMOKE_OPENAI_MODEL / SMOKE_ANTHROPIC_MODEL / SMOKE_OPENAI_BASE_URL /
+// SMOKE_ANTHROPIC_BASE_URL 覆盖（模型以账号可用为准；baseUrl 供代理/网关验收）。
 // gemini 不在本次 smoke（无 key；2.4 验收以 mock 为准，README 风险 3 顺延）。
 //
 // 宿主侧脚本（tools/ 不受核心包边界约束，可读 process.env）；核心代码经 esbuild
@@ -129,7 +130,7 @@ async function main() {
       label: "zhipu-openai",
       name: "zhipu-openai",
       protocol: "openai-completions",
-      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      baseUrl: process.env.SMOKE_OPENAI_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
       apiKey,
       model: process.env.SMOKE_OPENAI_MODEL ?? "glm-4.7",
       maxTokens: 4096,
@@ -138,7 +139,7 @@ async function main() {
       label: "zhipu-anthropic",
       name: "zhipu-anthropic",
       protocol: "anthropic-messages",
-      baseUrl: "https://open.bigmodel.cn/api/anthropic",
+      baseUrl: process.env.SMOKE_ANTHROPIC_BASE_URL ?? "https://open.bigmodel.cn/api/anthropic",
       apiKey,
       model: process.env.SMOKE_ANTHROPIC_MODEL ?? "glm-5.1",
       maxTokens: 4096,
@@ -147,11 +148,13 @@ async function main() {
 
   let failed = false;
   for (const card of cards) {
-    // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LlmDeps 注入口
+    // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LlmDeps 注入口。
+    // 脱敏按小写化键名匹配：HTTP 头大小写不敏感，extraHeaders 也可注入认证头
     const loggingFetch = async (url, init) => {
       const headers = { ...(init?.headers ?? {}) };
-      for (const k of ["authorization", "x-api-key", "x-goog-api-key"]) {
-        if (headers[k]) headers[k] = "<REDACTED>";
+      const SENSITIVE_HEADERS = ["authorization", "x-api-key", "x-goog-api-key"];
+      for (const k of Object.keys(headers)) {
+        if (SENSITIVE_HEADERS.includes(k.toLowerCase())) headers[k] = "<REDACTED>";
       }
       const body = String(init?.body ?? "").replaceAll(apiKey, "<REDACTED>");
       console.log(`\n>> POST ${url}`);
@@ -177,6 +180,11 @@ async function main() {
         console.log("toolInput:");
         console.log(JSON.stringify(result.toolInput, null, 2));
         console.log(`usage: ${JSON.stringify(result.usage)}`);
+      } else {
+        // empty = 解析梯子耗尽仍未产出 agent_response 调用——对 smoke 就是失败，
+        // 不能静默 exitCode 0 造成假通过
+        failed = true;
+        console.error(`   ${card.label} 返回 empty：解析梯子耗尽仍未产出 ${TOOL.name} 工具调用`);
       }
     } catch (e) {
       failed = true;

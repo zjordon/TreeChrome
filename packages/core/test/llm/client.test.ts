@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 import type { ChatMessage, ProviderConfig } from "../../src/index.js";
 import {
   createLLMClient,
+  createProvider,
   LLMAuthError,
   LLMConnectionError,
   LLMError,
   LLMRateLimitError,
   LLMTimeoutError,
 } from "../../src/index.js";
+import { AGENT_TOOL } from "./fixtures.js";
 import { FakeClock, MockFetch, type MockResponseSpec } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -40,11 +42,7 @@ const OPENAI_FALLBACK: ProviderConfig = {
   maxTokens: 4096,
 };
 
-const TOOL = {
-  name: "agent_response",
-  description: "d",
-  parameters: { type: "object", properties: { action: { type: "object" } } },
-};
+const TOOL = AGENT_TOOL;
 
 const U0 = `https://example.com/${"a".repeat(90)}`;
 
@@ -78,7 +76,7 @@ function setup(over: Partial<ProviderConfig> = {}) {
   const clock = new FakeClock();
   const client = createLLMClient(
     { ...CARD, ...over },
-    { fetch: mock.fetch, now: clock.now, sleep: clock.sleep },
+    { fetch: mock.fetch, now: clock.now, sleep: clock.sleep, log: () => {} },
   );
   return { mock, clock, client };
 }
@@ -168,15 +166,13 @@ describe("R1 空响应梯子（thinking-only 同桶）", () => {
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
     const second = mock.bodyAt(1);
-    const wireMessages = second.messages as unknown[];
-    expect(wireMessages[1]).toEqual({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Your previous response contained no action. Respond now with the agent_response tool, including your evaluation, memory, next goal, and action.",
-        },
-      ],
+    const wireMessages = second.messages as Array<Record<string, unknown>>;
+    // R1 追加的 user 与原 user 折叠为一条消息（anthropic 角色交替）——指令是第二个 text 块
+    expect(wireMessages.length).toBe(1);
+    const content = wireMessages[0].content as Array<Record<string, unknown>>;
+    expect(content[1]).toEqual({
+      type: "text",
+      text: "Your previous response contained no action. Respond now with the agent_response tool, including your evaluation, memory, next goal, and action.",
     });
   });
 
@@ -346,7 +342,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     const clock = new FakeClock();
     const client = createLLMClient(
       { ...CARD, fallback: OPENAI_FALLBACK },
-      { fetch: mock.fetch, now: clock.now, sleep: clock.sleep },
+      { fetch: mock.fetch, now: clock.now, sleep: clock.sleep, log: () => {} },
     );
     mock.queueMany(r429(), {
       status: 200,
@@ -435,6 +431,51 @@ describe("deadline 与取消", () => {
     await expect(client.getAction("sys", msgs(), TOOL, { timeoutMs: 60 })).rejects.toBeInstanceOf(
       LLMTimeoutError,
     );
+  });
+
+  it("响应体读取阶段超时 → LLMTimeoutError（resp.text() 同分类，不漏成裸 AbortError 被当外部取消）", async () => {
+    // 自制 fetch：状态行已返回（ok），body 读取挂起直到 signal 中止——覆盖
+    // postJson 成功路径的 resp.text() 分类（MockFetch 的真实 Response 无法构造此形态）
+    const hangingBodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+      return {
+        ok: true,
+        headers: new Headers(),
+        text: () =>
+          new Promise<string>((_resolve, reject) => {
+            const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+            if (init?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            init?.signal?.addEventListener("abort", onAbort, { once: true });
+          }),
+      } as unknown as Response;
+    }) as typeof fetch;
+    const provider = createProvider(CARD, { fetch: hangingBodyFetch, log: () => {} });
+    await expect(
+      provider.chat({
+        systemPrompt: null,
+        messages: msgs(),
+        tools: null,
+        timeoutMs: 60,
+      }),
+    ).rejects.toBeInstanceOf(LLMTimeoutError);
+  });
+
+  it("过期窗口不清除会拖垮后续调用；setCallWindow(null) 清除后恢复", async () => {
+    const stuck = setup();
+    stuck.client.setCallWindow(1); // 立即过期的窗口
+    stuck.mock.queueMany({ hangUntilAbort: true });
+    await expect(stuck.client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(
+      LLMTimeoutError,
+    );
+
+    const cleared = setup();
+    cleared.client.setCallWindow(1);
+    cleared.client.setCallWindow(null); // 清除登记
+    cleared.mock.queueMany(toolOk({ ok: 1 }));
+    const r = await cleared.client.getAction("sys", msgs(), TOOL);
+    expect(r.kind).toBe("ok");
   });
 
   it("外部 signal 在退避 sleep 期间 abort → AbortError 原样穿透（不吞、不变形、不重试）", async () => {

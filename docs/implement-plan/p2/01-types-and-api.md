@@ -226,10 +226,13 @@ export interface LlmDeps {
   now?: () => number;
   /** 可中止睡眠，缺省 AbortSignal-aware setTimeout 包装 */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** 观测日志通道（退避/切换/丢弃类 WARNING），缺省 console.warn；
+   *  P4 接 EventBus 后由宿主注入事件路由（评审轮 1 增补） */
+  log?: (message: string) => void;
 }
 ```
 
-核心包纪律：不 import `node:*`、不碰 `chrome.*`/`process.*`（biome 已拦 `packages/core/src/**`）。`performance`/`fetch`/`AbortController` 是 Web 标准 + Node 全局，双宿主可用。
+核心包纪律：不 import `node:*`、不碰 `chrome.*`/`process.*`（biome 已拦 `packages/core/src/**`）。`performance`/`fetch`/`AbortController` 是 Web 标准 + Node 全局，双宿主可用；`AbortSignal.any` 需 Node 20.3+/Chrome 116+，包 `engines` 已声明 node >=22。
 
 ## 7. 公共导出面（`src/index.ts`，P2 阶段）
 

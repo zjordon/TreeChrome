@@ -28,8 +28,9 @@ export class LLMClient {
     opts?: GetActionOptions,
   ): Promise<GetActionResult>;
   testConnection(): Promise<{ ok: boolean; error?: string; model?: string }>;
-  /** P4 step 在 wait_for 起点登记的步级共享窗口（Python set_llm_window） */
-  setCallWindow(timeoutMs: number): void;
+  /** P4 step 在 wait_for 起点登记的步级共享窗口（Python set_llm_window）；
+   *  null 清除登记（评审轮 1 增补——过期窗口不清除会让后续 getAction 恒超时） */
+  setCallWindow(timeoutMs: number | null): void;
 }
 
 export function createLLMClient(config: ProviderConfig, deps?: LlmDeps): LLMClient;

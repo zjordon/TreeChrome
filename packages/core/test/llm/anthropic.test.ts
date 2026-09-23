@@ -12,6 +12,7 @@ import {
   LLMRateLimitError,
   LLMServerError,
 } from "../../src/llm/errors.js";
+import { AGENT_TOOL, stubDeps } from "./fixtures.js";
 import { MockFetch } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -23,22 +24,11 @@ const CARD: ProviderConfig = {
   maxTokens: 16384,
 };
 
-const TOOL = {
-  name: "agent_response",
-  description: "respond",
-  parameters: { type: "object", properties: { action: { type: "object" } } },
-};
+const TOOL = AGENT_TOOL;
 
 function setup(over: Partial<ProviderConfig> = {}) {
   const mock = new MockFetch();
-  const provider = createAnthropicProvider(
-    { ...CARD, ...over },
-    {
-      fetch: mock.fetch,
-      now: () => 0,
-      sleep: async () => {},
-    },
-  );
+  const provider = createAnthropicProvider({ ...CARD, ...over }, stubDeps(mock));
   return { mock, provider };
 }
 
@@ -120,9 +110,11 @@ describe("请求构造（canonical → wire）", () => {
           content: [
             { type: "tool_result", tool_use_id: "t1", content: "done1", is_error: true },
             { type: "tool_result", tool_use_id: "t2", content: "done2" },
+            // 连续同角色折叠：toolResult 折叠出的 user 与紧随的 user 观察合并
+            //（Anthropic 要求角色交替，400 地雷——同 toolResult 折叠同族）
+            { type: "text", text: "next" },
           ],
         },
-        { role: "user", content: [{ type: "text", text: "next" }] },
       ],
       tools: [{ name: "agent_response", description: "respond", input_schema: TOOL.parameters }],
       tool_choice: { type: "tool", name: "agent_response" },
@@ -184,6 +176,73 @@ describe("请求构造（canonical → wire）", () => {
     const noTools = mock.lastBody();
     expect(noTools).not.toHaveProperty("tools");
     expect(noTools).not.toHaveProperty("tool_choice");
+  });
+
+  it("temperature 回退链：请求级缺省用卡片级，两级都缺省不发", async () => {
+    const { mock, provider } = setup({ temperature: 0.4 });
+    mock.queueMany(toolOk({}), toolOk({}), toolOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(mock.lastBody().temperature).toBe(0.4); // 卡片级回退
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+      temperature: 0.9,
+    });
+    expect(mock.lastBody().temperature).toBe(0.9); // 请求级优先
+    const noCard = setup();
+    noCard.mock.queueMany(toolOk({}));
+    await noCard.provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(noCard.mock.lastBody()).not.toHaveProperty("temperature"); // 两级缺省不发
+  });
+
+  it("连续同角色消息折叠：user+user 合并 content；toolResult 折叠出的 user 与紧随 user 观察合并", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "first" }] },
+        { role: "user", blocks: [{ kind: "text", text: "second" }] },
+        {
+          role: "assistant",
+          blocks: [],
+          toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+        },
+        { role: "toolResult", toolCallId: "t1", toolName: "agent_response", text: "done" },
+        { role: "user", blocks: [{ kind: "text", text: "observation" }] },
+      ],
+      tools: [TOOL],
+    });
+    const messages = mock.lastBody().messages as Array<Record<string, unknown>>;
+    expect(messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "first" },
+          { type: "text", text: "second" },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "t1", name: "agent_response", input: {} }],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "t1", content: "done" },
+          { type: "text", text: "observation" },
+        ],
+      },
+    ]);
   });
 
   it("extraHeaders 最后合并（可覆盖默认头）；尾斜杠 baseUrl 剥离", async () => {
@@ -326,6 +385,28 @@ describe("错误映射（状态 → 错误类 + error.message 提取 + Retry-Aft
     const err = await provider.chat(baseReq()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LLMServerError);
     expect((err as LLMServerError).message).toContain("HTTP 502");
+  });
+
+  it("非 JSON 长 error 页 → 原文截断到 500 字符（rawBody 形态构造）", async () => {
+    const { mock, provider } = setup();
+    const long = "x".repeat(600);
+    mock.queueMany({ status: 502, rawBody: long, headers: { "content-type": "text/plain" } });
+    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMServerError);
+    expect((err as LLMServerError).message).toBe(`HTTP 502: ${long.slice(0, 500)}`);
+    expect((err as LLMServerError).message.length).toBe("HTTP 502: ".length + 500);
+  });
+
+  it.each([
+    ["error 为纯字符串", { error: "gateway exploded" }],
+    ["顶层 message", { message: "upstream unavailable" }],
+  ] as const)("第三方网关错误形态（%s）→ 提取进异常消息", async (_label, body) => {
+    const { mock, provider } = setup();
+    mock.queueMany({ status: 502, body });
+    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMServerError);
+    const expected = "error" in body ? body.error : body.message;
+    expect((err as LLMServerError).message).toContain(expected);
   });
 
   it("网络层 TypeError → LLMConnectionError（cause 保留）", async () => {

@@ -6,6 +6,7 @@ import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createGeminiProvider } from "../../src/llm/adapters/gemini.js";
 import { sanitizeGeminiSchema } from "../../src/llm/adapters/schema-sanitize.js";
 import { LLMBlockedError, LLMRateLimitError } from "../../src/llm/errors.js";
+import { stubDeps } from "./fixtures.js";
 import { MockFetch } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -43,10 +44,7 @@ const SANITIZED = {
 
 function setup(over: Partial<ProviderConfig> = {}) {
   const mock = new MockFetch();
-  const provider = createGeminiProvider(
-    { ...CARD, ...over },
-    { fetch: mock.fetch, now: () => 0, sleep: async () => {} },
-  );
+  const provider = createGeminiProvider({ ...CARD, ...over }, stubDeps(mock));
   return { mock, provider };
 }
 
@@ -71,7 +69,7 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     expect(sanitizeGeminiSchema(TOOL.parameters)).toEqual(SANITIZED);
   });
 
-  it("嵌套 properties/items 递归清洗；type 大小写变体（Type）同收", () => {
+  it("嵌套 properties/items 递归清洗；type 大小写变体（Type）归一化为小写键", () => {
     const out = sanitizeGeminiSchema({
       Type: "object",
       $id: "x",
@@ -79,9 +77,22 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       items: { $schema: "y", type: "string" },
     });
     expect(out).toEqual({
-      Type: "object",
-      properties: { inner: { Type: "string", enum: ["x"] } },
+      type: "object",
+      properties: { inner: { type: "string", enum: ["x"] } },
       items: { type: "string" },
+    });
+  });
+
+  it("联合类型 type: ['string','null'] → 首个非 null + nullable（Gemini type 只收单字符串）", () => {
+    expect(
+      sanitizeGeminiSchema({
+        type: ["string", "null"],
+        properties: { opt: { type: ["object", "null"], description: "d" } },
+      }),
+    ).toEqual({
+      type: "string",
+      nullable: true,
+      properties: { opt: { type: "object", nullable: true, description: "d" } },
     });
   });
 
@@ -163,9 +174,11 @@ describe("请求构造（canonical → wire）", () => {
               functionResponse: { name: "agent_response", response: { result: "[error] failed" } },
             },
             { functionResponse: { name: "agent_response", response: { result: "done2" } } },
+            // 连续同角色折叠：toolResult 折叠出的 user turn 与紧随的 user 观察合并
+            //（Gemini 要求 user/model 交替，400 地雷）
+            { text: "next" },
           ],
         },
-        { role: "user", parts: [{ text: "next" }] },
       ],
       tools: [
         {
@@ -227,6 +240,49 @@ describe("请求构造（canonical → wire）", () => {
     });
     expect(mock.lastBody().generationConfig).toEqual({ maxOutputTokens: 77, temperature: 0.5 });
   });
+
+  it("temperature 回退链：请求级缺省用卡片级；两级缺省不发", async () => {
+    const { mock, provider } = setup({ temperature: 0.3 });
+    mock.queueMany(fnCallOk({}), fnCallOk({}), fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    const genConfig = () => mock.lastBody().generationConfig as Record<string, unknown>;
+    expect(genConfig().temperature).toBe(0.3);
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+      temperature: 0.8,
+    });
+    expect(genConfig().temperature).toBe(0.8);
+    const noCard = setup();
+    noCard.mock.queueMany(fnCallOk({}));
+    await noCard.provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(noCard.mock.lastBody().generationConfig).not.toHaveProperty("temperature");
+  });
+
+  it("连续 user turn 折叠（canonical 允许 [user, user]，Gemini 要求交替）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "first" }] },
+        { role: "user", blocks: [{ kind: "text", text: "second" }] },
+      ],
+      tools: [TOOL],
+    });
+    expect(mock.lastBody().contents).toEqual([
+      { role: "user", parts: [{ text: "first" }, { text: "second" }] },
+    ]);
+  });
 });
 
 describe("响应解析（wire → canonical）", () => {
@@ -256,7 +312,7 @@ describe("响应解析（wire → canonical）", () => {
             finishReason: "STOP",
           },
         ],
-        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, cachedContentTokenCount: 3 },
       },
     });
     const res = await provider.chat(baseReq());
@@ -268,7 +324,7 @@ describe("响应解析（wire → canonical）", () => {
         { id: "gemini-call-1", name: "agent_response", args: { b: 2 } },
       ],
       stopReason: "tool_call",
-      usage: { inputTokens: 1, outputTokens: 2 },
+      usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3 },
     });
   });
 
