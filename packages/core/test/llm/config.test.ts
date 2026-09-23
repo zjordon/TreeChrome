@@ -1,5 +1,7 @@
 // 视觉白名单 + 能力解析单测。期望值锚定 Python 实跑（AGENTS.md 铁律）：
-//   D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe -c \
+//   # 用 evals venv 里的 tree_walker 实跑取值——venv 的绝对路径与启用方式见
+//   # AGENTS.md「验收命令」节（Python: evals/webarena/.venv，tree_walker editable 安装）
+//   python -c \
 //     "from tree_walker.config import model_supports_vision as f; \
 //      cases=['claude-3-5-sonnet-20241022','claude-opus-4','glm-4v','glm-4.5v','glm-4.1v-plus',\
 // 'glm-5v','glm-5.3-flash','glm-5.1','glm-5.2','glm-4','glm-4.5','GLM-4V','  glm-5.3-flash  ','','gpt-4o','gemini-2.0-flash',None]; \

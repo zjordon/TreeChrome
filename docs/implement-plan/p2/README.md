@@ -137,3 +137,15 @@ smoke 产物摘要：
 - **驳回 #15**（滤图改纯能力驱动）：白名单外真视觉模型（qwen-vl/gpt-4o）缺省 supportsVision=false，恒滤图会把图从视觉模型静默剥掉——比现状更糟；按评审备选方案登记到 03 §4 偏离清单第 9 条，宿主侧用白名单外主卡时显式声明 capabilities。
 
 测试 173 例全绿（覆盖率 97.04%）。
+
+### 评审轮 3（review-p2-llm-client-3.json，2026-09-23，13 条）
+
+采纳 13 条（其中 #5/#6 按折中方案：锚定命令的 venv 绝对路径改为指向 AGENTS.md「验收命令」节的相对引用——P1 dom-snapshot 惯例是命令放 docs、测试头部只引用）。要点：
+
+- **真缺陷**：`replaceAll` 字符串 replacement 会解释 `$$`/`$&`/`$'` 特殊模式——还原侧的真实敏感值/URL 含 `$` 序列时被静默篡改（`pa$$word`→`pa$word`），Python `str.replace` 是字面替换。全部改回调形式 + `$` 序列往返专项用例。
+- **smoke**：maxTokens 4096→`DEFAULT_MAX_TOKENS`(16384)（思考模型 4096 会被 reasoning 写满 → getAction 落 empty → smoke 假失败）；脱敏统一 `redact()`——URL、header 值（按值含 key 即替换，覆盖 extraHeaders 注入的任意名认证头）、异常消息（http 层错误消息内嵌完整 URL/网关回显体）全走一遍。
+- **双时钟域消除**：ladder deadline 计时从原生 setTimeout 改为经 `deps.sleep` 的 watcher（与退避预算同注入钟域），getAction 收尾 abort 取消不留悬挂定时器；FakeClock 用例随注入时钟推进 deadline 触发。
+- **一致性**：trySwitchToFallback 先局部构造成功再提交（构造失败不再留下 config=fallback/provider=旧卡的错配状态）；MockFetch 队列耗尽改抛 AbortError 形态（可穿透 postJson/callWithBackoff/getAction 各层分类，编排错误立即失败而非挂到 5s 超时）；ConnectionError 耗尽用例补请求次数断言（与 429 版对称）；hanging fetch 桩提取参数化工厂。
+- **测试组织**：新增 test/llm/http.test.ts 集中覆盖 http.ts 导出面（parseRetryAfterMs 矩阵、状态→错误类、错误体三形态、500 截断、2xx 非 JSON、网络层），anthropic.test.ts 撤走重复的 http 层用例（保留 provider 集成矩阵）。
+
+测试 192 例全绿（覆盖率 97.39%）；smoke 假 key 链路复验（max_tokens=16384 上 wire、401 分罪、exitCode 1）。

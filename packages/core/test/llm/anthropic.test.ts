@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createAnthropicProvider } from "../../src/llm/adapters/anthropic-messages.js";
-import { parseRetryAfterMs } from "../../src/llm/adapters/http.js";
 import {
   LLMAuthError,
   LLMConnectionError,
@@ -384,58 +383,7 @@ describe("错误映射（状态 → 错误类 + error.message 提取 + Retry-Aft
     expect(err).toBeInstanceOf(klass);
     expect((err as Error).message).toContain(`boom ${status}`);
   });
-
-  it("429 + Retry-After 秒数 → retryAfterMs（封顶 60s）；非标量回落指数（client 侧）", () => {
-    expect(parseRetryAfterMs("5")).toBe(5000);
-    expect(parseRetryAfterMs("1e2")).toBe(60_000); // 100 → 封顶
-    expect(parseRetryAfterMs("120")).toBe(60_000);
-    expect(parseRetryAfterMs("0")).toBeUndefined();
-    expect(parseRetryAfterMs("-3")).toBeUndefined();
-    expect(parseRetryAfterMs("abc")).toBeUndefined();
-    expect(parseRetryAfterMs(null)).toBeUndefined();
-  });
-
-  it("429 带 Retry-After 头 → 错误携带 retryAfterMs", async () => {
-    const { mock, provider } = setup();
-    mock.queueMany({
-      status: 429,
-      headers: { "retry-after": "7" },
-      body: { error: { message: "slow" } },
-    });
-    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(LLMRateLimitError);
-    expect((err as LLMRateLimitError).retryAfterMs).toBe(7000);
-  });
-
-  it("非 JSON 错误体 → 原文前 500 字符进异常消息", async () => {
-    const { mock, provider } = setup();
-    mock.queueMany({ status: 502, body: undefined, headers: { "content-type": "text/plain" } });
-    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(LLMServerError);
-    expect((err as LLMServerError).message).toContain("HTTP 502");
-  });
-
-  it("非 JSON 长 error 页 → 原文截断到 500 字符（rawBody 形态构造）", async () => {
-    const { mock, provider } = setup();
-    const long = "x".repeat(600);
-    mock.queueMany({ status: 502, rawBody: long, headers: { "content-type": "text/plain" } });
-    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(LLMServerError);
-    expect((err as LLMServerError).message).toBe(`HTTP 502: ${long.slice(0, 500)}`);
-    expect((err as LLMServerError).message.length).toBe("HTTP 502: ".length + 500);
-  });
-
-  it.each([
-    ["error 为纯字符串", { error: "gateway exploded" }],
-    ["顶层 message", { message: "upstream unavailable" }],
-  ] as const)("第三方网关错误形态（%s）→ 提取进异常消息", async (_label, body) => {
-    const { mock, provider } = setup();
-    mock.queueMany({ status: 502, body });
-    const err = await provider.chat(baseReq()).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(LLMServerError);
-    const expected = "error" in body ? body.error : body.message;
-    expect((err as LLMServerError).message).toContain(expected);
-  });
+  // http 层单测（parseRetryAfterMs/Retry-After 头/错误体形态/截断）已抽离到 http.test.ts
 
   it("网络层 TypeError → LLMConnectionError（cause 保留）", async () => {
     const { mock, provider } = setup();

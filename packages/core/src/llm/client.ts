@@ -189,14 +189,19 @@ export class LLMClient {
         external.addEventListener("abort", onExternalAbort, { once: true });
       }
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    // deadline 计时走注入 sleep（与退避预算同钟域，不旁路 deps.now）——FakeClock 下
+    // 时钟不推进即不触发（退避预算的 gate 判定同域）；getAction 结束时 abort 取消
+    // watcher，不留悬挂定时器
+    const watchCancel = new AbortController();
     if (deadlineAt !== undefined) {
-      timer = setTimeout(
+      void this.deps.sleep(Math.max(0, deadlineAt - now), watchCancel.signal).then(
         () => {
           windowExpired = true;
           controller.abort();
         },
-        Math.max(0, deadlineAt - now),
+        () => {
+          // 被取消（正常收尾）——无事可做
+        },
       );
     }
 
@@ -260,9 +265,7 @@ export class LLMClient {
       }
       throw e; // 外部取消穿透，不吞、不变形（#186 教训）；其余异常原样上抛
     } finally {
-      if (timer !== undefined) {
-        clearTimeout(timer);
-      }
+      watchCancel.abort(); // 取消 deadline watcher（真实时钟下不留悬挂定时器）
       external?.removeEventListener("abort", onExternalAbort);
     }
   }
@@ -369,17 +372,21 @@ export class LLMClient {
     if (this.usingFallback || this.fallbackConfig === null) {
       return false;
     }
-    this.config = this.fallbackConfig;
+    // 先在局部变量构造成功再统一提交——构造抛出时 this.config/provider 保持旧卡
+    // 一致状态，后续复用实例的错误归因不会落到初始化已失败的 fallback 卡上
+    let newProvider: LLMProvider;
     try {
-      this.provider = createProvider(this.config, this.deps);
+      newProvider = createProvider(this.fallbackConfig, this.deps);
     } catch (switchErr) {
       // 保留根因：fallback 卡片构造失败（如反序列化来的非法 protocol）不能掩盖触发
       // 切换的原始错误——终点异常类型是 step 分罪依据，cause 挂原始 err
       throw new LLMInvalidRequestError(
-        `fallback 卡片初始化失败（${this.config.name}）：${switchErr instanceof Error ? switchErr.message : String(switchErr)}`,
-        { provider: this.config.name, cause: err },
+        `fallback 卡片初始化失败（${this.fallbackConfig.name}）：${switchErr instanceof Error ? switchErr.message : String(switchErr)}`,
+        { provider: this.fallbackConfig.name, cause: err },
       );
     }
+    this.config = this.fallbackConfig;
+    this.provider = newProvider;
     this.usingFallback = true;
     this.deps.log(
       `[llm] Switched to fallback LLM: ${this.config.model} (due to ${err.name}: ${err.message})`,

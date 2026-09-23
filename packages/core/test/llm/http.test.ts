@@ -1,0 +1,147 @@
+// http.ts 共享发送层单测（评审轮 3 抽离：此前散在 anthropic/client 测试中顺带覆盖）。
+// 直接对 postJson/parseRetryAfterMs/isAbortError 断言（不经适配器）；
+// 适配器测试只保留 provider 集成路径的矩阵（状态→类型经适配器走通即可）。
+import { describe, expect, it } from "vitest";
+import { isAbortError, parseRetryAfterMs, postJson } from "../../src/llm/adapters/http.js";
+import {
+  LLMAuthError,
+  LLMConnectionError,
+  LLMInvalidRequestError,
+  LLMProtocolViolationError,
+  LLMRateLimitError,
+  LLMServerError,
+} from "../../src/llm/errors.js";
+import { MockFetch } from "./mock-fetch.js";
+
+async function post(mock: MockFetch): Promise<unknown> {
+  return postJson(
+    mock.fetch,
+    "https://unit.example/api",
+    { "content-type": "application/json" },
+    { ping: 1 },
+    { provider: "unit" },
+  );
+}
+
+describe("parseRetryAfterMs（Python 锚定容错集）", () => {
+  it.each([
+    ["5", 5000],
+    ["1e2", 60_000], // 100 → 封顶
+    ["120", 60_000],
+  ] as const)("%s → %d", (raw, expected) => {
+    expect(parseRetryAfterMs(raw)).toBe(expected);
+  });
+  it.each(["0", "-3", "abc", ""])("%s → undefined（回落指数）", (raw) => {
+    expect(parseRetryAfterMs(raw)).toBeUndefined();
+  });
+  it("null（头缺失）→ undefined", () => {
+    expect(parseRetryAfterMs(null)).toBeUndefined();
+  });
+});
+
+describe("isAbortError", () => {
+  it("按 name 鸭子判别（DOMException 与各宿主形态）", () => {
+    expect(isAbortError(new DOMException("Aborted", "AbortError"))).toBe(true);
+    expect(isAbortError(new Error("x", { cause: new DOMException("a", "AbortError") }))).toBe(
+      false,
+    );
+    expect(isAbortError(null)).toBe(false);
+    expect(isAbortError("AbortError")).toBe(false);
+  });
+});
+
+describe("postJson 状态→错误类与错误体提取", () => {
+  it.each([
+    [429, LLMRateLimitError],
+    [401, LLMAuthError],
+    [403, LLMAuthError],
+    [400, LLMInvalidRequestError],
+    [500, LLMServerError],
+    [503, LLMServerError],
+  ] as const)("HTTP %s → %s（error.message 提取 + status 归因）", async (status, klass) => {
+    const mock = new MockFetch();
+    mock.queueMany({ status, body: { error: { message: `boom ${status}` } } });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(klass);
+    expect((err as Error).message).toContain(`boom ${status}`);
+    expect((err as { status?: number }).status).toBe(status);
+    expect((err as { provider?: string }).provider).toBe("unit");
+  });
+
+  it("429 带 Retry-After 头 → retryAfterMs（秒数标量封顶 60s）", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({
+      status: 429,
+      headers: { "retry-after": "7" },
+      body: { error: { message: "slow" } },
+    });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMRateLimitError);
+    expect((err as LLMRateLimitError).retryAfterMs).toBe(7000);
+  });
+
+  it.each([
+    ["error 为纯字符串", { error: "gateway exploded" }, "gateway exploded"],
+    ["顶层 message", { message: "upstream unavailable" }, "upstream unavailable"],
+  ] as const)("第三方网关错误形态（%s）→ 提取进异常消息", async (_label, body, expected) => {
+    const mock = new MockFetch();
+    mock.queueMany({ status: 502, body });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMServerError);
+    expect((err as Error).message).toContain(expected);
+  });
+
+  it("非 JSON 长 error 页 → 原文截断到 500 字符（rawBody 形态）", async () => {
+    const mock = new MockFetch();
+    const long = "x".repeat(600);
+    mock.queueMany({ status: 502, rawBody: long, headers: { "content-type": "text/plain" } });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMServerError);
+    expect((err as LLMServerError).message).toBe(`HTTP 502: ${long.slice(0, 500)}`);
+    expect((err as LLMServerError).message.length).toBe("HTTP 502: ".length + 500);
+  });
+
+  it("空错误体（body 缺失）→ 消息只有状态码", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({ status: 502, body: undefined, headers: { "content-type": "text/plain" } });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect((err as LLMServerError).message).toBe("HTTP 502");
+  });
+});
+
+describe("postJson 成功与网络层", () => {
+  it("2xx JSON → 原样返回解析结果", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({ status: 200, body: { ok: true, n: 3 } });
+    await expect(post(mock)).resolves.toEqual({ ok: true, n: 3 });
+  });
+
+  it("2xx 非 JSON → LLMProtocolViolationError（body 截断进消息）", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({
+      status: 200,
+      rawBody: "<html>oops",
+      headers: { "content-type": "text/html" },
+    });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMProtocolViolationError);
+    expect((err as Error).message).toContain("<html>oops");
+  });
+
+  it("网络层 TypeError → LLMConnectionError（cause 保留）", async () => {
+    const mock = new MockFetch();
+    const netErr = new TypeError("fetch failed");
+    mock.queueMany({ networkError: netErr });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMConnectionError);
+    expect((err as LLMConnectionError).cause).toBe(netErr);
+  });
+
+  it("请求体按 JSON.stringify 发送，方法 POST", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({ status: 200, body: {} });
+    await post(mock);
+    expect(mock.calls[0].init.method).toBe("POST");
+    expect(mock.calls[0].init.body).toBe(JSON.stringify({ ping: 1 }));
+  });
+});

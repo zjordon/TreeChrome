@@ -37,7 +37,7 @@ async function loadCore() {
     // 不在仓库或临时目录留入口文件
     await build({
       stdin: {
-        contents: 'export { createLLMClient } from "./src/index.ts";',
+        contents: 'export { createLLMClient, DEFAULT_MAX_TOKENS } from "./src/index.ts";',
         resolveDir: join(here, ".."),
         loader: "ts",
       },
@@ -123,7 +123,7 @@ async function main() {
     );
     process.exit(1);
   }
-  const { createLLMClient } = await loadCore();
+  const { createLLMClient, DEFAULT_MAX_TOKENS } = await loadCore();
 
   const cards = [
     {
@@ -133,7 +133,9 @@ async function main() {
       baseUrl: process.env.SMOKE_OPENAI_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
       apiKey,
       model: process.env.SMOKE_OPENAI_MODEL ?? "glm-4.7",
-      maxTokens: 4096,
+      // 16384（非 4096）：glm 系思考模型的 reasoning 计入输出额度，4096 会被思考
+      // 写满 → getAction 落 empty → smoke 产生与端点无关的假失败（TreeWalker 教训）
+      maxTokens: DEFAULT_MAX_TOKENS,
     },
     {
       label: "zhipu-anthropic",
@@ -142,22 +144,28 @@ async function main() {
       baseUrl: process.env.SMOKE_ANTHROPIC_BASE_URL ?? "https://open.bigmodel.cn/api/anthropic",
       apiKey,
       model: process.env.SMOKE_ANTHROPIC_MODEL ?? "glm-5.1",
-      maxTokens: 4096,
+      maxTokens: DEFAULT_MAX_TOKENS,
     },
   ];
 
   let failed = false;
   for (const card of cards) {
+    // 统一脱敏：任何输出面（URL/body/headers/异常消息）里的 apiKey 一律替换——
+    // http 层的超时/网络错误消息内嵌完整 URL，网关 URL 的 query/path 也可能带令牌
+    const redact = (s) => String(s).replaceAll(apiKey, "<REDACTED>");
     // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LlmDeps 注入口。
-    // 脱敏按小写化键名匹配：HTTP 头大小写不敏感，extraHeaders 也可注入认证头
+    // header 脱敏双保险：已知敏感头名（大小写不敏感）+ 值包含 apiKey 即整体替换
+    //（extraHeaders 可注入任意名字的网关认证头，按名字拦不住）
     const loggingFetch = async (url, init) => {
       const headers = { ...(init?.headers ?? {}) };
       const SENSITIVE_HEADERS = ["authorization", "x-api-key", "x-goog-api-key"];
       for (const k of Object.keys(headers)) {
-        if (SENSITIVE_HEADERS.includes(k.toLowerCase())) headers[k] = "<REDACTED>";
+        if (SENSITIVE_HEADERS.includes(k.toLowerCase()) || String(headers[k]).includes(apiKey)) {
+          headers[k] = "<REDACTED>";
+        }
       }
-      const body = String(init?.body ?? "").replaceAll(apiKey, "<REDACTED>");
-      console.log(`\n>> POST ${url}`);
+      const body = redact(init?.body ?? "");
+      console.log(`\n>> POST ${redact(url)}`);
       console.log(`   headers: ${JSON.stringify(headers)}`);
       console.log(`   body: ${body.slice(0, 800)}${body.length > 800 ? " …" : ""}`);
       return fetch(url, init);
@@ -188,7 +196,10 @@ async function main() {
       }
     } catch (e) {
       failed = true;
-      console.error(`\n== ${card.label} FAILED (${Date.now() - t0}ms): ${e?.name}: ${e?.message}`);
+      // 异常消息可能内嵌完整 URL / 网关回显的错误体——同样过 redact
+      console.error(
+        `\n== ${card.label} FAILED (${Date.now() - t0}ms): ${e?.name}: ${redact(e?.message ?? "")}`,
+      );
     }
   }
   process.exitCode = failed ? 1 : 0;

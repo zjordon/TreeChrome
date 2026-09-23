@@ -48,11 +48,12 @@ export class MockFetch {
     this.calls.push({ url: u, init: init ?? ({} as RequestInit) });
     const next = this.queue.shift();
     if (next === undefined) {
-      // 队列耗尽即测试编排错误（不是被测行为）。先同步打日志再抛：postJson 会把该
-      // Error 分类成 LLMConnectionError（infra 成员），退避/fallback 路径会把它吞掉，
-      // 不打日志的话 URL 线索要到 5s 测试超时才浮出
+      // 队列耗尽即测试编排错误（不是被测行为）。AbortError 形态可穿透各层分类
+      //（postJson 非超时中止原样上抛 → callWithBackoff 非 LLMError 直接抛 →
+      // getAction 非窗口中止穿透）——立即失败且携带 URL；普通 Error 会被分类成
+      // LLMConnectionError（infra 成员）被退避/fallback 吞掉，挂到 5s 超时才暴露
       console.error(`MockFetch: unexpected request ${u}（队列已耗尽，检查用例的 queueMany 编排）`);
-      throw new Error(`MockFetch: unexpected request ${u}`);
+      throw new DOMException(`MockFetch: unexpected request ${u}`, "AbortError");
     }
     return applySpec(next, init?.signal);
   };

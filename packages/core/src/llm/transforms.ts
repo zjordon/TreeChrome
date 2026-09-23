@@ -78,7 +78,8 @@ export function applySensitiveInMessages(
         continue;
       }
       for (const [real, placeholder] of entries) {
-        block.text = block.text.replaceAll(real, placeholder);
+        // 回调形式：占位符含 $ 序列（如 "$SECRET_1"）时不被解释为替换模式（#9 同因）
+        block.text = block.text.replaceAll(real, () => placeholder);
       }
     }
   }
@@ -91,7 +92,9 @@ function restoreInStrings(
   if (typeof obj === "string") {
     let out = obj;
     for (const [from, to] of replacements) {
-      out = out.replaceAll(from, to);
+      // 回调形式做字面替换：字符串 replacement 会解释 $$/$&/$' 等特殊模式，
+      // 真实敏感值/URL 含 $ 序列时会被静默篡改（Python str.replace 是字面替换）
+      out = out.replaceAll(from, () => to);
     }
     return out;
   }

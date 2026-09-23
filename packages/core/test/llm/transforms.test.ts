@@ -1,7 +1,8 @@
 // transforms 单测。期望值锚定 Python 实跑（AGENTS.md 铁律），生成命令与输出如下
-//（evals venv，tree_walker editable 安装，2026-09-23）：
+//（用 evals venv 里的 tree_walker 实跑——venv 绝对路径与启用方式见 AGENTS.md
+//「验收命令」节，Python: evals/webarena/.venv，tree_walker editable 安装）：
 //
-//   D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe - <<'PYEOF'
+//   python - <<'PYEOF'
 //   from tree_walker.llm.client import _try_parse_json, _infra_backoff_delay, LLMClient
 //   cases = ['{"a": 1}', '```json\n{"a": 1}\n```', '```json\n{"a": {"b": 2}}\n```',
 //            'no json here', '', 'Sure! Here it is: {"x": 1} hope it helps',
@@ -140,6 +141,20 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     expect(restoreSensitiveInOutput({ v: "<KEY2> and <KEY1>" }, map)).toEqual({
       v: "sk-abc and sk-abc-def",
     });
+  });
+
+  it("含 $$/$&/$' 序列的真实值与 URL 字面往返（字符串 replacement 会解释特殊模式）", () => {
+    const dollar = "pa$$word";
+    const tick = "pre$'post";
+    const messages: ChatMessage[] = [userMsg(`secret ${dollar} and ${tick}`)];
+    const sensitiveMap = { [dollar]: "<D>", [tick]: "<T>" };
+    applySensitiveInMessages(messages, sensitiveMap);
+    expect(firstText(messages[0])).toBe("secret <D> and <T>");
+    const restored = restoreSensitiveInOutput({ v: "<D> <T>", url: "[u0]" }, sensitiveMap);
+    expect(restored).toEqual({ v: `${dollar} ${tick}`, url: "[u0]" });
+    // URL 还原同款：真实 URL 含 $& 时不被解释为"匹配串"
+    const urlMap = new Map([["[u0]", "https://ex.com/$&/a"]]);
+    expect(restoreUrlsInOutput({ u: "[u0]" }, urlMap)).toEqual({ u: "https://ex.com/$&/a" });
   });
 
   it("map 为空/undefined 时两侧都不动", () => {

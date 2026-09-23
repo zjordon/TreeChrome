@@ -434,12 +434,13 @@ describe("deadline 与取消", () => {
     );
   });
 
-  it("响应体读取阶段超时 → LLMTimeoutError（resp.text() 同分类，不漏成裸 AbortError 被当外部取消）", async () => {
-    // 自制 fetch：状态行已返回（ok），body 读取挂起直到 signal 中止——覆盖
-    // postJson 成功路径的 resp.text() 分类（MockFetch 的真实 Response 无法构造此形态）
-    const hangingBodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+  // 「状态行已返回、body 读取挂起至 abort」的同型 fetch 桩（MockFetch 的真实
+  // Response 无法构造此形态）——覆盖 postJson 的 resp.text() 分类路径
+  const hangingBodyFetch = (ok: boolean, status = 200): typeof fetch =>
+    (async (_url: unknown, init?: { signal?: AbortSignal }) => {
       return {
-        ok: true,
+        ok,
+        status,
         headers: new Headers(),
         text: () =>
           new Promise<string>((_resolve, reject) => {
@@ -452,7 +453,9 @@ describe("deadline 与取消", () => {
           }),
       } as unknown as Response;
     }) as typeof fetch;
-    const provider = createProvider(CARD, { fetch: hangingBodyFetch, log: () => {} });
+
+  it("响应体读取阶段超时 → LLMTimeoutError（resp.text() 同分类，不漏成裸 AbortError 被当外部取消）", async () => {
+    const provider = createProvider(CARD, { fetch: hangingBodyFetch(true), log: () => {} });
     await expect(
       provider.chat({
         systemPrompt: null,
@@ -464,23 +467,10 @@ describe("deadline 与取消", () => {
   });
 
   it("错误响应体读取阶段超时 → 仍按超时分型（不被状态码 400 误报为不可重试/触发切换）", async () => {
-    const hangingErrorBodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
-      return {
-        ok: false,
-        status: 400,
-        headers: new Headers(),
-        text: () =>
-          new Promise<string>((_resolve, reject) => {
-            const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
-            if (init?.signal?.aborted) {
-              onAbort();
-              return;
-            }
-            init?.signal?.addEventListener("abort", onAbort, { once: true });
-          }),
-      } as unknown as Response;
-    }) as typeof fetch;
-    const provider = createProvider(CARD, { fetch: hangingErrorBodyFetch, log: () => {} });
+    const provider = createProvider(CARD, {
+      fetch: hangingBodyFetch(false, 400),
+      log: () => {},
+    });
     await expect(
       provider.chat({
         systemPrompt: null,
@@ -509,9 +499,10 @@ describe("deadline 与取消", () => {
     const stuck = setup();
     stuck.client.setCallWindow(1); // 立即过期的窗口
     stuck.mock.queueMany({ hangUntilAbort: true });
-    await expect(stuck.client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(
-      LLMTimeoutError,
-    );
+    const p = stuck.client.getAction("sys", msgs(), TOOL);
+    await stuck.clock.advance(0); // 冲刷：fetch 在飞 + deadline watcher 挂起（注入时钟域）
+    await stuck.clock.advance(1); // deadline 到点 → abort 在飞请求
+    await expect(p).rejects.toBeInstanceOf(LLMTimeoutError);
 
     const cleared = setup();
     cleared.client.setCallWindow(1);
@@ -553,6 +544,7 @@ describe("deadline 与取消", () => {
     await clock.advance(16000);
     await clock.advance(30000);
     await expect(p).rejects.toBeInstanceOf(LLMConnectionError);
+    expect(mock.calls.length).toBe(6); // 与 429 恒败用例对称：退避名额被完整消耗
   });
 });
 
