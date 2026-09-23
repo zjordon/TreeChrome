@@ -86,7 +86,7 @@
 |---|---|---|
 | 1 | 智谱 Anthropic 兼容端点与官方规格的偏差（thinking 块、stop_reason、usage 字段） | 2.5 smoke 实测锚定，不猜；wire fixtures 以实测样本为准修订 |
 | 2 | 开源兼容端点（vLLM/Ollama 形态）对 forced tool_choice 支持参差 | 承重墙路径（prompt 约束 + JSON 兜底）是 2.3 的专项验收用例；capabilities 由 provider 卡片显式声明 |
-| 3 | gemini schema 子集（`$schema`/`additionalProperties` 等键不被接受） | 适配器白名单清洗（02 §5.3）；smoke 只测智谱两端点，gemini 真机验证顺延到有 key 时（2.4 验收以 mock 为准，标注待实测） |
+| 3 | gemini 真机差异：schema 子集（`$schema`/`additionalProperties` 等键不被接受）、thinking 模型 thoughtSignature 回传 | 适配器白名单清洗 + 删除键告警（02 §5.3，轮 6 补观测）；thoughtSignature 透传已按官方规格实现（轮 6 #17）；smoke 只测智谱两端点，gemini 真机验证顺延到有 key 时（2.4 验收以 mock 为准，标注待实测） |
 | 4 | P2/P4 哨兵契约返工：P4 快照审查时 step 梯子语义若与 `{kind:"empty"}` 不匹配 | 03 §4 偏离清单已写明契约意图；P4 启动检查点重新对照 client.py |
 | 5 | 外部取消穿透（用户 stop 时 SW 被杀/信号竞争） | `AbortSignal` 全链路传递，取消异常不吞（Python #186 教训）；单测有用例 |
 | 6 | 文档冻结后协议漂移（官方 API 演进） | 02 头部声明"以本仓 fixtures + smoke 为准，文档是导航不是权威"；fixtures 更新须在提交信息注明 |
@@ -180,3 +180,21 @@ smoke 产物摘要：
 - **#18**（package.json 未声明 engines）：packages/core 的 `engines: node >=22` 已在轮 1 声明（>20.3 满足 AbortSignal.any），前提不成立，不做运行时降级。
 
 测试 200 例全绿（覆盖率 97.24%）；smoke 假 key 链路复验（exitCode 1）。
+
+### 评审轮 6（review-p2-llm-client-6.json，2026-09-23，19 条）
+
+采纳 17 条（#1 采纳其"文档化别名"子项）/ 驳回 2 条。要点：
+
+- **gemini thoughtSignature 透传（#17，本轮最重要）**：2.5/3 系 thinking 模型的 functionCall part 携带 thoughtSignature，官方要求后续回合随 part 原样回传、缺失即 400 INVALID_ARGUMENT——多轮工具调用第二轮即断。canonical `ToolCall` 增可选 `signature`（仅 gemini 适配器读写，其余协议恒缺省）；解析捕获、回传时随 functionCall part 写回；按官方规格实现并锚定 mock 用例，真机验证随风险 3 顺延。
+- **tools 空数组三适配器一致过滤（#5/#6/#16）**：`tools: []` 此前原样发空列表（anthropic 官方端点 400；openai 兼容端点 vLLM/Ollama 同类风险），且与 forced toolChoice 组合会产生孤立 tool_choice/toolConfig——统一按长度过滤，forced 守卫同口径收严。
+- **schema 清洗删除告警（#7）**：白名单外键（anyOf/oneOf/$ref/minimum…）删除不再无痕——`onDroppedKey` 上报归一化键名（顶层+嵌套递归），provider 实例级按键名去重（工具 schema 逐请求固定，重复告警只有噪音），约束丢失留下排障线索。
+- **smoke 打磨（#2/#10/#11）**：redact/SENSITIVE_HEADERS/cause 链格式化提取为模块级共享（主循环与兜底 catch 用同一份实现，防两处口径漂移）；per-card catch 补 cause 链输出（LLMTimeoutError/LLMConnectionError 的底层网络错误恰在此路径抛出，原先只打 name:message 丢最关键排障信息）；SMOKE_* 环境变量 `??`→`||`（空串 env 会把 baseUrl 置空变形为 "Failed to parse URL"）。
+- **transforms 注释与锚定（#9）**：还原侧"与请求侧对称滤空键"表述失实——请求侧只滤空 real（Python 两侧都不滤，均为 TS 防御性收严）；空占位符条目的请求侧语义 = 删除敏感值（`replaceAll(real, '')`，Python 同款不可逆），还原侧无从恢复跳过；补请求侧删除语义锚定用例，注释改写为准确表述。
+- **测试补强（#3/#12/#13/#14/#15/#18/#19）**：Retry-After 回落集补 HTTP-date 样例（Python 口径显式不支持，锁定边界）；gemini 补 tools:null+forced 用例（三协议契约矩阵闭盲区）；合成 id 跨响应续增用例（防退化为按响应内编号造成跨回合碰撞）；maxTokensField 卡片声明补反向断言（两字段并存会被新契约网关拒收）；2xx 非 JSON 补长响应体用例锁定 200 截断阈值；hangingBodyFetch 扩 headers 参数复用（轮 5 用例的 ~15 行重复桩消除）；R4 梯子用例标题与 3 次编排对齐。
+- **注释修正（#4/#1 子项）**：FakeClock 收敛参数注释对齐实现（超限 throw 非 warn）；vitest.config.ts 注明 `test:coverage` 是 `test` 的纯别名（根脚本与 gate.mjs 按名引用的跨包契约）。
+
+驳回 2 条：
+- **#1 删除子项**（删 `test:coverage`）：gate.mjs quality 步骤按名调用 `pnpm -r run test:coverage`（轮 5 #1 已核实同款），删除即让 core 在提交门失去覆盖率校验；按评审自己的备选方案文档化为纯别名。
+- **#8 行为扩展子项**（请求侧 sensitiveMap 扩展到 toolResult.text）：P5 parity 裁决在案（transforms.test 锁定，轮 1 #17 同源驳回），P4 接 SecretProvider 时一并裁决；其文档诉求已在位——GetActionOptions.sensitiveMap JSDoc 已明示"工具输出中的敏感值会明文出站"。
+
+测试 211 例全绿（覆盖率 97.28%）；smoke 假 key 链路复验（exitCode 1，脱敏生效）。

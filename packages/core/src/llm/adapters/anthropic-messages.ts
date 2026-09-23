@@ -206,9 +206,10 @@ export function createAnthropicProvider(
       "anthropic-dangerous-direct-browser-access": "true",
       ...config.extraHeaders,
     };
-    // ChatRequest 契约：tools 为 null 时忽略 toolChoice——孤立 tool_choice 会被端点 400
+    // ChatRequest 契约：tools 为 null/空数组时忽略 toolChoice 且不发 tools——
+    // 孤立 tool_choice 与空 tools 列表都会被官方端点 400
     const toolChoice =
-      req.toolChoice?.kind === "forced" && req.tools !== null
+      req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
         ? { type: "tool", name: req.toolChoice.name }
         : undefined;
     const body: Record<string, unknown> = {
@@ -216,7 +217,7 @@ export function createAnthropicProvider(
       max_tokens: req.maxTokens ?? config.maxTokens,
       ...(req.systemPrompt !== null ? { system: req.systemPrompt } : {}),
       messages: toWireMessages(req.messages),
-      ...(req.tools !== null
+      ...(req.tools !== null && req.tools.length > 0
         ? {
             tools: req.tools.map((t) => ({
               name: t.name,

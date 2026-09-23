@@ -134,7 +134,7 @@ describe("解析优先级与公共面", () => {
 });
 
 describe("R4 text-not-tool 梯子（Python _TEXT_RETRY_MAX=2）", () => {
-  it("第 1 次文本 → 追加指令 → 第 2 次工具调用成功（断言追加消息逐字符）", async () => {
+  it("第 1 次文本 → 追加指令 → 再次文本 → 第 3 次请求工具调用成功（断言首次追加消息逐字符）", async () => {
     const { mock, client } = setup();
     mock.queueMany(text("I think we should click."), text("explaining again"), toolOk({ ok: 1 }));
     const r = await client.getAction("sys", msgs(), TOOL);
@@ -452,12 +452,16 @@ describe("deadline 与取消", () => {
   // 「状态行已返回、body 读取挂起至 abort」的同型 fetch 桩（MockFetch 的真实
   // Response 无法构造此形态）——覆盖 postJson 的 resp.text() 分类路径。
   // reject(signal.reason)：复刻真实 fetch 形态（超时 reason 是 TimeoutError）
-  const hangingBodyFetch = (ok: boolean, status = 200): typeof fetch =>
+  const hangingBodyFetch = (
+    ok: boolean,
+    status = 200,
+    headers: Record<string, string> = {},
+  ): typeof fetch =>
     (async (_url: unknown, init?: { signal?: AbortSignal }) => {
       return {
         ok,
         status,
-        headers: new Headers(),
+        headers: new Headers(headers),
         text: () =>
           new Promise<string>((_resolve, reject) => {
             const onAbort = () =>
@@ -532,23 +536,7 @@ describe("deadline 与取消", () => {
   it("外部 signal 恰逢错误响应体读取 → AbortError 穿透且不消耗 fallback 单向锁（评审轮 5 #12）", async () => {
     // 首请求返回 429 状态行但 body 读取挂起（真实流式读体形态）；外部取消时 http 层
     // 会把它吞成 LLMRateLimitError——修复前该假性 429 会误触发 fallback 单向切换
-    const hanging429BodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
-      return {
-        ok: false,
-        status: 429,
-        headers: new Headers({ "retry-after": "5" }),
-        text: () =>
-          new Promise<string>((_resolve, reject) => {
-            const onAbort = () =>
-              reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
-            if (init?.signal?.aborted) {
-              onAbort();
-              return;
-            }
-            init?.signal?.addEventListener("abort", onAbort, { once: true });
-          }),
-      } as unknown as Response;
-    }) as typeof fetch;
+    const hanging429BodyFetch = hangingBodyFetch(false, 429, { "retry-after": "5" });
     const normal = new MockFetch();
     normal.queueMany(toolOk({ ok: 1 }));
     let firstCall = true;

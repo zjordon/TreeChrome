@@ -67,7 +67,9 @@ export function applySensitiveInMessages(
   if (!sensitiveMap) {
     return;
   }
-  // 空字符串键会让 replaceAll 逐字符插入占位符（无声损坏全文）——宿主侧失误防御
+  // 空字符串 real 键会让 replaceAll 逐字符插入占位符（无声损坏全文）——宿主侧
+  // 失误防御（Python 不滤）。空占位符条目**保留**：语义即删除敏感值
+  //（replaceAll(real, '')，Python 同款不可逆语义），还原侧无从恢复、跳过该条
   const entries = Object.entries(sensitiveMap).filter(([real]) => real !== "");
   for (const msg of messages) {
     if (msg.role === "toolResult") {
@@ -127,8 +129,9 @@ export function restoreSensitiveInOutput<T>(
   if (!sensitiveMap) {
     return output;
   }
-  // entries 是 real→placeholder，还原方向取反（顺序仍按插入序，与 Python dict 一致）；
-  // 与请求侧对称地滤除空 real 键与空占位符键（replaceAll('', x) 逐字符插入会损坏全文）
+  // entries 是 real→placeholder，还原方向取反（顺序仍按插入序，与 Python dict 一致）。
+  // 空键过滤是还原侧防御（replaceAll('', x) 逐字符插入会损坏全文；Python 不滤）：
+  // 滤空 real 与空占位符两类——后者的请求侧语义是删除敏感值（不可逆），无从还原
   const reversed = Object.entries(sensitiveMap)
     .filter(([real, placeholder]) => real !== "" && placeholder !== "")
     .map(([real, placeholder]) => [placeholder, real] as const);

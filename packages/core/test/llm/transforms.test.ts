@@ -144,16 +144,26 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     applySensitiveInMessages(messages, map);
     expect(firstText(messages[2])).toBe("tool echoed sk-abc-def"); // 明文保留（已知取舍）
   });
-  it("空字符串键跳过（replaceAll('', x) 会逐字符插入占位符损坏全文）；还原侧对称滤除", () => {
+  it("空字符串键跳过（replaceAll('', x) 会逐字符插入占位符损坏全文）；还原侧滤空 real 与空占位符", () => {
     const messages: ChatMessage[] = [userMsg("keep this intact")];
     applySensitiveInMessages(messages, { "": "<BAD>", keep: "<K>" });
     expect(firstText(messages[0])).toBe("<K> this intact");
-    // 还原侧：空 real 键与空占位符键都被滤除（请求侧对称），文本原样——
-    // 含模型回显 "<BAD>" 的输入也不被静默改写
+    // 还原侧：空 real 键与空占位符键都被滤除（请求侧只滤空 real——空占位符条目
+    // 的请求侧语义是删除敏感值，见下一条用例），文本原样——含模型回显 "<BAD>"
+    // 的输入也不被静默改写
     expect(restoreSensitiveInOutput({ v: "x secret" }, { "": "<BAD>", secret: "" })).toEqual({
       v: "x secret",
     });
     expect(restoreSensitiveInOutput({ v: "<BAD> x" }, { "": "<BAD>" })).toEqual({ v: "<BAD> x" });
+  });
+
+  it("空占位符条目：请求侧删除敏感值（replaceAll(real, '')，Python 同款不可逆语义）；还原侧跳过无从恢复", () => {
+    const messages: ChatMessage[] = [userMsg("token sk-abc here")];
+    applySensitiveInMessages(messages, { "sk-abc": "" });
+    expect(firstText(messages[0])).toBe("token  here");
+    expect(restoreSensitiveInOutput({ v: "token  here" }, { "sk-abc": "" })).toEqual({
+      v: "token  here",
+    });
   });
 
   it("restore：占位符还原真实值（锚定输出）", () => {

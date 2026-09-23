@@ -83,49 +83,79 @@ const TOOL = {
   },
 };
 
-/** 两三步消息：user → assistant(纯工具调用) → toolResult → user，覆盖 toolResult wire 路径 */
-const MESSAGES = [
-  {
-    role: "user",
-    blocks: [
-      {
-        kind: "text",
-        text: "You are controlling a browser. Current page: a search page with an empty search box and a submit button.",
-      },
-    ],
-  },
-  {
-    role: "assistant",
-    blocks: [],
-    toolCalls: [
-      {
-        id: "t1",
-        name: "agent_response",
-        args: {
-          evaluation_previous_goal: "n/a",
-          memory: "search page loaded",
-          next_goal: "focus the search box",
-          action: { name: "click_element_by_index", params: { index: 1 } },
+/** 两三步消息：user → assistant(纯工具调用) → toolResult → user，覆盖 toolResult wire 路径 */ const MESSAGES =
+  [
+    {
+      role: "user",
+      blocks: [
+        {
+          kind: "text",
+          text: "You are controlling a browser. Current page: a search page with an empty search box and a submit button.",
         },
-      },
-    ],
-  },
-  {
-    role: "toolResult",
-    toolCallId: "t1",
-    toolName: "agent_response",
-    text: "clicked index=1 (search box focused)",
-  },
-  {
-    role: "user",
-    blocks: [
-      {
-        kind: "text",
-        text: "The search box now has focus. Decide the next action to search for 'tree walker'.",
-      },
-    ],
-  },
-];
+      ],
+    },
+    {
+      role: "assistant",
+      blocks: [],
+      toolCalls: [
+        {
+          id: "t1",
+          name: "agent_response",
+          args: {
+            evaluation_previous_goal: "n/a",
+            memory: "search page loaded",
+            next_goal: "focus the search box",
+            action: { name: "click_element_by_index", params: { index: 1 } },
+          },
+        },
+      ],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "t1",
+      toolName: "agent_response",
+      text: "clicked index=1 (search box focused)",
+    },
+    {
+      role: "user",
+      blocks: [
+        {
+          kind: "text",
+          text: "The search box now has focus. Decide the next action to search for 'tree walker'.",
+        },
+      ],
+    },
+  ];
+
+// —— 脱敏与错误格式化（主循环与兜底 catch 共用同一份实现，防两处口径漂移）——
+
+// URL query 掩码：SMOKE_*_BASE_URL 携带 ?token=… 时不能明文出现在任何输出面
+const MASK_QUERY_RE = /([?&][\w-]+=)[^&"'\s]+/g;
+// 已知敏感头名（大小写不敏感）；extraHeaders 可注入任意名字的网关认证头，
+// 按名字拦不住——值包含 apiKey 即整体替换（双保险在 loggingFetch 内）
+const SENSITIVE_HEADERS = ["authorization", "x-api-key", "x-goog-api-key"];
+
+const makeRedact = (apiKey) => (s) => {
+  let out = String(s).replaceAll(MASK_QUERY_RE, "$1<MASKED>");
+  if (apiKey) {
+    out = out.replaceAll(apiKey, "<REDACTED>");
+  }
+  return out;
+};
+
+// 异常链格式化：LLMTimeoutError/LLMConnectionError 的底层网络错误挂在 cause 上，
+// 只打 e.message 会丢最关键的排障信息（上限 5 层防 cause 环）；formatEntry 供
+// 兜底 catch 换用 stack（主循环用紧凑的 name: message）
+const formatErrorChain = (e, redact, formatEntry = (cur) => `${cur.name}: ${cur.message}`) => {
+  const parts = [];
+  for (let cur = e; cur instanceof Error && parts.length < 5; cur = cur.cause) {
+    parts.push(formatEntry(cur));
+  }
+  if (parts.length === 0) {
+    parts.push(String(e));
+  }
+  return redact(parts.join("\n[cause] "));
+};
 
 async function main() {
   const apiKey = process.env.GLM_API_KEY;
@@ -142,9 +172,11 @@ async function main() {
       label: "zhipu-openai",
       name: "zhipu-openai",
       protocol: "openai-completions",
-      baseUrl: process.env.SMOKE_OPENAI_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
+      // || 而非 ??：`VAR= node`（shell 变量未设的常见形态）会把空串带进来，
+      // baseUrl="" 会让 fetch 抛与端点无关的 "Failed to parse URL"
+      baseUrl: process.env.SMOKE_OPENAI_BASE_URL || "https://open.bigmodel.cn/api/paas/v4",
       apiKey,
-      model: process.env.SMOKE_OPENAI_MODEL ?? "glm-4.7",
+      model: process.env.SMOKE_OPENAI_MODEL || "glm-4.7",
       // 16384（非 4096）：glm 系思考模型的 reasoning 计入输出额度，4096 会被思考
       // 写满 → getAction 落 empty → smoke 产生与端点无关的假失败（TreeWalker 教训）
       maxTokens: DEFAULT_MAX_TOKENS,
@@ -153,9 +185,9 @@ async function main() {
       label: "zhipu-anthropic",
       name: "zhipu-anthropic",
       protocol: "anthropic-messages",
-      baseUrl: process.env.SMOKE_ANTHROPIC_BASE_URL ?? "https://open.bigmodel.cn/api/anthropic",
+      baseUrl: process.env.SMOKE_ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
       apiKey,
-      model: process.env.SMOKE_ANTHROPIC_MODEL ?? "glm-5.1",
+      model: process.env.SMOKE_ANTHROPIC_MODEL || "glm-5.1",
       maxTokens: DEFAULT_MAX_TOKENS,
     },
   ];
@@ -166,20 +198,13 @@ async function main() {
   let failed = false;
   // 两端点独立但刻意串行：请求/响应日志逐卡成段输出，并行会交错打乱；
   // 最坏 2×timeoutMs（各卡独立预算），手工 smoke 可接受
+  const redact = makeRedact(apiKey);
   for (const card of cards) {
-    // 统一脱敏：apiKey 逐字替换 + URL query 值掩码（任何输出面）——http 层的超时/
-    // 网络错误消息内嵌完整 URL；网关令牌往往不是 GLM_API_KEY 本身
-    //（SMOKE_*_BASE_URL 携带 ?token=… 时同样不能明文出现在任何输出面）
-    const redact = (s) =>
-      String(s)
-        .replaceAll(apiKey, "<REDACTED>")
-        .replaceAll(/([?&][\w-]+=)[^&"'\s]+/g, "$1<MASKED>");
     // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LlmDeps 注入口。
     // header 脱敏双保险：已知敏感头名（大小写不敏感）+ 值包含 apiKey 即整体替换
     //（extraHeaders 可注入任意名字的网关认证头，按名字拦不住）
     const loggingFetch = async (url, init) => {
       const headers = { ...(init?.headers ?? {}) };
-      const SENSITIVE_HEADERS = ["authorization", "x-api-key", "x-goog-api-key"];
       for (const k of Object.keys(headers)) {
         if (SENSITIVE_HEADERS.includes(k.toLowerCase()) || String(headers[k]).includes(apiKey)) {
           headers[k] = "<REDACTED>";
@@ -226,9 +251,11 @@ async function main() {
       }
     } catch (e) {
       failed = true;
-      // 异常消息可能内嵌完整 URL / 网关回显的错误体——同样过 redact
+      // 与文件末尾兜底同口径：遍历 cause 链（LLMTimeoutError/LLMConnectionError 的
+      // 底层网络错误挂在 cause 上，丢消息即丢最关键排障信息）；消息内嵌完整 URL /
+      // 网关回显的错误体——同样过 redact
       console.error(
-        `\n== ${card.label} FAILED (${Date.now() - t0}ms): ${e?.name}: ${redact(e?.message ?? "")}`,
+        `\n== ${card.label} FAILED (${Date.now() - t0}ms): ${formatErrorChain(e, redact)}`,
       );
     }
   }
@@ -239,17 +266,8 @@ main().catch((e) => {
   // 兜底输出同样过脱敏，并显式遍历 cause 链（Error.stack 不含 cause——核心层
   // LLMTimeoutError/LLMConnectionError 都以 cause 挂底层网络错误，丢失即丢失最
   // 关键的排障信息）；链上 stack/cause 可能内嵌 URL 或网关回显的错误详情
-  const apiKey = process.env.GLM_API_KEY;
-  const redact = (s) =>
-    apiKey
-      ? String(s)
-          .replaceAll(apiKey, "<REDACTED>")
-          .replaceAll(/([?&][\w-]+=)[^&"'\s]+/g, "$1<MASKED>")
-      : String(s);
-  const parts = [];
-  for (let cur = e; cur instanceof Error && parts.length < 5; cur = cur.cause) {
-    parts.push(cur.stack ?? cur.message);
-  }
-  console.error(redact(parts.join("\n[cause] ")));
+  console.error(
+    formatErrorChain(e, makeRedact(process.env.GLM_API_KEY), (cur) => cur.stack ?? cur.message),
+  );
   process.exitCode = 1;
 });

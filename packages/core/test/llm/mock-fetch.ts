@@ -83,7 +83,8 @@ interface FakeTimer {
   off?: () => void;
 }
 
-/** 收敛参数：轮数上限与每轮微任务冲刷深度（具名便于调档；超限 warn 而非静默跳过） */
+/** 收敛参数：轮数上限与每轮微任务冲刷深度（具名便于调档；超限直接抛错 fail fast
+ * 并携带 due/t 线索——见 advance 尾部，掩蔽成 vitest 5s 挂起只会降低可诊断性） */
 const MAX_ROUNDS = 6;
 const MICROTASK_FLUSH = 50;
 

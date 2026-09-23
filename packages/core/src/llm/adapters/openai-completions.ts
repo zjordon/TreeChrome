@@ -214,7 +214,7 @@ export function createOpenAICompletionsProvider(
       model: config.model,
       messages: wireMessages,
       [maxTokensField]: req.maxTokens ?? config.maxTokens,
-      ...(req.tools !== null
+      ...(req.tools !== null && req.tools.length > 0
         ? {
             tools: req.tools.map((t) => ({
               type: "function",
@@ -222,8 +222,10 @@ export function createOpenAICompletionsProvider(
             })),
           }
         : {}),
-      // ChatRequest 契约：tools 为 null 时忽略 toolChoice——孤立 tool_choice 会被端点 400
-      ...(req.toolChoice?.kind === "forced" && req.tools !== null
+      // ChatRequest 契约：tools 为 null/空数组时忽略 toolChoice 且不发 tools——
+      // 孤立 tool_choice 会被官方端点 400；空 tools 列表在部分兼容端点（vLLM/Ollama
+      // 等）同样拒收
+      ...(req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
       // temperature 回退链（common.temperatureEntry）；两级缺省不发。新契约模型

@@ -56,10 +56,14 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
       continue;
     }
     if (msg.role === "assistant") {
-      // 角色名是 model 不是 assistant；functionCall 与文本同 turn 并置（args 原生对象）
+      // 角色名是 model 不是 assistant；functionCall 与文本同 turn 并置（args 原生对象）。
+      // thoughtSignature 随 functionCall part 原样写回（不回传即 400，见 ToolCall.signature）
       const parts = blocksToParts(msg.blocks);
       for (const call of msg.toolCalls ?? []) {
-        parts.push({ functionCall: { name: call.name, args: call.args } });
+        parts.push({
+          functionCall: { name: call.name, args: call.args },
+          ...(call.signature !== undefined ? { thoughtSignature: call.signature } : {}),
+        });
       }
       pushMerged("model", parts);
       const results = new Map<string, ToolResultMessage>();
@@ -185,11 +189,15 @@ function parseResponse(
       }
       // 无调用 id——合成，保证 canonical 不变量；同回合多 functionCall 即并行调用。
       // 序号是 provider 实例级自增：跨回合/跨响应唯一（宿主可能以 toolCallId 作跨回合
-      // 键，与 anthropic/openai 真实端点的全局唯一 id 行为对齐）
+      // 键，与 anthropic/openai 真实端点的全局唯一 id 行为对齐）。
+      // thoughtSignature 捕获进 ToolCall.signature（2.5/3 thinking 模型回传硬要求）
+      const signature =
+        typeof part.thoughtSignature === "string" ? part.thoughtSignature : undefined;
       toolCalls.push({
         id: nextCallId(),
         name,
         args: (rawArgs as Record<string, unknown>) ?? {},
+        ...(signature !== undefined ? { signature } : {}),
       });
     }
   }
@@ -213,6 +221,15 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   const capabilities = resolveCapabilities(config);
   // 合成 id 的实例级自增序号（跨响应唯一；每 provider 从 0 起）
   let synthSeq = 0;
+  // schema 白名单外键删除告警的去重集：工具 schema 逐请求固定，同一键名重复告警只有
+  // 噪音；每键一次即保留「约束被清洗丢失」的排障线索
+  const warnedSchemaKeys = new Set<string>();
+  const onDroppedSchemaKey = (key: string): void => {
+    if (!warnedSchemaKeys.has(key)) {
+      warnedSchemaKeys.add(key);
+      deps.log(`[llm] gemini schema 清洗删除白名单外键「${key}」（该键约束丢失）`);
+    }
+  };
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
@@ -228,20 +245,22 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
         ? { systemInstruction: { parts: [{ text: req.systemPrompt }] } }
         : {}),
       contents: toWireContents(req.messages),
-      ...(req.tools !== null
+      // ChatRequest 契约：tools 为 null/空数组时不发 tools 且忽略 toolChoice——
+      // 空 functionDeclarations 与孤立 toolConfig 都是端点 400 形态
+      ...(req.tools !== null && req.tools.length > 0
         ? {
             tools: [
               {
                 functionDeclarations: req.tools.map((t) => ({
                   name: t.name,
                   description: t.description,
-                  parameters: sanitizeGeminiSchema(t.parameters),
+                  parameters: sanitizeGeminiSchema(t.parameters, onDroppedSchemaKey),
                 })),
               },
             ],
           }
         : {}),
-      ...(req.toolChoice?.kind === "forced" && req.tools !== null
+      ...(req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
         ? {
             toolConfig: {
               functionCallingConfig: { mode: "ANY", allowedFunctionNames: [req.toolChoice.name] },

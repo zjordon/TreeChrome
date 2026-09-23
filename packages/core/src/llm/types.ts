@@ -63,6 +63,12 @@ export interface ToolCall {
   id: string;
   name: string;
   args: Record<string, unknown>;
+  /**
+   * gemini thinking 模型（2.5/3 系）functionCall part 携带的 thoughtSignature：
+   * 官方要求后续回合随 functionCall part 原样回传，缺失即 400 INVALID_ARGUMENT。
+   * 仅 gemini 适配器读写（canonical 层透传不消费）；其余协议恒缺省
+   */
+  signature?: string;
 }
 
 /** 工具选择：auto（模型自决）或 forced（agent_response 强制） */

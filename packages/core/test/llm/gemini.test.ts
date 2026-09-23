@@ -111,6 +111,15 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     });
     expect(original).toEqual(snapshot);
   });
+
+  it("onDroppedKey：删除时按归一化键名上报（顶层与嵌套递归），白名单内键不报", () => {
+    const dropped: string[] = [];
+    sanitizeGeminiSchema(
+      { $schema: "x", Minimum: 1, properties: { inner: { examples: [1], type: "string" } } },
+      (k) => dropped.push(k),
+    );
+    expect(dropped).toEqual(["$schema", "minimum", "examples"]);
+  });
 });
 
 describe("请求构造（canonical → wire）", () => {
@@ -233,6 +242,53 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("toolConfig");
   });
 
+  it("tools null + forced toolChoice → 不发孤立 toolConfig（ChatRequest 契约，三协议一致）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+      toolChoice: { kind: "forced", name: "agent_response" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+    expect(mock.lastBody()).not.toHaveProperty("toolConfig");
+  });
+
+  it("tools 空数组 → 不发 tools/toolConfig（空 functionDeclarations 是端点 400 形态；forced 一并抑制）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: [],
+      toolChoice: { kind: "forced", name: "agent_response" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+    expect(mock.lastBody()).not.toHaveProperty("toolConfig");
+  });
+
+  it("schema 清洗删除键的告警在 provider 实例级按键名去重（同 schema 逐请求固定，重复只有噪音）", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const provider = createGeminiProvider(CARD, { ...stubDeps(mock), log: (m) => logs.push(m) });
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: [TOOL],
+    };
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    await provider.chat(req);
+    await provider.chat(req);
+    // TOOL.parameters 的白名单外键按首现序各告警一次（键名以归一化口径上报）：
+    // $schema（顶层）、additionalproperties（顶层+嵌套 action 同名）、minimum（嵌套 action）
+    expect(logs.filter((m) => m.includes("白名单外键"))).toEqual([
+      "[llm] gemini schema 清洗删除白名单外键「$schema」（该键约束丢失）",
+      "[llm] gemini schema 清洗删除白名单外键「additionalproperties」（该键约束丢失）",
+      "[llm] gemini schema 清洗删除白名单外键「minimum」（该键约束丢失）",
+    ]);
+  });
+
   it("maxTokens 请求级覆盖与 temperature 显式", async () => {
     const { mock, provider } = setup();
     mock.queueMany(fnCallOk({}));
@@ -344,6 +400,62 @@ describe("响应解析（wire → canonical）", () => {
       stopReason: "tool_call",
       usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3 },
     });
+  });
+
+  it("thoughtSignature：解析捕获进 ToolCall.signature，回传时随 functionCall part 原样写回（2.5/3 thinking 模型硬要求，不回传即 400）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(
+      {
+        status: 200,
+        body: {
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    functionCall: { name: "agent_response", args: { a: 1 } },
+                    thoughtSignature: "sig-1",
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: null,
+        },
+      },
+      fnCallOk({}),
+    );
+    const first = await provider.chat(baseReq());
+    expect(first.toolCalls).toEqual([
+      { id: "gemini-call-0", name: "agent_response", args: { a: 1 }, signature: "sig-1" },
+    ]);
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        { role: "assistant", blocks: [], toolCalls: first.toolCalls },
+        { role: "toolResult", toolCallId: "gemini-call-0", toolName: "agent_response", text: "ok" },
+      ],
+      tools: [TOOL],
+    });
+    const contents = mock.lastBody().contents as Array<Record<string, unknown>>;
+    expect(contents[1]).toEqual({
+      role: "model",
+      parts: [
+        { functionCall: { name: "agent_response", args: { a: 1 } }, thoughtSignature: "sig-1" },
+      ],
+    });
+  });
+
+  it("合成 id 跨响应持续自增（宿主可能以 toolCallId 作跨回合键，不碰撞）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    const first = await provider.chat(baseReq());
+    const second = await provider.chat(baseReq());
+    expect(first.toolCalls[0]?.id).toBe("gemini-call-0");
+    expect(second.toolCalls[0]?.id).toBe("gemini-call-1");
   });
 
   it("只有被丢弃的 functionCall（非请求名）→ stopReason 按 finishReason 归一，不因丢弃变形", async () => {

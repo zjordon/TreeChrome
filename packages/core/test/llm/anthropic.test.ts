@@ -335,6 +335,17 @@ describe("响应解析（wire → canonical）", () => {
     expect(mock.lastBody()).not.toHaveProperty("tools");
   });
 
+  it("tools 空数组 → 不发 tools/tool_choice（官方端点对空 tools 列表 400；forced 一并抑制）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { content: [{ type: "text", text: "t" }], stop_reason: "end_turn" },
+    });
+    await provider.chat({ ...baseReq(), tools: [], toolChoice: { kind: "forced", name: "x" } });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
+
   it.each([
     ["end_turn", "stop"],
     ["stop_sequence", "stop"],

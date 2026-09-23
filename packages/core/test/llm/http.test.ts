@@ -32,9 +32,12 @@ describe("parseRetryAfterMs（Python 锚定容错集）", () => {
   ] as const)("%s → %d", (raw, expected) => {
     expect(parseRetryAfterMs(raw)).toBe(expected);
   });
-  it.each(["0", "-3", "abc", ""])("%s → undefined（回落指数）", (raw) => {
-    expect(parseRetryAfterMs(raw)).toBeUndefined();
-  });
+  it.each(["0", "-3", "abc", "", "Wed, 21 Oct 2015 07:28:00 GMT"])(
+    "%s → undefined（回落指数；HTTP-date 为 Python 口径显式不支持，Number 解析为 NaN）",
+    (raw) => {
+      expect(parseRetryAfterMs(raw)).toBeUndefined();
+    },
+  );
   it("null（头缺失）→ undefined", () => {
     expect(parseRetryAfterMs(null)).toBeUndefined();
   });
@@ -130,6 +133,19 @@ describe("postJson 成功与网络层", () => {
     const err = await post(mock).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LLMProtocolViolationError);
     expect((err as Error).message).toContain("<html>oops");
+  });
+
+  it("2xx 非 JSON 长响应体 → 消息截断在 200 字符（阈值锁定；网关 200 回整页 HTML 时不无上限膨胀）", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({
+      status: 200,
+      rawBody: `<html>${"x".repeat(300)}`,
+      headers: { "content-type": "text/html" },
+    });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMProtocolViolationError);
+    expect((err as Error).message.length).toBeLessThanOrEqual("响应体不是合法 JSON：".length + 200);
+    expect((err as Error).message).toContain("<html>");
   });
 
   it("网络层 TypeError → LLMConnectionError（cause 保留）", async () => {

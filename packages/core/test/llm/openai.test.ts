@@ -181,11 +181,13 @@ describe("请求构造（canonical → wire）", () => {
     expect(newContract.mock.lastBody()).toHaveProperty("max_completion_tokens");
     expect(newContract.mock.lastBody()).not.toHaveProperty("max_tokens");
 
-    // 本地/网关新契约模型：前缀命中但卡片显式声明旧字段（webbrain local/lmstudio 场景）
+    // 本地/网关新契约模型：前缀命中但卡片显式声明旧字段（webbrain local/lmstudio 场景）。
+    // 反向断言锁定「声明覆盖启发式」：两字段并存会被新契约网关拒收
     const declared = setup({ model: "gpt-5", maxTokensField: "max_tokens" });
     declared.mock.queueMany(toolOk("{}"));
     await declared.provider.chat(baseReq());
     expect(declared.mock.lastBody()).toHaveProperty("max_tokens");
+    expect(declared.mock.lastBody()).not.toHaveProperty("max_completion_tokens");
   });
 
   it("tools null / temperature 显式 / maxTokens 请求级覆盖", async () => {
@@ -321,6 +323,21 @@ describe("响应解析（wire → canonical）", () => {
     await provider.chat({
       ...baseReq(),
       tools: null,
+      toolChoice: { kind: "forced", name: "x" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
+
+  it("tools 空数组 → 不发 tools/tool_choice（部分兼容端点 vLLM/Ollama 400；forced 一并抑制）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "stop" }] },
+    });
+    await provider.chat({
+      ...baseReq(),
+      tools: [],
       toolChoice: { kind: "forced", name: "x" },
     });
     expect(mock.lastBody()).not.toHaveProperty("tool_choice");
