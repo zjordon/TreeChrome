@@ -157,7 +157,12 @@ function parseResponse(
         log(`[llm] openai tool_call arguments 解析失败，丢弃调用：${fn.name}`);
         continue; // 截断容错：不带病 args 进 canonical，消费侧自然落入文本兜底
       }
-      toolCalls.push({ id: typeof item.id === "string" ? item.id : "", name: fn.name, args });
+      // 缺失/空 id 直接丢弃：回传历史时 tool_call_id="" 会被官方端点 400 且难定位
+      if (typeof item.id !== "string" || item.id === "") {
+        log(`[llm] openai tool_call 缺失 id，丢弃调用：${fn.name}`);
+        continue;
+      }
+      toolCalls.push({ id: item.id, name: fn.name, args });
     }
   }
 
@@ -206,7 +211,8 @@ export function createOpenAICompletionsProvider(
             })),
           }
         : {}),
-      ...(req.toolChoice?.kind === "forced"
+      // ChatRequest 契约：tools 为 null 时忽略 toolChoice——孤立 tool_choice 会被端点 400
+      ...(req.toolChoice?.kind === "forced" && req.tools !== null
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
       // 回退链与 maxTokens 同款（请求级 ?? 卡片级）；两级都缺省不发。新契约模型

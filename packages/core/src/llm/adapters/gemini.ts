@@ -205,8 +205,9 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   const capabilities = resolveCapabilities(config);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
-    // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）
-    const url = `${stripTrailingSlash(config.baseUrl)}/v1beta/models/${config.model}:generateContent`;
+    // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
+    // model 段编码：含空格/#/? 等字符时避免 URL 截断把配置问题变形为 Invalid URL/404
+    const url = `${stripTrailingSlash(config.baseUrl)}/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
     const headers: Record<string, string> = {
       "content-type": "application/json",
       "x-goog-api-key": config.apiKey,

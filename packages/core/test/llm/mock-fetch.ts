@@ -25,8 +25,12 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
     });
   }
   const headers = new Headers(spec.headers ?? { "content-type": "application/json" });
-  const bodyText =
-    "rawBody" in spec ? spec.rawBody : spec.body === undefined ? "" : JSON.stringify(spec.body);
+  let bodyText: string;
+  if ("rawBody" in spec) {
+    bodyText = spec.rawBody;
+  } else {
+    bodyText = spec.body === undefined ? "" : JSON.stringify(spec.body);
+  }
   return Promise.resolve(
     new Response(bodyText, {
       status: spec.status,
@@ -44,7 +48,10 @@ export class MockFetch {
     this.calls.push({ url: u, init: init ?? ({} as RequestInit) });
     const next = this.queue.shift();
     if (next === undefined) {
-      // 队列耗尽即测试编排错误（不是被测行为）：立即失败并给出请求线索
+      // 队列耗尽即测试编排错误（不是被测行为）。先同步打日志再抛：postJson 会把该
+      // Error 分类成 LLMConnectionError（infra 成员），退避/fallback 路径会把它吞掉，
+      // 不打日志的话 URL 线索要到 5s 测试超时才浮出
+      console.error(`MockFetch: unexpected request ${u}（队列已耗尽，检查用例的 queueMany 编排）`);
       throw new Error(`MockFetch: unexpected request ${u}`);
     }
     return applySpec(next, init?.signal);
@@ -132,8 +139,11 @@ export class FakeClock {
       }
     }
     if (this.timers.some((tm) => tm.due <= this.t)) {
-      console.warn(
-        `FakeClock.advance: ${MAX_ROUNDS} 轮内未收敛，仍有到期 sleep 未触发（调大 MAX_ROUNDS/MICROTASK_FLUSH 或检查链路）`,
+      // fail fast：未收敛时到期 sleep 永不 resolve，等 vitest 超时只会把编排问题
+      // 掩蔽成 5s 挂起——直接抛出并携带 due/t 线索
+      const stuck = this.timers.filter((tm) => tm.due <= this.t).map((tm) => tm.due);
+      throw new Error(
+        `FakeClock.advance: ${MAX_ROUNDS} 轮内未收敛，仍有到期 sleep 未触发（due=[${stuck.join(", ")}], t=${this.t}；调大 MAX_ROUNDS/MICROTASK_FLUSH 或检查链路）`,
       );
     }
   }

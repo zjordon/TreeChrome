@@ -6,8 +6,8 @@ export default defineConfig({
     environment: "node",
     coverage: {
       provider: "v8",
-      // 默认开启：让 `pnpm test` 也执行覆盖率门禁（不依赖调用方记得加 --coverage）
-      enabled: true,
+      // 门禁由 package.json 的 test 脚本（vitest run --coverage）显式开启——config 层
+      // 不默认 enabled：单文件调试/watch 模式下未执行源文件按 0% 计入会假性卡死阈值
       include: ["src/**/*.ts"],
       // 纯类型声明文件，无运行时代码，不参与覆盖率统计（types.ts 含 assertValidMessages，
       // 是运行时代码，不在此列）

@@ -125,3 +125,15 @@ smoke 产物摘要：
 - #17 敏感值占位扩展到 toolResult.text——Python `_filter_sensitive_in_messages` 明确只处理 text block（P5 parity），修改属上游契约变更；已在函数注释记录取舍，P4 接 SecretProvider 时一并裁决。
 - #7 的"折叠骨架参数化共享"子项——两协议折叠的块形状/排序语义不同，抽象收益低于可读性损失；仅抽公共小件（isRecord/stripTrailingSlash/defaultTestConnection）。
 - #12 仅部分采纳：MockFetch 删除未用的 expect/expectFor；queueMany 耗尽抛错保留为编排失败信号。
+
+### 评审轮 2（review-p2-llm-client-2.json，2026-09-23，17 条）
+
+采纳 16 条 / 驳回 1 条（#15 行为改动，按其备选方案登记取舍）。要点：
+
+- **canonical 层防御前移**：toolResult 的 toolName 与配对 toolCall.name 一致性校验（gemini 按 name 关联，失配不再发到端点才 400）；anthropic/openai 缺失/空 id 的 tool_call 丢弃+log（回传历史 id="" 会被官方端点 400）；tool_choice 补 `tools !== null` 守卫（孤立 tool_choice 400，与 gemini 对齐）。
+- **错误分型补洞**：错误响应体读取阶段的超时按超时分型（原 `.catch(()=>\"\")` 会把超时误报为状态码错误 → 不可重试 + 误触 fallback）；fallback 卡片构造失败不再掩盖触发切换的原始错误（cause 保留根因，分罪不变形）。
+- **视觉白名单边界收紧（偏离 Python，已注释+测试锁定）**：`v`/`flash` 后加 `(?![a-z0-9])`——glm-4voice 类伪型号不再误判视觉；真实型号（v 后结尾或连字符）不受影响。Python 无此断言，属有意偏离。
+- **工具链**：gemini model 路径段 encodeURIComponent；覆盖率门禁收敛到 package.json test 脚本（单文件/watch 不再被全局阈值假性卡死）；FakeClock 未收敛改 throw（fail fast 带 due/t 线索）；MockFetch 队列耗尽先 console.error（防被 ConnectionError 分类吞掉线索）；嵌套三元改 if/else；common.ts 死类型删除；schema-sanitize 复用 common.isRecord；敏感值还原侧对称滤空键。
+- **驳回 #15**（滤图改纯能力驱动）：白名单外真视觉模型（qwen-vl/gpt-4o）缺省 supportsVision=false，恒滤图会把图从视觉模型静默剥掉——比现状更糟；按评审备选方案登记到 03 §4 偏离清单第 9 条，宿主侧用白名单外主卡时显式声明 capabilities。
+
+测试 173 例全绿（覆盖率 97.04%）。

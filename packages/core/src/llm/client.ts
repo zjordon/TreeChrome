@@ -290,6 +290,10 @@ export class LLMClient {
     tool: ToolDefinition,
     signal: AbortSignal,
   ): ChatRequest {
+    // 仅 fallback 切换后滤图（Python _strip_image_blocks 同款），主卡不滤——有意取舍：
+    // 白名单外的主卡（如 qwen-vl/gpt-4o 等真视觉模型缺省 supportsVision=false）恒滤图
+    // 会把图从视觉模型上静默剥掉，比"文本主卡带图静默致盲"更糟；主卡文本模型应显式
+    // 配 capabilities.supportsVision=false 之外的路径由宿主决策（03 §3.5 登记取舍）
     if (this.usingFallback && !this.provider.capabilities.supportsVision) {
       stripImageBlocks(work, this.config.name);
     }
@@ -366,7 +370,16 @@ export class LLMClient {
       return false;
     }
     this.config = this.fallbackConfig;
-    this.provider = createProvider(this.config, this.deps);
+    try {
+      this.provider = createProvider(this.config, this.deps);
+    } catch (switchErr) {
+      // 保留根因：fallback 卡片构造失败（如反序列化来的非法 protocol）不能掩盖触发
+      // 切换的原始错误——终点异常类型是 step 分罪依据，cause 挂原始 err
+      throw new LLMInvalidRequestError(
+        `fallback 卡片初始化失败（${this.config.name}）：${switchErr instanceof Error ? switchErr.message : String(switchErr)}`,
+        { provider: this.config.name, cause: err },
+      );
+    }
     this.usingFallback = true;
     this.deps.log(
       `[llm] Switched to fallback LLM: ${this.config.model} (due to ${err.name}: ${err.message})`,

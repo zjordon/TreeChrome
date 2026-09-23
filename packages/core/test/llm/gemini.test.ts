@@ -283,6 +283,19 @@ describe("请求构造（canonical → wire）", () => {
       { role: "user", parts: [{ text: "first" }, { text: "second" }] },
     ]);
   });
+
+  it("model 路径段编码：异常字符不截断 URL（配置问题不变形为 Invalid URL/404）", async () => {
+    const { mock, provider } = setup({ model: "gemini 2.5#x" });
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(mock.calls[0].url).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini%202.5%23x:generateContent",
+    );
+  });
 });
 
 describe("响应解析（wire → canonical）", () => {

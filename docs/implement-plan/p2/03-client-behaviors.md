@@ -169,6 +169,7 @@ user: "Your previous response contained no action. Respond now with the
 | 6 | **openai args guard-parse** | （anthropic 原生无此问题） | 字符串解析失败的 toolCall 丢弃+warn，落文本兜底 | webbrain 已踩：截断 args 的 JSON.parse 抛错会永久毒化后续请求 |
 | 7 | **temperature 缺省不发** | 不发（create kwargs 无 temperature） | 同（webbrain 的 0.7 默认不采纳） | 非偏离，写明防"顺手补默认值" |
 | 8 | **单文件非递归实现** | 梯子靠递归 get_action | 循环 + 计数器 | 语义同（防递归标志即计数器），可读性/栈深更优 |
+| 9 | **滤图仍限 fallback 切换后**（评审轮 2 登记） | `_strip_image_blocks` 仅在 fallback 切到无视觉模型时执行（主卡隐含恒为 claude 视觉模型） | 同款 `usingFallback && !supportsVision`；**主卡不滤** | 改为纯能力驱动（主卡 !supportsVision 即滤）有反向风险：白名单外的真视觉模型（qwen-vl/gpt-4o 等）缺省 supportsVision=false，恒滤图会把图从视觉模型上静默剥掉。宿主用白名单外主卡时应显式声明 `capabilities.supportsVision` |
 
 ## 5. 不移植项（Python 有、P2 明确不要）
 

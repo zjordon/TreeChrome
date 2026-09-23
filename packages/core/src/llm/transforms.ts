@@ -125,9 +125,9 @@ export function restoreSensitiveInOutput<T>(
     return output;
   }
   // entries 是 real→placeholder，还原方向取反（顺序仍按插入序，与 Python dict 一致）；
-  // 滤空键（空占位符同样会让 replaceAll 逐字符插入，损坏全文）
+  // 与请求侧对称地滤除空 real 键与空占位符键（replaceAll('', x) 逐字符插入会损坏全文）
   const reversed = Object.entries(sensitiveMap)
-    .filter(([, placeholder]) => placeholder !== "")
+    .filter(([real, placeholder]) => real !== "" && placeholder !== "")
     .map(([real, placeholder]) => [placeholder, real] as const);
   return restoreInStrings(output, reversed) as T;
 }

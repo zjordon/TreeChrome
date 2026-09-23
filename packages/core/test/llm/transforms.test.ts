@@ -124,14 +124,16 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     expect(firstText(messages[0])).toBe("my key <KEY1> and <KEY2> both");
   });
 
-  it("空字符串键跳过（replaceAll('', x) 会逐字符插入占位符损坏全文）；空占位符还原侧同理", () => {
+  it("空字符串键跳过（replaceAll('', x) 会逐字符插入占位符损坏全文）；还原侧对称滤除", () => {
     const messages: ChatMessage[] = [userMsg("keep this intact")];
     applySensitiveInMessages(messages, { "": "<BAD>", keep: "<K>" });
     expect(firstText(messages[0])).toBe("<K> this intact");
-    // 还原侧：空 real 键与空占位符键都被滤除，文本原样
+    // 还原侧：空 real 键与空占位符键都被滤除（请求侧对称），文本原样——
+    // 含模型回显 "<BAD>" 的输入也不被静默改写
     expect(restoreSensitiveInOutput({ v: "x secret" }, { "": "<BAD>", secret: "" })).toEqual({
       v: "x secret",
     });
+    expect(restoreSensitiveInOutput({ v: "<BAD> x" }, { "": "<BAD>" })).toEqual({ v: "<BAD> x" });
   });
 
   it("restore：占位符还原真实值（锚定输出）", () => {

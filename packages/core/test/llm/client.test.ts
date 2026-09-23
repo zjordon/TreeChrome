@@ -9,6 +9,7 @@ import {
   LLMAuthError,
   LLMConnectionError,
   LLMError,
+  LLMInvalidRequestError,
   LLMRateLimitError,
   LLMTimeoutError,
 } from "../../src/index.js";
@@ -460,6 +461,48 @@ describe("deadline 与取消", () => {
         timeoutMs: 60,
       }),
     ).rejects.toBeInstanceOf(LLMTimeoutError);
+  });
+
+  it("错误响应体读取阶段超时 → 仍按超时分型（不被状态码 400 误报为不可重试/触发切换）", async () => {
+    const hangingErrorBodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+      return {
+        ok: false,
+        status: 400,
+        headers: new Headers(),
+        text: () =>
+          new Promise<string>((_resolve, reject) => {
+            const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+            if (init?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            init?.signal?.addEventListener("abort", onAbort, { once: true });
+          }),
+      } as unknown as Response;
+    }) as typeof fetch;
+    const provider = createProvider(CARD, { fetch: hangingErrorBodyFetch, log: () => {} });
+    await expect(
+      provider.chat({
+        systemPrompt: null,
+        messages: msgs(),
+        tools: null,
+        timeoutMs: 60,
+      }),
+    ).rejects.toBeInstanceOf(LLMTimeoutError);
+  });
+
+  it("fallback 卡片构造失败（非法 protocol）→ LLMInvalidRequestError 且 cause 保留触发切换的原始错误", async () => {
+    const { mock, clock, client } = setup({
+      fallback: { ...FALLBACK, protocol: "bogus" as ProviderConfig["protocol"] },
+    });
+    mock.queueMany(r429());
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0); // 429 → 尝试切换 → fallback 卡片构造抛
+    const err = await p.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMInvalidRequestError);
+    expect((err as LLMInvalidRequestError).message).toContain("fallback 卡片初始化失败");
+    expect((err as LLMInvalidRequestError).cause).toBeInstanceOf(LLMRateLimitError);
+    expect(mock.calls.length).toBe(1);
   });
 
   it("过期窗口不清除会拖垮后续调用；setCallWindow(null) 清除后恢复", async () => {

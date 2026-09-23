@@ -138,10 +138,12 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
         throw violation("assistant 的 blocks 与 toolCalls 同时为空");
       }
       if (calls.length > 0) {
-        const expected = new Set(calls.map((c) => c.id));
-        // Set 按 id 去重会让重复 id 的 toolCalls 一条结果即"恰好配对"假性通过，
+        // id→name 映射：配对校验同时要求 toolName 与 toolCall.name 一致——
+        // gemini 的 functionResponse 按 name 关联，失配发到端点才 400（canonical 层拦截）
+        const callsById = new Map(calls.map((c) => [c.id, c.name]));
+        // Map 按 id 去重会让重复 id 的 toolCalls 一条结果即"恰好配对"假性通过，
         // 而适配器折叠同样按 id 建 Map——重复 id 下校验结论与 wire 输出会不一致
-        if (expected.size !== calls.length) {
+        if (callsById.size !== calls.length) {
           throw violation("assistant 的 toolCalls 存在重复 id");
         }
         const seen = new Set<string>();
@@ -151,9 +153,15 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
           if (cur.role !== "toolResult") {
             break;
           }
-          if (!expected.has(cur.toolCallId)) {
+          const pairedName = callsById.get(cur.toolCallId);
+          if (pairedName === undefined) {
             throw violation(
               `孤儿 toolResult（toolCallId=${cur.toolCallId} 不在紧邻 assistant 的 toolCalls 中）`,
+            );
+          }
+          if (pairedName !== cur.toolName) {
+            throw violation(
+              `toolResult（toolCallId=${cur.toolCallId}）的 toolName=${cur.toolName} 与配对 toolCall 的 name=${pairedName} 不一致`,
             );
           }
           if (seen.has(cur.toolCallId)) {
@@ -162,8 +170,8 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
           seen.add(cur.toolCallId);
           j += 1;
         }
-        if (seen.size !== expected.size) {
-          throw violation(`assistant 的 ${expected.size} 个 toolCall 仅收到 ${seen.size} 条结果`);
+        if (seen.size !== callsById.size) {
+          throw violation(`assistant 的 ${callsById.size} 个 toolCall 仅收到 ${seen.size} 条结果`);
         }
         i = j;
       } else {

@@ -2,7 +2,6 @@
 // 折叠连续 toolResult、块形状转换等协议差异逻辑不在此抽象（改一漏二的风险主要来自
 // 逐字重复的小件与完全同构的探测逻辑）。
 
-import type { LLMProvider } from "../provider.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
@@ -34,6 +33,3 @@ export async function defaultTestConnection(
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
-
-export type ProviderChat = (req: ChatRequest) => Promise<ChatResponse>;
-export type TestConnectionResult = Awaited<ReturnType<LLMProvider["testConnection"]>>;

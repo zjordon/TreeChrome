@@ -134,6 +134,17 @@ describe("assertValidMessages · 违例序列", () => {
     );
   });
 
+  it("toolResult 的 toolName 与配对 toolCall 的 name 不一致 → 拒绝（gemini 按 name 关联）", () => {
+    expectViolation(
+      [
+        user("q"),
+        assistant({ toolCalls: [{ id: "t1", name: "agent_response", args: {} }] }),
+        { role: "toolResult", toolCallId: "t1", toolName: "other_tool", text: "ok" },
+      ],
+      "不一致",
+    );
+  });
+
   it("toolCall 缺结果（2 个调用只回 1 条）", () => {
     expectViolation(
       [

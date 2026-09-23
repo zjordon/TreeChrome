@@ -51,6 +51,21 @@ describe("modelSupportsVision（Python 锚定边界集）", () => {
   });
 });
 
+describe("modelSupportsVision 边界收紧（评审轮 2，偏离 Python）", () => {
+  // Python 无 (?![a-z0-9]) 断言——glm-4voice 会被误判 true。真实型号（v 后为结尾或
+  // 连字符）不受影响；伪型号收紧为 false，防"跳过滤图把图发给文本模型"的静默致盲
+  it.each([
+    ["glm-4voice", false],
+    ["glm-5vx", false],
+    ["glm-5.3-flashx", false],
+    ["glm-5.3-flash-pro", true], // 连字符后缀变体仍按多模态
+    ["glm-4v-flash", true],
+    ["glm-4.5v-plus", true],
+  ] as const)("%s → %s", (model, expected) => {
+    expect(modelSupportsVision(model)).toBe(expected);
+  });
+});
+
 describe("resolveCapabilities", () => {
   it("缺省：tools/forced 恒 true，vision 走白名单", () => {
     const caps = resolveCapabilities(card({ model: "glm-5.1" }));

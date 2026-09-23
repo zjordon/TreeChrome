@@ -159,8 +159,13 @@ function parseResponse(
       reasoningText += item.thinking;
     } else if (item.type === "tool_use") {
       if (typeof item.name === "string" && requestedNames.has(item.name)) {
+        // 缺失/空 id 直接丢弃：回传历史时 tool_use id="" 会被官方端点 400 且难定位
+        if (typeof item.id !== "string" || item.id === "") {
+          log(`[llm] anthropic tool_use 缺失 id，丢弃调用：${item.name}`);
+          continue;
+        }
         toolCalls.push({
-          id: typeof item.id === "string" ? item.id : "",
+          id: item.id,
           name: item.name,
           args: isRecord(item.input) ? item.input : {},
         });
@@ -198,8 +203,11 @@ export function createAnthropicProvider(
       "anthropic-dangerous-direct-browser-access": "true",
       ...config.extraHeaders,
     };
+    // ChatRequest 契约：tools 为 null 时忽略 toolChoice——孤立 tool_choice 会被端点 400
     const toolChoice =
-      req.toolChoice?.kind === "forced" ? { type: "tool", name: req.toolChoice.name } : undefined;
+      req.toolChoice?.kind === "forced" && req.tools !== null
+        ? { type: "tool", name: req.toolChoice.name }
+        : undefined;
     const body: Record<string, unknown> = {
       model: config.model,
       max_tokens: req.maxTokens ?? config.maxTokens,

@@ -6,9 +6,7 @@
 // 键名与 type 值做归一化（小写键写入、联合类型拆 nullable）——只清洗 schema 键，
 // properties 下的属性名原样保留。
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
+import { isRecord } from "./common.js";
 
 const ALLOWED_KEYS = new Set([
   "type",

@@ -256,6 +256,46 @@ describe("响应解析（wire → canonical）", () => {
     expect(guarded.stopReason).toBe("length"); // finish_reason 仍归一，不因丢弃变形
   });
 
+  it('tool_call 缺失/空 id → 丢弃（回传历史 tool_call_id="" 会被官方端点 400）', async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                { type: "function", function: { name: "agent_response", arguments: "{}" } },
+                { id: "", type: "function", function: { name: "agent_response", arguments: "{}" } },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([]);
+  });
+
+  it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "stop" }] },
+    });
+    await provider.chat({
+      ...baseReq(),
+      tools: null,
+      toolChoice: { kind: "forced", name: "x" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
+
   it("content 文本 + reasoning_content 捕获；usage cached_tokens 可选", async () => {
     const { mock, provider } = setup();
     mock.queueMany({

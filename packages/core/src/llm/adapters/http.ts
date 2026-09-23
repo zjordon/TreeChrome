@@ -152,7 +152,20 @@ export async function postJson(
   }
 
   if (!resp.ok) {
-    const raw = await resp.text().catch(() => "");
+    let raw = "";
+    try {
+      raw = await resp.text();
+    } catch (e) {
+      // 错误体读取阶段的超时仍按超时分型（LLMTimeoutError/infra 可重试）——吞成
+      // 空体会把超时误报为状态码错误（4xx 不可重试且会触发 fallback 切换）。
+      // 非超时的读体失败（连接中断等）保持状态码错误优先、空体兜底
+      if (isAbortError(e) && timeoutSignal?.aborted) {
+        throw new LLMTimeoutError(`请求超时（${init.timeoutMs}ms）：${url}`, {
+          provider: init.provider,
+          cause: e,
+        });
+      }
+    }
     throw statusToError(resp.status, raw, resp.headers.get("retry-after"), init.provider);
   }
   let text: string;

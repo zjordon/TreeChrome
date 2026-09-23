@@ -43,6 +43,9 @@ export interface ProviderConfig {
  *   - glm-<n>[.n]*v* 家族（glm-4v / 4.1v / 4.5v / 4.6v / 5v…）
  *   - glm-5.3-flash（GLM-5 系列首个原生多模态）
  * 名单外（glm-5.1 / 5.2 / 5.3、glm-4.x 无 v 等）一律 false。
+ *
+ * 与 Python 的唯一偏离（评审轮 2）：v / flash 后加 (?![a-z0-9]) 边界——Python 无此
+ * 断言，glm-4voice 类伪型号会误判为视觉（跳过滤图 → 静默致盲）。真实型号不受影响。
  */
 export function modelSupportsVision(model: string | null | undefined): boolean {
   const m = (model ?? "").trim().toLowerCase();
@@ -52,10 +55,13 @@ export function modelSupportsVision(model: string | null | undefined): boolean {
   if (m.startsWith("claude-")) {
     return true;
   }
-  if (/^glm-\d+(\.\d+)*v/.test(m)) {
+  // 边界断言是 TS 侧收紧（评审轮 2）：Python 无 (?![a-z0-9])，glm-4voice 类伪型号会被
+  // 误判为视觉 → 跳过滤图把 image 发给文本模型（智谱静默致盲）。真实型号（v 后为
+  // 结尾或连字符，如 glm-4v / glm-4.5v-plus / glm-4v-flash）匹配不受影响
+  if (/^glm-\d+(\.\d+)*v(?![a-z0-9])/.test(m)) {
     return true;
   }
-  return m.startsWith("glm-5.3-flash");
+  return /^glm-5\.3-flash(?![a-z0-9])/.test(m);
 }
 
 /**

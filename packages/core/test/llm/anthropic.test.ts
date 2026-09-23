@@ -301,6 +301,34 @@ describe("响应解析（wire → canonical）", () => {
     });
   });
 
+  it('tool_use 缺失/空 id → 丢弃（回传历史 id="" 会被官方端点 400）', async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        content: [
+          { type: "tool_use", name: "agent_response", input: { a: 1 } },
+          { type: "tool_use", id: "", name: "agent_response", input: { b: 2 } },
+        ],
+        stop_reason: "tool_use",
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([]);
+  });
+
+  it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { content: [{ type: "text", text: "t" }], stop_reason: "end_turn" },
+    });
+    await provider.chat({ ...baseReq(), tools: null, toolChoice: { kind: "forced", name: "x" } });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
+
   it.each([
     ["end_turn", "stop"],
     ["stop_sequence", "stop"],
