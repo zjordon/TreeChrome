@@ -50,7 +50,7 @@ const U0 = LONG_URL;
 const toolOk = (input: Record<string, unknown>): MockResponseSpec => ({
   status: 200,
   body: {
-    content: [{ type: "tool_use", id: "t", name: "agent_response", input }],
+    content: [{ type: "tool_use", id: "t", name: TOOL.name, input }],
     stop_reason: "tool_use",
     usage: { input_tokens: 5, output_tokens: 7 },
   },
@@ -125,7 +125,7 @@ describe("解析优先级与公共面", () => {
       usage: { inputTokens: 5, outputTokens: 7 },
     });
     const body = mock.lastBody();
-    expect(body.tool_choice).toEqual({ type: "tool", name: "agent_response" });
+    expect(body.tool_choice).toEqual({ type: "tool", name: TOOL.name });
     expect(body.max_tokens).toBe(4096); // 缺省走卡片 maxTokens
     expect(body.system).toBe("sys");
   });
@@ -240,7 +240,12 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(wire).toContain("<KEY>");
     expect(wire).not.toContain("sk-secret");
     expect(wire).not.toContain(U0);
-    expect(r.kind === "ok" && r.toolInput).toEqual({
+    // 先锁 kind 再断言产物：短路写法在意外 empty 时失败信息只剩 "false to equal"
+    expect(r.kind).toBe("ok");
+    if (r.kind !== "ok") {
+      throw new Error("unreachable");
+    }
+    expect(r.toolInput).toEqual({
       next_goal: `open ${U0} with sk-secret`,
       action: { url: U0 },
     });
@@ -271,6 +276,8 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     // wire 仍明文（P5 parity 不动）；但暴露必须可观测
     expect(JSON.stringify(mock.lastBody())).toContain("echoed sk-secret");
     expect(logs.some((m) => m.includes("WARNING") && m.includes(TOOL.name))).toBe(true);
+    // 观测通道自身不得成为泄露点：WARNING 中不得出现敏感明文
+    expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
   });
 });
 
@@ -410,7 +417,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
                 {
                   id: "c1",
                   type: "function",
-                  function: { name: "agent_response", arguments: '{"via":"openai"}' },
+                  function: { name: TOOL.name, arguments: '{"via":"openai"}' },
                 },
               ],
             },
@@ -432,7 +439,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     expect(mock.calls[1].url).toContain("fallback.example/v1/chat/completions");
     const fb = mock.bodyAt(1);
     expect(fb.model).toBe("glm-4.7");
-    expect(fb.tool_choice).toEqual({ type: "function", function: { name: "agent_response" } });
+    expect(fb.tool_choice).toEqual({ type: "function", function: { name: TOOL.name } });
     expect(fb.max_tokens).toBe(4096);
   });
 
@@ -610,8 +617,32 @@ describe("deadline 与取消", () => {
 
   it("外部 signal 恰逢错误响应体读取 → AbortError 穿透且不消耗 fallback 单向锁（评审轮 5 #12）", async () => {
     // 首请求返回 429 状态行但 body 读取挂起（真实流式读体形态）；外部取消时 http 层
-    // 会把它吞成 LLMRateLimitError——修复前该假性 429 会误触发 fallback 单向切换
-    const hanging429BodyFetch = hangingBodyFetch(false, 429, { "retry-after": "5" });
+    // 会把它吞成 LLMRateLimitError——修复前该假性 429 会误触发 fallback 单向切换。
+    // 确定性同步：text() 首次调用即打点，await 打点后再 abort——钉死「恰逢读体挂起」
+    // 的测试意图，不依赖真实定时器时序
+    let markBodyRead: () => void = () => {};
+    const bodyReadStarted = new Promise<void>((resolve) => {
+      markBodyRead = resolve;
+    });
+    const hanging429BodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+      return {
+        ok: false,
+        status: 429,
+        headers: new Headers({ "retry-after": "5" }),
+        text: () => {
+          markBodyRead();
+          return new Promise<string>((_resolve, reject) => {
+            const onAbort = () =>
+              reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+            if (init?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            init?.signal?.addEventListener("abort", onAbort, { once: true });
+          });
+        },
+      } as unknown as Response;
+    }) as typeof fetch;
     const normal = new MockFetch();
     normal.queueMany(toolOk({ ok: 1 }));
     let firstCall = true;
@@ -628,7 +659,7 @@ describe("deadline 与取消", () => {
     );
     const ctrl = new AbortController();
     const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
-    await new Promise((resolve) => setTimeout(resolve, 10)); // 让链跑到错误体读取挂起
+    await bodyReadStarted; // 链已确定性到达错误体读取挂起
     ctrl.abort();
     const err = await p.catch((e: unknown) => e);
     expect((err as DOMException).name).toBe("AbortError");
@@ -638,6 +669,48 @@ describe("deadline 与取消", () => {
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
     expect(normal.calls[0].url).toContain("primary.example");
+  });
+
+  it("外部取消与 deadline 到点竞态 → 外部取消优先穿透，不变形为 LLMTimeoutError（评审轮 9 #8）", async () => {
+    // 拒绝延迟一个真实宏任务：让 FakeClock 的 deadline watcher 先翻位 windowExpired，
+    // 构造「外部 abort 在前、deadline 恰在异常 unwind 期间到点」的临界——修复前
+    // 取消被变形为 LLMTimeoutError，污染 step 层按异常类型分罪的依据
+    const delayedAbortFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: () =>
+          new Promise<string>((_resolve, reject) => {
+            const onAbort = () =>
+              setTimeout(
+                () => reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError")),
+                0,
+              );
+            if (init?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            init?.signal?.addEventListener("abort", onAbort, { once: true });
+          }),
+      } as unknown as Response;
+    }) as typeof fetch;
+    const clock = new FakeClock();
+    const client = createLLMClient(CARD, {
+      fetch: delayedAbortFetch,
+      now: clock.now,
+      sleep: clock.sleep,
+      log: () => {},
+    });
+    client.setCallWindow(1); // deadline = t+1（watcher 经注入 sleep 注册）
+    const ctrl = new AbortController();
+    const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
+    await clock.advance(0); // 冲刷：fetch 在飞（text 挂起）、watcher 注册（due t+1）
+    ctrl.abort(); // 外部取消 → ladder signal abort → 桩安排宏任务延迟 reject
+    await clock.advance(1); // watcher 到点翻位 windowExpired（reject 尚未送达）
+    const err = await p.catch((e: unknown) => e);
+    expect((err as DOMException).name).toBe("AbortError");
+    expect(err).not.toBeInstanceOf(LLMError);
   });
 
   it("外部 signal 在退避 sleep 期间 abort → AbortError 原样穿透（不吞、不变形、不重试）", async () => {
@@ -686,7 +759,9 @@ describe("缺省 deps（真时钟：now=performance.now，sleep=setTimeout 包�
     mock.queueMany(r429("5")); // 5s 退避 → 缺省 sleep 挂起
     const ctrl = new AbortController();
     const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
-    await new Promise((resolve) => setTimeout(resolve, 10)); // 让链跑到 sleep
+    // 任一宏任务边界前微任务必排空：fetch 回放（同步 resolve）到 sleep 注册全链是
+    // 微任务，10ms 定时器触发时链已确定到达 sleep 挂起——不是时序赌注
+    await new Promise((resolve) => setTimeout(resolve, 10));
     ctrl.abort();
     const err = await p.catch((e: unknown) => e);
     expect((err as DOMException).name).toBe("AbortError");

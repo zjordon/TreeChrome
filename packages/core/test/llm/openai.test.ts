@@ -188,6 +188,13 @@ describe("请求构造（canonical → wire）", () => {
     await declared.provider.chat(baseReq());
     expect(declared.mock.lastBody()).toHaveProperty("max_tokens");
     expect(declared.mock.lastBody()).not.toHaveProperty("max_completion_tokens");
+
+    // gpt-oss 系（reasoning 模型，2025-08 起在售）同样拒收 max_tokens——轮 9 补入前缀
+    const oss = setup({ model: "gpt-oss-120b" });
+    oss.mock.queueMany(toolOk("{}"));
+    await oss.provider.chat(baseReq());
+    expect(oss.mock.lastBody()).toHaveProperty("max_completion_tokens");
+    expect(oss.mock.lastBody()).not.toHaveProperty("max_tokens");
   });
 
   it("tools null / temperature 显式 / maxTokens 请求级覆盖", async () => {

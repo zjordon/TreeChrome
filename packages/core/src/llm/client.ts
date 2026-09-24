@@ -43,6 +43,15 @@ const INFRA_BACKOFF_CAP_SEC = 30.0;
 const INFRA_BUDGET_DEFAULT_SEC = 90.0;
 /** 窗口派生预算下限（Python set_llm_window 的 max(30.0, t*0.75)） */
 const WINDOW_BUDGET_FLOOR_MS = 30_000;
+/** 窗口派生预算比率（Python set_llm_window 的 t*0.75） */
+const WINDOW_BUDGET_RATIO = 0.75;
+/**
+ * 单次 HTTP 请求缺省超时（毫秒）：仅当调用方既未传 timeoutMs 也未 setCallWindow
+ * （无梯子 deadline）时兜底——挂死请求（TCP 黑洞/网关不回包）不会无限阻塞。
+ * 对齐 Anthropic/OpenAI SDK 的缺省请求超时 600s：Python 侧同款上界来自 SDK，
+ * 梯子总时长仍无上界（对齐 get_action，上界由 step 层提供）
+ */
+const CHAT_HTTP_TIMEOUT_DEFAULT_MS = 600_000;
 
 export interface GetActionOptions {
   /**
@@ -54,8 +63,10 @@ export interface GetActionOptions {
   sensitiveMap?: Record<string, string>;
   /**
    * 本次 getAction 的墙钟预算（毫秒）。梯子内全部请求与 sleep 共享。
-   * 调用契约：无 timeoutMs 且未 setCallWindow 时梯子**无内部时长上界**（对齐
+   * 调用契约：无 timeoutMs 且未 setCallWindow 时梯子**总时长无内部上界**（对齐
    * Python get_action——上界由 step 层的外层 wait_for 提供）；P4 step 恒传。
+   * 单次 HTTP 请求仍有 600s 缺省超时兜底（CHAT_HTTP_TIMEOUT_DEFAULT_MS，对齐
+   * SDK 缺省），挂死请求不会无限阻塞。
    */
   timeoutMs?: number;
   /** 外部取消（step 停止）。穿透所有内部调用，不被吞（#186 教训） */
@@ -172,7 +183,7 @@ export class LLMClient {
       return;
     }
     this.windowDeadline = this.deps.now() + timeoutMs;
-    this.windowBudgetCapMs = Math.max(WINDOW_BUDGET_FLOOR_MS, timeoutMs * 0.75);
+    this.windowBudgetCapMs = Math.max(WINDOW_BUDGET_FLOOR_MS, timeoutMs * WINDOW_BUDGET_RATIO);
   }
 
   async getAction(
@@ -218,6 +229,10 @@ export class LLMClient {
         },
       );
     }
+    // 无梯子 deadline 时给单次请求挂保守缺省超时：调用方漏传 timeoutMs 且未
+    // setCallWindow 的失败模式不该是无限挂死（TCP 黑洞/网关不回包无超时无错误）。
+    // 有 deadline 时由 ladder signal 负责到点强杀，不重复设
+    const httpTimeoutMs = deadlineAt === undefined ? CHAT_HTTP_TIMEOUT_DEFAULT_MS : undefined;
 
     try {
       // 1. 请求侧变换：全部落在 work 副本（03 偏离 1：不原地改调用方消息）
@@ -247,7 +262,7 @@ export class LLMClient {
       for (;;) {
         // 2+3. 组装请求（承重墙在此分支）并经退避层发送
         const response = await this.callWithBackoff(() =>
-          this.buildChatRequest(systemPrompt, work, tool, controller.signal),
+          this.buildChatRequest(systemPrompt, work, tool, controller.signal, httpTimeoutMs),
         );
 
         // 4. 解析优先级：目标工具调用 → 文本 JSON 兜底 → R4 → R1
@@ -295,7 +310,10 @@ export class LLMClient {
         return { kind: "empty" };
       }
     } catch (e) {
-      if (isAbortError(e) && windowExpired) {
+      // 外部取消优先分类：外部 abort 先发生、deadline 恰在异常 unwind 期间到点时
+      // windowExpired 已翻 true，会把取消变形为 LLMTimeoutError（#186 不变形契约）。
+      // 二者竞态同时触发时按外部取消处理（穿透原样上抛）
+      if (isAbortError(e) && windowExpired && !external?.aborted) {
         throw new LLMTimeoutError(
           `getAction 窗口预算到期（deadline=${deadlineAt !== undefined ? Math.round(deadlineAt) : "?"}ms）`,
           { provider: this.config.name, cause: e },
@@ -332,6 +350,7 @@ export class LLMClient {
     work: ChatMessage[],
     tool: ToolDefinition,
     signal: AbortSignal,
+    httpTimeoutMs: number | undefined,
   ): ChatRequest {
     // 滤图条件（评审轮 4 修订，03 §4 偏离 9）：
     // - 当前卡（主/fallback 皆可）**显式声明** supportsVision=false → 恒滤——声明即生效，
@@ -371,7 +390,15 @@ export class LLMClient {
     } else {
       sys += noToolsConstraint(tool);
     }
-    return { systemPrompt: sys, messages: work, tools, toolChoice, signal };
+    return {
+      systemPrompt: sys,
+      messages: work,
+      tools,
+      toolChoice,
+      signal,
+      // 无梯子 deadline 时的单请求兜底超时（undefined = 由 ladder signal 强杀）
+      timeoutMs: httpTimeoutMs,
+    };
   }
 
   /**

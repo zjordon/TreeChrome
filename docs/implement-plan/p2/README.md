@@ -86,7 +86,7 @@
 |---|---|---|
 | 1 | 智谱 Anthropic 兼容端点与官方规格的偏差（thinking 块、stop_reason、usage 字段） | 2.5 smoke 实测锚定，不猜；wire fixtures 以实测样本为准修订 |
 | 2 | 开源兼容端点（vLLM/Ollama 形态）对 forced tool_choice 支持参差 | 承重墙路径（prompt 约束 + JSON 兜底）是 2.3 的专项验收用例；capabilities 由 provider 卡片显式声明 |
-| 3 | gemini 真机差异：schema 子集（`$schema`/`additionalProperties` 等键不被接受）、thinking 模型 thoughtSignature 回传 | 适配器白名单清洗 + 删除键告警（02 §5.3，轮 6 补观测）；thoughtSignature 透传已按官方规格实现（轮 6 #17）；smoke 只测智谱两端点，gemini 真机验证顺延到有 key 时（2.4 验收以 mock 为准，标注待实测） |
+| 3 | gemini 真机差异：schema 子集（`$schema`/`additionalProperties` 等键不被接受）、thinking 模型 thoughtSignature 回传 | 适配器白名单清洗 + 清洗事件告警（02 §5.3，轮 6/9 补观测与收口）；thoughtSignature 透传已按官方规格实现（轮 6 #17）——**真机核对项（轮 9 #11）**：官方 GenAI SDK 把签名附到下一回合 functionResponse part，当前实现在 functionCall part 上回传，若真机按 functionResponse 校验需调整位置；smoke 只测智谱两端点，gemini 真机验证顺延到有 key 时 |
 | 4 | P2/P4 哨兵契约返工：P4 快照审查时 step 梯子语义若与 `{kind:"empty"}` 不匹配 | 03 §4 偏离清单已写明契约意图；P4 启动检查点重新对照 client.py |
 | 5 | 外部取消穿透（用户 stop 时 SW 被杀/信号竞争） | `AbortSignal` 全链路传递，取消异常不吞（Python #186 教训）；单测有用例 |
 | 6 | 文档冻结后协议漂移（官方 API 演进） | 02 头部声明"以本仓 fixtures + smoke 为准，文档是导航不是权威"；fixtures 更新须在提交信息注明 |
@@ -223,3 +223,17 @@ smoke 产物摘要：
 - **测试打磨（#1/#6/#7/#9/#12）**：schema 告警断言与文案解耦（只锁键名序列：去重/归一化/首现序）；client.test 抽 setupWithLogs/setupRealClock 变体收敛 5 处手工样板；补 r500 镜像用例（无 fallback 直抛 LLMServerError 1 次请求 / 有 fallback 触发切换——5xx 独立分类在行为层锁定）；anthropic 六状态矩阵改 instanceof-only + 429 单点 message 抽样（message 提取属 http 层职责，与 http.test 分工对齐）；滤图去重用例第二次调用改用带图消息（原无图调用测不到去重，删掉 loggedImageFilter 也能通过）。
 
 测试 222 例全绿（覆盖率 97.94%）。
+
+### 评审轮 9（review-p2-llm-client-9.json，2026-09-24，18 条）
+
+采纳 18 条。要点：
+
+- **外部取消与 deadline 竞态优先分类（#8，本轮最重要）**：windowExpired 由 deadline watcher 异步翻位——外部 abort 先发生、deadline 恰在异常 unwind 期间到点时，外部取消会被变形为 LLMTimeoutError（污染 step 层按异常类型分罪的依据，违背 #186 不变形契约）。catch 判定补 `!external?.aborted`（竞态同时触发按外部取消穿透）。回归用例以「真实宏任务延迟 reject + FakeClock deadline」确定性构造临界，已验证无修复必失败。
+- **无 deadline 时单请求 600s 兜底超时（#9）**：此前调用方漏传 timeoutMs 且未 setCallWindow 时一次挂死 fetch（TCP 黑洞）会无限阻塞——无超时无取消无错误。`CHAT_HTTP_TIMEOUT_DEFAULT_MS=600_000`（对齐 Anthropic/OpenAI SDK 缺省请求超时；Python 侧同款上界本就来自 SDK）仅在无梯子 deadline 时下发，有 deadline 时仍由 ladder signal 强杀；梯子总时长仍无上界（契约不变，JSDoc 同步）。600s 到点路径涉真实计时器不可入单测，三元逻辑由全量用例行覆盖。
+- **schema 清洗闭环与观测泛化（#13/#17）**：onDroppedKey 泛化为 onSchemaIssue（detail 字符串）——type 联合多成员窄化（string\|number→string）、items 元组窄化首元素、items/属性子 schema 非对象（含 draft-06+ 布尔 schema）归一空 schema，全部不再静默且不再原样透传被端点 400；「非对象子项原样透传」旧锚定用例随之翻转（自建 fixture 非 Python 锚定）。
+- **前缀清单现役缺口（#18）**：gpt-oss 系（2025-08 起在售 reasoning 模型）补入 NEW_CONTRACT_PREFIX——已核实兼容端点对 reasoning 模型拒收 max_tokens；补 maxTokens 双轨用例。
+- **smoke（#1/#2/#3）**：MASK_QUERY_RE 键名收 `[^&=]+`（`?api.key=`/`?auth/token=` 点斜杠键此前整条失配、token 明文漏出——假 key 网关 URL 实测掩码生效）；MESSAGES 注释独占一行（轮 6 引入的格式失误）；删冗余 label 字段（日志直接用卡片 name）。
+- **观测一致性与注释（#16/#12/#11/#10）**：gemini functionCall 非对象 part 丢弃补 log（与 name 非字符串同口径）；openai assistant 历史图块静默丢弃补协议约束注释；thoughtSignature 回传位置列入风险 3 真机核对项（官方 SDK 附在 functionResponse part，现按 functionCall part 回传）；窗口派生比率 0.75 提为 WINDOW_BUDGET_RATIO 常量。
+- **测试打磨（#4/#5/#6/#7/#14/#15）**：敏感值 WARNING 用例补反向断言（观测通道自身不得泄露明文）；client.test 的 "agent_response" 硬编码统一 TOOL.name 单源（承重墙 prompt 断言是 Python 锚定文案，保留字面）；轮 5 回归用例改「text() 打点 + await 后 abort」确定性同步（缺省 sleep 用例补微任务排空注释）；schema 告警断言注释修正（关键词+「」格式是契约的一部分，非完全解耦）；变换往返用例短路写法改分步断言；transforms.test 头注释补锚定归属（指数梯子在 client.test、retry-after 在 http.test）。
+
+测试 224 例全绿（覆盖率 97.91%）；smoke 假 key 复验（exitCode 1、`?api.key=` 点号键掩码生效）。

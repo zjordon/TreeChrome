@@ -114,24 +114,53 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     });
   });
 
-  it("非对象子项原样透传；原始 schema 不被改动", () => {
-    const original = { type: "object", properties: { n: 3, s: "x", arr: [1] }, required: null };
+  it("非对象子 schema（含 draft-06+ 布尔 schema）归一为空 schema——原样透传会被端点 400；原始 schema 不被改动", () => {
+    const original = { type: "object", properties: { n: 3, s: "x", ok: true }, required: null };
     const snapshot = JSON.parse(JSON.stringify(original)) as Record<string, unknown>;
-    expect(sanitizeGeminiSchema(original)).toEqual({
+    const issues: string[] = [];
+    expect(sanitizeGeminiSchema(original, (d) => issues.push(d))).toEqual({
       type: "object",
-      properties: { n: 3, s: "x", arr: [1] },
-      required: null,
+      properties: { n: {}, s: {}, ok: {} },
+      required: null, // 顶层 required 非 schema 形态，白名单键原样透传（不在本轮收口范围）
     });
     expect(original).toEqual(snapshot);
+    expect(issues).toEqual([
+      "属性「n」子 schema 非对象，归一为空 schema",
+      "属性「s」子 schema 非对象，归一为空 schema",
+      "属性「ok」子 schema 非对象，归一为空 schema",
+    ]);
   });
 
-  it("onDroppedKey：删除时按归一化键名上报（顶层与嵌套递归），白名单内键不报", () => {
-    const dropped: string[] = [];
+  it("type 联合多成员窄化 + items 元组/非对象收口 → 上报清洗事件（与删键同观测口径）", () => {
+    const issues: string[] = [];
+    const out = sanitizeGeminiSchema(
+      {
+        type: ["string", "number"],
+        items: [{ type: "string" }, { type: "number" }],
+      },
+      (d) => issues.push(d),
+    );
+    expect(out).toEqual({ type: "string", items: { type: "string" } });
+    const nonRecordItems = sanitizeGeminiSchema({ items: "x" }, (d) => issues.push(d));
+    expect(nonRecordItems).toEqual({ items: {} });
+    expect(issues).toEqual([
+      "type 联合窄化 string|number → string",
+      "items 元组形态窄化为首元素",
+      "items 非对象形态归一为空 schema",
+    ]);
+  });
+
+  it("onSchemaIssue：删键时按归一化键名上报（顶层与嵌套递归），白名单内键不报", () => {
+    const issues: string[] = [];
     sanitizeGeminiSchema(
       { $schema: "x", Minimum: 1, properties: { inner: { examples: [1], type: "string" } } },
-      (k) => dropped.push(k),
+      (d) => issues.push(d),
     );
-    expect(dropped).toEqual(["$schema", "minimum", "examples"]);
+    expect(issues).toEqual([
+      "删除白名单外键「$schema」",
+      "删除白名单外键「minimum」",
+      "删除白名单外键「examples」",
+    ]);
   });
 });
 
@@ -281,7 +310,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("toolConfig");
   });
 
-  it("schema 清洗删除键的告警在 provider 实例级按键名去重（同 schema 逐请求固定，重复只有噪音）", async () => {
+  it("schema 清洗事件告警在 provider 实例级去重（同 schema 逐请求固定，重复只有噪音）", async () => {
     const mock = new MockFetch();
     const logs: string[] = [];
     const provider = createGeminiProvider(CARD, { ...stubDeps(mock), log: (m) => logs.push(m) });
@@ -293,8 +322,9 @@ describe("请求构造（canonical → wire）", () => {
     mock.queueMany(fnCallOk({}), fnCallOk({}));
     await provider.chat(req);
     await provider.chat(req);
-    // 契约：白名单外键按首现序各告警一次、键名以归一化（小写）口径上报——
-    // 只断言键名序列，与告警文案解耦（措辞属可自由调整的实现细节）：
+    // 契约：删键事件按首现序各告警一次、键名以归一化（小写）口径上报。
+    // 注：关键词「白名单外键」与「」引号包裹格式是本断言契约的一部分（并非完全
+    // 文案解耦）——措辞的其余部分可自由调整：
     // $schema（顶层）、additionalproperties（顶层+嵌套 action 同名）、minimum（嵌套 action）
     const droppedKeys = logs
       .filter((m) => m.includes("白名单外键"))

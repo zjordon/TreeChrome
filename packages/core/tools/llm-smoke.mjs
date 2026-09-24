@@ -83,54 +83,56 @@ const TOOL = {
   },
 };
 
-/** 两三步消息：user → assistant(纯工具调用) → toolResult → user，覆盖 toolResult wire 路径 */ const MESSAGES =
-  [
-    {
-      role: "user",
-      blocks: [
-        {
-          kind: "text",
-          text: "You are controlling a browser. Current page: a search page with an empty search box and a submit button.",
+/** 两三步消息：user → assistant(纯工具调用) → toolResult → user，覆盖 toolResult wire 路径 */
+const MESSAGES = [
+  {
+    role: "user",
+    blocks: [
+      {
+        kind: "text",
+        text: "You are controlling a browser. Current page: a search page with an empty search box and a submit button.",
+      },
+    ],
+  },
+  {
+    role: "assistant",
+    blocks: [],
+    toolCalls: [
+      {
+        id: "t1",
+        name: "agent_response",
+        args: {
+          evaluation_previous_goal: "n/a",
+          memory: "search page loaded",
+          next_goal: "focus the search box",
+          action: { name: "click_element_by_index", params: { index: 1 } },
         },
-      ],
-    },
-    {
-      role: "assistant",
-      blocks: [],
-      toolCalls: [
-        {
-          id: "t1",
-          name: "agent_response",
-          args: {
-            evaluation_previous_goal: "n/a",
-            memory: "search page loaded",
-            next_goal: "focus the search box",
-            action: { name: "click_element_by_index", params: { index: 1 } },
-          },
-        },
-      ],
-    },
-    {
-      role: "toolResult",
-      toolCallId: "t1",
-      toolName: "agent_response",
-      text: "clicked index=1 (search box focused)",
-    },
-    {
-      role: "user",
-      blocks: [
-        {
-          kind: "text",
-          text: "The search box now has focus. Decide the next action to search for 'tree walker'.",
-        },
-      ],
-    },
-  ];
+      },
+    ],
+  },
+  {
+    role: "toolResult",
+    toolCallId: "t1",
+    toolName: "agent_response",
+    text: "clicked index=1 (search box focused)",
+  },
+  {
+    role: "user",
+    blocks: [
+      {
+        kind: "text",
+        text: "The search box now has focus. Decide the next action to search for 'tree walker'.",
+      },
+    ],
+  },
+];
 
 // —— 脱敏与错误格式化（主循环与兜底 catch 共用同一份实现，防两处口径漂移）——
 
-// URL query 掩码：SMOKE_*_BASE_URL 携带 ?token=… 时不能明文出现在任何输出面
-const MASK_QUERY_RE = /([?&][\w-]+=)[^&"'\s]+/g;
+// URL query 掩码：SMOKE_*_BASE_URL 携带 ?token=… 时不能明文出现在任何输出面。
+// 键名收非分隔符字符（[^&=]+）——网关常见 ?api.key= / ?auth/token= 形态的键含 ./，
+// 字符集过窄会让整条匹配失败、token 明文漏出
+const MASK_QUERY_RE = /([?&][^&=]+=)[^&"'\s]+/g;
 // 已知敏感头名（大小写不敏感）；extraHeaders 可注入任意名字的网关认证头，
 // 按名字拦不住——值包含 apiKey 即整体替换（双保险在 loggingFetch 内）
 const SENSITIVE_HEADERS = ["authorization", "x-api-key", "x-goog-api-key"];
@@ -169,7 +171,6 @@ async function main() {
 
   const cards = [
     {
-      label: "zhipu-openai",
       name: "zhipu-openai",
       protocol: "openai-completions",
       // || 而非 ??：`VAR= node`（shell 变量未设的常见形态）会把空串带进来，
@@ -182,7 +183,6 @@ async function main() {
       maxTokens: DEFAULT_MAX_TOKENS,
     },
     {
-      label: "zhipu-anthropic",
       name: "zhipu-anthropic",
       protocol: "anthropic-messages",
       baseUrl: process.env.SMOKE_ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
@@ -228,7 +228,7 @@ async function main() {
       );
       const ms = Date.now() - t0;
       console.log(
-        `\n== ${card.label} (${card.protocol}, model=${card.model}) → kind=${result.kind} (${ms}ms)`,
+        `\n== ${card.name} (${card.protocol}, model=${card.model}) → kind=${result.kind} (${ms}ms)`,
       );
       if (result.kind === "ok") {
         // ok 有两条路径：toolCalls 命中，或模型返回纯文本恰为非空 JSON（text-JSON
@@ -237,7 +237,7 @@ async function main() {
         if (typeof action !== "object" || action === null || typeof action.name !== "string") {
           failed = true;
           console.error(
-            `   ${card.label} ok 但 toolInput 缺 action.name（疑似 text-JSON 兜底，非工具调用）`,
+            `   ${card.name} ok 但 toolInput 缺 action.name（疑似 text-JSON 兜底，非工具调用）`,
           );
         }
         console.log("toolInput:");
@@ -247,7 +247,7 @@ async function main() {
         // empty = 解析梯子耗尽仍未产出 agent_response 调用——对 smoke 就是失败，
         // 不能静默 exitCode 0 造成假通过
         failed = true;
-        console.error(`   ${card.label} 返回 empty：解析梯子耗尽仍未产出 ${TOOL.name} 工具调用`);
+        console.error(`   ${card.name} 返回 empty：解析梯子耗尽仍未产出 ${TOOL.name} 工具调用`);
       }
     } catch (e) {
       failed = true;
@@ -255,7 +255,7 @@ async function main() {
       // 底层网络错误挂在 cause 上，丢消息即丢最关键排障信息）；消息内嵌完整 URL /
       // 网关回显的错误体——同样过 redact
       console.error(
-        `\n== ${card.label} FAILED (${Date.now() - t0}ms): ${formatErrorChain(e, redact)}`,
+        `\n== ${card.name} FAILED (${Date.now() - t0}ms): ${formatErrorChain(e, redact)}`,
       );
     }
   }

@@ -57,7 +57,10 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
     }
     if (msg.role === "assistant") {
       // 角色名是 model 不是 assistant；functionCall 与文本同 turn 并置（args 原生对象）。
-      // thoughtSignature 随 functionCall part 原样写回（不回传即 400，见 ToolCall.signature）
+      // thoughtSignature 随 functionCall part 原样写回（不回传即 400，见 ToolCall.signature）。
+      // **真机核对项（README 风险 3）**：官方 GenAI SDK 的做法是把签名附到下一回合的
+      // functionResponse part 上——若真机（尤其 Gemini 3 系 thinking）按 functionResponse
+      // 校验签名，此位置会 400，届时改为在下方 resultParts 循环内携带（tr 与 call 同循环可得）
       const parts = blocksToParts(msg.blocks);
       for (const call of msg.toolCalls ?? []) {
         parts.push({
@@ -201,6 +204,10 @@ function parseResponse(
         args: (rawArgs as Record<string, unknown>) ?? {},
         ...(signature !== undefined ? { signature } : {}),
       });
+    } else if (part.functionCall !== undefined) {
+      // functionCall 存在但非对象（网关畸形输出，如 "foo"）——与 name 非字符串同款
+      // 「丢弃留证据」口径，不静默跳过
+      log(`[llm] gemini 丢弃形态异常的 functionCall：${JSON.stringify(part.functionCall)}`);
     }
   }
   const response: ChatResponse = {
@@ -223,13 +230,13 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   const capabilities = resolveCapabilities(config);
   // 合成 id 的实例级自增序号（跨响应唯一；每 provider 从 0 起）
   let synthSeq = 0;
-  // schema 白名单外键删除告警的去重集：工具 schema 逐请求固定，同一键名重复告警只有
-  // 噪音；每键一次即保留「约束被清洗丢失」的排障线索
-  const warnedSchemaKeys = new Set<string>();
-  const onDroppedSchemaKey = (key: string): void => {
-    if (!warnedSchemaKeys.has(key)) {
-      warnedSchemaKeys.add(key);
-      deps.log(`[llm] gemini schema 清洗删除白名单外键「${key}」（该键约束丢失）`);
+  // schema 清洗事件告警的去重集：工具 schema 逐请求固定，同一事件重复告警只有
+  // 噪音；每条一次即保留「约束被清洗丢失」的排障线索
+  const warnedSchemaIssues = new Set<string>();
+  const onSchemaIssue = (detail: string): void => {
+    if (!warnedSchemaIssues.has(detail)) {
+      warnedSchemaIssues.add(detail);
+      deps.log(`[llm] gemini schema 清洗：${detail}（约束丢失，模型可能生成违反原 schema 的参数）`);
     }
   };
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
@@ -256,7 +263,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
                 functionDeclarations: req.tools.map((t) => ({
                   name: t.name,
                   description: t.description,
-                  parameters: sanitizeGeminiSchema(t.parameters, onDroppedSchemaKey),
+                  parameters: sanitizeGeminiSchema(t.parameters, onSchemaIssue),
                 })),
               },
             ],

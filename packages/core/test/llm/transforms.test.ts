@@ -27,7 +27,9 @@
 //              restore {"v": "<KEY2> and <KEY1>"} → {"v": "sk-abc and sk-abc-def"}（插入序）
 //   backoff：attempt 0..6 → [2.0, 4.0, 8.0, 16.0, 30.0, 30.0, 30.0]
 //            retry-after "5"→5.0 / "120"→60.0 / "1e2"→60.0 / "0"/"-3"/"abc"/None→回落指数 2.0
-//   （backoff 的延迟消费路径在 client.test.ts 退避组覆盖；本文件锚定纯函数。）
+//   （指数梯子的延迟消费路径在 client.test.ts 退避组锚定；retry-after 容错集在
+//    http.test.ts 的 parseRetryAfterMs 矩阵锚定；本文件只锚定 tryParseJson/
+//    shorten/sensitive 纯函数。）
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, TextBlock, UserMessage } from "../../src/index.js";
 

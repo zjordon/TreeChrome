@@ -31,7 +31,7 @@ import { postJson } from "./http.js";
  * `o1|o3|o4` 也会误匹配同前缀的自定义模型名（如 o1-finetune）。新增模型时同步
  * 此正则。
  */
-const NEW_CONTRACT_PREFIX = /^(gpt-5|gpt-4\.1|o1|o3|o4)/;
+const NEW_CONTRACT_PREFIX = /^(gpt-5|gpt-4\.1|gpt-oss|o1|o3|o4)/;
 
 /** 纯文本 user → content 字符串（最大化兼容）；含图 → 数组形态（data-URL image_url） */
 function userContent(blocks: ContentBlock[]): string | Array<Record<string, unknown>> {
@@ -57,6 +57,8 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       continue;
     }
     if (msg.role === "assistant") {
+      // OpenAI 的 assistant content 仅 string|null：历史中 image 块无 wire 形态，
+      // 静默丢弃（与 user 侧 image_url 数组形态的不对称是协议约束，非遗漏）
       const text = msg.blocks.map((b) => (b.kind === "text" ? b.text : "")).join("");
       const wire: Record<string, unknown> = {
         role: "assistant",
