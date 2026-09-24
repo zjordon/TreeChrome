@@ -220,7 +220,8 @@ export class LLMClient {
     const onExternalAbort = () => controller.abort(external?.reason);
     if (external !== undefined) {
       if (external.aborted) {
-        controller.abort();
+        // 预中止路径与事件路径同款透传 reason（#186 不变形；轮 11 #7 补齐）
+        controller.abort(external.reason);
       } else {
         external.addEventListener("abort", onExternalAbort, { once: true });
       }

@@ -77,7 +77,12 @@ export function sanitizeGeminiSchema(
       onSchemaIssue?.("required 非 string[]，删除该键");
       continue;
     }
-    if (normalized === "properties" && isRecord(value)) {
+    if (normalized === "properties") {
+      if (!isRecord(value)) {
+        // 与 required/items 同款清洗闭环：非对象 properties 原样透传会被端点 400
+        onSchemaIssue?.("properties 非对象，删除该键");
+        continue;
+      }
       const props: Record<string, unknown> = {};
       for (const [name, sub] of Object.entries(value)) {
         // 子 schema 非对象（draft-06+ 布尔 schema properties:{foo:true} 等）原样
@@ -101,6 +106,21 @@ export function sanitizeGeminiSchema(
       }
       out[normalized] = isRecord(item) ? sanitizeGeminiSchema(item, onSchemaIssue) : {};
     } else {
+      // 标量键值形态校验（清洗闭环的最后一格，轮 11 #9）：病态值原样透传会被
+      // 端点 400——type 非字符串兜底合法枚举、enum/nullable 非法形态删除并上报
+      if (normalized === "type" && typeof value !== "string") {
+        onSchemaIssue?.(`type 非字符串形态兜底为 string：${JSON.stringify(value)}`);
+        out.type = "string";
+        continue;
+      }
+      if (normalized === "enum" && !isStringArray(value)) {
+        onSchemaIssue?.("enum 非 string[]，删除该键");
+        continue;
+      }
+      if (normalized === "nullable" && typeof value !== "boolean") {
+        onSchemaIssue?.("nullable 非布尔，删除该键");
+        continue;
+      }
       // 写入统一用归一化（小写）键 + 多词约束键的官方 camelCase（"MaxLength" 等
       // 变体原样透传仍会被端点拒收，清洗必须闭环）
       out[EMIT_KEY[normalized] ?? normalized] = value;

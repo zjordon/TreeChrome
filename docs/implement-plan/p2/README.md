@@ -251,3 +251,17 @@ smoke 产物摘要：
 - **测试组织（#4/#7/#8）**：fixtures 增 setupProvider 装配（三适配器 setup 收敛为委托，卡片仍留各自文件）；anthropic/openai 的「tools null+forced / 空数组」两用例从响应解析 describe 归位到请求构造（与 gemini 口径对齐）。
 
 测试 228 例全绿（覆盖率 97.95%）。
+
+### 评审轮 11（review-p2-llm-client-11.json，2026-09-25，11 条）
+
+采纳 10 条 / 驳回 1 条（#6，同源第三次的 parity 裁决维持）。要点：
+
+- **schema 值形态闭环补全（#1/#9，本轮主要实质改进）**：properties 非对象（`properties: "foo"`）与 type 标量非字符串（`type: 5`）、enum 非 string[]、nullable 非布尔此前都经 else 分支原样透传——端点 400 形态。对齐 required/items 的既有口径：properties/enum/nullable 删除并上报、type 标量兜底 "string" 并上报；附专项用例。
+- **预中止分支 reason 透传（#7）**：external 已 aborted 时 `controller.abort()`（无参）与事件路径 `abort(external.reason)` 行为不一致——轮 10 #5 修复的漏网分支，宿主自定义 reason 在该路径仍被抹平；一行补齐。
+- **测试基建（#4/#5）**：MockFetch.bodyAt/lastBody 越界或缺 body 时原先抛无线索的 SyntaxError（JSON.parse(String(undefined))）——补守卫报错携带 calls 数量（与队列耗尽的显式报错对称）；三份「挂起响应体」桩（hangingBodyFetch / 轮 5 markBodyRead 内联桩 / 轮 9 delayedAbortFetch）提取为 mock-fetch 的 `makeHangingBodyFetch({ok,status,headers,onBodyRead,rejectDelayMs})` 参数化工厂——signal.aborted 预检与 reason 兜底等分型语义细节不再散在三份拷贝里。
+- **注释与口径（#8/#11/#3/#2/#10）**：LLMBlockedError 注释去掉与实现不符的「openai content_filter 保留」表述；provider.ts testConnection 注释同步 maxTokens=16；去重上限断言先过滤再计数（与姊妹用例口径对齐，防无关日志误红）；anthropic.test 清理 setupProvider 抽取后的死导入；setupRealClock 注入静音 log（被测对象是缺省时钟/睡眠，非缺省日志——退避用例不再向控制台刷 backoff 日志）。
+
+驳回 1 条：
+- **#6**（toolResult.text 纳入敏感值占位 / opt-in 确认）：同源第三次（轮 1 #17、轮 6 #8、轮 7 #4）——`_filter_sensitive_in_messages` 只处理 text block 是 Python parity 的 P5 裁决在案行为，transforms.test 锚定；修复点登记在 P4 接 SecretProvider 时一并裁决（彼时才有 opt-in 面与还原语义的完整设计上下文）。当前版本以 WARNING 保证明文出站可观测（轮 7 #4），不构成静默泄露。P4 启动时优先处理此项。
+
+测试 229 例全绿（覆盖率 97.97%）。

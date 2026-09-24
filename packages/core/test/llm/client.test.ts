@@ -16,7 +16,7 @@ import {
   resolveChatHttpTimeoutMs,
 } from "../../src/index.js";
 import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
-import { FakeClock, MockFetch, type MockResponseSpec } from "./mock-fetch.js";
+import { FakeClock, MockFetch, type MockResponseSpec, makeHangingBodyFetch } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
   name: "primary",
@@ -100,10 +100,11 @@ function setupWithLogs(over: Partial<ProviderConfig> = {}) {
   return { mock, logs, client };
 }
 
-/** setup 的真时钟变体（缺省 deps：now=performance.now，sleep=setTimeout 包装） */
+/** setup 的真时钟变体（缺省 now/sleep：performance.now + setTimeout 包装；log 静音
+ * ——被测对象是缺省时钟/睡眠，非缺省日志，与 stubDeps 的静音理由一致） */
 function setupRealClock(over: Partial<ProviderConfig> = {}) {
   const mock = new MockFetch();
-  const client = createLLMClient({ ...CARD, ...over }, { fetch: mock.fetch });
+  const client = createLLMClient({ ...CARD, ...over }, { fetch: mock.fetch, log: () => {} });
   return { mock, client };
 }
 
@@ -532,34 +533,8 @@ describe("deadline 与取消", () => {
     );
   });
 
-  // 「状态行已返回、body 读取挂起至 abort」的同型 fetch 桩（MockFetch 的真实
-  // Response 无法构造此形态）——覆盖 postJson 的 resp.text() 分类路径。
-  // reject(signal.reason)：复刻真实 fetch 形态（超时 reason 是 TimeoutError）
-  const hangingBodyFetch = (
-    ok: boolean,
-    status = 200,
-    headers: Record<string, string> = {},
-  ): typeof fetch =>
-    (async (_url: unknown, init?: { signal?: AbortSignal }) => {
-      return {
-        ok,
-        status,
-        headers: new Headers(headers),
-        text: () =>
-          new Promise<string>((_resolve, reject) => {
-            const onAbort = () =>
-              reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
-            if (init?.signal?.aborted) {
-              onAbort();
-              return;
-            }
-            init?.signal?.addEventListener("abort", onAbort, { once: true });
-          }),
-      } as unknown as Response;
-    }) as typeof fetch;
-
   it("响应体读取阶段超时 → LLMTimeoutError（resp.text() 同分类，不漏成裸 AbortError 被当外部取消）", async () => {
-    const provider = createProvider(CARD, { fetch: hangingBodyFetch(true), log: () => {} });
+    const provider = createProvider(CARD, { fetch: makeHangingBodyFetch(), log: () => {} });
     await expect(
       provider.chat({
         systemPrompt: null,
@@ -572,7 +547,7 @@ describe("deadline 与取消", () => {
 
   it("错误响应体读取阶段超时 → 仍按超时分型（不被状态码 400 误报为不可重试/触发切换）", async () => {
     const provider = createProvider(CARD, {
-      fetch: hangingBodyFetch(false, 400),
+      fetch: makeHangingBodyFetch({ ok: false, status: 400 }),
       log: () => {},
     });
     await expect(
@@ -625,25 +600,12 @@ describe("deadline 与取消", () => {
     const bodyReadStarted = new Promise<void>((resolve) => {
       markBodyRead = resolve;
     });
-    const hanging429BodyFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
-      return {
-        ok: false,
-        status: 429,
-        headers: new Headers({ "retry-after": "5" }),
-        text: () => {
-          markBodyRead();
-          return new Promise<string>((_resolve, reject) => {
-            const onAbort = () =>
-              reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
-            if (init?.signal?.aborted) {
-              onAbort();
-              return;
-            }
-            init?.signal?.addEventListener("abort", onAbort, { once: true });
-          });
-        },
-      } as unknown as Response;
-    }) as typeof fetch;
+    const hanging429BodyFetch = makeHangingBodyFetch({
+      ok: false,
+      status: 429,
+      headers: { "retry-after": "5" },
+      onBodyRead: markBodyRead,
+    });
     const normal = new MockFetch();
     normal.queueMany(toolOk({ ok: 1 }));
     let firstCall = true;
@@ -673,29 +635,11 @@ describe("deadline 与取消", () => {
   });
 
   it("外部取消与 deadline 到点竞态 → 外部取消优先穿透，不变形为 LLMTimeoutError（评审轮 9 #8）", async () => {
-    // 拒绝延迟一个真实宏任务：让 FakeClock 的 deadline watcher 先翻位 windowExpired，
-    // 构造「外部 abort 在前、deadline 恰在异常 unwind 期间到点」的临界——修复前
-    // 取消被变形为 LLMTimeoutError，污染 step 层按异常类型分罪的依据
-    const delayedAbortFetch = (async (_url: unknown, init?: { signal?: AbortSignal }) => {
-      return {
-        ok: true,
-        status: 200,
-        headers: new Headers(),
-        text: () =>
-          new Promise<string>((_resolve, reject) => {
-            const onAbort = () =>
-              setTimeout(
-                () => reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError")),
-                0,
-              );
-            if (init?.signal?.aborted) {
-              onAbort();
-              return;
-            }
-            init?.signal?.addEventListener("abort", onAbort, { once: true });
-          }),
-      } as unknown as Response;
-    }) as typeof fetch;
+    // 拒绝经真实宏任务延迟（工厂缺省 rejectDelayMs=0）：让 FakeClock 的 deadline
+    // watcher 先翻位 windowExpired，构造「外部 abort 在前、deadline 恰在异常
+    // unwind 期间到点」的临界——修复前取消被变形为 LLMTimeoutError，污染 step
+    // 层按异常类型分罪的依据
+    const delayedAbortFetch = makeHangingBodyFetch();
     const clock = new FakeClock();
     const client = createLLMClient(CARD, {
       fetch: delayedAbortFetch,

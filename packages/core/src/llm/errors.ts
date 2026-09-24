@@ -73,7 +73,8 @@ export class LLMServerError extends LLMError {
   }
 }
 
-/** gemini promptFeedback.blockReason 全局拦截 /（保留）openai content_filter 全拦形态 */
+/** gemini promptFeedback.blockReason 全局拦截（openai content_filter 现映射为
+ * stopReason="other" 不抛本类型，见 openai-completions.ts mapFinishReason） */
 export class LLMBlockedError extends LLMError {
   constructor(message: string, opts: LLMErrorOptions) {
     super(message, opts);

@@ -11,8 +11,7 @@ import {
   LLMRateLimitError,
   LLMServerError,
 } from "../../src/llm/errors.js";
-import { AGENT_TOOL, setupProvider, stubDeps } from "./fixtures.js";
-import { MockFetch } from "./mock-fetch.js";
+import { AGENT_TOOL, setupProvider } from "./fixtures.js";
 
 const CARD: ProviderConfig = {
   name: "glm-anthropic",

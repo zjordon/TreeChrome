@@ -68,12 +68,62 @@ export class MockFetch {
   }
 
   bodyAt(index: number): Record<string, unknown> {
-    return JSON.parse(String(this.calls[index].init.body)) as Record<string, unknown>;
+    const body = this.calls[index]?.init.body;
+    if (typeof body !== "string") {
+      // 越界/缺 body 时 JSON.parse(String(undefined)) 只会抛无线索的 SyntaxError——
+      // 与队列耗尽的显式报错对称，携带 calls 数量辅助定位编排问题
+      throw new Error(
+        `MockFetch.bodyAt(${index})：无对应请求记录或请求未携带 body（实际 calls=${this.calls.length}，检查 queueMany 编排或重试次数预期）`,
+      );
+    }
+    return JSON.parse(body) as Record<string, unknown>;
   }
 
   lastBody(): Record<string, unknown> {
     return this.bodyAt(this.calls.length - 1);
   }
+}
+
+/**
+ * 「状态行已返回、body 读取挂起至 abort」的 fetch 桩（MockFetch 的真实 Response
+ * 无法构造此形态）——覆盖 postJson 的 resp.text() 分类路径。reject(signal.reason)：
+ * 复刻真实 fetch 形态（超时 reason 是 TimeoutError）。
+ * opts：ok/status/headers 定形态；onBodyRead 在 text() 首次调用时打点（确定性同步
+ * 「恰逢读体挂起」）；rejectDelayMs 把 abort reject 推迟 N 毫秒（构造 deadline
+ * watcher 先行的竞态临界，走真实定时器）。
+ */
+export function makeHangingBodyFetch(
+  opts: {
+    ok?: boolean;
+    status?: number;
+    headers?: Record<string, string>;
+    onBodyRead?: () => void;
+    rejectDelayMs?: number;
+  } = {},
+): typeof fetch {
+  const { ok = true, status = 200, headers = {}, onBodyRead, rejectDelayMs = 0 } = opts;
+  return (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+    return {
+      ok,
+      status,
+      headers: new Headers(headers),
+      text: () => {
+        onBodyRead?.();
+        return new Promise<string>((_resolve, reject) => {
+          const onAbort = () =>
+            setTimeout(
+              () => reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError")),
+              rejectDelayMs,
+            );
+          if (init?.signal?.aborted) {
+            onAbort();
+            return;
+          }
+          init?.signal?.addEventListener("abort", onAbort, { once: true });
+        });
+      },
+    } as unknown as Response;
+  }) as typeof fetch;
 }
 
 interface FakeTimer {

@@ -17,6 +17,8 @@ export interface LLMProvider {
   readonly model: string;
   readonly capabilities: ProviderCapabilities;
   chat(req: ChatRequest): Promise<ChatResponse>;
-  /** 最小连通性检查（webbrain 形状）：chat("Hi", maxTokens=5) 的成败包装 */
+  /** 最小连通性检查（webbrain 形状）：chat("Hi", maxTokens=16) 的成败包装
+   *  （16 是 o 系/gpt-5 的 max_completion_tokens 最小值，5 会被端点 400——见
+   *  adapters/common.ts defaultTestConnection） */
   testConnection(): Promise<{ ok: boolean; error?: string; model?: string }>;
 }

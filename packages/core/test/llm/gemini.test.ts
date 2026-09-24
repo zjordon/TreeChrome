@@ -172,6 +172,29 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
+  it("标量键值形态闭环：properties 非对象/type 标量/enum 非 string[]/nullable 非布尔 → 删除或兜底并上报", () => {
+    const issues: string[] = [];
+    const out = sanitizeGeminiSchema(
+      {
+        type: "object",
+        properties: "foo",
+        enum: "bar",
+        nullable: "yes",
+      },
+      (d) => issues.push(d),
+    );
+    expect(out).toEqual({ type: "object" });
+    expect(sanitizeGeminiSchema({ type: 5 }, (d) => issues.push(d))).toEqual({
+      type: "string",
+    });
+    expect(issues).toEqual([
+      "properties 非对象，删除该键",
+      "enum 非 string[]，删除该键",
+      "nullable 非布尔，删除该键",
+      "type 非字符串形态兜底为 string：5",
+    ]);
+  });
+
   it("onSchemaIssue：删键时按归一化键名上报（顶层与嵌套递归），约束键不报", () => {
     const issues: string[] = [];
     const out = sanitizeGeminiSchema(
@@ -379,7 +402,9 @@ describe("请求构造（canonical → wire）", () => {
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
       tools: [tool],
     });
-    expect(logs.length).toBe(128);
+    // 只计 schema 清洗事件（与姊妹用例的过滤口径对齐）：适配器未来新增的无关
+    // 日志不应误红本断言
+    expect(logs.filter((m) => m.includes("schema 清洗")).length).toBe(128);
   });
 
   it("maxTokens 请求级覆盖与 temperature 显式", async () => {
