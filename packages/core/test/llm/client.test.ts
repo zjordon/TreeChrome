@@ -13,6 +13,7 @@ import {
   LLMRateLimitError,
   LLMServerError,
   LLMTimeoutError,
+  resolveChatHttpTimeoutMs,
 } from "../../src/index.js";
 import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
 import { FakeClock, MockFetch, type MockResponseSpec } from "./mock-fetch.js";
@@ -725,6 +726,22 @@ describe("deadline 与取消", () => {
     expect((err as DOMException).name).toBe("AbortError");
     expect(err).not.toBeInstanceOf(LLMError);
     expect(mock.calls.length).toBe(1);
+  });
+
+  it("宿主自定义 abort reason 穿透不变形（轮 10 #5；#186 取消不变形的边缘收口）", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r429());
+    const ctrl = new AbortController();
+    const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
+    await clock.advance(0); // sleep 挂起
+    ctrl.abort("user-stop"); // 宿主以自定义 reason 区分停止来源
+    const err = await p.catch((e: unknown) => e);
+    expect(err).toBe("user-stop"); // 原样上抛，不被抹平为默认 AbortError
+  });
+
+  it("resolveChatHttpTimeoutMs：无 deadline → 600s 兜底；有 deadline → undefined（ladder signal 负责）", () => {
+    expect(resolveChatHttpTimeoutMs(undefined)).toBe(600_000);
+    expect(resolveChatHttpTimeoutMs(12345)).toBeUndefined();
   });
 
   it("网络层失败未被重试耗尽时类型保持 ConnectionError（分罪不变形）", async () => {

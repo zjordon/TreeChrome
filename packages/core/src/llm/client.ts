@@ -86,7 +86,9 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
       if (timer !== undefined) {
         clearTimeout(timer);
       }
-      reject(new DOMException("Aborted", "AbortError"));
+      // 透传 abort reason（宿主可能以自定义 reason 区分停止来源，#186 不变形）；
+      // 无 reason 的 abort 用规范缺省形态
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
     };
     timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
@@ -98,6 +100,15 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
     }
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+/**
+ * 无梯子 deadline 时的单请求超时决策（导出供测试锚定）：无 deadline（调用方
+ * 漏传 timeoutMs 且未 setCallWindow）→ 600s 兜底；有 deadline → undefined
+ * （由 ladder signal 到点强杀，不重复设）
+ */
+export function resolveChatHttpTimeoutMs(deadlineAt: number | undefined): number | undefined {
+  return deadlineAt === undefined ? CHAT_HTTP_TIMEOUT_DEFAULT_MS : undefined;
 }
 
 function resolveDeps(deps?: LlmDeps): Required<LlmDeps> {
@@ -206,7 +217,7 @@ export class LLMClient {
     const external = opts.signal;
     const controller = new AbortController();
     let windowExpired = false;
-    const onExternalAbort = () => controller.abort();
+    const onExternalAbort = () => controller.abort(external?.reason);
     if (external !== undefined) {
       if (external.aborted) {
         controller.abort();
@@ -232,7 +243,7 @@ export class LLMClient {
     // 无梯子 deadline 时给单次请求挂保守缺省超时：调用方漏传 timeoutMs 且未
     // setCallWindow 的失败模式不该是无限挂死（TCP 黑洞/网关不回包无超时无错误）。
     // 有 deadline 时由 ladder signal 负责到点强杀，不重复设
-    const httpTimeoutMs = deadlineAt === undefined ? CHAT_HTTP_TIMEOUT_DEFAULT_MS : undefined;
+    const httpTimeoutMs = resolveChatHttpTimeoutMs(deadlineAt);
 
     try {
       // 1. 请求侧变换：全部落在 work 副本（03 偏离 1：不原地改调用方消息）

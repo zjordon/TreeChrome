@@ -23,6 +23,9 @@ import { defaultTestConnection, isRecord, stripTrailingSlash, temperatureEntry }
 import { postJson } from "./http.js";
 import { sanitizeGeminiSchema } from "./schema-sanitize.js";
 
+/** schema 清洗事件去重集条数上限（防动态 schema 无界增长；上限后新事件静默） */
+const SCHEMA_ISSUE_DEDUP_MAX = 128;
+
 function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
   return blocks.map((b) =>
     b.kind === "text" ? { text: b.text } : { inlineData: { mimeType: b.mimeType, data: b.base64 } },
@@ -57,10 +60,9 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
     }
     if (msg.role === "assistant") {
       // 角色名是 model 不是 assistant；functionCall 与文本同 turn 并置（args 原生对象）。
-      // thoughtSignature 随 functionCall part 原样写回（不回传即 400，见 ToolCall.signature）。
-      // **真机核对项（README 风险 3）**：官方 GenAI SDK 的做法是把签名附到下一回合的
-      // functionResponse part 上——若真机（尤其 Gemini 3 系 thinking）按 functionResponse
-      // 校验签名，此位置会 400，届时改为在下方 resultParts 循环内携带（tr 与 call 同循环可得）
+      // thoughtSignature 随 functionCall part 原样写回（不回传即 400，见 ToolCall.signature），
+      // 并同时在下方 functionResponse part 补挂——官方两处口径并存（错误文案 vs SDK
+      // 组装形态），双携带待真机核验（README 风险 3，评审轮 10 #9）
       const parts = blocksToParts(msg.blocks);
       for (const call of msg.toolCalls ?? []) {
         parts.push({
@@ -90,6 +92,10 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
                 // isError 无原生字段：[error] 前缀约定（与 openai 同款）
                 response: { result: tr.isError ? `[error] ${tr.text}` : tr.text },
               },
+              // 官方 SDK 形态：签名随 functionResponse part 回传（评审轮 10 #9——
+              // 官方文档两处口径并存：错误文案指向 functionCall part、SDK 组装
+              // 指向 functionResponse，双携带待真机核验，README 风险 3）
+              ...(call.signature !== undefined ? { thoughtSignature: call.signature } : {}),
             });
           }
         }
@@ -231,13 +237,15 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   // 合成 id 的实例级自增序号（跨响应唯一；每 provider 从 0 起）
   let synthSeq = 0;
   // schema 清洗事件告警的去重集：工具 schema 逐请求固定，同一事件重复告警只有
-  // 噪音；每条一次即保留「约束被清洗丢失」的排障线索
+  // 噪音；每条一次即保留「约束被清洗丢失」的排障线索。设条数上限防动态工具
+  // schema（属性名随页面变化）在长生命周期实例上无界增长——上限后新事件静默
   const warnedSchemaIssues = new Set<string>();
   const onSchemaIssue = (detail: string): void => {
-    if (!warnedSchemaIssues.has(detail)) {
-      warnedSchemaIssues.add(detail);
-      deps.log(`[llm] gemini schema 清洗：${detail}（约束丢失，模型可能生成违反原 schema 的参数）`);
+    if (warnedSchemaIssues.has(detail) || warnedSchemaIssues.size >= SCHEMA_ISSUE_DEDUP_MAX) {
+      return;
     }
+    warnedSchemaIssues.add(detail);
+    deps.log(`[llm] gemini schema 清洗：${detail}（约束丢失，模型可能生成违反原 schema 的参数）`);
   };
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);

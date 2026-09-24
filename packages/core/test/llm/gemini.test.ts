@@ -10,7 +10,7 @@ import {
   LLMProtocolViolationError,
   LLMRateLimitError,
 } from "../../src/llm/errors.js";
-import { stubDeps } from "./fixtures.js";
+import { setupProvider, stubDeps } from "./fixtures.js";
 import { MockFetch } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -30,7 +30,7 @@ const TOOL = {
     type: "object",
     additionalProperties: false,
     properties: {
-      // minimum 数值约束键：第三方 JSON Schema 常见携带项，白名单外删除的覆盖点
+      // minimum 数值约束键：官方 Schema 支持的约束键（轮 10 起白名单收录，透传保留）
       action: { type: "object", description: "the action", additionalProperties: true, minimum: 1 },
       tags: { type: "array", items: { type: "string", enum: ["a", "b"] } },
     },
@@ -41,17 +41,14 @@ const TOOL = {
 const SANITIZED = {
   type: "object",
   properties: {
-    action: { type: "object", description: "the action" },
+    action: { type: "object", description: "the action", minimum: 1 },
     tags: { type: "array", items: { type: "string", enum: ["a", "b"] } },
   },
   required: ["action"],
 };
 
-function setup(over: Partial<ProviderConfig> = {}) {
-  const mock = new MockFetch();
-  const provider = createGeminiProvider({ ...CARD, ...over }, stubDeps(mock));
-  return { mock, provider };
-}
+const setup = (over: Partial<ProviderConfig> = {}) =>
+  setupProvider(createGeminiProvider, CARD, over);
 
 const fnCallOk = (args: Record<string, unknown>) => ({
   status: 200,
@@ -70,8 +67,32 @@ const fnCallOk = (args: Record<string, unknown>) => ({
 });
 
 describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
-  it("白名单外键删除（$schema/additionalProperties/examples/$id/minimum），白名单内保留", () => {
+  it("白名单外键删除（$schema/additionalProperties/examples/$id），约束键（minimum）保留透传", () => {
     expect(sanitizeGeminiSchema(TOOL.parameters)).toEqual(SANITIZED);
+  });
+
+  it("官方约束键透传：minimum/maximum/pattern/minItems 保留，多词键按官方 camelCase 发射", () => {
+    expect(
+      sanitizeGeminiSchema({
+        type: "object",
+        minimum: 0,
+        Maximum: 10,
+        pattern: "^a",
+        MinLength: 1,
+        maxlength: 20,
+        minItems: 0,
+        MaxItems: 5,
+      }),
+    ).toEqual({
+      type: "object",
+      minimum: 0,
+      maximum: 10,
+      pattern: "^a",
+      minLength: 1,
+      maxLength: 20,
+      minItems: 0,
+      maxItems: 5,
+    });
   });
 
   it("嵌套 properties/items 递归清洗；type 大小写变体（Type）归一化为小写键", () => {
@@ -114,20 +135,21 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     });
   });
 
-  it("非对象子 schema（含 draft-06+ 布尔 schema）归一为空 schema——原样透传会被端点 400；原始 schema 不被改动", () => {
+  it("非对象子 schema（含 draft-06+ 布尔 schema）归一为空 schema、required 非 string[] 删除——原样透传会被端点 400；原始 schema 不被改动", () => {
     const original = { type: "object", properties: { n: 3, s: "x", ok: true }, required: null };
     const snapshot = JSON.parse(JSON.stringify(original)) as Record<string, unknown>;
     const issues: string[] = [];
     expect(sanitizeGeminiSchema(original, (d) => issues.push(d))).toEqual({
       type: "object",
       properties: { n: {}, s: {}, ok: {} },
-      required: null, // 顶层 required 非 schema 形态，白名单键原样透传（不在本轮收口范围）
+      // required: null 已被删除（官方只收 string[]）
     });
     expect(original).toEqual(snapshot);
     expect(issues).toEqual([
       "属性「n」子 schema 非对象，归一为空 schema",
       "属性「s」子 schema 非对象，归一为空 schema",
       "属性「ok」子 schema 非对象，归一为空 schema",
+      "required 非 string[]，删除该键",
     ]);
   });
 
@@ -150,15 +172,24 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
-  it("onSchemaIssue：删键时按归一化键名上报（顶层与嵌套递归），白名单内键不报", () => {
+  it("onSchemaIssue：删键时按归一化键名上报（顶层与嵌套递归），约束键不报", () => {
     const issues: string[] = [];
-    sanitizeGeminiSchema(
-      { $schema: "x", Minimum: 1, properties: { inner: { examples: [1], type: "string" } } },
+    const out = sanitizeGeminiSchema(
+      {
+        type: "object",
+        $schema: "x",
+        ExclusiveMinimum: 1,
+        properties: { inner: { examples: [1], type: "string", minimum: 0 } },
+      },
       (d) => issues.push(d),
     );
+    expect(out).toEqual({
+      type: "object",
+      properties: { inner: { type: "string", minimum: 0 } },
+    });
     expect(issues).toEqual([
       "删除白名单外键「$schema」",
-      "删除白名单外键「minimum」",
+      "删除白名单外键「exclusiveminimum」",
       "删除白名单外键「examples」",
     ]);
   });
@@ -325,11 +356,30 @@ describe("请求构造（canonical → wire）", () => {
     // 契约：删键事件按首现序各告警一次、键名以归一化（小写）口径上报。
     // 注：关键词「白名单外键」与「」引号包裹格式是本断言契约的一部分（并非完全
     // 文案解耦）——措辞的其余部分可自由调整：
-    // $schema（顶层）、additionalproperties（顶层+嵌套 action 同名）、minimum（嵌套 action）
+    // $schema（顶层）、additionalproperties（顶层+嵌套 action 同名）
     const droppedKeys = logs
       .filter((m) => m.includes("白名单外键"))
       .map((m) => m.match(/「([^」]+)」/)?.[1] ?? "");
-    expect(droppedKeys).toEqual(["$schema", "additionalproperties", "minimum"]);
+    expect(droppedKeys).toEqual(["$schema", "additionalproperties"]);
+  });
+
+  it("去重集条数上限（128）：动态 schema 的无界增长封顶——上限后新事件静默", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const provider = createGeminiProvider(CARD, { ...stubDeps(mock), log: (m) => logs.push(m) });
+    // 130 个唯一属性名（各产生一条唯一清洗事件）→ 仅前 128 条告警
+    const dynamicProps: Record<string, unknown> = {};
+    for (let i = 0; i < 130; i += 1) {
+      dynamicProps[`p${i}`] = i; // 非对象子 schema → 每属性一条唯一事件
+    }
+    const tool = { ...TOOL, parameters: { type: "object", properties: dynamicProps } };
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: [tool],
+    });
+    expect(logs.length).toBe(128);
   });
 
   it("maxTokens 请求级覆盖与 temperature 显式", async () => {
@@ -488,6 +538,18 @@ describe("响应解析（wire → canonical）", () => {
       role: "model",
       parts: [
         { functionCall: { name: "agent_response", args: { a: 1 } }, thoughtSignature: "sig-1" },
+      ],
+    });
+    // 双携带（轮 10 #9）：签名同时随下一回合的 functionResponse part 回传——官方
+    // 两处口径并存（错误文案指 functionCall part、SDK 组装指 functionResponse），
+    // 真机核验后收敛（README 风险 3）
+    expect(contents[2]).toEqual({
+      role: "user",
+      parts: [
+        {
+          functionResponse: { name: "agent_response", response: { result: "ok" } },
+          thoughtSignature: "sig-1",
+        },
       ],
     });
   });

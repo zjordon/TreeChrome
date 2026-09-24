@@ -179,7 +179,8 @@
 
 ### 4.4 schema sanitize（`schema-sanitize.ts`）
 
-`functionDeclarations.parameters` 只收 **OpenAPI Schema 子集**（`type`/`format`/`description`/`nullable`/`items`/`properties`/`required`/`enum` 及 `type` 的大小写变体），JSON Schema 的 `$schema`/`$id`/`additionalProperties`/`examples` 等键会被拒或忽略。适配器对 `parameters` 做**递归白名单清洗**（只删不报），原始 schema 不动（其余两协议透传）。白名单首版如上，2.4 的 mock 用例锁定行为，真机差异等有 key 实测后修订（README 风险 3）。
+`functionDeclarations.parameters` 只收 **OpenAPI Schema 子集**（`type`/`format`/`description`/`nullable`/`items`/`properties`/`required`/`enum` 及 `type` 的大小写变体），JSON Schema 的 `$schema`/`$id`/`additionalProperties`/`examples` 等键会被拒或忽略。适配器对 `parameters` 做**递归白名单清洗**（清洗事件经回调上报），原始 schema 不动（其余两协议透传）。白名单首版如上，2.4 的 mock 用例锁定行为，真机差异等有 key 实测后修订（README 风险 3）。
+**评审轮 10 修订**：按官方 v1beta Schema 文档把约束键 `minimum`/`maximum`/`pattern`/`minLength`/`maxLength`/`minItems`/`maxItems` 补入白名单（多词键按官方 camelCase 发射）——删除会让数值/长度约束静默丢失、模型生成越界参数；同时收口 `required` 非 string[]、items 元组/非对象、布尔子 schema 的值形态（归一或删除并上报）。
 
 ## 5. 强制工具映射总表（架构 §3.4 落地）
 

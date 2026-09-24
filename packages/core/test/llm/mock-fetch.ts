@@ -108,7 +108,8 @@ export class FakeClock {
           this.timers.splice(i, 1);
         }
         timer.off?.();
-        reject(new DOMException("Aborted", "AbortError"));
+        // 透传 abort reason（与 client.defaultSleep 同款：宿主自定义 reason 不变形）
+        reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
       };
       timer.off = () => signal?.removeEventListener("abort", onAbort);
       if (signal?.aborted) {

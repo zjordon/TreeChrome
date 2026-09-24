@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createOpenAICompletionsProvider } from "../../src/llm/adapters/openai-completions.js";
 import { LLMAuthError, LLMProtocolViolationError } from "../../src/llm/errors.js";
-import { AGENT_TOOL, stubDeps } from "./fixtures.js";
+import { AGENT_TOOL, setupProvider, stubDeps } from "./fixtures.js";
 import { MockFetch, type MockResponseSpec } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -19,11 +19,8 @@ const CARD: ProviderConfig = {
 
 const TOOL = AGENT_TOOL;
 
-function setup(over: Partial<ProviderConfig> = {}) {
-  const mock = new MockFetch();
-  const provider = createOpenAICompletionsProvider({ ...CARD, ...over }, stubDeps(mock));
-  return { mock, provider };
-}
+const setup = (over: Partial<ProviderConfig> = {}) =>
+  setupProvider(createOpenAICompletionsProvider, CARD, over);
 
 const toolOk = (args: string): MockResponseSpec => ({
   status: 200,
@@ -221,6 +218,36 @@ describe("请求构造（canonical → wire）", () => {
     await noCard.provider.chat(baseReq());
     expect(noCard.mock.lastBody()).not.toHaveProperty("temperature");
   });
+
+  it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "stop" }] },
+    });
+    await provider.chat({
+      ...baseReq(),
+      tools: null,
+      toolChoice: { kind: "forced", name: "x" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
+
+  it("tools 空数组 → 不发 tools/tool_choice（部分兼容端点 vLLM/Ollama 400；forced 一并抑制）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "stop" }] },
+    });
+    await provider.chat({
+      ...baseReq(),
+      tools: [],
+      toolChoice: { kind: "forced", name: "x" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
 });
 
 describe("响应解析（wire → canonical）", () => {
@@ -369,36 +396,6 @@ describe("响应解析（wire → canonical）", () => {
     expect(
       logs.some((m) => m.includes("忽略非请求工具名") && m.includes("hallucinated_tool")),
     ).toBe(true);
-  });
-
-  it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
-    const { mock, provider } = setup();
-    mock.queueMany({
-      status: 200,
-      body: { choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "stop" }] },
-    });
-    await provider.chat({
-      ...baseReq(),
-      tools: null,
-      toolChoice: { kind: "forced", name: "x" },
-    });
-    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
-    expect(mock.lastBody()).not.toHaveProperty("tools");
-  });
-
-  it("tools 空数组 → 不发 tools/tool_choice（部分兼容端点 vLLM/Ollama 400；forced 一并抑制）", async () => {
-    const { mock, provider } = setup();
-    mock.queueMany({
-      status: 200,
-      body: { choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "stop" }] },
-    });
-    await provider.chat({
-      ...baseReq(),
-      tools: [],
-      toolChoice: { kind: "forced", name: "x" },
-    });
-    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
-    expect(mock.lastBody()).not.toHaveProperty("tools");
   });
 
   it("content 文本 + reasoning_content 捕获；usage cached_tokens 可选", async () => {

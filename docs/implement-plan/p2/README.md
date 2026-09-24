@@ -237,3 +237,17 @@ smoke 产物摘要：
 - **测试打磨（#4/#5/#6/#7/#14/#15）**：敏感值 WARNING 用例补反向断言（观测通道自身不得泄露明文）；client.test 的 "agent_response" 硬编码统一 TOOL.name 单源（承重墙 prompt 断言是 Python 锚定文案，保留字面）；轮 5 回归用例改「text() 打点 + await 后 abort」确定性同步（缺省 sleep 用例补微任务排空注释）；schema 告警断言注释修正（关键词+「」格式是契约的一部分，非完全解耦）；变换往返用例短路写法改分步断言；transforms.test 头注释补锚定归属（指数梯子在 client.test、retry-after 在 http.test）。
 
 测试 224 例全绿（覆盖率 97.91%）；smoke 假 key 复验（exitCode 1、`?api.key=` 点号键掩码生效）。
+
+### 评审轮 10（review-p2-llm-client-10.json，2026-09-24，9 条）
+
+采纳 9 条。要点：
+
+- **schema 白名单扩约束键（#1，行为改动，02 §4.4 已同步修订）**：官方 v1beta Schema 文档明确支持 `minimum`/`maximum`/`pattern`/`minLength`/`maxLength`/`minItems`/`maxItems`——此前一律删除会让数值/长度约束静默丢失、模型生成越界参数直接进入工具执行。补入白名单；多词键按官方 camelCase 发射（本模块写入键统一小写，新增 EMIT_KEY 还原拼写）。附 camelCase/大小写变体透传用例。
+- **required 值形态收口（#2）**：`required: null` 等非 string[] 原样透传同有 400 风险——删除并上报（与 type 联合/items 元组/布尔子 schema 的轮 9 收口口径对齐）；旧「不在本轮收口范围」的 toEqual 锚定随之翻转。
+- **thoughtSignature 双携带（#9，行为改动）**：官方两处口径并存——错误文案"missing thought_signature **in functionCall parts**"指向 functionCall part（现有实现），官方 SDK 组装形态与文档"随 functionResponse 回传"指向 functionResponse part。按文档在 functionResponse part 补挂签名（functionCall part 携带保留），双携带待真机核验收敛（风险 3）；往返用例补 functionResponse 断言。
+- **abort reason 透传（#5）**：onExternalAbort `controller.abort(external?.reason)`、defaultSleep/FakeClock reject `signal.reason ?? 缺省`——宿主以自定义 reason（如 "user-stop"）区分停止来源时不再在 getAction 边界被抹平为默认 AbortError；补自定义 reason 穿透用例。
+- **600s 兜底测试锚定（#6）**：决策提为导出函数 `resolveChatHttpTimeoutMs`（index 导出注明仅为测试锚定）——`undefined→600_000 / 有 deadline→undefined` 单测锁定，防未来重构静默丢兜底。
+- **去重集上限（#3）**：warnedSchemaIssues 以完整事件文案为键，动态工具 schema（属性名随页面变化）在长生命周期实例上无界增长——设 128 条上限（上限后新事件静默），130 唯一事件用例锁定 128 条封顶。
+- **测试组织（#4/#7/#8）**：fixtures 增 setupProvider 装配（三适配器 setup 收敛为委托，卡片仍留各自文件）；anthropic/openai 的「tools null+forced / 空数组」两用例从响应解析 describe 归位到请求构造（与 gemini 口径对齐）。
+
+测试 228 例全绿（覆盖率 97.95%）。

@@ -11,7 +11,7 @@ import {
   LLMRateLimitError,
   LLMServerError,
 } from "../../src/llm/errors.js";
-import { AGENT_TOOL, stubDeps } from "./fixtures.js";
+import { AGENT_TOOL, setupProvider, stubDeps } from "./fixtures.js";
 import { MockFetch } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -25,11 +25,8 @@ const CARD: ProviderConfig = {
 
 const TOOL = AGENT_TOOL;
 
-function setup(over: Partial<ProviderConfig> = {}) {
-  const mock = new MockFetch();
-  const provider = createAnthropicProvider({ ...CARD, ...over }, stubDeps(mock));
-  return { mock, provider };
-}
+const setup = (over: Partial<ProviderConfig> = {}) =>
+  setupProvider(createAnthropicProvider, CARD, over);
 
 const toolOk = (input: Record<string, unknown>) => ({
   status: 200,
@@ -264,6 +261,38 @@ describe("请求构造（canonical → wire）", () => {
       "x-custom": "1",
     });
   });
+
+  it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { content: [{ type: "text", text: "t" }], stop_reason: "end_turn" },
+    });
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+      toolChoice: { kind: "forced", name: "x" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
+
+  it("tools 空数组 → 不发 tools/tool_choice（官方端点对空 tools 列表 400；forced 一并抑制）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: { content: [{ type: "text", text: "t" }], stop_reason: "end_turn" },
+    });
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: [],
+      toolChoice: { kind: "forced", name: "x" },
+    });
+    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
+    expect(mock.lastBody()).not.toHaveProperty("tools");
+  });
 });
 
 describe("响应解析（wire → canonical）", () => {
@@ -322,28 +351,6 @@ describe("响应解析（wire → canonical）", () => {
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([]);
     expect(res.stopReason).toBe("other"); // 全部被丢弃：不置 tool_call（与 gemini 口径一致）
-  });
-
-  it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
-    const { mock, provider } = setup();
-    mock.queueMany({
-      status: 200,
-      body: { content: [{ type: "text", text: "t" }], stop_reason: "end_turn" },
-    });
-    await provider.chat({ ...baseReq(), tools: null, toolChoice: { kind: "forced", name: "x" } });
-    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
-    expect(mock.lastBody()).not.toHaveProperty("tools");
-  });
-
-  it("tools 空数组 → 不发 tools/tool_choice（官方端点对空 tools 列表 400；forced 一并抑制）", async () => {
-    const { mock, provider } = setup();
-    mock.queueMany({
-      status: 200,
-      body: { content: [{ type: "text", text: "t" }], stop_reason: "end_turn" },
-    });
-    await provider.chat({ ...baseReq(), tools: [], toolChoice: { kind: "forced", name: "x" } });
-    expect(mock.lastBody()).not.toHaveProperty("tool_choice");
-    expect(mock.lastBody()).not.toHaveProperty("tools");
   });
 
   it.each([
