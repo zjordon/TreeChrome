@@ -6,6 +6,10 @@
 // minimum/maximum/pattern/minLength/maxLength/minItems/maxItems（评审轮 10 补入——
 // 官方文档明确支持，删除会让数值/长度约束静默丢失、模型生成越界参数）；
 // 真机差异等有 key 实测后修订（README 风险 3）。
+// 核验结论（评审轮 12 #14，2026-09）：minProperties/maxProperties 不在官方经典
+// Schema 字段列表（社区 Gemini schema 转换器均列为不支持项剥离）；Nov-2025 扩展
+// 的 default/anyOf/$ref 走 response_json_schema 通道而非 functionDeclarations。
+// parameters——维持删除并上报，真机有 key 后复核。
 // 键名与 type 值做归一化（小写键判定、联合类型拆 nullable）——多词约束键按官方
 // camelCase 发射；只清洗 schema 键，properties 下的属性名原样保留。
 

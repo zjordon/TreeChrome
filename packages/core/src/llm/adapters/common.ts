@@ -3,6 +3,7 @@
 //（改一漏二的风险主要来自逐字重复的小件与完全同构的探测逻辑）。
 
 import type { ProviderConfig } from "../config.js";
+import type { LlmProtocol } from "../provider.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
@@ -41,11 +42,25 @@ export async function defaultTestConnection(
 /**
  * temperature 回退链（请求级 ?? 卡片级，与 maxTokens 同款；两级都缺省则不发——
  * 新契约模型 400 地雷的缺省口径）。三适配器同构语义，非协议差异，收敛于此。
+ * 取值按协议上限钳制到 [0, max]（轮 12 #7）：anthropic 要求 0-1、openai/gemini
+ * 0-2——卡片误配（如智谱 anthropic 兼容卡配 1.5）会整链每请求硬 400（非 infra
+ * 不重试），与「主动拆解 400 地雷」的口径一致（maxTokens=16 同款思路）。
  */
+const PROTOCOL_MAX_TEMPERATURE: Record<LlmProtocol, number> = {
+  "anthropic-messages": 1,
+  "openai-completions": 2,
+  gemini: 2,
+};
+
 export function temperatureEntry(
   req: ChatRequest,
   config: ProviderConfig,
 ): Record<string, unknown> {
   const temperature = req.temperature ?? config.temperature;
-  return temperature !== undefined ? { temperature } : {};
+  if (temperature === undefined) {
+    return {};
+  }
+  return {
+    temperature: Math.min(Math.max(temperature, 0), PROTOCOL_MAX_TEMPERATURE[config.protocol]),
+  };
 }

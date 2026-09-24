@@ -192,8 +192,15 @@ async function main() {
     },
   ];
 
-  // 梯子墙钟预算（解析梯子含 R4/R1 重试与退避，慢网络/慢模型 60s 可能不够）
-  const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS ?? 60_000) || 60_000;
+  // 梯子墙钟预算（解析梯子含 R4/R1 重试与退避，慢网络/慢模型 60s 可能不够）。
+  // 非法值显式告警后回退：静默回退会让「配置未生效」在 60s 超时处被误导向端点问题
+  const rawTimeoutMs = Number(process.env.SMOKE_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(rawTimeoutMs) && rawTimeoutMs > 0 ? rawTimeoutMs : 60_000;
+  if (process.env.SMOKE_TIMEOUT_MS !== undefined && timeoutMs === 60_000) {
+    console.warn(
+      `SMOKE_TIMEOUT_MS="${process.env.SMOKE_TIMEOUT_MS}" 非法（需正数毫秒），已回退缺省 60000ms`,
+    );
+  }
 
   let failed = false;
   // 两端点独立但刻意串行：请求/响应日志逐卡成段输出，并行会交错打乱；

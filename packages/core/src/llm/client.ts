@@ -62,6 +62,13 @@ export interface GetActionOptions {
    */
   sensitiveMap?: Record<string, string>;
   /**
+   * 为 true 时 toolResult 文本同样做敏感值占位（real→placeholder，作用于 work
+   * 副本不动调用方消息；模型回显占位符时响应侧还原自然闭合）。缺省 false 维持
+   * P5 parity（Python 只处理 text block）——明文出站路径仅 WARNING 可观测；
+   * 合规宿主可即刻阻断泄露。P4 接 SecretProvider 时统一收口此开关。
+   */
+  redactToolResults?: boolean;
+  /**
    * 本次 getAction 的墙钟预算（毫秒）。梯子内全部请求与 sleep 共享。
    * 调用契约：无 timeoutMs 且未 setCallWindow 时梯子**总时长无内部上界**（对齐
    * Python get_action——上界由 step 层的外层 wait_for 提供）；P4 step 恒传。
@@ -172,6 +179,8 @@ export class LLMClient {
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
+  /** getAction 重入哨兵（非并发约束的运行时防护） */
+  private inFlight = false;
   private readonly deps: Required<LlmDeps>;
 
   constructor(config: ProviderConfig, deps?: LlmDeps) {
@@ -202,6 +211,28 @@ export class LLMClient {
     messages: ChatMessage[],
     tool: ToolDefinition,
     opts: GetActionOptions = {},
+  ): Promise<GetActionResult> {
+    // 重入哨兵（轮 12 #6）：把「类文档声明的非并发约束」变成显式失败——误用并发
+    // 时的静默串卡（请求发到切换后的 fallback 卡）或窗口预算错乱极难排障
+    if (this.inFlight) {
+      throw new LLMInvalidRequestError(
+        "LLMClient 不支持并发 getAction（fallback 单向切换/窗口登记为实例级状态；多会话应各持实例）",
+        { provider: this.config.name },
+      );
+    }
+    this.inFlight = true;
+    try {
+      return await this.getActionInner(systemPrompt, messages, tool, opts);
+    } finally {
+      this.inFlight = false;
+    }
+  }
+
+  private async getActionInner(
+    systemPrompt: string,
+    messages: ChatMessage[],
+    tool: ToolDefinition,
+    opts: GetActionOptions,
   ): Promise<GetActionResult> {
     assertValidMessages(messages, this.config.name);
 
@@ -252,8 +283,9 @@ export class LLMClient {
       const urlMap = shortenUrlsInMessages(work);
       const sensitive = opts.sensitiveMap;
       applySensitiveInMessages(work, sensitive);
-      // toolResult 文本不在占位范围（P5 parity，见 applySensitiveInMessages 注释）——
-      // 命中敏感 real 值时留 WARNING：明文出站的暴露必须可观测，不再静默（P4 收口）
+      // toolResult 文本默认不在占位范围（P5 parity，见 applySensitiveInMessages
+      // 注释）——命中敏感 real 值时按 redactToolResults 分流：缺省明文出站但留
+      // WARNING（暴露可观测，P4 SecretProvider 收口）；opt-in 则占位阻断泄露
       if (sensitive !== undefined) {
         const reals = Object.keys(sensitive).filter((real) => real !== "");
         const leaking: string[] = [];
@@ -263,9 +295,28 @@ export class LLMClient {
           }
         }
         if (leaking.length > 0) {
-          this.deps.log(
-            `[llm] WARNING: toolResult(${leaking.join(", ")}) 文本包含敏感值，将以明文出站（toolResult 不在占位范围，P4 接 SecretProvider 时收口）`,
-          );
+          if (opts.redactToolResults === true) {
+            for (const m of work) {
+              if (m.role !== "toolResult") {
+                continue;
+              }
+              let text = m.text;
+              for (const [real, placeholder] of Object.entries(sensitive)) {
+                if (real !== "") {
+                  // 回调形式防占位符 $ 序列被解释为替换模式（#9 同因）
+                  text = text.replaceAll(real, () => placeholder);
+                }
+              }
+              m.text = text;
+            }
+            this.deps.log(
+              `[llm] toolResult(${leaking.join(", ")}) 敏感值已占位（redactToolResults）`,
+            );
+          } else {
+            this.deps.log(
+              `[llm] WARNING: toolResult(${leaking.join(", ")}) 文本包含敏感值，将以明文出站（toolResult 不在占位范围，redactToolResults:true 可阻断；P4 接 SecretProvider 时收口）`,
+            );
+          }
         }
       }
 
@@ -306,7 +357,19 @@ export class LLMClient {
           this.deps.log(
             `[llm] LLM returned text (not tool_use), retrying with directive prompt (${textRetries}/${TEXT_RETRY_MAX})`,
           );
-          work.push({ role: "assistant", blocks: [{ kind: "text", text: response.text }] });
+          // 回显文本复用敏感值占位（Python R4 经递归 get_action 重跑
+          // _filter_sensitive_in_messages，TS 循环结构需手动对齐 parity）；
+          // 不重跑 URL 缩写——其 tag 计数器独立，重跑会与既有 urlMap 的 [uN]
+          // 冲突导致还原错乱（保守偏离，回显中的新 URL 保持全量无正确性问题）
+          let echo = response.text;
+          if (sensitive !== undefined) {
+            for (const [real, placeholder] of Object.entries(sensitive)) {
+              if (real !== "") {
+                echo = echo.replaceAll(real, () => placeholder);
+              }
+            }
+          }
+          work.push({ role: "assistant", blocks: [{ kind: "text", text: echo }] });
           work.push({ role: "user", blocks: [{ kind: "text", text: r4Directive(tool.name) }] });
           continue;
         }
@@ -423,7 +486,8 @@ export class LLMClient {
    */
   private async callWithBackoff(buildReq: () => ChatRequest): Promise<ChatResponse> {
     const capMs = this.windowBudgetCapMs ?? INFRA_BUDGET_DEFAULT_SEC * 1000;
-    let deadline = this.deps.now() + capMs;
+    const budgetDeadline = this.deps.now() + capMs;
+    let deadline = budgetDeadline;
     if (this.windowDeadline !== undefined) {
       deadline = Math.min(deadline, this.windowDeadline);
     }
@@ -456,8 +520,12 @@ export class LLMClient {
           e.retryAfterMs ??
           Math.min(INFRA_BACKOFF_CAP_SEC, INFRA_BACKOFF_BASE_SEC * 2 ** retries) * 1000;
         if (this.deps.now() + delayMs > deadline) {
+          // 归因实际生效的约束（轮 12 #15）：deadline = min(预算, 窗口)，固定打印
+          // capMs 会把窗口先到的耗尽误导成预算记账错误
+          const boundByWindow =
+            this.windowDeadline !== undefined && this.windowDeadline < budgetDeadline;
           this.deps.log(
-            `[llm] LLM infra backoff budget (${Math.round(capMs / 1000)}s wall-clock incl. requests) exhausted after ${retries} retry(ies) — raising ${e.name}`,
+            `[llm] LLM infra backoff ${boundByWindow ? "window deadline" : `budget (${Math.round(capMs / 1000)}s wall-clock incl. requests)`} exhausted after ${retries} retry(ies) — raising ${e.name}`,
           );
           throw e;
         }

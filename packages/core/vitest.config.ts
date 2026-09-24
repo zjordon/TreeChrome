@@ -14,7 +14,7 @@ export default defineConfig({
       // 纯类型声明文件，无运行时代码，不参与覆盖率统计（types.ts 含 assertValidMessages，
       // 是运行时代码，不在此列）
       exclude: ["src/llm/provider.ts", "src/llm/deps.ts"],
-      // 项目门槛：> 85%（根 AGENTS.md「单元测试要求」）；不达标即失败
+      // 项目门槛：≥ 85%（根 AGENTS.md「单元测试要求」）；不达标即失败
       thresholds: { statements: 85, lines: 85, functions: 85, branches: 85 },
       reporter: ["text", "html"],
     },

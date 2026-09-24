@@ -447,6 +447,17 @@ describe("请求构造（canonical → wire）", () => {
     expect(noCard.mock.lastBody().generationConfig).not.toHaveProperty("temperature");
   });
 
+  it("temperature 按协议上限钳制（gemini 0-2）：误配 3 钳到 2（轮 12 #7）", async () => {
+    const { mock, provider } = setup({ temperature: 3 });
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
+  });
+
   it("连续 user turn 折叠（canonical 允许 [user, user]，Gemini 要求交替）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(fnCallOk({}));
@@ -518,6 +529,40 @@ describe("响应解析（wire → canonical）", () => {
       stopReason: "tool_call",
       usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3 },
     });
+  });
+
+  it("丢弃类事件留告警 + 病态分支覆盖：非请求名 / name 非字符串 / functionCall 非对象 / args 非对象（轮 12 #12）", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const provider = createGeminiProvider(CARD, { ...stubDeps(mock), log: (m) => logs.push(m) });
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [
+                { functionCall: { name: "other_tool", args: {} } }, // 非请求名
+                { functionCall: { name: 42, args: {} } }, // name 非字符串
+                { functionCall: "not-an-object" }, // functionCall 整体非对象
+                { functionCall: { name: "agent_response", args: "bad" } }, // args 非对象
+                { functionCall: { name: "agent_response", args: { ok: 1 } } }, // 合法保留
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([
+      { id: "gemini-call-0", name: "agent_response", args: { ok: 1 } },
+    ]);
+    expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
+    expect(logs.some((m) => m.includes("丢弃形态异常的 functionCall"))).toBe(true);
+    expect(logs.some((m) => m.includes("丢弃 args 非对象的 functionCall"))).toBe(true);
   });
 
   it("thoughtSignature：解析捕获进 ToolCall.signature，回传时随 functionCall part 原样写回（2.5/3 thinking 模型硬要求，不回传即 400）", async () => {

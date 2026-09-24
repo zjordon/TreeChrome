@@ -192,6 +192,16 @@ describe("请求构造（canonical → wire）", () => {
     await oss.provider.chat(baseReq());
     expect(oss.mock.lastBody()).toHaveProperty("max_completion_tokens");
     expect(oss.mock.lastBody()).not.toHaveProperty("max_tokens");
+
+    // 前缀清单其余成员逐个锁定（轮 12 #10）：正则被误改（误删成员/误拼写）在此处红，
+    // 回归面不再直接落在端点 400
+    for (const model of ["gpt-4.1-mini", "o1", "o3-mini", "o4-mini"]) {
+      const s = setup({ model });
+      s.mock.queueMany(toolOk("{}"));
+      await s.provider.chat(baseReq());
+      expect(s.mock.lastBody()).toHaveProperty("max_completion_tokens");
+      expect(s.mock.lastBody()).not.toHaveProperty("max_tokens");
+    }
   });
 
   it("tools null / temperature 显式 / maxTokens 请求级覆盖", async () => {
@@ -217,6 +227,13 @@ describe("请求构造（canonical → wire）", () => {
     noCard.mock.queueMany(toolOk("{}"));
     await noCard.provider.chat(baseReq());
     expect(noCard.mock.lastBody()).not.toHaveProperty("temperature");
+  });
+
+  it("temperature 按协议上限钳制（openai 0-2）：误配 2.5 钳到 2（轮 12 #7）", async () => {
+    const { mock, provider } = setup({ temperature: 2.5 });
+    mock.queueMany(toolOk("{}"));
+    await provider.chat(baseReq());
+    expect(mock.lastBody().temperature).toBe(2);
   });
 
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
@@ -251,8 +268,13 @@ describe("请求构造（canonical → wire）", () => {
 });
 
 describe("响应解析（wire → canonical）", () => {
-  it("arguments guard-parse：字符串/对象形态直收；截断 JSON 丢弃该调用（不带病 args 进 canonical）", async () => {
-    const { mock, provider } = setup();
+  it("arguments guard-parse：字符串/对象形态直收；截断 JSON 丢弃该调用并留告警（不带病 args 进 canonical）", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const provider = createOpenAICompletionsProvider(CARD, {
+      ...stubDeps(mock),
+      log: (m) => logs.push(m),
+    });
     mock.queueMany(toolOk('{"action": {"name": "click"}}'), {
       status: 200,
       body: {
@@ -291,6 +313,12 @@ describe("响应解析（wire → canonical）", () => {
     expect(guarded.toolCalls).toEqual([{ id: "c1", name: "agent_response", args: { direct: 1 } }]);
     // 保留的调用推导优先（三协议统一）：c1 在 → tool_call 压过 finish_reason=length
     expect(guarded.stopReason).toBe("tool_call");
+    // 观测口径锁定（轮 12 #9）：截断丢弃与非请求名丢弃都留告警——排障时区分
+    // 「模型未发起调用」与「调用被丢弃」的唯一线索
+    expect(
+      logs.some((m) => m.includes("arguments 解析失败，丢弃调用") && m.includes("agent_response")),
+    ).toBe(true);
+    expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
   });
 
   it('tool_call 缺失/空 id → 丢弃（回传历史 tool_call_id="" 会被官方端点 400）', async () => {
@@ -317,6 +345,36 @@ describe("响应解析（wire → canonical）", () => {
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([]);
     expect(res.stopReason).toBe("other"); // 全部被丢弃：不置 tool_call（与 gemini 口径一致）
+  });
+
+  it("形态异常的 tool_call（item 合法但 function 非对象 / item 非对象）→ 丢弃并留告警（轮 12 #8）", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const provider = createOpenAICompletionsProvider(CARD, {
+      ...stubDeps(mock),
+      log: (m) => logs.push(m),
+    });
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [{ id: "bad1", type: "function", function: "not-an-object" }, 42],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([]);
+    expect(logs.some((m) => m.includes("丢弃形态异常的 tool_call") && m.includes("bad1"))).toBe(
+      true,
+    );
   });
 
   it("arguments 缺失/null/空串兜底 {}（兼容端点无参工具形态，与 anthropic/gemini 口径对齐）", async () => {

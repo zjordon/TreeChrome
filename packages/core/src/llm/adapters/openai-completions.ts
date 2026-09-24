@@ -163,6 +163,8 @@ function parseResponse(
   if (Array.isArray(message.tool_calls)) {
     for (const item of message.tool_calls) {
       if (!isRecord(item) || !isRecord(item.function)) {
+        // 形态异常（item 合法但 function 非对象等）——与 gemini「丢弃留证据」口径一致
+        log(`[llm] openai 丢弃形态异常的 tool_call：${JSON.stringify(item)}`);
         continue;
       }
       const fn = item.function;

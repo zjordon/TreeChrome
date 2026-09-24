@@ -13,8 +13,9 @@ import {
   LLMRateLimitError,
   LLMServerError,
   LLMTimeoutError,
-  resolveChatHttpTimeoutMs,
 } from "../../src/index.js";
+// 内部决策函数的测试锚定走深层导入（不进公共导出面，同 config/types 测试惯例）
+import { resolveChatHttpTimeoutMs } from "../../src/llm/client.js";
 import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
 import { FakeClock, MockFetch, type MockResponseSpec, makeHangingBodyFetch } from "./mock-fetch.js";
 
@@ -280,6 +281,42 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(logs.some((m) => m.includes("WARNING") && m.includes(TOOL.name))).toBe(true);
     // 观测通道自身不得成为泄露点：WARNING 中不得出现敏感明文
     expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
+  });
+
+  it("redactToolResults:true → toolResult 文本占位出站（明文阻断）；模型回显占位符经还原闭合（轮 12 #4）", async () => {
+    const { mock, logs, client } = setupWithLogs();
+    mock.queueMany(toolOk({ next_goal: "used <KEY>", action: { name: "done" } }));
+    const messages: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "text", text: "q" }] },
+      { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args: {} }] },
+      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "echoed sk-secret" },
+    ];
+    const r = await client.getAction("sys", messages, TOOL, {
+      sensitiveMap: { "sk-secret": "<KEY>" },
+      redactToolResults: true,
+    });
+    const wire = JSON.stringify(mock.lastBody());
+    expect(wire).not.toContain("sk-secret"); // 占位阻断，不再明文出站
+    expect(wire).toContain("<KEY>");
+    expect(logs.some((m) => m.includes("已占位"))).toBe(true);
+    expect(r.kind).toBe("ok");
+    if (r.kind !== "ok") {
+      throw new Error("unreachable");
+    }
+    // 模型回显占位符 → 响应 toolInput 还原为真实值（往返闭合）
+    expect(r.toolInput.next_goal).toBe("used sk-secret");
+  });
+
+  it("R4 回显文本复用敏感值占位（Python 递归重跑 filter 的 parity 对齐，轮 12 #5）", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(text("the secret is sk-abc here"), toolOk({ done: 1 }));
+    const r = await client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-abc": "<K>" },
+    });
+    expect(r.kind).toBe("ok");
+    const second = JSON.stringify(mock.bodyAt(1).messages);
+    expect(second).not.toContain("sk-abc"); // 回显文本占位后才 push 进 work
+    expect(second).toContain("<K>");
   });
 });
 
@@ -686,6 +723,42 @@ describe("deadline 与取消", () => {
   it("resolveChatHttpTimeoutMs：无 deadline → 600s 兜底；有 deadline → undefined（ladder signal 负责）", () => {
     expect(resolveChatHttpTimeoutMs(undefined)).toBe(600_000);
     expect(resolveChatHttpTimeoutMs(12345)).toBeUndefined();
+  });
+
+  it("并发 getAction → 重入哨兵显式失败（轮 12 #6）；完成后哨兵复位可串行复用", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ ok: 1 }), toolOk({ ok: 2 }));
+    const p1 = client.getAction("sys", msgs(), TOOL);
+    await expect(client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(
+      LLMInvalidRequestError,
+    );
+    const r1 = await p1; // 第一个调用不受影响
+    expect(r1.kind).toBe("ok");
+    const r2 = await client.getAction("sys", msgs(), TOOL); // 哨兵已复位
+    expect(r2.kind).toBe("ok");
+  });
+
+  it("预算耗尽日志归因实际生效约束：窗口先到标 window deadline 而非预算秒数（轮 12 #15）", async () => {
+    const mock = new MockFetch();
+    const clock = new FakeClock();
+    const logs: string[] = [];
+    const client = createLLMClient(CARD, {
+      fetch: mock.fetch,
+      now: clock.now,
+      sleep: clock.sleep,
+      log: (m) => logs.push(m),
+    });
+    // t=20s → cap=max(30s, 0.75×20s)=30s > 窗口 20s：实际生效约束是窗口
+    client.setCallWindow(20_000);
+    mock.queueMany(r429(), r429(), r429(), r429());
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0); // 429 → sleep(2s)
+    await clock.advance(2000);
+    await clock.advance(4000);
+    await clock.advance(8000); // t=15s；下一轮 delay 16s，15+16 > 20 → 窗口耗尽
+    await expect(p).rejects.toBeInstanceOf(LLMRateLimitError);
+    expect(logs.some((m) => m.includes("window deadline exhausted"))).toBe(true);
+    expect(logs.some((m) => m.includes("budget (30s"))).toBe(false);
   });
 
   it("网络层失败未被重试耗尽时类型保持 ConnectionError（分罪不变形）", async () => {

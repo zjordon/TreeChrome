@@ -265,3 +265,20 @@ smoke 产物摘要：
 - **#6**（toolResult.text 纳入敏感值占位 / opt-in 确认）：同源第三次（轮 1 #17、轮 6 #8、轮 7 #4）——`_filter_sensitive_in_messages` 只处理 text block 是 Python parity 的 P5 裁决在案行为，transforms.test 锚定；修复点登记在 P4 接 SecretProvider 时一并裁决（彼时才有 opt-in 面与还原语义的完整设计上下文）。当前版本以 WARNING 保证明文出站可观测（轮 7 #4），不构成静默泄露。P4 启动时优先处理此项。
 
 测试 229 例全绿（覆盖率 97.97%）。
+
+### 评审轮 12（review-p2-llm-client-12.json，2026-09-25，15 条）
+
+采纳 14 条 / 驳回 1 条（#14，核验不支持按备选口径登记）。要点：
+
+- **redactToolResults opt-in（#4，敏感值议题第四次评审的落点）**：`GetActionOptions.redactToolResults?: boolean`——缺省 false 维持 P5 parity（明文出站 + WARNING），true 时对 work 副本的 toolResult.text 做同款 real→placeholder 占位（合规宿主即刻阻断泄露；模型回显占位符经响应还原自然闭合）。P4 接 SecretProvider 时统一收口此开关。前三次驳回的是「改默认行为」，本次 opt-in 不动默认契约故采纳。
+- **R4 回显文本占位（#5，parity 缺口修复）**：核实 Python R4 经递归 get_action 重跑 `_filter_sensitive_in_messages`——回显文本本应占位，TS 循环结构漏掉了：模型回显的敏感值会在重试请求中二次明文出站且回显路径无告警。补齐占位（刻意不重跑 URL 缩写——tag 域冲突，保守偏离已注释）。
+- **并发哨兵（#6）**：getAction 重入显式失败（LLMInvalidRequestError）——「非并发」从类文档约束升级为运行时防护，误用不再表现为静默串卡/窗口错乱；拆 getActionInner 保持 finally 复位。
+- **temperature 协议钳制（#7）**：anthropic 0-1 / openai/gemini 0-2——卡片误配（如智谱 anthropic 兼容卡 1.5）不再整链每请求硬 400（非 infra 不重试），与 maxTokens=16 同款「主动拆解 400 地雷」思路；三协议钳制用例。
+- **预算耗尽日志归因（#15）**：deadline = min(预算, 窗口)，耗尽日志区分 window deadline / budget 秒数——步级窗口先到不再被误导成预算记账错误（setCallWindow(20s) 用例锁定）。
+- **观测口径收齐（#8/#9/#11/#12/#13）**：openai 形态异常 tool_call 丢弃补 log；anthropic input 病态非对象（非缺失/null）从静默兜底 {} 改为丢弃+log（与 gemini args/openai arguments 对齐——空参静默执行是排障盲区）；三适配器的丢弃类告警（截断 args/缺失 id/非请求名/病态形态）全部补测试断言，重构丢 log 不再静默。
+- **杂项（#1/#2/#3/#10）**：覆盖率注释对齐 AGENTS.md「≥ 85%」；resolveChatHttpTimeoutMs 退出公共导出面（测试深层导入，防签名调整成 breaking change）；SMOKE_TIMEOUT_MS 非法值显式告警（静默回退会把「配置未生效」误导为端点问题，实测告警生效）；maxTokens 双轨补前缀全成员锁定（gpt-4.1-mini/o1/o3-mini/o4-mini——正则误删成员在测试层红，不再落到端点 400）。
+
+驳回 1 条：
+- **#14**（白名单补 minProperties/maxProperties）：核验官方 v1beta Schema 经典字段列表不含这两键，社区 Gemini schema 转换器均将其列为不支持项剥离；Nov-2025 扩展的 default/anyOf/$ref 属 response_json_schema 通道非 functionDeclarations.parameters 路径。按评审自己的备选口径「确属不支持则维持现状并在注释记录核验结论」处理，真机有 key 后复核。
+
+测试 239 例全绿（覆盖率 98.65%）；smoke 假 key 复验（SMOKE_TIMEOUT_MS 非法值告警生效）。

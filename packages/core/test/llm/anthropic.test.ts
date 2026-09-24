@@ -11,7 +11,8 @@ import {
   LLMRateLimitError,
   LLMServerError,
 } from "../../src/llm/errors.js";
-import { AGENT_TOOL, setupProvider } from "./fixtures.js";
+import { AGENT_TOOL, setupProvider, stubDeps } from "./fixtures.js";
+import { MockFetch } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
   name: "glm-anthropic",
@@ -199,6 +200,24 @@ describe("请求构造（canonical → wire）", () => {
     expect(noCard.mock.lastBody()).not.toHaveProperty("temperature"); // 两级缺省不发
   });
 
+  it("temperature 按协议上限钳制（anthropic 0-1）：误配 1.5 不再每请求硬 400（轮 12 #7）", async () => {
+    const { mock, provider } = setup({ temperature: 1.5 });
+    mock.queueMany(toolOk({}), toolOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(mock.lastBody().temperature).toBe(1);
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+      temperature: -0.5,
+    });
+    expect(mock.lastBody().temperature).toBe(0); // 下界同钳
+  });
+
   it("连续同角色消息折叠：user+user 合并 content；toolResult 折叠出的 user 与紧随 user 观察合并", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));
@@ -350,6 +369,37 @@ describe("响应解析（wire → canonical）", () => {
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([]);
     expect(res.stopReason).toBe("other"); // 全部被丢弃：不置 tool_call（与 gemini 口径一致）
+  });
+
+  it("丢弃类事件留告警：缺失 id / 非请求名 / input 病态非对象（轮 12 #11/#13 观测口径锁定）", async () => {
+    const mock = new MockFetch();
+    const logs: string[] = [];
+    const provider = createAnthropicProvider(CARD, {
+      ...stubDeps(mock),
+      log: (m) => logs.push(m),
+    });
+    mock.queueMany({
+      status: 200,
+      body: {
+        content: [
+          { type: "tool_use", name: "agent_response", input: { a: 1 } }, // 缺失 id
+          { type: "tool_use", id: "x1", name: "other_tool", input: {} }, // 非请求名
+          // input 病态非对象（与 gemini args / openai arguments 的丢弃口径对齐）
+          { type: "tool_use", id: "x2", name: "agent_response", input: "weird" },
+          // 合法无参形态（input 缺失）兜底 {} 保留
+          { type: "tool_use", id: "x3", name: "agent_response" },
+        ],
+        stop_reason: "tool_use",
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([{ id: "x3", name: "agent_response", args: {} }]);
+    expect(logs.some((m) => m.includes("缺失 id，丢弃调用") && m.includes("agent_response"))).toBe(
+      true,
+    );
+    expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
+    expect(logs.some((m) => m.includes("丢弃 input 非对象的 tool_use"))).toBe(true);
   });
 
   it.each([

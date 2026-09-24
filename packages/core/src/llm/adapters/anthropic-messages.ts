@@ -168,6 +168,12 @@ function parseResponse(
           log(`[llm] anthropic tool_use 缺失 id，丢弃调用：${item.name}`);
           continue;
         }
+        // 缺失/null 兜底 {}（无参工具合法形态）；其余非对象病态值与 gemini args /
+        // openai arguments 同款「丢弃留证据」，避免调用以空参静默执行（轮 12 #13）
+        if (item.input !== undefined && item.input !== null && !isRecord(item.input)) {
+          log(`[llm] anthropic 丢弃 input 非对象的 tool_use：${item.name}`);
+          continue;
+        }
         toolCalls.push({
           id: item.id,
           name: item.name,
