@@ -173,12 +173,9 @@ function parseResponse(
   providerName: string,
 ): ChatResponse {
   if (!isRecord(json)) {
-    throw new LLMProtocolViolationError(
-      `gemini 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
-      {
-        provider: providerName,
-      },
-    );
+    throw new LLMProtocolViolationError(`gemini 响应不是对象：${stringifyForLog(json)}`, {
+      provider: providerName,
+    });
   }
   // promptFeedback.blockReason = 全局拦截（无候选内容，梯子无从处理）→ LLMBlockedError
   const feedback = isRecord(json.promptFeedback) ? json.promptFeedback : undefined;
@@ -306,11 +303,24 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
         ? {
             tools: [
               {
-                functionDeclarations: req.tools.map((t) => ({
-                  name: t.name,
-                  description: t.description,
-                  parameters: sanitizeGeminiSchema(t.parameters, onSchemaIssue),
-                })),
+                functionDeclarations: req.tools.map((t) => {
+                  const sanitized = sanitizeGeminiSchema(t.parameters, onSchemaIssue);
+                  // 顶层 parameters 语义恒为命名参数集（object）：无参工具上游常给
+                  // {}（清洗兜底成 type:string）——严格端点 400、宽容端点也把工具
+                  // 声明成「参数是一个字符串」诱导病态 args；嵌套节点兜底 string
+                  // 合理（语义未知），顶层在此调用点收口（轮 22 #7）
+                  if (sanitized.type !== "object") {
+                    onSchemaIssue(
+                      `顶层 parameters type=${String(sanitized.type)} 归一为 object（函数参数恒为命名参数集）`,
+                    );
+                    sanitized.type = "object";
+                  }
+                  return {
+                    name: t.name,
+                    description: t.description,
+                    parameters: sanitized,
+                  };
+                }),
               },
             ],
           }

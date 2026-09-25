@@ -414,3 +414,14 @@ smoke 产物摘要：
 - **杂项**：`[error] ` 前缀常量单源（#3，openai/gemini 共用）；超时消息 deadline 绝对时间戳改相对 elapsed（#9，deps.now() 域无参照系易误读）；anthropic CARD.maxTokens 与 DEFAULT 同值无区分度改 4096（#1）；空 systemPrompt 用例收紧首条 user + 条数断言（#2）；setupLogs 支持 over 收敛两处直调（#13）；blocked 用例内联零时钟收敛 setupCore（#14）；transforms.test 空行对齐（#7）。
 
 测试 299 例全绿（覆盖率 98.41%；断言增密、用例合并致净数持平）。
+
+### 评审轮 22（review-p2-llm-client-22.json，2026-09-25，8/8 采纳）
+
+采纳 8 条。要点：
+
+- **__proto__ 属性名原型污染收口（#5）**：properties 循环的普通对象字面量容器遇 "__proto__" 属性名（宿主/用户可控的工具参数名）会命中继承的原型 setter——子 schema 静默丢失且无上报、props 原型被改写；null 原型容器收口（P1.2 parseAttrs 同款坑）。测试侧用 defineProperty 构造自有 __proto__（计算键/字符串成员访问均被 biome useLiteralKeys 误报，同 P1.2 轮 3 教训）。
+- **无参工具顶层 parameters 归一 object（#7）**：上游对无参工具给 `{}` 很自然，清洗兜底成 `{type:"string"}` 后语义错误（顶层 parameters 恒为命名参数集；严格端点 400、宽容端点把工具声明成「参数是一个字符串」诱导病态 args）——gemini 调用点对清洗结果顶层 type 收口 object 并留清洗证据；嵌套节点兜底 string 不变（语义未知）。
+- **截断长度统一 500（#1-#4）**：三适配器「响应不是对象」的 `.slice(0, 200)` 收敛 stringifyForLog、http.ts「响应体不是合法 JSON」同文件 200 与 ERROR_DETAIL_MAX=500 分叉消除；既有 200 阈值锁定用例同步更新。
+- **杂项（#6/#8）**：测试注释「16 位卡号」修正为 19 位（字面量事实）；敏感值空对象与 undefined 的不同代码路径（空 entries 循环 / reversed 空早退）补对称锚定。
+
+测试 301 例全绿（覆盖率 98.42%）。

@@ -166,12 +166,9 @@ function parseResponse(
   providerName: string,
 ): ChatResponse {
   if (!isRecord(json)) {
-    throw new LLMProtocolViolationError(
-      `anthropic 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
-      {
-        provider: providerName,
-      },
-    );
+    throw new LLMProtocolViolationError(`anthropic 响应不是对象：${stringifyForLog(json)}`, {
+      provider: providerName,
+    });
   }
   const content = Array.isArray(json.content) ? json.content : [];
   let text = "";

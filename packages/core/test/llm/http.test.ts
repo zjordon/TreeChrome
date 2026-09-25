@@ -157,16 +157,16 @@ describe("postJson 成功与网络层", () => {
     expect((err as Error).message).toContain("<html>oops");
   });
 
-  it("2xx 非 JSON 长响应体 → 消息截断在 200 字符（阈值锁定；网关 200 回整页 HTML 时不无上限膨胀）", async () => {
+  it("2xx 非 JSON 长响应体 → 消息截断在 ERROR_DETAIL_MAX=500（阈值统一，轮 22 #4；网关 200 回整页 HTML 时不无上限膨胀）", async () => {
     const mock = new MockFetch();
     mock.queueMany({
       status: 200,
-      rawBody: `<html>${"x".repeat(300)}`,
+      rawBody: `<html>${"x".repeat(600)}`,
       headers: { "content-type": "text/html" },
     });
     const err = await post(mock).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LLMProtocolViolationError);
-    expect((err as Error).message.length).toBeLessThanOrEqual("响应体不是合法 JSON：".length + 200);
+    expect((err as Error).message.length).toBeLessThanOrEqual("响应体不是合法 JSON：".length + 500);
     expect((err as Error).message).toContain("<html>");
   });
 

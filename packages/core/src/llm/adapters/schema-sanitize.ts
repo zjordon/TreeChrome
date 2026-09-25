@@ -134,7 +134,10 @@ export function sanitizeGeminiSchema(
         onSchemaIssue?.("properties 非对象，删除该键");
         continue;
       }
-      const props: Record<string, unknown> = {};
+      // __proto__ 属性名会命中普通对象字面量继承的原型 setter 而非创建自有键
+      //（子 schema 静默丢失 + 原型被改写）——null 原型容器收口（轮 22 #5；属性名
+      // 是宿主/用户可控输入，与 P1.2 parseAttrs 同款坑）
+      const props = Object.create(null) as Record<string, unknown>;
       for (const [name, sub] of Object.entries(value)) {
         // 子 schema 非对象（draft-06+ 布尔 schema properties:{foo:true} 等）原样
         // 透传会被端点 400——归一空 schema 并补缺省 type（Gemini 不支持布尔

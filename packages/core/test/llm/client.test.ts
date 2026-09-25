@@ -523,7 +523,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     });
     expect(intKeys.logs.some((m) => m.includes("WARNING") && m.includes("数组索引键"))).toBe(true);
 
-    // 超界数字串（16 位卡号）是普通字符串键恒插入序——无重排风险零告警
+    // 超界数字串（19 位卡号）是普通字符串键恒插入序——无重排风险零告警
     //（轮 21 #15 谓词收窄的反例锚定：旧「整数形态键」说法对卡号/手机号是假阳性）
     const cardNumber = setupWithLogs();
     cardNumber.mock.queueMany(toolOk({ done: 1 }));

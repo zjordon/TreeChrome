@@ -242,6 +242,11 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     applySensitiveInMessages(messages, undefined);
     expect(firstText(messages[0])).toBe("sk-abc");
     expect(restoreSensitiveInOutput({ v: "x" }, undefined)).toEqual({ v: "x" });
+    // 空对象与 undefined 是不同代码路径（空 entries 循环 / reversed 空早退，
+    // 轮 22 #8）——宿主「未配置任何敏感值」的常见入参形态对称锚定
+    applySensitiveInMessages(messages, {});
+    expect(firstText(messages[0])).toBe("sk-abc");
+    expect(restoreSensitiveInOutput({ v: "x" }, {})).toEqual({ v: "x" });
   });
 });
 

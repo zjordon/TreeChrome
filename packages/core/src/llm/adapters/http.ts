@@ -203,7 +203,7 @@ export async function postJson(
   try {
     return JSON.parse(text);
   } catch {
-    throw new LLMProtocolViolationError(`响应体不是合法 JSON：${text.slice(0, 200)}`, {
+    throw new LLMProtocolViolationError(`响应体不是合法 JSON：${text.slice(0, ERROR_DETAIL_MAX)}`, {
       provider: init.provider,
       status: resp.status,
     });

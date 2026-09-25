@@ -323,6 +323,26 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
+  it("属性名 __proto__ 不触发原型 setter（null 原型容器，子 schema 不静默丢失，轮 22 #5）", () => {
+    // defineProperty 构造自有 __proto__ 属性：字面量简写形式会设置原型、计算键
+    // 与字符串成员访问会被 biome useLiteralKeys 误报（P1.2 轮 3 同款坑）
+    const input: Record<string, unknown> = { type: "object" };
+    const props: Record<string, unknown> = {};
+    Object.defineProperty(props, "__proto__", {
+      value: { type: "string" },
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    input.properties = props;
+    const out = sanitizeGeminiSchema(input);
+    const outProps = out.properties as Record<string, unknown>;
+    expect(Object.keys(outProps)).toContain("__proto__");
+    expect(Object.getOwnPropertyDescriptor(outProps, "__proto__")?.value).toEqual({
+      type: "string",
+    });
+  });
+
   it("标量键值形态闭环：properties 非对象/type 标量/enum 非 string[]/nullable 非布尔 → 删除或兜底并上报", () => {
     const issues: string[] = [];
     const out = sanitizeGeminiSchema(
@@ -513,6 +533,22 @@ describe("请求构造（canonical → wire）", () => {
     });
     expect(mock.lastBody()).not.toHaveProperty("tools");
     expect(mock.lastBody()).not.toHaveProperty("toolConfig");
+  });
+
+  it("无参工具顶层 parameters {} → 归一 type:object（命名参数集语义，留清洗证据，轮 22 #7）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: [{ name: "no_args", description: "d", parameters: {} }],
+    });
+    const tools = mock.lastBody().tools as Array<Record<string, unknown>>;
+    const decls = tools[0].functionDeclarations as Array<Record<string, unknown>>;
+    expect(decls[0].parameters).toEqual({ type: "object" }); // 非 type:string
+    expect(logs.some((m) => m.includes("顶层 parameters") && m.includes("归一为 object"))).toBe(
+      true,
+    );
   });
 
   it("schema 清洗事件告警在 provider 实例级去重（同 schema 逐请求固定，重复只有噪音）", async () => {

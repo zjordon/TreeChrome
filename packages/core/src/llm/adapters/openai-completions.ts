@@ -197,12 +197,9 @@ function parseResponse(
   providerName: string,
 ): ChatResponse {
   if (!isRecord(json)) {
-    throw new LLMProtocolViolationError(
-      `openai 响应不是对象：${JSON.stringify(json).slice(0, 200)}`,
-      {
-        provider: providerName,
-      },
-    );
+    throw new LLMProtocolViolationError(`openai 响应不是对象：${stringifyForLog(json)}`, {
+      provider: providerName,
+    });
   }
   const choices = Array.isArray(json.choices) ? json.choices : [];
   const first = choices.length > 0 ? choices[0] : undefined;
