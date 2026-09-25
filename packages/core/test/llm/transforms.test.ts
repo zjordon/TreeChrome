@@ -173,6 +173,7 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     applySensitiveInMessages(messages, map);
     expect(firstText(messages[2])).toBe("tool echoed sk-abc-def"); // 明文保留（已知取舍）
   });
+
   it("空字符串键跳过（replaceAll('', x) 会逐字符插入占位符损坏全文）；还原侧滤空 real 与空占位符", () => {
     const messages: ChatMessage[] = [userMsg("keep this intact")];
     applySensitiveInMessages(messages, { "": "<BAD>", keep: "<K>" });

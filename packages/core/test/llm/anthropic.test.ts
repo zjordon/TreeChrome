@@ -19,7 +19,8 @@ const CARD: ProviderConfig = {
   baseUrl: "https://open.bigmodel.cn/api/anthropic",
   apiKey: "sk-test",
   model: "glm-5.1",
-  maxTokens: 16384,
+  // ≠ DEFAULT_MAX_TOKENS(16384)：与「NaN 回退 DEFAULT」用例形成「卡片直通 vs 回退缺省」区分度（轮 21 #1）
+  maxTokens: 4096,
 };
 
 const TOOL = AGENT_TOOL;
@@ -36,8 +37,9 @@ const toolOk = (input: Record<string, unknown>) => ({
   },
 });
 
-/** 带日志采集的装配（丢弃类/清洗类告警断言共用） */
-const setupLogs = () => setupProviderWithLogs(createAnthropicProvider, CARD);
+/** 带日志采集的装配（丢弃类/清洗类告警断言共用；over 覆盖卡片级配置，轮 21 #13） */
+const setupLogs = (over: Partial<ProviderConfig> = {}) =>
+  setupProviderWithLogs(createAnthropicProvider, CARD, over);
 describe("请求构造（canonical → wire）", () => {
   it("全量映射：system 独立字段、text/image 块、tool_use、连续 toolResult 折叠进一条 user", async () => {
     const { mock, provider } = setup();
@@ -84,7 +86,7 @@ describe("请求构造（canonical → wire）", () => {
     });
     expect(mock.lastBody()).toEqual({
       model: "glm-5.1",
-      max_tokens: 16384,
+      max_tokens: 4096,
       system: "You are an agent.",
       messages: [
         {
@@ -231,9 +233,7 @@ describe("请求构造（canonical → wire）", () => {
   });
 
   it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4；三适配器接线锚定——纯逻辑矩阵见 common.test.ts，轮 19 #2）", async () => {
-    const { mock, logs, provider } = setupProviderWithLogs(createAnthropicProvider, CARD, {
-      temperature: 1.5,
-    });
+    const { mock, logs, provider } = setupLogs({ temperature: 1.5 });
     const req: ChatRequest = {
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
@@ -251,9 +251,7 @@ describe("请求构造（canonical → wire）", () => {
   });
 
   it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #10；三适配器接线锚定，纯逻辑见 common.test.ts）", async () => {
-    const { mock, logs, provider } = setupProviderWithLogs(createAnthropicProvider, CARD, {
-      maxTokens: Number.NaN,
-    });
+    const { mock, logs, provider } = setupLogs({ maxTokens: Number.NaN });
     mock.queueMany(toolOk({}), toolOk({}));
     const req: ChatRequest = {
       systemPrompt: null,

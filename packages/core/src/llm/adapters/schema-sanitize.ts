@@ -13,7 +13,7 @@
 // 键名与 type 值做归一化（小写键判定、联合类型拆 nullable）——多词约束键按官方
 // camelCase 发射；只清洗 schema 键，properties 下的属性名原样保留。
 
-import { isRecord } from "./common.js";
+import { isRecord, stringifyForLog } from "./common.js";
 
 const ALLOWED_KEYS = new Set([
   "type",
@@ -166,7 +166,7 @@ export function sanitizeGeminiSchema(
       // 非法形态删除并上报
       if (normalized === "type") {
         if (typeof value !== "string") {
-          onSchemaIssue?.(`type 非字符串形态兜底为 string：${JSON.stringify(value)}`);
+          onSchemaIssue?.(`type 非字符串形态兜底为 string：${stringifyForLog(value)}`);
           out.type = "string";
           continue;
         }
@@ -181,7 +181,7 @@ export function sanitizeGeminiSchema(
             onSchemaIssue?.(`type「${value}」归一化为小写 ${lowered}`);
             out.type = lowered;
           } else {
-            onSchemaIssue?.(`type「${JSON.stringify(value)}」不在官方枚举集，兜底为 string`);
+            onSchemaIssue?.(`type「${stringifyForLog(value)}」不在官方枚举集，兜底为 string`);
             out.type = "string";
           }
           continue;
@@ -190,7 +190,7 @@ export function sanitizeGeminiSchema(
       if (normalized === "description" && typeof value !== "string") {
         // description 是 proto string 字段，非字符串上送即 400——白名单内最后
         // 一个未做值形态校验的标量键（轮 18 #6 补齐闭环）
-        onSchemaIssue?.(`description 非字符串，删除该键：${JSON.stringify(value)}`);
+        onSchemaIssue?.(`description 非字符串，删除该键：${stringifyForLog(value)}`);
         continue;
       }
       if (normalized === "enum" && !isStringArray(value)) {
@@ -202,26 +202,35 @@ export function sanitizeGeminiSchema(
         continue;
       }
       if (normalized === "format" && (typeof value !== "string" || !GEMINI_FORMATS.has(value))) {
-        onSchemaIssue?.(`format「${JSON.stringify(value)}」不在官方支持集，删除该键`);
+        onSchemaIssue?.(`format「${stringifyForLog(value)}」不在官方支持集，删除该键`);
         continue;
       }
       // 约束键标量类型校验（轮 15 #13）：官方口径 pattern 为 string、
       // minLength/maxLength 为 int64（数值）——病态值（pattern: 123 等）上送
       // 即 400 INVALID_ARGUMENT
       if (normalized === "pattern" && typeof value !== "string") {
-        onSchemaIssue?.(`约束键「pattern」非字符串，删除该键：${JSON.stringify(value)}`);
+        onSchemaIssue?.(`约束键「pattern」非字符串，删除该键：${stringifyForLog(value)}`);
         continue;
       }
+      // 约束键标量类型校验分域（轮 15 #13 + 轮 21 #12）：minLength/maxLength/
+      // minItems/maxItems 官方为 int64——小数（如 maxLength: 2.5）proto3 解析失败
+      // 同为 400（Number.isInteger 蕴含 number+finite）；minimum/maximum 为
+      // double，维持有限数值校验
       if (
         (normalized === "minlength" ||
           normalized === "maxlength" ||
-          normalized === "minimum" ||
-          normalized === "maximum" ||
           normalized === "minitems" ||
           normalized === "maxitems") &&
+        !Number.isInteger(value)
+      ) {
+        onSchemaIssue?.(`约束键「${normalized}」非整数，删除该键：${stringifyForLog(value)}`);
+        continue;
+      }
+      if (
+        (normalized === "minimum" || normalized === "maximum") &&
         (typeof value !== "number" || !Number.isFinite(value))
       ) {
-        onSchemaIssue?.(`约束键「${normalized}」非有限数值，删除该键：${JSON.stringify(value)}`);
+        onSchemaIssue?.(`约束键「${normalized}」非有限数值，删除该键：${stringifyForLog(value)}`);
         continue;
       }
       // 写入统一用归一化（小写）键 + 多词约束键的官方 camelCase（"MaxLength" 等

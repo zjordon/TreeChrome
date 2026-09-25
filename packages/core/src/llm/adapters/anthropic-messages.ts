@@ -34,11 +34,16 @@ function blocksToContent(blocks: ContentBlock[]): Array<Record<string, unknown>>
   for (const b of blocks) {
     if (b.kind === "text") {
       content.push({ type: "text", text: b.text });
-    } else {
+    } else if (b.kind === "image") {
       content.push({
         type: "image",
         source: { type: "base64", media_type: b.mimeType, data: b.base64 },
       });
+    } else {
+      // 穷尽断言（轮 21 #6）：ContentBlock 联合扩展新成员（types.ts 注释明示
+      // PDF 等后置）时编译期报错——隐式 else 会产出 undefined 字段的非法 wire 块
+      const _exhaustive: never = b;
+      throw new Error(`未支持的 ContentBlock kind: ${stringifyForLog(_exhaustive)}`);
     }
   }
   return content;

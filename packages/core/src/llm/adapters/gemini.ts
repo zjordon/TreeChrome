@@ -27,6 +27,7 @@ import {
   resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
+  TOOL_RESULT_ERROR_PREFIX,
   temperatureEntry,
 } from "./common.js";
 import { postJson } from "./http.js";
@@ -36,9 +37,17 @@ import { sanitizeGeminiSchema } from "./schema-sanitize.js";
 const SCHEMA_ISSUE_DEDUP_MAX = 128;
 
 function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
-  return blocks.map((b) =>
-    b.kind === "text" ? { text: b.text } : { inlineData: { mimeType: b.mimeType, data: b.base64 } },
-  );
+  return blocks.map((b) => {
+    if (b.kind === "text") {
+      return { text: b.text };
+    }
+    if (b.kind === "image") {
+      return { inlineData: { mimeType: b.mimeType, data: b.base64 } };
+    }
+    // 穷尽断言（轮 21 #6）：联合扩展新成员时编译期报错（同 anthropic blocksToContent）
+    const _exhaustive: never = b;
+    return _exhaustive;
+  });
 }
 
 /**
@@ -107,7 +116,9 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
               functionResponse: {
                 name: tr.toolName,
                 // isError 无原生字段：[error] 前缀约定（与 openai 同款）
-                response: { result: tr.isError ? `[error] ${tr.text}` : tr.text },
+                response: {
+                  result: tr.isError ? `${TOOL_RESULT_ERROR_PREFIX}${tr.text}` : tr.text,
+                },
               },
               // 官方 SDK 形态：签名随 functionResponse part 回传（评审轮 10 #9——
               // 官方文档两处口径并存：错误文案指向 functionCall part、SDK 组装

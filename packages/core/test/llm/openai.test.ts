@@ -292,6 +292,21 @@ describe("请求构造（canonical → wire）", () => {
     normal.mock.queueMany(toolOk("{}"));
     await normal.provider.chat(baseReq());
     expect(normal.mock.lastBody().temperature).toBe(0.2);
+
+    // 抑制可观测（轮 21 #11）：配置了 temperature 却被忽略 → 一次性 WARNING
+    //（与「两级缺省不发」不同，静默忽略无线索）；未配置则零告警
+    const suppressed = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
+      model: "gpt-5",
+      temperature: 0.7,
+    });
+    suppressed.mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await suppressed.provider.chat(baseReq());
+    await suppressed.provider.chat(baseReq());
+    expect(suppressed.logs.filter((m) => m.includes("只接受默认温度"))).toHaveLength(1);
+    const quiet = setup({ model: "gpt-5" });
+    quiet.mock.queueMany(toolOk("{}"));
+    await quiet.provider.chat(baseReq());
+    expect(quiet.mock.lastBody()).not.toHaveProperty("temperature");
   });
 
   it("空串 systemPrompt 与 null 同等不发（三协议统一口径，轮 20 #13）", async () => {
@@ -303,7 +318,8 @@ describe("请求构造（canonical → wire）", () => {
       tools: [TOOL],
     });
     const messages = mock.lastBody().messages as Array<Record<string, unknown>>;
-    expect(messages[0].role).not.toBe("system");
+    expect(messages[0].role).toBe("user"); // 不止「无 system」：首条必须是 user
+    expect(messages).toHaveLength(1);
   });
 
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {

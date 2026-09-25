@@ -164,19 +164,26 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
-  it("约束键标量类型校验：pattern/minLength 非字符串、minimum/minItems 非有限数值删除并上报（轮 15 #13）", () => {
+  it("约束键标量类型校验分域：pattern 非字符串、int64 四键非整数（含小数）、minimum/maximum 非有限数值删除并上报（轮 15 #13 + 轮 21 #12）", () => {
     const issues: string[] = [];
     expect(
       sanitizeGeminiSchema(
-        { pattern: 123, minLength: true, minimum: "5", minItems: Number.NaN },
+        {
+          pattern: 123,
+          minLength: true,
+          minimum: "5",
+          minItems: Number.NaN,
+          maxLength: 2.5, // 小数：proto3 int64 解析失败同为 400
+        },
         (d) => issues.push(d),
       ),
     ).toEqual({ type: "string" }); // 约束键删空后补注入缺省 type（轮 19 #1）
     expect(issues).toEqual([
       "约束键「pattern」非字符串，删除该键：123",
-      "约束键「minlength」非有限数值，删除该键：true",
+      "约束键「minlength」非整数，删除该键：true",
       '约束键「minimum」非有限数值，删除该键："5"',
-      "约束键「minitems」非有限数值，删除该键：null",
+      "约束键「minitems」非整数，删除该键：null",
+      "约束键「maxlength」非整数，删除该键：2.5",
       "节点缺 type，补注入缺省 string",
     ]);
   });

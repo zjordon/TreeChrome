@@ -9,6 +9,10 @@ import { ERROR_DETAIL_MAX } from "./http.js";
 
 export { isRecord } from "../transforms.js";
 
+/** toolResult.isError 无原生 wire 字段时的前缀约定（openai content / gemini
+ * response 两协议共用，02 §3.2 映射表；轮 21 #3 单源防口径漂移） */
+export const TOOL_RESULT_ERROR_PREFIX = "[error] ";
+
 export function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }

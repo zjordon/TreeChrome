@@ -14,6 +14,7 @@ import type {
   ChatResponse,
   ContentBlock,
   StopReason,
+  TextBlock,
   TokenUsage,
   ToolCall,
 } from "../types.js";
@@ -25,6 +26,7 @@ import {
   resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
+  TOOL_RESULT_ERROR_PREFIX,
   temperatureEntry,
 } from "./common.js";
 import { postJson } from "./http.js";
@@ -42,19 +44,46 @@ import { postJson } from "./http.js";
  */
 const NEW_CONTRACT_PREFIX = /^(gpt-5|gpt-4\.1|gpt-oss|o1|o3|o4)/;
 
+/** 只接受默认温度 1 的模型前缀（轮 21 #4 具名）：o 系全系 + gpt-5 全系（400
+ * "Unsupported value: 'temperature' …Only the default (1) value is supported"，
+ * 轮 20 #11 web 核实）；成员集与 NEW_CONTRACT_PREFIX **刻意不同**（gpt-4.1/
+ * gpt-oss 走新上限字段但仍收温度）——新增模型时两清单分别核对 */
+const TEMPERATURE_UNSUPPORTED_PREFIX = /^(o\d|gpt-5)/;
+
+/** 温度抑制路径的观测（轮 21 #11）：「配置了却被静默忽略」与「两级缺省不发」
+ * 不同——宿主误配无线索；复用钳制告警的 makeOnceWarn 实例（同一卡片要么命中
+ * 抑制前缀永不钳制、要么走钳制，互斥无冲突） */
+function suppressedTemperatureEntry(
+  req: ChatRequest,
+  config: ProviderConfig,
+  onWarn: (message: string) => void,
+): Record<string, unknown> {
+  if (req.temperature !== undefined || config.temperature !== undefined) {
+    onWarn(
+      `模型 ${config.model} 只接受默认温度，配置的 temperature 将被忽略不发送（${config.name}）`,
+    );
+  }
+  return {};
+}
+
 /** 纯文本 user → content 字符串（最大化兼容）；含图 → 数组形态（data-URL image_url） */
 function userContent(blocks: ContentBlock[]): string | Array<Record<string, unknown>> {
-  if (!blocks.some((b) => b.kind === "image")) {
-    return blocks.map((b) => (b.kind === "text" ? b.text : "")).join("");
+  // 类型谓词守卫（轮 21 #10）：评审建议的 some(image) 反向守卫无法让 TS 收窄
+  //（never 断言编译不过）——every 谓词对现联合语义等价，且联合扩展新成员
+  //（PDF 等）时自然落入数组路径的穷尽断言
+  if (blocks.every((b): b is TextBlock => b.kind === "text")) {
+    return blocks.map((b) => b.text).join("");
   }
-  return blocks.map((b) =>
-    b.kind === "text"
-      ? { type: "text", text: b.text }
-      : {
-          type: "image_url",
-          image_url: { url: `data:${b.mimeType};base64,${b.base64}` },
-        },
-  );
+  return blocks.map((b) => {
+    if (b.kind === "text") {
+      return { type: "text", text: b.text };
+    }
+    if (b.kind === "image") {
+      return { type: "image_url", image_url: { url: `data:${b.mimeType};base64,${b.base64}` } };
+    }
+    const _exhaustive: never = b;
+    return _exhaustive;
+  });
 }
 
 /** canonical → wire 消息。toolResult 每条独立 tool 消息（与 anthropic 相反，不合并） */
@@ -96,7 +125,7 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       role: "tool",
       tool_call_id: msg.toolCallId,
       // isError 无原生字段：true 时 [error] 前缀约定（写死在适配器，02 §3.2 映射表）
-      content: msg.isError ? `[error] ${msg.text}` : msg.text,
+      content: msg.isError ? `${TOOL_RESULT_ERROR_PREFIX}${msg.text}` : msg.text,
     });
   }
   return out;
@@ -275,14 +304,13 @@ export function createOpenAICompletionsProvider(
       ...(req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
-      // temperature 回退链（common.temperatureEntry）；两级缺省不发。o 系与 gpt-5
-      // 系**只接受默认温度 1**（gpt-5 全系 400 "Unsupported value: 'temperature'
-      // does not support X with this model. Only the default (1) value is
-      // supported"，轮 20 #11 web 核实——轮 14 注释「gpt-5 支持 0-2」有误）——卡片
-      // 误配即每请求硬 400 且误触 fallback 单向切换，与 maxTokensField 同源的
-      // 地雷在此拆除：前缀命中时抑制发送（gpt-4.1/gpt-oss 支持 0-2 不抑制）
-      ...(/^(o\d|gpt-5)/.test(config.model)
-        ? {}
+      // temperature 回退链（common.temperatureEntry）；两级缺省不发。o 系与
+      // gpt-5 系只接受默认温度（TEMPERATURE_UNSUPPORTED_PREFIX，轮 20 #11 web
+      // 核实）——卡片误配即每请求硬 400 且误触 fallback 单向切换，与
+      // maxTokensField 同源的地雷在此拆除：前缀命中时抑制发送并留一次性告警
+      //（轮 21 #11；gpt-4.1/gpt-oss 支持 0-2 不抑制）
+      ...(TEMPERATURE_UNSUPPORTED_PREFIX.test(config.model)
+        ? suppressedTemperatureEntry(req, config, onTemperatureClamp)
         : temperatureEntry(req, config, onTemperatureClamp)),
     };
     const json = await postJson(deps.fetch, url, headers, body, {

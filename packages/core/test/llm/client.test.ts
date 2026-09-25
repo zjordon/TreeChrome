@@ -513,14 +513,24 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
   });
 
-  it("sensitiveMap 病态配置一次性 WARNING：整数键重排 / 占位符冲突（轮 20 #10/#14）", async () => {
-    // 整数形态键：JS 引擎重排到枚举首位，含包含关系键时替换顺序不可依赖
+  it("sensitiveMap 病态配置一次性 WARNING：数组索引键重排 / 占位符冲突（轮 20 #10/#14 + 轮 21 #8/#15）", async () => {
+    // canonical 数组索引键（≤10 位非负数字串）：引擎重排到枚举首位升序，
+    // 含包含关系键时替换顺序不可依赖
     const intKeys = setupWithLogs();
     intKeys.mock.queueMany(toolOk({ done: 1 }));
     await intKeys.client.getAction("sys", msgs(), TOOL, {
       sensitiveMap: { "1234": "<A>", "sk-x": "<B>" },
     });
-    expect(intKeys.logs.some((m) => m.includes("WARNING") && m.includes("整数形态键"))).toBe(true);
+    expect(intKeys.logs.some((m) => m.includes("WARNING") && m.includes("数组索引键"))).toBe(true);
+
+    // 超界数字串（16 位卡号）是普通字符串键恒插入序——无重排风险零告警
+    //（轮 21 #15 谓词收窄的反例锚定：旧「整数形态键」说法对卡号/手机号是假阳性）
+    const cardNumber = setupWithLogs();
+    cardNumber.mock.queueMany(toolOk({ done: 1 }));
+    await cardNumber.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "6222020000000000123": "<CARD>" },
+    });
+    expect(cardNumber.logs.some((m) => m.includes("WARNING"))).toBe(false);
 
     // 占位符冲突：还原侧先插入者胜，后续条目静默失效（还原结果张冠李戴）
     const conflict = setupWithLogs();
@@ -529,6 +539,15 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       sensitiveMap: { realA: "<X>", realB: "<X>" },
     });
     expect(conflict.logs.some((m) => m.includes("WARNING") && m.includes("占位符冲突"))).toBe(true);
+
+    // 两类病态共存：各自独立告警（轮 21 #8——旧 if/else 会让整数键掩盖冲突检测）
+    const both = setupWithLogs();
+    both.mock.queueMany(toolOk({ done: 1 }));
+    await both.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "42": "<N>", realA: "<X>", realB: "<X>" },
+    });
+    expect(both.logs.some((m) => m.includes("数组索引键"))).toBe(true);
+    expect(both.logs.some((m) => m.includes("占位符冲突"))).toBe(true);
 
     // 正常配置零告警（反例锚定）
     const clean = setupWithLogs();
@@ -677,11 +696,8 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
   });
 
   it("blocked（非 infra 第三分支，gemini promptFeedback）同样触发切换且类型不变形（轮 14 #6）", async () => {
-    const mock = new MockFetch();
-    const client = createLLMClient(
-      { ...GEMINI_CARD, fallback: FALLBACK },
-      { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: () => {} },
-    );
+    // setupCore 的 zero 形态（轮 21 #14：不再内联重建零时钟 deps 字面量）
+    const { mock, client } = setupCore({ ...GEMINI_CARD, fallback: FALLBACK }, "zero", false);
     mock.queueMany(
       { status: 200, body: { promptFeedback: { blockReason: "SAFETY" } } },
       toolOk({ via: "fb" }),

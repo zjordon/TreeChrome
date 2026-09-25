@@ -401,3 +401,16 @@ smoke 产物摘要：
 - **#7 敏感值缺省翻转 secure-by-default**：第 N 次同议题（轮 13 #8 驳回、轮 14 #2 登记缺省风险 + P4 决策项、轮 15 更名 redactToolPayloads），本轮无新事实——「缺省抛错迫使二选一」仍是缺省行为变更，属 P4 SecretProvider 裁决域，维持裁决。
 
 测试 299 例全绿（覆盖率 98.75%）。
+
+### 评审轮 21（review-p2-llm-client-21.json，2026-09-25，15/15 采纳）
+
+采纳 15 条。要点：
+
+- **数组索引键谓词修正（#15，修正轮 20 #10 的假阳性面）**：引擎只把 canonical 数组索引键（非负整数 ≤ 2^32-1 的数字串）重排到枚举首位——负数与超界数字串（11 位手机号/16-19 位卡号，恰是轮 15 #10 注释与告警文案引用的典型形态）是普通字符串键恒插入序、无风险；谓词收窄 + 告警文案与 transforms 注释同步修正，补「16 位卡号零告警」反例锚定。
+- **病态检测独立执行（#8，修正轮 20 自身的掩盖缺陷）**：整数键与占位符冲突两类检测原为 if/else 串行且共享标志——整数键命中时冲突检测被跳过且标志置位后不再复查（风险更高的张冠李戴损坏恰被掩盖）；改各自独立执行 + 共存用例锚定。
+- **穷尽断言收口三适配器（#6/#10）**：ContentBlock 联合（types.ts 注释明示 PDF 等后置）的块转换 else 分支全部改为显式 kind 判定 + never 断言——联合扩展新成员时编译期报错而非静默产出 undefined 字段的非法 wire 块/空串。**评审建议的纯文本路径写法自身编译不过**（some(image) 反向守卫无法收窄到 never，TS2322 实证），改用 every 类型谓词守卫（语义等价且真收窄）。
+- **温度抑制可观测（#11）+ 具名常量（#4）**：「配置了 temperature 却被静默忽略」补一次性 WARNING（复用钳制告警的 makeOnceWarn 实例，路径互斥）；抑制正则提升为 TEMPERATURE_UNSUPPORTED_PREFIX（与 NEW_CONTRACT_PREFIX 相邻，成员集刻意不同的差异入注释）。
+- **schema-sanitize 收尾（#5/#12）**：6 处 onSchemaIssue 裸 stringify 收敛 stringifyForLog（病态 schema 值无上限，且 detail 整串进 128 条去重集挡不住单条无界）；约束键校验分域——int64 四键（minLength/maxLength/minItems/maxItems）补整数校验（小数 proto3 解析失败同为 400），minimum/maximum 维持 double 有限校验。
+- **杂项**：`[error] ` 前缀常量单源（#3，openai/gemini 共用）；超时消息 deadline 绝对时间戳改相对 elapsed（#9，deps.now() 域无参照系易误读）；anthropic CARD.maxTokens 与 DEFAULT 同值无区分度改 4096（#1）；空 systemPrompt 用例收紧首条 user + 条数断言（#2）；setupLogs 支持 over 收敛两处直调（#13）；blocked 用例内联零时钟收敛 setupCore（#14）；transforms.test 空行对齐（#7）。
+
+测试 299 例全绿（覆盖率 98.41%；断言增密、用例合并致净数持平）。

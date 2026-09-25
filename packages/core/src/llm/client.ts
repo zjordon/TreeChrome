@@ -331,27 +331,34 @@ export class LLMClient {
         );
       }
       // sensitiveMap 病态配置的一次性 WARNING（轮 20 #10/#14——transforms 纯函数
-      // 无告警通道，检测上提到有 deps.log 的入口）：
-      // ① 整数形态键（卡号/手机号类）：JS 引擎把 canonical 数字键重排到枚举首位
-      //    （Python dict 恒插入序），含包含关系键时替换顺序静默偏离插入序；
+      // 无告警通道，检测上提到有 deps.log 的入口；轮 21 #8 两检测独立执行，防
+      // 一类病态掩盖另一类；轮 21 #15 谓词收窄到引擎实际重排的键形态）：
+      // ① canonical 数组索引键（非负整数 ≤ 2^32-1 的数字串）：JS 引擎把它们重排
+      //    到枚举首位升序（Python dict 恒插入序），含包含关系键时替换顺序静默
+      //    偏离插入序——负数与超界数字串（11 位手机号/16-19 位卡号）是普通字符
+      //    串键恒插入序，无此风险；
       // ② 占位符冲突（多 real 共享同一 placeholder）：还原侧顺序 replaceAll 先
       //    插入者恒胜，后续条目静默失效——还原结果张冠李戴的数据损坏
       if (sensitive !== undefined && !this.loggedSensitiveMapConfigWarn) {
         const reals = Object.keys(sensitive);
-        const INTEGER_KEY_RE = /^(?:0|-?[1-9]\d*)$/;
-        if (reals.some((real) => INTEGER_KEY_RE.test(real))) {
-          this.loggedSensitiveMapConfigWarn = true;
+        const ARRAY_INDEX_KEY_RE = /^(?:0|[1-9]\d*)$/;
+        const isArrayIndexKey = (real: string): boolean =>
+          ARRAY_INDEX_KEY_RE.test(real) && Number(real) <= 4294967295;
+        const hasIntKey = reals.some(isArrayIndexKey);
+        const placeholders = reals.map((real) => sensitive[real]).filter((ph) => ph !== "");
+        const hasConflict = new Set(placeholders).size !== placeholders.length;
+        if (hasIntKey) {
           this.deps.log(
-            "[llm] WARNING: sensitiveMap 含整数形态键——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖，建议避免纯数字敏感值",
+            "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（≤10 位非负数字串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
           );
-        } else {
-          const placeholders = reals.map((real) => sensitive[real]).filter((ph) => ph !== "");
-          if (new Set(placeholders).size !== placeholders.length) {
-            this.loggedSensitiveMapConfigWarn = true;
-            this.deps.log(
-              "[llm] WARNING: sensitiveMap 存在占位符冲突（多个真实值映射到同一占位符）——还原侧先插入者胜、后续条目静默失效，还原结果可能张冠李戴",
-            );
-          }
+        }
+        if (hasConflict) {
+          this.deps.log(
+            "[llm] WARNING: sensitiveMap 存在占位符冲突（多个真实值映射到同一占位符）——还原侧先插入者胜、后续条目静默失效，还原结果可能张冠李戴",
+          );
+        }
+        if (hasIntKey || hasConflict) {
+          this.loggedSensitiveMapConfigWarn = true;
         }
       }
       // 工具载荷（toolResult 文本 + assistant.toolCalls[].args）默认不在占位范围
@@ -487,7 +494,10 @@ export class LLMClient {
           source = "window";
         }
         throw new LLMTimeoutError(
-          `getAction 预算到期（source=${source}，deadline=${deadlineAt !== undefined ? Math.round(deadlineAt) : "?"}ms）`,
+          // 相对量 elapsed（轮 21 #9）：deadline 是 deps.now() 域的绝对时间戳
+          //（生产为 performance.now()），无参照系易被误读为「预算时长」；
+          // windowExpired 蕴含 deadlineAt 必有定义，"?"" 兜底随之收敛
+          `getAction 预算到期（source=${source}，elapsed=${Math.round(this.deps.now() - now)}ms）`,
           { provider: this.config.name, cause: e },
         );
       }

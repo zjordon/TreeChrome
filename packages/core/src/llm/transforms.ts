@@ -74,9 +74,9 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
  * 防 $ 替换模式 + 按对象插入序（键有包含关系时顺序影响结果，Python dict 序
  * 等价，锚定测试覆盖正反两序）。请求侧占位 / R4 回显占位 / redactToolPayloads
  * 三处共用，防语义失同步。
- * 注意（轮 15 #10）：整数形态键（纯数字敏感值，如卡号）会被 JS 引擎重排到
- * 枚举首位（Python dict 恒插入序）——含此类键且存在包含关系时替换序不可
- * 依赖，宿主应避免纯数字键。
+ * 注意（轮 15 #10，轮 21 #15 表述收窄）：canonical 数组索引键（≤10 位非负
+ * 数字串，引擎重排到枚举首位升序）存在包含关系键时替换序不可依赖；负数与
+ * 超界数字串（手机号/卡号）是普通字符串键，恒插入序无此风险。
  */
 export function replaceSensitiveText(
   text: string,
