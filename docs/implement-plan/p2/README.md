@@ -530,3 +530,16 @@ smoke 产物摘要：
 - **观测缺口（#5/#11）**：gemini 去重集达 128 上限时留一次性达限提示（「事件已停止上报」本身是运维线索，文案避开既有计数过滤词）；无已知内容域的对象 part（inlineData 等官方类型/图像输出模型/网关私货）按键名留证据（不 stringify 防 base64 刷屏）。
 - **openai tool_call type 校验（#4）**：显式非 function 类型（custom/mcp 等新式形态）function 域恰为对象也会混入执行链——丢弃留证据；缺失 type 容忍（兼容端点省略）。
 - **测试结构（#1/#2/#6/#7/#8/#12/#13）**：mock-fetch abortReason 三处单源 + null-body 状态降 null（204/205/304 显式 body 会在构造处抛 TypeError 被分型成网络层假象）；fixtures assemble 收敛装配主体；gemini/openai setupLogs 补 over 参数（三文件签名统一）；夹具 minimum 挪到数值域属性（object 节点挂 minimum 与顶层归一剥离口径自相矛盾）；温度巨型用例按行为维度拆为四条。
+
+测试 337 例全绿（覆盖率 98.72%）。
+
+### 评审轮 32（review-p2-llm-client-32.json，2026-09-25，12/12 采纳）
+
+采纳 12 条。要点：
+
+- **schema 两道硬化（#7/#12）**：递归深度上限 SCHEMA_MAX_DEPTH=64（宿主程序化构造的病态深层嵌套原先以 RangeError 栈溢出直穿——非 LLMError 无归因线索，同 http.ts 轮 27 #2 的宿主数据硬化维度），截断留证据；**嵌套节点约束键 type 分域收尾剥离**（{type:"string", items} 等矛盾组合原先透传，与顶层归一口径不一致）——CONSTRAINT_KEYS_BY_TYPE 按最终 type 删除域外键并上报，四个写在分域口径确立前的旧用例同步改造为域自洽形态。
+- **顶层承载字段留证三连（#8/#9/#10/#11）**：anthropic content / openai choices+message / gemini candidates+promptFeedback「存在但非数组/非 record」原先静默归空——网关 200 畸形载荷下 client 只见空响应无线索；缺失形态不告警保零误报。
+- **transforms 单源化（#1/#5）**：cloneBlocks 提取（TextBlock 拷贝契约两处逐字重复）+ args 嵌套共享前提注释；replaceSensitiveText 委托 rewriteStrings 字符串分支 + filteredSensitiveEntries 共用（「顺序替换」此前文本侧/深层侧两份平行实现，注释宣称的单一实现名不符实）。
+- **边界与收窄（#2/#3/#4/#6）**：用户文本自带 [uN] 字面量与分配 tag 撞名的还原行为锚定（Python 同款固有边界）；REDACTED_PLACEHOLDER 收窄模块内（导出面宽于复用面）；病态检测 O(n²) 重跑的成本取舍显式裁决注释（有意支持 map 原地变异可观测）；toolCall 零结果两形态（悬空结尾/后跟 user）锚定。
+
+测试 344 例全绿（覆盖率 98.76%）。

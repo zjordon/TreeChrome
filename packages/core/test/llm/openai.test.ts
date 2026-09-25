@@ -611,6 +611,26 @@ describe("响应解析（wire → canonical）", () => {
     expect(nullForm.logs.some((m) => m.includes("丢弃形态异常的 message.content"))).toBe(false);
   });
 
+  it("顶层 choices / message 域「存在但形态异常」→ 归空留证据（轮 32 #9）", async () => {
+    const choicesForm = setupLogs();
+    choicesForm.mock.queueMany({
+      status: 200,
+      body: { choices: "gateway junk", usage: null },
+    });
+    const r1 = await choicesForm.provider.chat(baseReq());
+    expect(r1.text).toBe("");
+    expect(choicesForm.logs.some((m) => m.includes("丢弃形态异常的顶层 choices"))).toBe(true);
+
+    const messageForm = setupLogs();
+    messageForm.mock.queueMany({
+      status: 200,
+      body: { choices: [{ message: "junk", finish_reason: "stop" }], usage: null },
+    });
+    const r2 = await messageForm.provider.chat(baseReq());
+    expect(r2.text).toBe("");
+    expect(messageForm.logs.some((m) => m.includes("丢弃形态异常的 message（非对象）"))).toBe(true);
+  });
+
   it("reasoning_content 存在但非 string → 折叠空串但留证据（轮 30 #5，与 content 轮 29 #8 同款）", async () => {
     const { mock, logs, provider } = setupLogs();
     mock.queueMany({

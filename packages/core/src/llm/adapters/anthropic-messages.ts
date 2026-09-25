@@ -175,6 +175,11 @@ function parseResponse(
     });
   }
   const content = Array.isArray(json.content) ? json.content : [];
+  // 顶层承载字段「存在但非数组」留证据（轮 32 #8）：网关 200 + 畸形载荷静默归空
+  // 后 client 只见空响应无线索；缺失（undefined）是合法形态不告警
+  if (json.content !== undefined && !Array.isArray(json.content)) {
+    log(`[llm] anthropic 丢弃形态异常的顶层 content（非数组）：${stringifyForLog(json.content)}`);
+  }
   let text = "";
   let reasoningText = "";
   const toolCalls: ToolCall[] = [];

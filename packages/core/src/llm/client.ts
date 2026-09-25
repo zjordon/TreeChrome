@@ -283,6 +283,10 @@ export class LLMClient {
    * loggedSystemPromptLeaks 同口径）：同一 map 跨步复用每类只告警一次，新 map
    * 各自获得告警机会（长生命周期实例换 map 时第二个 map 的病态不被首个掩蔽） */
   private warnSensitiveMapPathologies(sensitive: Record<string, string>): void {
+    // 成本取舍（轮 32 #4 显式裁决）：交叉冲突/占位符嵌套是 O(n²) 字符串包含检测，
+    // 且每次 getAction 全量重跑（去重的只是告警不短路检测）——典型 map 规模（几十
+    // 条）下开销可忽略；维持重跑是有意支持宿主原地修改同一 map 后新增病态仍可
+    // 观测，按 map 缓存检测结果会失去该行为
     let warned = this.warnedSensitiveMapPathologies.get(sensitive);
     if (warned === undefined) {
       warned = new Set();

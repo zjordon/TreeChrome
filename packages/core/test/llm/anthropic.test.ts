@@ -539,6 +539,17 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("丢弃 input 非对象的 tool_use"))).toBe(true);
   });
 
+  it("顶层 content 存在但非数组 → 归空留证据（轮 32 #8）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: { content: "gateway junk", stop_reason: "end_turn", usage: null },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.text).toBe("");
+    expect(logs.some((m) => m.includes("丢弃形态异常的顶层 content"))).toBe(true);
+  });
+
   it("tool_use name 非 string → 丢弃并留形态异常档证据（与 gemini 分档口径一致，轮 16 #11）", async () => {
     const { mock, logs, provider } = setupLogs();
     mock.queueMany({

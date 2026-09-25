@@ -207,8 +207,17 @@ function parseResponse(
     });
   }
   const choices = Array.isArray(json.choices) ? json.choices : [];
+  // 顶层承载字段「存在但非数组」留证据（轮 32 #9）：网关 200 + 错误载荷顶替
+  // choices 时静默归空，client 只能记「no parseable response」不含响应体线索
+  if (json.choices !== undefined && !Array.isArray(json.choices)) {
+    log(`[llm] openai 丢弃形态异常的顶层 choices（非数组）：${stringifyForLog(json.choices)}`);
+  }
   const first = choices.length > 0 ? choices[0] : undefined;
   const message = isRecord(first) && isRecord(first.message) ? first.message : {};
+  if (first !== undefined && isRecord(first) && !isRecord(first.message)) {
+    // 同族（轮 32 #9）：message 域「存在但非对象」静默归空同样无证据
+    log(`[llm] openai 丢弃形态异常的 message（非对象）：${stringifyForLog(first.message)}`);
+  }
   const rawContent: unknown = message.content;
   const text = typeof rawContent === "string" ? rawContent : "";
   // 存在但既非 string 也非 null/undefined 的形态留证据（轮 29 #8）：转换型网关回传

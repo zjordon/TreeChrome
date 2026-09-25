@@ -192,6 +192,21 @@ describe("assertValidMessages · 违例序列", () => {
     );
   });
 
+  it("toolCall 零结果边界：悬空 toolCall 结尾 / 后紧跟 user（轮 32 #6——截断历史重放的真实形态）", () => {
+    expectViolation(
+      [user("q"), assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] })],
+      "仅收到 0 条结果",
+    );
+    expectViolation(
+      [
+        user("q"),
+        assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] }),
+        user("next"),
+      ],
+      "仅收到 0 条结果",
+    );
+  });
+
   it('toolCall id 为空串 → 拒绝（请求侧 tool_use id="" 是端点 400 形态，轮 17 #8）', () => {
     expectViolation(
       [user("q"), assistant({ toolCalls: [{ id: "", name: AGENT_TOOL.name, args: {} }] })],

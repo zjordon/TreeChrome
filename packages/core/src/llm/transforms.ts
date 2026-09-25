@@ -2,7 +2,7 @@
 // 移植自 tree_walker/llm/client.py 同名私有方法（03 §3.2-3.4）；期望值锚定 Python 实跑，
 // 见 test/llm/transforms.test.ts 头部命令与输出。
 
-import type { ChatMessage } from "./types.js";
+import type { ChatMessage, ContentBlock } from "./types.js";
 
 /** URL 缩写阈值（Python _URL_MIN_LENGTH=100） */
 export const URL_MIN_LENGTH = 100;
@@ -19,8 +19,10 @@ export const IMAGE_OMITTED_PLACEHOLDER = "[image omitted]";
 
 /** 滤空降级哨兵（轮 20 #15 共享实现）：仅「原始非空、替换后为空」降级，不掩蔽
  * 调用方自带的空文本违例（归因仍指向调用方）；client.ts 的 redactToolPayloads
- * 与 R4 回显分支同款复用，防三处判空条件/文案漂移破坏非空文本不变量 */
-export const REDACTED_PLACEHOLDER = "[redacted]";
+ * 与 R4 回显分支同款复用（经 redactOrPreserve 函数），防三处判空条件/文案漂移
+ * 破坏非空文本不变量。模块内常量（轮 32 #3 收窄）：测试锚定 "[redacted]"
+ * 字面量是既定防漂移口径，导出面不再宽于实际复用面 */
+const REDACTED_PLACEHOLDER = "[redacted]";
 
 export function redactOrPreserve(original: string, replaced: string): string {
   return original !== "" && replaced === "" ? REDACTED_PLACEHOLDER : replaced;
@@ -83,6 +85,16 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
  * 数字串，引擎重排到枚举首位升序）存在包含关系键时替换序不可依赖；负数与
  * 超界数字串（手机号/卡号）是普通字符串键，恒插入序无此风险。
  */
+/** 敏感值 entries 构造单源（轮 32 #5）：滤空 real + 插入序，文本侧与深层侧
+ * 共用——各写一份时任一侧调整过滤条件/顺序会静默漂移 */
+function filteredSensitiveEntries(
+  sensitiveMap: Record<string, string>,
+): ReadonlyArray<readonly [string, string]> {
+  return Object.entries(sensitiveMap)
+    .filter(([real]) => real !== "")
+    .map(([real, placeholder]) => [real, placeholder] as const);
+}
+
 export function replaceSensitiveText(
   text: string,
   sensitiveMap: Record<string, string> | undefined,
@@ -90,13 +102,9 @@ export function replaceSensitiveText(
   if (!sensitiveMap) {
     return text;
   }
-  let out = text;
-  for (const [real, placeholder] of Object.entries(sensitiveMap)) {
-    if (real !== "") {
-      out = out.replaceAll(real, () => placeholder);
-    }
-  }
-  return out;
+  // 委托 rewriteStrings 字符串分支（轮 32 #5）：「real→placeholder 顺序替换」
+  // 此前在文本侧/深层侧各维护一份平行实现，注释宣称的「单一实现」名不符实
+  return rewriteStrings(text, filteredSensitiveEntries(sensitiveMap)) as string;
 }
 
 /**
@@ -114,9 +122,7 @@ export function replaceSensitiveDeep<T>(
   if (!sensitiveMap) {
     return value;
   }
-  const entries = Object.entries(sensitiveMap)
-    .filter(([real]) => real !== "")
-    .map(([real, placeholder]) => [real, placeholder] as const);
+  const entries = filteredSensitiveEntries(sensitiveMap);
   if (entries.length === 0) {
     return value;
   }
@@ -325,6 +331,11 @@ export function stripImageBlocks(messages: ChatMessage[]): void {
  * 复制会被改写的对象（消息对象、blocks 数组、TextBlock）；ImageBlock 与
  * toolResult 的字符串字段不可变，共享/浅拷贝即可。
  */
+/** blocks 拷贝单点（轮 32 #1）：「TextBlock 拷贝、ImageBlock 共享」的偏离 1 契约
+ * 只在此一处维护——两分支各写一份时未来只改一处会静默破坏副本语义 */
+const cloneBlocks = (blocks: ContentBlock[]): ContentBlock[] =>
+  blocks.map((b) => (b.kind === "text" ? { ...b } : b));
+
 export function cloneWorkMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((msg) => {
     if (msg.role === "toolResult") {
@@ -333,16 +344,19 @@ export function cloneWorkMessages(messages: ChatMessage[]): ChatMessage[] {
     if (msg.role === "assistant") {
       return {
         ...msg,
-        blocks: msg.blocks.map((b) => (b.kind === "text" ? { ...b } : b)),
+        blocks: cloneBlocks(msg.blocks),
         // toolCalls 防御性拷贝（数组 + 调用对象 + args 顶层，轮 15 #9）：请求侧
         // 变换扩展到 args 时（redactToolPayloads 的深层替换）原地改写不会泄漏
-        // 回调用方原始消息——「变换只落在副本上（03 偏离 1）」不再靠隐式约定维持
+        // 回调用方原始消息——「变换只落在副本上（03 偏离 1）」不再靠隐式约定维持。
+        // 注意（轮 32 #1）：args 仅顶层浅拷贝，嵌套对象在副本与原件间共享——
+        // replaceSensitiveDeep 为重建式改写故现无泄漏，引入就地改写嵌套 args 的
+        // 变换前必须先加深拷贝
         toolCalls: msg.toolCalls?.map((c) => ({ ...c, args: { ...c.args } })),
       };
     }
     return {
       ...msg,
-      blocks: msg.blocks.map((b) => (b.kind === "text" ? { ...b } : b)),
+      blocks: cloneBlocks(msg.blocks),
     };
   });
 }

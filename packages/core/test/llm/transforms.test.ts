@@ -296,6 +296,14 @@ describe("restoreUrlsInOutput", () => {
   it("空 map 原样返回", () => {
     expect(restoreUrlsInOutput({ a: "[u0]" }, new Map())).toEqual({ a: "[u0]" });
   });
+
+  it("用户文本自带 [uN] 字面量与分配 tag 撞名 → 还原侧无条件展开（Python 同款固有边界，轮 32 #2 锚定防漂移）", () => {
+    const messages = [userMsg(`ref [u0] and ${U0}`)];
+    const map = shortenUrlsInMessages(messages);
+    expect(map).toEqual(new Map([["[u0]", U0]]));
+    // 字面量 [u0] 与 tag 同名：restore 不区分来源，二者都被展开成长 URL
+    expect(restoreUrlsInOutput({ u: "[u0]" }, map)).toEqual({ u: U0 });
+  });
 });
 
 describe("hasImageBlocks", () => {

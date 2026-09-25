@@ -64,6 +64,30 @@ const FORMATS_BY_TYPE: Record<string, ReadonlySet<string>> = {
 /** boolean/array/object 无任何合法 format（分域表缺项 = 全部删除） */
 const NO_FORMATS: ReadonlySet<string> = new Set();
 
+// 轮 32 #12 约束键 type 分域表：各 type 合法的结构/约束键（官方 v1beta Schema
+// 口径，与 gemini.ts 顶层归一剥离清单同源）——收尾按最终 type 剥离域外键
+const CONSTRAINT_KEYS_BY_TYPE: Record<string, ReadonlySet<string>> = {
+  string: new Set(["enum", "pattern", "minLength", "maxLength"]),
+  number: new Set(["minimum", "maximum"]),
+  integer: new Set(["minimum", "maximum"]),
+  array: new Set(["items", "minItems", "maxItems"]),
+  object: new Set(["properties", "required"]),
+};
+const NO_CONSTRAINT_KEYS: ReadonlySet<string> = new Set();
+const DOMAIN_SCOPED_KEYS = [
+  "properties",
+  "required",
+  "items",
+  "enum",
+  "pattern",
+  "minLength",
+  "maxLength",
+  "minItems",
+  "maxItems",
+  "minimum",
+  "maximum",
+] as const;
+
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((t) => typeof t === "string");
 
@@ -77,10 +101,22 @@ function isCompilablePattern(value: string): boolean {
   }
 }
 
+/** 嵌套深度上限（轮 32 #7）：未设限递归在病态深层 schema（宿主程序化构造可绕过
+ *  JSON.parse 自身栈限制）上以 RangeError 栈溢出直穿——非 LLMError，client 按
+ * 「编程错误原样穿透」上抛，既无清洗证据也无归因线索（同 http.ts 轮 27 #2 的
+ * 宿主数据硬化维度）。导出供测试锚定（同 SCHEMA_ISSUE_DEDUP_MAX 口径） */
+export const SCHEMA_MAX_DEPTH = 64;
+
 export function sanitizeGeminiSchema(
   schema: Record<string, unknown>,
   onSchemaIssue?: (detail: string) => void,
+  depth = 0,
 ): Record<string, unknown> {
+  if (depth >= SCHEMA_MAX_DEPTH) {
+    // 截断留证据而非栈溢出直穿（轮 32 #7）
+    onSchemaIssue?.(`schema 嵌套深度达 ${SCHEMA_MAX_DEPTH}，深层节点截断为空 schema`);
+    return { type: "string" };
+  }
   const out: Record<string, unknown> = {};
   // 归一撞键统一上报出口（轮 30 #1，轮 31 #3 扩到全部分支）：归一化（大小写/
   // camelCase 发射）后同键后写者覆盖先写者（"properties" 与 "Properties" 并存
@@ -168,7 +204,7 @@ export function sanitizeGeminiSchema(
           props[name] = { type: "string" };
           continue;
         }
-        props[name] = sanitizeGeminiSchema(sub, onSchemaIssue);
+        props[name] = sanitizeGeminiSchema(sub, onSchemaIssue, depth + 1);
       }
       emit(key, normalized, props);
     } else if (normalized === "items") {
@@ -184,7 +220,7 @@ export function sanitizeGeminiSchema(
       emit(
         key,
         normalized,
-        isRecord(item) ? sanitizeGeminiSchema(item, onSchemaIssue) : { type: "string" },
+        isRecord(item) ? sanitizeGeminiSchema(item, onSchemaIssue, depth + 1) : { type: "string" },
       );
     } else {
       // 标量键值形态校验（清洗闭环的最后一格，轮 11 #9）：病态值原样透传会被
@@ -295,6 +331,19 @@ export function sanitizeGeminiSchema(
     if (!allowed.has(out.format)) {
       onSchemaIssue?.(`format「${out.format}」不在 type=${out.type} 的官方支持集，删除该键`);
       delete out.format;
+    }
+  }
+  // 约束键 type 分域的收尾剥离（轮 32 #12，与 gemini.ts 顶层归一同口径、per-node）：
+  // 收尾处 out.type 恒已注入，嵌套节点宿主自带的 type 与约束键失配（{type:"string",
+  // items}、{type:"object", minimum} 等）按最终 type 统一删除并上报——域外键要么
+  // 是 400 形态要么语义失效，约束丢失可观测
+  if (typeof out.type === "string") {
+    const allowedConstraintKeys = CONSTRAINT_KEYS_BY_TYPE[out.type] ?? NO_CONSTRAINT_KEYS;
+    for (const k of DOMAIN_SCOPED_KEYS) {
+      if (out[k] !== undefined && !allowedConstraintKeys.has(k)) {
+        onSchemaIssue?.(`键「${k}」不在 type=${out.type} 的官方支持域，删除该键`);
+        delete out[k];
+      }
     }
   }
   return out;

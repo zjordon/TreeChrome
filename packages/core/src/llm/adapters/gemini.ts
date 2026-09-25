@@ -181,14 +181,28 @@ function parseResponse(
       provider: providerName,
     });
   }
-  // promptFeedback.blockReason = 全局拦截（无候选内容，梯子无从处理）→ LLMBlockedError
+  // promptFeedback.blockReason = 全局拦截（无候选内容，梯子无从处理）→ LLMBlockedError。
+  // 「存在但非 record」留证据（轮 32 #11）：畸形载荷会使 blockReason 检测失效，
+  // 拦截形态退化为空响应——record 是该字段唯一合法形态，零误报
   const feedback = isRecord(json.promptFeedback) ? json.promptFeedback : undefined;
+  if (json.promptFeedback !== undefined && feedback === undefined) {
+    log(
+      `[llm] gemini 丢弃形态异常的 promptFeedback（非对象）：${stringifyForLog(json.promptFeedback)}`,
+    );
+  }
   if (feedback !== undefined && feedback.blockReason !== undefined) {
     throw new LLMBlockedError(`gemini promptFeedback 拦截：${String(feedback.blockReason)}`, {
       provider: providerName,
     });
   }
   const candidates = Array.isArray(json.candidates) ? json.candidates : [];
+  // 顶层承载字段「存在但非数组」留证据（轮 32 #10）：与 anthropic content /
+  // openai choices 同族；candidates 缺失在 promptFeedback 拦截形态是合法的不告警
+  if (json.candidates !== undefined && !Array.isArray(json.candidates)) {
+    log(
+      `[llm] gemini 丢弃形态异常的顶层 candidates（非数组）：${stringifyForLog(json.candidates)}`,
+    );
+  }
   const first = candidates.length > 0 ? candidates[0] : undefined;
   const content =
     isRecord(first) && isRecord(first.content) && Array.isArray(first.content.parts)

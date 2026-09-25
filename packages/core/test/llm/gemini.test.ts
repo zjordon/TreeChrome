@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createGeminiProvider, SCHEMA_ISSUE_DEDUP_MAX } from "../../src/llm/adapters/gemini.js";
-import { sanitizeGeminiSchema } from "../../src/llm/adapters/schema-sanitize.js";
+import { SCHEMA_MAX_DEPTH, sanitizeGeminiSchema } from "../../src/llm/adapters/schema-sanitize.js";
 import {
   LLMBlockedError,
   LLMProtocolViolationError,
@@ -77,44 +77,100 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     expect(sanitizeGeminiSchema(TOOL.parameters)).toEqual(SANITIZED);
   });
 
-  it("官方约束键透传：minimum/maximum/pattern/minItems 保留，多词键按官方 camelCase 发射", () => {
+  it("官方约束键透传（域内）：分域后保留，多词键按官方 camelCase 发射（轮 10 起；轮 32 #12 收尾剥离后须域内自洽）", () => {
     expect(
       sanitizeGeminiSchema({
-        type: "object",
+        type: "number",
         minimum: 0,
         Maximum: 10,
+      }),
+    ).toEqual({
+      type: "number",
+      minimum: 0,
+      maximum: 10,
+    });
+    expect(
+      sanitizeGeminiSchema({
+        type: "string",
         pattern: "^a",
         MinLength: 1,
         maxlength: 20,
+      }),
+    ).toEqual({
+      type: "string",
+      pattern: "^a",
+      minLength: 1,
+      maxLength: 20,
+    });
+    expect(
+      sanitizeGeminiSchema({
+        type: "array",
         minItems: 0,
         MaxItems: 5,
       }),
     ).toEqual({
-      type: "object",
-      minimum: 0,
-      maximum: 10,
-      pattern: "^a",
-      minLength: 1,
-      maxLength: 20,
+      type: "array",
       minItems: 0,
       maxItems: 5,
     });
   });
 
-  it("format 值按官方封闭枚举集校验：uri/email 等常见 JSON Schema 值删除并上报（轮 13 #4）", () => {
+  it("约束键 type 分域收尾剥离（轮 32 #12）：域外键删除并上报，域内保留", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema(
+        {
+          type: "string",
+          items: { type: "string" }, // items 仅 ARRAY 域
+          minimum: 0, // minimum/maximum 仅 NUMBER/INTEGER 域
+          minItems: 1, // minItems/maxItems 仅 ARRAY 域
+          pattern: "^a", // 域内保留
+        },
+        (d) => issues.push(d),
+      ),
+    ).toEqual({ type: "string", pattern: "^a" });
+    expect(issues).toContain("键「items」不在 type=string 的官方支持域，删除该键");
+    expect(issues).toContain("键「minimum」不在 type=string 的官方支持域，删除该键");
+    expect(issues).toContain("键「minItems」不在 type=string 的官方支持域，删除该键");
+    // object 节点携带 required 合法、携带 minimum 剥离
+    const objIssues: string[] = [];
+    expect(
+      sanitizeGeminiSchema(
+        { type: "object", properties: { a: { type: "string" } }, required: ["a"], minimum: 1 },
+        (d) => objIssues.push(d),
+      ),
+    ).toEqual({ type: "object", properties: { a: { type: "string" } }, required: ["a"] });
+    expect(objIssues).toContain("键「minimum」不在 type=object 的官方支持域，删除该键");
+  });
+
+  it("嵌套深度上限（SCHEMA_MAX_DEPTH）：深层节点截断为空 schema 留证据（轮 32 #7）", () => {
+    const issues: string[] = [];
+    // 程序化构造 SCHEMA_MAX_DEPTH + 5 层嵌套 properties（宿主程序化构造可绕过
+    // JSON.parse 自身栈限制——未设限递归以 RangeError 直穿且无归因线索）
+    let deep: Record<string, unknown> = { type: "string" };
+    for (let i = 0; i < SCHEMA_MAX_DEPTH + 5; i += 1) {
+      deep = { type: "object", properties: { next: deep } };
+    }
+    const out = sanitizeGeminiSchema(deep, (d) => issues.push(d));
+    // depth 0..63 层正常处理，depth 64 层截断为 {type:"string"}（不再向下递归）
+    let node: Record<string, unknown> = out;
+    for (let i = 0; i < SCHEMA_MAX_DEPTH; i += 1) {
+      node = (node.properties as Record<string, unknown>).next as Record<string, unknown>;
+    }
+    expect(node).toEqual({ type: "string" });
+    expect(issues.filter((d) => d.includes("嵌套深度达")).length).toBe(1);
+  });
+
+  it("format 值按官方封闭枚举集校验：uri/email 等常见 JSON Schema 值删除并上报（轮 13 #4；父节点改 object 域自洽——string 节点的 properties 自轮 32 #12 起剥离）", () => {
     const issues: string[] = [];
     const out = sanitizeGeminiSchema(
       {
-        type: "string",
-        format: "email",
-        properties: { t: { type: "string", format: "date-time" } },
+        type: "object",
+        properties: { t: { type: "string", format: "email" } },
       },
       (d) => issues.push(d),
     );
-    expect(out).toEqual({
-      type: "string",
-      properties: { t: { type: "string", format: "date-time" } },
-    });
+    expect(out).toEqual({ type: "object", properties: { t: { type: "string" } } });
     expect(issues).toEqual(['format「"email"」不在官方支持集，删除该键']);
     expect(sanitizeGeminiSchema({ type: "number", format: 42 }, (d) => issues.push(d))).toEqual({
       type: "number",
@@ -122,28 +178,32 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     expect(issues.length).toBe(2);
   });
 
-  it("嵌套 properties/items 递归清洗；type 大小写变体（Type）归一化为小写键", () => {
+  it("嵌套 properties/items 递归清洗；type 大小写变体（Type）归一化为小写键（object 节点的 items 自轮 32 #12 起剥离，演示项挪到 array 子节点）", () => {
     const out = sanitizeGeminiSchema({
       Type: "object",
       $id: "x",
-      properties: { inner: { Type: "string", examples: ["a"], enum: ["x"] } },
-      items: { $schema: "y", type: "string" },
+      properties: {
+        inner: { Type: "string", examples: ["a"], enum: ["x"] },
+        list: { Type: "array", items: { $schema: "y", type: "string" } },
+      },
     });
     expect(out).toEqual({
       type: "object",
-      properties: { inner: { type: "string", enum: ["x"] } },
-      items: { type: "string" },
+      properties: {
+        inner: { type: "string", enum: ["x"] },
+        list: { type: "array", items: { type: "string" } },
+      },
     });
   });
 
-  it("联合类型 type: ['string','null'] → 首个非 null + nullable（Gemini type 只收单字符串）", () => {
+  it("联合类型 type: ['string','null'] → 首个非 null + nullable（Gemini type 只收单字符串；properties 挪进 object 成员演示，轮 32 #12 域自洽）", () => {
     expect(
       sanitizeGeminiSchema({
-        type: ["string", "null"],
+        type: ["object", "null"],
         properties: { opt: { type: ["object", "null"], description: "d" } },
       }),
     ).toEqual({
-      type: "string",
+      type: "object",
       nullable: true,
       properties: { opt: { type: "object", nullable: true, description: "d" } },
     });
@@ -330,7 +390,7 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
-  it("type 联合多成员窄化 + items 元组/非对象收口 → 上报清洗事件（与删键同观测口径）", () => {
+  it("type 联合多成员窄化 + items 元组/非对象收口 → 上报清洗事件（与删键同观测口径；窄化到 string 后 items 域外剥离，轮 32 #12）", () => {
     const issues: string[] = [];
     const out = sanitizeGeminiSchema(
       {
@@ -339,12 +399,13 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       },
       (d) => issues.push(d),
     );
-    expect(out).toEqual({ type: "string", items: { type: "string" } });
+    expect(out).toEqual({ type: "string" }); // items 仅 ARRAY 域，string 节点剥离
     const nonRecordItems = sanitizeGeminiSchema({ items: "x" }, (d) => issues.push(d));
     expect(nonRecordItems).toEqual({ type: "array", items: { type: "string" } });
     expect(issues).toEqual([
       "type 联合窄化 string|number → string",
       "items 元组形态窄化为首元素",
+      "键「items」不在 type=string 的官方支持域，删除该键",
       "items 非对象形态归一为空 schema",
       "节点缺 type，按 items 推断注入 array", // { items: "x" } 自身也无 type（轮 20 #1）
     ]);
@@ -410,7 +471,7 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
-  it("onSchemaIssue：删键时按归一化键名上报（顶层与嵌套递归），约束键不报", () => {
+  it("onSchemaIssue：删键时按归一化键名上报（顶层与嵌套递归），约束键不报（嵌套域外约束键自轮 32 #12 起上报剥离）", () => {
     const issues: string[] = [];
     const out = sanitizeGeminiSchema(
       {
@@ -423,12 +484,13 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     );
     expect(out).toEqual({
       type: "object",
-      properties: { inner: { type: "string", minimum: 0 } },
+      properties: { inner: { type: "string" } }, // minimum 仅 NUMBER/INTEGER 域
     });
     expect(issues).toEqual([
       "删除白名单外键「$schema」",
       "删除白名单外键「exclusiveminimum」",
       "删除白名单外键「examples」",
+      "键「minimum」不在 type=string 的官方支持域，删除该键",
     ]);
   });
 });
@@ -964,6 +1026,31 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("丢弃形态异常的 text part"))).toBe(true);
     // functionCall part 的 text 缺失（undefined）是正常形态，不产生告警
     expect(logs.filter((m) => m.includes("丢弃形态异常的 text part"))).toHaveLength(1);
+  });
+
+  it("顶层 candidates / promptFeedback「存在但形态异常」→ 归空留证据且拦截检测不误触（轮 32 #10/#11）", async () => {
+    const candidatesForm = setupLogs();
+    candidatesForm.mock.queueMany({
+      status: 200,
+      body: { candidates: "gateway junk", usageMetadata: { promptTokenCount: 1 } },
+    });
+    const r1 = await candidatesForm.provider.chat(baseReq());
+    expect(r1.text).toBe("");
+    expect(candidatesForm.logs.some((m) => m.includes("丢弃形态异常的顶层 candidates"))).toBe(true);
+
+    // promptFeedback 非 record：blockReason 检测失效退化为空响应——留证据不抛 blocked
+    const feedbackForm = setupLogs();
+    feedbackForm.mock.queueMany({
+      status: 200,
+      body: {
+        promptFeedback: "SAFETY",
+        candidates: [],
+        usageMetadata: { promptTokenCount: 1 },
+      },
+    });
+    const r2 = await feedbackForm.provider.chat(baseReq());
+    expect(r2.text).toBe("");
+    expect(feedbackForm.logs.some((m) => m.includes("丢弃形态异常的 promptFeedback"))).toBe(true);
   });
 
   it("非对象形态的 part（网关畸形，如字符串）→ 丢弃留证据（轮 30 #4）", async () => {
