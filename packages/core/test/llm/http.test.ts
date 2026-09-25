@@ -211,4 +211,23 @@ describe("postJson 成功与网络层", () => {
     expect((err as LLMTimeoutError).cause).toBeInstanceOf(DOMException);
     expect((err as LLMTimeoutError).cause).toMatchObject({ name: "TimeoutError" });
   });
+
+  it("外部 signal 为 AbortSignal.timeout 时到点 → 原样穿透，不误分型为 LLMTimeoutError（轮 24 #3）", async () => {
+    // 姊妹用例：宿主 deadline 场景（外部 signal 而非自身 timeoutMs）。abort reason
+    // 与自身超时同形（name="TimeoutError" 的 DOMException）——分型唯一依据是自身
+    // timeoutSignal?.aborted 而非错误 name；若按 name 直觉重构，宿主取消会被吞成
+    // LLMTimeoutError（infra 可重试 + 误触 fallback 单向切换）而现有用例不红
+    const mock = new MockFetch();
+    mock.queueMany({ hangUntilAbort: true });
+    const signal = AbortSignal.timeout(40);
+    const err = await postJson(
+      mock.fetch,
+      "https://unit.example/api",
+      {},
+      {},
+      { provider: "unit", signal },
+    ).catch((e: unknown) => e);
+    expect(err).toBe(signal.reason);
+    expect(err).not.toBeInstanceOf(LLMTimeoutError);
+  });
 });

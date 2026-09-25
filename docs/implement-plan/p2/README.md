@@ -436,3 +436,16 @@ smoke 产物摘要：
 - **测试侧（#4/#5）**：「未配置则零告警」声明改 setupProviderWithLogs 真断言（静音 setup 无回归防护，且 toHaveLength(1) 受 makeOnceWarn 去重保护测不出「无条件告警」回归）；带图 user 消息三处逐字重复收敛 withImageMessages 夹具。
 
 测试 302 例全绿（覆盖率 98.42%）。
+
+### 评审轮 24（review-p2-llm-client-24.json，2026-09-25，7/7 采纳）
+
+采纳 7 条（硬化/收敛类，无行为争议）。要点：
+
+- **smoke header 白名单脱敏（#1）**：黑名单 + 值含 apiKey 兜底拦不住 extraHeaders 注入的网关独立 token（值与 key 无关），配合 `2>&1 | tee` 留档会持久化凭据——改 SAFE_HEADERS 白名单（content-type/anthropic-version/anthropic-dangerous-direct-browser-access），名单外一律 `<REDACTED>`（宁多脱敏不漏脱敏）。
+- **fixtures.LONG_URL 派生自阈值（#2）**：110 字符是对 URL_MIN_LENGTH=100 的跨文件魔法契约，阈值上调会静默失去覆盖——导入常量派生长度（+10 余量），文档契约变结构性约束。
+- **外部 TimeoutError 穿透锁定（#3）**：postJson 分型唯一依据是自身 timeoutSignal?.aborted 而非错误 name——补姊妹用例（外部 signal 为 AbortSignal.timeout、不传 timeoutMs → reason 与自身超时同形但必须原样穿透），防「按 name 重构」吞掉宿主 deadline 取消为 LLMTimeoutError（infra 可重试 + 误触 fallback 单向切换）。
+- **gemini baseUrl /v1beta 守卫（#4）**：官方文档 URL 本身以 /v1beta 结尾，整段复制拼出 /v1beta/v1beta → 404——与 anthropic /v1（轮 23 #1）同族的一次性告警补齐。
+- **pattern 可编译性校验（#5）**：编译失败的正则（"[" 等）上送同为 400——清洗侧 try { new RegExp } 截断并上报（编译通过只是必要条件：JS 正则是端点 RE2 超集，lookbehind 等 JS 合法形态仍可能被拒收）。
+- **测试侧（#6/#7）**：expect 第二实参位的注释上移消除「消息参数写丢」歧义；setupCore 增 fetchOverride 维度，竞态/外部取消两处旁路用例不再内联重建 deps 字面量（防三态展开漂移）。
+
+测试 305 例全绿（覆盖率 98.43%）。

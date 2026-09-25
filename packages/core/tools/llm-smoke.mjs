@@ -141,10 +141,14 @@ const DEFAULT_SMOKE_TIMEOUT_MS = 60_000;
 // 键名收非分隔符字符（[^&=]+）——网关常见 ?api.key= / ?auth/token= 形态的键含 ./，
 // 字符集过窄会让整条匹配失败、token 明文漏出
 const MASK_QUERY_RE = /([?&][^&=]+=)[^&"'\s]+/g;
-// 已知敏感头名（大小写不敏感）；extraHeaders 可注入任意名字的网关认证头，
-// 按名字拦不住——值包含 apiKey 即整体替换（双保险在 loggingFetch 内）
-const SENSITIVE_HEADERS = ["authorization", "x-api-key", "x-goog-api-key"];
-
+// 已知安全头名（大小写不敏感）——白名单外一律脱敏（轮 24 #1）：extraHeaders 可
+// 注入任意名字的网关认证头（独立 token 值与 apiKey 无关，按名字/按值都拦不住），
+// 本脚本预期 2>&1 | tee 留档排障，凭据可能持久化进日志——诊断脚本宁多脱敏不漏脱敏
+const SAFE_HEADERS = new Set([
+  "content-type",
+  "anthropic-version",
+  "anthropic-dangerous-direct-browser-access",
+]);
 const makeRedact = (apiKey) => (s) => {
   let out = String(s).replaceAll(MASK_QUERY_RE, "$1<MASKED>");
   if (apiKey) {
@@ -222,14 +226,12 @@ async function main() {
   const redact = makeRedact(apiKey);
   for (const card of cards) {
     // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LlmDeps 注入口。
-    // header 脱敏双保险：已知敏感头名（大小写不敏感）+ 值包含 apiKey 即整体替换
-    //（extraHeaders 可注入任意名字的网关认证头，按名字拦不住）
+    // header 白名单脱敏（轮 24 #1）：网关独立 token 与 GLM_API_KEY 无关，
+    // 黑名单 + 值匹配拦不住 extraHeaders 注入的任意名字认证头
     const loggingFetch = async (url, init) => {
       const headers = { ...(init?.headers ?? {}) };
       for (const k of Object.keys(headers)) {
-        if (SENSITIVE_HEADERS.includes(k.toLowerCase()) || String(headers[k]).includes(apiKey)) {
-          headers[k] = "<REDACTED>";
-        }
+        headers[k] = SAFE_HEADERS.has(k.toLowerCase()) ? headers[k] : "<REDACTED>";
       }
       const body = redact(init?.body ?? "");
       console.log(`\n>> POST ${redact(url)}`);

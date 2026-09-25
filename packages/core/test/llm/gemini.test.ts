@@ -188,6 +188,21 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
+  it("pattern 可编译性校验：编译失败的正则删除并上报，可编译的保留（轮 24 #5）", () => {
+    const issues: string[] = [];
+    expect(sanitizeGeminiSchema({ pattern: "[", description: "d" }, (d) => issues.push(d))).toEqual(
+      { description: "d", type: "string" },
+    );
+    expect(issues).toEqual([
+      '约束键「pattern」非可编译正则，删除该键："["',
+      "节点缺 type，补注入缺省 string",
+    ]);
+    expect(sanitizeGeminiSchema({ type: "string", pattern: "^a+b?$" })).toEqual({
+      type: "string",
+      pattern: "^a+b?$",
+    });
+  });
+
   it("单值 type:'null' 与数组含非字符串病态元素 → 同一兜底路径收口（'null' 不在 Gemini 枚举内）", () => {
     expect(sanitizeGeminiSchema({ type: "null" })).toEqual({ type: "string", nullable: true });
     expect(sanitizeGeminiSchema({ type: ["null", 5] })).toEqual({ type: "string", nullable: true });
@@ -719,6 +734,26 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.calls[0].url).toBe(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini%202.5%23x:generateContent",
     );
+  });
+
+  it("baseUrl 整段误配官方端点（含 /v1beta）→ 如实拼接 + 一次性告警（轮 24 #4，与 anthropic /v1 同族）", async () => {
+    // 官方文档 URL 本身以 /v1beta 结尾，整段复制进卡片会拼出 /v1beta/v1beta → 404
+    const plain = setupLogs();
+    const misconfigured = setupProviderWithLogs(createGeminiProvider, CARD, {
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    });
+    misconfigured.mock.queueMany(fnCallOk({}), fnCallOk({}));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    await misconfigured.provider.chat(req);
+    await misconfigured.provider.chat(req);
+    expect(misconfigured.mock.calls[0].url).toContain("/v1beta/v1beta/models/"); // 误配形态如实拼接
+    expect(misconfigured.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(1);
+    // 无误配的缺省卡片不受影响：不告警
+    expect(plain.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(0);
   });
 });
 

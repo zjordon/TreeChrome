@@ -67,6 +67,16 @@ const NO_FORMATS: ReadonlySet<string> = new Set();
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((t) => typeof t === "string");
 
+// 轮 24 #5：编译失败（"["、"(" 等）的 pattern 上送端点即 400，清洗侧截断
+function isCompilablePattern(value: string): boolean {
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function sanitizeGeminiSchema(
   schema: Record<string, unknown>,
   onSchemaIssue?: (detail: string) => void,
@@ -213,6 +223,13 @@ export function sanitizeGeminiSchema(
       // 即 400 INVALID_ARGUMENT
       if (normalized === "pattern" && typeof value !== "string") {
         onSchemaIssue?.(`约束键「pattern」非字符串，删除该键：${stringifyForLog(value)}`);
+        continue;
+      }
+      // pattern 可编译性校验（轮 24 #5）：JS 编译失败的正则（"[" 等）上送同为 400。
+      // 编译通过只是必要条件——JS 正则是端点 RE2 的超集（lookbehind 等 JS 合法
+      // 形态仍可能被拒收），不可编译形态在此截断
+      if (normalized === "pattern" && typeof value === "string" && !isCompilablePattern(value)) {
+        onSchemaIssue?.(`约束键「pattern」非可编译正则，删除该键：${stringifyForLog(value)}`);
         continue;
       }
       // 约束键标量类型校验分域（轮 15 #13 + 轮 21 #12）：minLength/maxLength/

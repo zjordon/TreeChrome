@@ -86,12 +86,14 @@ const r500 = (): MockResponseSpec => ({ status: 500, body: { error: { message: "
 
 const msgs = (): ChatMessage[] => [{ role: "user", blocks: [{ kind: "text", text: "hello" }] }];
 
-/** 四工厂的公共核心（轮 19 #4）：「时钟形态 × 日志采集」两维正交——real 时钟
- * 省略 now/sleep 走 resolveDeps 缺省，zero 时钟冻结在 0（无定时器语义） */
+/** 四工厂的公共核心（轮 19 #4）：「时钟形态 × 日志采集 × fetch 覆盖」三维正交——
+ * real 时钟省略 now/sleep 走 resolveDeps 缺省，zero 时钟冻结在 0（无定时器语义）；
+ * fetchOverride 供旁路用例注入挂起桩（轮 24 #7，不再内联重建 deps 字面量） */
 function setupCore(
   over: Partial<ProviderConfig>,
   clock: "fake" | "zero" | "real",
   collectLogs: boolean,
+  fetchOverride?: typeof fetch,
 ) {
   const mock = new MockFetch();
   const logs: string[] = [];
@@ -106,7 +108,7 @@ function setupCore(
   const client = createLLMClient(
     { ...CARD, ...over },
     {
-      fetch: mock.fetch,
+      fetch: fetchOverride ?? mock.fetch,
       ...clockDeps,
       log: collectLogs ? (m) => logs.push(m) : () => {},
     },
@@ -463,10 +465,8 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
         sensitiveMap: { "sk-secret": "<KEY>", "12345": "<N>" },
       },
     );
-    expect(
-      noLeak.logs.some((m) => m.includes("工具载荷") || m.includes("已占位")),
-      // 只排除泄露类告警：map 里的整数键 "12345" 会合法触发轮 20 #10 的配置告警
-    ).toBe(false);
+    // 只排除泄露类告警：map 里的整数键 "12345" 会合法触发轮 20 #10 的配置告警
+    expect(noLeak.logs.some((m) => m.includes("工具载荷") || m.includes("已占位"))).toBe(false);
   });
 
   it("redactToolPayloads + 删除式 sensitiveMap：toolResult 整体即敏感值 → [redacted] 降级防空 text 出站（轮 16 #7）", async () => {
@@ -949,10 +949,7 @@ describe("deadline 与取消", () => {
       }
       return normal.fetch(url, init);
     }) as typeof fetch;
-    const client = createLLMClient(
-      { ...CARD, fallback: FALLBACK },
-      { fetch: fetchFn, now: () => 0, sleep: async () => {}, log: () => {} },
-    );
+    const client = setupCore({ fallback: FALLBACK }, "zero", false, fetchFn).client;
     const ctrl = new AbortController();
     const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
     await bodyReadStarted; // 链已确定性到达错误体读取挂起
@@ -973,19 +970,16 @@ describe("deadline 与取消", () => {
     // unwind 期间到点」的临界——修复前取消被变形为 LLMTimeoutError，污染 step
     // 层按异常类型分罪的依据
     const delayedAbortFetch = makeHangingBodyFetch();
-    const clock = new FakeClock();
-    const client = createLLMClient(CARD, {
-      fetch: delayedAbortFetch,
-      now: clock.now,
-      sleep: clock.sleep,
-      log: () => {},
-    });
+    const { fake, client } = setupCore({}, "fake", false, delayedAbortFetch);
+    if (fake === null) {
+      throw new Error("unreachable");
+    }
     client.setCallWindow(1); // deadline = t+1（watcher 经注入 sleep 注册）
     const ctrl = new AbortController();
     const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
-    await clock.advance(0); // 冲刷：fetch 在飞（text 挂起）、watcher 注册（due t+1）
+    await fake.advance(0); // 冲刷：fetch 在飞（text 挂起）、watcher 注册（due t+1）
     ctrl.abort(); // 外部取消 → ladder signal abort → 桩安排宏任务延迟 reject
-    await clock.advance(1); // watcher 到点翻位 windowExpired（reject 尚未送达）
+    await fake.advance(1); // watcher 到点翻位 windowExpired（reject 尚未送达）
     const err = await p.catch((e: unknown) => e);
     expect((err as DOMException).name).toBe("AbortError");
     expect(err).not.toBeInstanceOf(LLMError);
