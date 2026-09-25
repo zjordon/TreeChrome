@@ -270,35 +270,8 @@ describe("请求构造（canonical → wire）", () => {
     await provider.chat(baseReq());
     expect(mock.lastBody().temperature).toBe(2);
   });
-
-  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4）", async () => {
-    const { mock, logs, provider } = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
-      temperature: 2.5,
-    });
-    mock.queueMany(toolOk("{}"), toolOk("{}"));
-    await provider.chat(baseReq());
-    await provider.chat(baseReq());
-    expect(mock.bodyAt(0).temperature).toBe(2);
-    expect(mock.bodyAt(1).temperature).toBe(2);
-    const warnings = logs.filter((m) => m.includes("钳制"));
-    expect(warnings).toHaveLength(1); // 每请求都在钳制，告警只一次
-    expect(warnings[0]).toContain("2.5");
-    expect(warnings[0]).toContain("glm-openai"); // 卡片归因
-  });
-
-  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #12，双轨字段同守卫）", async () => {
-    const { mock, logs, provider } = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
-      maxTokens: Number.NaN,
-    });
-    mock.queueMany(toolOk("{}"), toolOk("{}"));
-    await provider.chat(baseReq());
-    await provider.chat(baseReq());
-    expect(mock.bodyAt(0).max_tokens).toBe(16384); // NaN 序列化 null 是端点硬 400
-    expect(mock.bodyAt(1).max_tokens).toBe(16384);
-    const warnings = logs.filter((m) => m.includes("maxTokens"));
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("glm-openai");
-  });
+  // 钳制告警/maxTokens 回退的纯逻辑矩阵见 common.test.ts（轮 19 #2 收敛）；
+  // 接线锚定保留在 anthropic.test.ts（三适配器注入形态一致）
 
   it("o 系模型抑制 temperature（只接受默认温度，轮 14 #10）；gpt-4o 照常发送", async () => {
     const oSeries = setup({ model: "o3-mini", temperature: 0.2 });
@@ -421,8 +394,8 @@ describe("响应解析（wire → canonical）", () => {
     expect(res.stopReason).toBe("tool_call"); // 不再按解析失败丢弃
   });
 
-  it('tool_call 缺失/空 id → 丢弃（回传历史 tool_call_id="" 会被官方端点 400）', async () => {
-    const { mock, provider } = setup();
+  it('tool_call 缺失/空 id → 丢弃并留告警（回传历史 tool_call_id="" 会被官方端点 400；观测锚定轮 19 #6）', async () => {
+    const { mock, logs, provider } = setupLogs();
     mock.queueMany({
       status: 200,
       body: {
@@ -445,6 +418,11 @@ describe("响应解析（wire → canonical）", () => {
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([]);
     expect(res.stopReason).toBe("other"); // 全部被丢弃：不置 tool_call（与 gemini 口径一致）
+    // 与 anthropic 侧同名场景的观测口径对齐：丢弃告警是区分「模型未发起调用」
+    // 与「调用被丢弃」的唯一线索
+    expect(logs.some((m) => m.includes("缺失 id，丢弃调用") && m.includes("agent_response"))).toBe(
+      true,
+    );
   });
 
   it("形态异常的 tool_call（item 合法但 function 非对象 / item 非对象）→ 丢弃并留告警（轮 12 #8）", async () => {

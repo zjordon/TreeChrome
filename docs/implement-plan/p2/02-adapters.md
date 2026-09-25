@@ -181,6 +181,7 @@
 
 `functionDeclarations.parameters` 只收 **OpenAPI Schema 子集**（`type`/`format`/`description`/`nullable`/`items`/`properties`/`required`/`enum` 及 `type` 的大小写变体），JSON Schema 的 `$schema`/`$id`/`additionalProperties`/`examples` 等键会被拒或忽略。适配器对 `parameters` 做**递归白名单清洗**（清洗事件经回调上报），原始 schema 不动（其余两协议透传）。白名单首版如上，2.4 的 mock 用例锁定行为，真机差异等有 key 实测后修订（README 风险 3）。
 **评审轮 10 修订**：按官方 v1beta Schema 文档把约束键 `minimum`/`maximum`/`pattern`/`minLength`/`maxLength`/`minItems`/`maxItems` 补入白名单（多词键按官方 camelCase 发射）——删除会让数值/长度约束静默丢失、模型生成越界参数；同时收口 `required` 非 string[]、items 元组/非对象、布尔子 schema 的值形态（归一或删除并上报）。
+**评审轮 18/19 修订**：端点要求**每个 schema 节点显式 `type`**（社区实证 "missing a type" 400：livekit/agents#5044、awslabs/mcp#661）——type 的病态值（非字符串/全病态数组/非法枚举字符串）统一兜底 `string` 不删键；联合数组按成员级枚举校验取首个合法成员；`format` 按 type 分域收尾校验（string: enum/date-time、number: float/double、integer: int32/int64，其余 type 无合法 format）；清洗产物与调用方未写 type 的子 schema 统一补注入缺省 `type:"string"`（归一空 schema 不再产出无 type 节点）。真机有 key 后复核（README 风险 3）。
 
 ## 5. 强制工具映射总表（架构 §3.4 落地）
 

@@ -137,10 +137,11 @@ export function sanitizeGeminiSchema(
       const props: Record<string, unknown> = {};
       for (const [name, sub] of Object.entries(value)) {
         // 子 schema 非对象（draft-06+ 布尔 schema properties:{foo:true} 等）原样
-        // 透传会被端点 400——归一为空 schema（Gemini 不支持布尔 schema），闭环
+        // 透传会被端点 400——归一空 schema 并补缺省 type（Gemini 不支持布尔
+        // schema；节点须显式 type，轮 19 #1），闭环
         if (!isRecord(sub)) {
           onSchemaIssue?.(`属性「${name}」子 schema 非对象，归一为空 schema`);
-          props[name] = {};
+          props[name] = { type: "string" };
           continue;
         }
         props[name] = sanitizeGeminiSchema(sub, onSchemaIssue);
@@ -148,14 +149,17 @@ export function sanitizeGeminiSchema(
       out[normalized] = props;
     } else if (normalized === "items") {
       // 元组形态 items:[{…},{…}] 窄化为首元素（Gemini 的 items 只收单个 Schema）；
-      // 非对象值兜底空 schema——不原样透传被端点 400
+      // 非对象值兜底空 schema 并补缺省 type（节点须显式 type，轮 19 #1）——不原样
+      // 透传被端点 400
       const item = Array.isArray(value) ? value[0] : value;
       if (Array.isArray(value)) {
         onSchemaIssue?.("items 元组形态窄化为首元素");
       } else if (!isRecord(item)) {
         onSchemaIssue?.("items 非对象形态归一为空 schema");
       }
-      out[normalized] = isRecord(item) ? sanitizeGeminiSchema(item, onSchemaIssue) : {};
+      out[normalized] = isRecord(item)
+        ? sanitizeGeminiSchema(item, onSchemaIssue)
+        : { type: "string" };
     } else {
       // 标量键值形态校验（清洗闭环的最后一格，轮 11 #9）：病态值原样透传会被
       // 端点 400——type 非字符串兜底合法枚举、enum/nullable/format 及约束键
@@ -225,9 +229,16 @@ export function sanitizeGeminiSchema(
       out[EMIT_KEY[normalized] ?? normalized] = value;
     }
   }
+  // 缺 type 补注入（轮 19 #1）：端点要求每个 schema 节点显式 type（轮 18 #1 web
+  // 核实）——清洗产物（约束键删空的节点）与调用方未写 type 的子 schema 统一补
+  // string（无类型线索时的缺省枚举，与非法枚举兜底同款口径）；先于 format 分域
+  // 注入，缺 type 节点的 format 按注入后的 type 收口
+  if (out.type === undefined) {
+    onSchemaIssue?.("节点缺 type，补注入缺省 string");
+    out.type = "string";
+  }
   // format 按 type 分域的收尾校验（轮 18 #8）：循环内只校验了全集成员——值在
-  // 全集但 type 域外的组合在此删除；type 缺失（调用方未写 type 键）不限定，
-  // 交由端点/真机核验（README 风险 3）
+  // 全集但 type 域外的组合在此删除
   if (typeof out.format === "string" && typeof out.type === "string") {
     const allowed = FORMATS_BY_TYPE[out.type] ?? NO_FORMATS;
     if (!allowed.has(out.format)) {

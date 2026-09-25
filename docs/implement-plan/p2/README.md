@@ -368,3 +368,17 @@ smoke 产物摘要：
 - **杂项（#2/#5/#6/#7/#9）**：cloneWorkMessages 的 toolCalls/args 副本隔离补对偶用例（轮 15 #9 实现零测试锁定）；rewriteStrings 注 null 原型对象重建会静默换原型；description 非字符串删除上报（白名单标量键值校验最后一块）；openai arguments `"null"` 字符串兜底 {}（网关字符串化 null args 与原生 null 同义，不再误报解析失败）；ASCII 尾随标点吞入行为补对偶锚定（防排除集日后扩到 ASCII 后与 Python 静默漂移）。
 
 测试 284 例全绿（覆盖率 98.77%）。
+
+### 评审轮 19（review-p2-llm-client-19.json，2026-09-25，6 条采纳 5 驳回 1）
+
+采纳 5 条。要点：
+
+- **空 schema 归一补注入 type（#1，轮 18 口径矛盾的收口）**：评审正确指出轮 18 #1 的「节点须显式 type」结论没有贯彻到自身的归一产物——子 schema 非对象 / items 非对象 / 约束键删空三条路径产出的 `{}` 节点同样无 type。统一收口：两处归一点直接产出 `{type:"string"}`，函数末尾对缺 type 节点（含调用方未写 type 的子 schema）补注入缺省 string 并上报；注入先于 format 分域校验（缺 type 节点的 format 按注入后的 type 收口）。不变量收敛为「清洗产物节点恒有显式 type」；02 §4.4 登记修订（真机核验项随风险 3）。
+- **common.ts 纯函数单测收敛（#2）**：temperatureEntry/resolveMaxTokens/makeOnceWarn/stringifyForLog 此前只经三适配器测试间接覆盖（回退链/钳制告警/maxTokens 回退近乎逐字复制三份）——新增 test/llm/common.test.ts 一处锁定行为矩阵（含精确告警文案、协议上限表、Infinity/NaN 均不发）；适配器侧保留 anthropic 一份接线锚定（wire 落点 + 实例去重经 provider 生效），删 gemini/openai 重复副本。**顺手修正实现注释失实**：「Infinity 反而能被正确钳制」实际走 `!Number.isFinite` 不发分支。
+- **测试组织（#4/#5/#6）**：client.test 四装配工厂（setup/setupWithLogs/setupRealClock/setupClockWithLogs）收敛为 setupCore 公共核心（时钟形态 × 日志采集两维正交）+ 薄委托，零调用点扰动；三段式 history 六处逐字重复收敛 historyWithToolResult 夹具。gemini name:42 分档断言补 `includes("42")` 真锚定（原断言会被同响应的 functionCall 整体非对象分支同文案喂绿，畸形误路由进名字失配档时用例失明）；openai 缺失 id 丢弃补告警锚定（与 anthropic 同名场景观测口径对齐）。
+
+驳回 1 条：
+
+- **#3 issues 文案逐字符断言脆弱**：驳回。逐字符锚定是既定契约——轮 9 #9 已显式裁决「关键词与引号格式是断言契约的一部分」（gemini 去重用例注释自认），这些字符串是可观测性契约本体（日志消费方/排障文档引用），放宽为关键词匹配会让措辞静默漂移；文案变更触发测试红是**有意的摩擦**（迫使有意识地更新契约），toEqual 的期望 diff 本身即可区分「行为回归」与「文案变更」，评审所称「无法区分」不成立。
+
+测试 293 例全绿（覆盖率 98.77%；+11：common.test.ts 纯函数矩阵，净变化含删 4 条重复用例）。

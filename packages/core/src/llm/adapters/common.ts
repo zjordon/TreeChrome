@@ -59,8 +59,8 @@ export function temperatureEntry(
   onClamp?: (message: string) => void,
 ): Record<string, unknown> {
   const temperature = req.temperature ?? config.temperature;
-  // 非有限数值（NaN 等）不发：Math.min/max 对 NaN 透传，JSON 序列化成 null 上送
-  // 会被端点 400（Infinity 反而能被正确钳制）——钳制防护的闭环补齐（轮 13 #5）
+  // 非有限数值（NaN/Infinity）不发：NaN 序列化成 null、Infinity 溢出上送均是
+  // 端点 400（轮 13 #5）——钳制防护的闭环补齐；去重由调用方注入的回调负责
   if (temperature === undefined || !Number.isFinite(temperature)) {
     return {};
   }

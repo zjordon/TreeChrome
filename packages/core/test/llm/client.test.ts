@@ -86,55 +86,72 @@ const r500 = (): MockResponseSpec => ({ status: 500, body: { error: { message: "
 
 const msgs = (): ChatMessage[] => [{ role: "user", blocks: [{ kind: "text", text: "hello" }] }];
 
-function setup(over: Partial<ProviderConfig> = {}) {
-  const mock = new MockFetch();
-  const clock = new FakeClock();
-  const client = createLLMClient(
-    { ...CARD, ...over },
-    { fetch: mock.fetch, now: clock.now, sleep: clock.sleep, log: () => {} },
-  );
-  return { mock, clock, client };
-}
-
-/** setup 的日志捕获变体（冻结时钟 + logs 数组）——WARNING 类观测断言共用 */
-function setupWithLogs(over: Partial<ProviderConfig> = {}) {
+/** 四工厂的公共核心（轮 19 #4）：「时钟形态 × 日志采集」两维正交——real 时钟
+ * 省略 now/sleep 走 resolveDeps 缺省，zero 时钟冻结在 0（无定时器语义） */
+function setupCore(
+  over: Partial<ProviderConfig>,
+  clock: "fake" | "zero" | "real",
+  collectLogs: boolean,
+) {
   const mock = new MockFetch();
   const logs: string[] = [];
+  const fake = clock === "fake" ? new FakeClock() : null;
   const client = createLLMClient(
     { ...CARD, ...over },
     {
       fetch: mock.fetch,
-      now: () => 0,
-      sleep: async () => {},
-      log: (m) => logs.push(m),
+      ...(fake !== null
+        ? { now: fake.now, sleep: fake.sleep }
+        : clock === "zero"
+          ? { now: () => 0, sleep: async () => {} }
+          : {}),
+      log: collectLogs ? (m) => logs.push(m) : () => {},
     },
   );
+  return { mock, fake, logs, client };
+}
+
+function setup(over: Partial<ProviderConfig> = {}) {
+  const { mock, fake, client } = setupCore(over, "fake", false);
+  if (fake === null) {
+    throw new Error("unreachable");
+  }
+  return { mock, clock: fake, client };
+}
+
+/** setup 的日志捕获变体（冻结时钟 + logs 数组）——WARNING 类观测断言共用 */
+function setupWithLogs(over: Partial<ProviderConfig> = {}) {
+  const { mock, logs, client } = setupCore(over, "zero", true);
   return { mock, logs, client };
 }
 
 /** setup 的真时钟变体（缺省 now/sleep：performance.now + setTimeout 包装；log 静音
  * ——被测对象是缺省时钟/睡眠，非缺省日志，与 stubDeps 的静音理由一致） */
 function setupRealClock(over: Partial<ProviderConfig> = {}) {
-  const mock = new MockFetch();
-  const client = createLLMClient({ ...CARD, ...over }, { fetch: mock.fetch, log: () => {} });
+  const { mock, client } = setupCore(over, "real", false);
   return { mock, client };
 }
 
 /** FakeClock + 日志采集组合（预算归因类用例）——三工厂外的第 4 形态收敛 */
 function setupClockWithLogs(over: Partial<ProviderConfig> = {}) {
-  const mock = new MockFetch();
-  const clock = new FakeClock();
-  const logs: string[] = [];
-  const client = createLLMClient(
-    { ...CARD, ...over },
-    {
-      fetch: mock.fetch,
-      now: clock.now,
-      sleep: clock.sleep,
-      log: (m) => logs.push(m),
-    },
-  );
-  return { mock, clock, logs, client };
+  const { mock, fake, logs, client } = setupCore(over, "fake", true);
+  if (fake === null) {
+    throw new Error("unreachable");
+  }
+  return { mock, clock: fake, logs, client };
+}
+
+/** user → assistant(单 toolCall) → toolResult 三段式历史（轮 19 #4：6 处逐字
+ * 重复收敛；args 与结果文本按用例注入） */
+function historyWithToolResult(
+  resultText: string,
+  args: Record<string, unknown> = {},
+): ChatMessage[] {
+  return [
+    { role: "user", blocks: [{ kind: "text", text: "q" }] },
+    { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args }] },
+    { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: resultText },
+  ];
 }
 
 /** 先锁 kind 再断言产物：短路写法在意外 empty 时失败信息只剩 "false to equal" */
@@ -300,11 +317,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
   it("toolResult 文本命中敏感值 → WARNING 可观测（明文出站不静默；P5 parity 只告警不改 wire）", async () => {
     const { mock, logs, client } = setupWithLogs();
     mock.queueMany(toolOk({ done: 1 }));
-    const messages: ChatMessage[] = [
-      { role: "user", blocks: [{ kind: "text", text: "q" }] },
-      { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args: {} }] },
-      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "echoed sk-secret" },
-    ];
+    const messages = historyWithToolResult("echoed sk-secret");
     const r = await client.getAction("sys", messages, TOOL, {
       sensitiveMap: { "sk-secret": "<KEY>" },
     });
@@ -319,11 +332,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
   it("redactToolPayloads:true → toolResult 文本占位出站（明文阻断）；模型回显占位符经还原闭合（轮 12 #4）", async () => {
     const { mock, logs, client } = setupWithLogs();
     mock.queueMany(toolOk({ next_goal: "used <KEY>", action: { name: "done" } }));
-    const messages: ChatMessage[] = [
-      { role: "user", blocks: [{ kind: "text", text: "q" }] },
-      { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args: {} }] },
-      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "echoed sk-secret" },
-    ];
+    const messages = historyWithToolResult("echoed sk-secret");
     const r = await client.getAction("sys", messages, TOOL, {
       sensitiveMap: { "sk-secret": "<KEY>" },
       redactToolPayloads: true,
@@ -338,21 +347,10 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
   });
 
   it("历史 args 含敏感值（okResult 还原回灌的泄露链）→ 缺省 WARNING / redactToolPayloads 深层占位（轮 15 #7）", async () => {
-    const history: ChatMessage[] = [
-      { role: "user", blocks: [{ kind: "text", text: "q" }] },
-      {
-        role: "assistant",
-        blocks: [],
-        toolCalls: [
-          {
-            id: "t1",
-            name: TOOL.name,
-            args: { creds: "sk-secret", nested: { token: "sk-secret" } },
-          },
-        ],
-      },
-      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "ok" },
-    ];
+    const history = historyWithToolResult("ok", {
+      creds: "sk-secret",
+      nested: { token: "sk-secret" },
+    });
 
     // 缺省：args 明文出站 + WARNING 可观测
     const plain = setupWithLogs();
@@ -408,15 +406,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     // 旧 JSON.stringify(args).includes(real) 与文本替换域不一致：real 串化后为
     // 转义形态（\" \\ \n），includes 永远失配——opt-in 也既不替换也无告警
     const tricky = 'pa"ss\\w\nord';
-    const history: ChatMessage[] = [
-      { role: "user", blocks: [{ kind: "text", text: "q" }] },
-      {
-        role: "assistant",
-        blocks: [],
-        toolCalls: [{ id: "t1", name: TOOL.name, args: { password: tricky } }],
-      },
-      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "ok" },
-    ];
+    const history = historyWithToolResult("ok", { password: tricky });
 
     // 缺省：WARNING 可观测（转义形态不再漏报）
     const plain = setupWithLogs();
@@ -451,15 +441,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     noLeak.mock.queueMany(toolOk({ done: 1 }));
     await noLeak.client.getAction(
       "sys",
-      [
-        { role: "user", blocks: [{ kind: "text", text: "q" }] },
-        {
-          role: "assistant",
-          blocks: [],
-          toolCalls: [{ id: "t1", name: TOOL.name, args: { "sk-secret": 1, code: 12345 } }],
-        },
-        { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "ok" },
-      ],
+      historyWithToolResult("ok", { "sk-secret": 1, code: 12345 }),
       TOOL,
       {
         sensitiveMap: { "sk-secret": "<KEY>", "12345": "<N>" },
@@ -471,16 +453,10 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
   it("redactToolPayloads + 删除式 sensitiveMap：toolResult 整体即敏感值 → [redacted] 降级防空 text 出站（轮 16 #7）", async () => {
     const { mock, client } = setup();
     mock.queueMany(toolOk({ done: 1 }));
-    const r = await client.getAction(
-      "sys",
-      [
-        { role: "user", blocks: [{ kind: "text", text: "q" }] },
-        { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args: {} }] },
-        { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "topsecret" },
-      ],
-      TOOL,
-      { sensitiveMap: { topsecret: "" }, redactToolPayloads: true },
-    );
+    const r = await client.getAction("sys", historyWithToolResult("topsecret"), TOOL, {
+      sensitiveMap: { topsecret: "" },
+      redactToolPayloads: true,
+    });
     expect(r.kind).toBe("ok");
     const wire = JSON.stringify(mock.lastBody().messages);
     expect(wire).not.toContain("topsecret");

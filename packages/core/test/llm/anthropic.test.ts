@@ -230,7 +230,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("temperature");
   });
 
-  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4）", async () => {
+  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4；三适配器接线锚定——纯逻辑矩阵见 common.test.ts，轮 19 #2）", async () => {
     const { mock, logs, provider } = setupProviderWithLogs(createAnthropicProvider, CARD, {
       temperature: 1.5,
     });
@@ -250,7 +250,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(warnings[0]).toContain("glm-anthropic"); // 卡片归因
   });
 
-  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #10）", async () => {
+  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #10；三适配器接线锚定，纯逻辑见 common.test.ts）", async () => {
     const { mock, logs, provider } = setupProviderWithLogs(createAnthropicProvider, CARD, {
       maxTokens: Number.NaN,
     });

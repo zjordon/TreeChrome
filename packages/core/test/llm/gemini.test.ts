@@ -171,12 +171,13 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
         { pattern: 123, minLength: true, minimum: "5", minItems: Number.NaN },
         (d) => issues.push(d),
       ),
-    ).toEqual({});
+    ).toEqual({ type: "string" }); // 约束键删空后补注入缺省 type（轮 19 #1）
     expect(issues).toEqual([
       "约束键「pattern」非字符串，删除该键：123",
       "约束键「minlength」非有限数值，删除该键：true",
       '约束键「minimum」非有限数值，删除该键："5"',
       "约束键「minitems」非有限数值，删除该键：null",
+      "节点缺 type，补注入缺省 string",
     ]);
   });
 
@@ -259,13 +260,14 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     expect(issues).toEqual(["description 非字符串，删除该键：123"]);
   });
 
-  it("非对象子 schema（含 draft-06+ 布尔 schema）归一为空 schema、required 非 string[] 删除——原样透传会被端点 400；原始 schema 不被改动", () => {
+  it("非对象子 schema（含 draft-06+ 布尔 schema）归一空 schema 并补缺省 type、required 非 string[] 删除——原样透传会被端点 400；原始 schema 不被改动", () => {
     const original = { type: "object", properties: { n: 3, s: "x", ok: true }, required: null };
     const snapshot = JSON.parse(JSON.stringify(original)) as Record<string, unknown>;
     const issues: string[] = [];
     expect(sanitizeGeminiSchema(original, (d) => issues.push(d))).toEqual({
       type: "object",
-      properties: { n: {}, s: {}, ok: {} },
+      // 归一节点带显式 type（轮 19 #1：端点要求节点显式 type，空 schema 同为 400 形态）
+      properties: { n: { type: "string" }, s: { type: "string" }, ok: { type: "string" } },
       // required: null 已被删除（官方只收 string[]）
     });
     expect(original).toEqual(snapshot);
@@ -288,11 +290,12 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     );
     expect(out).toEqual({ type: "string", items: { type: "string" } });
     const nonRecordItems = sanitizeGeminiSchema({ items: "x" }, (d) => issues.push(d));
-    expect(nonRecordItems).toEqual({ items: {} });
+    expect(nonRecordItems).toEqual({ type: "string", items: { type: "string" } });
     expect(issues).toEqual([
       "type 联合窄化 string|number → string",
       "items 元组形态窄化为首元素",
       "items 非对象形态归一为空 schema",
+      "节点缺 type，补注入缺省 string", // { items: "x" } 自身也无 type
     ]);
   });
 
@@ -578,44 +581,6 @@ describe("请求构造（canonical → wire）", () => {
     expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
   });
 
-  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4）", async () => {
-    const { mock, logs, provider } = setupProviderWithLogs(createGeminiProvider, CARD, {
-      temperature: 3,
-    });
-    const req: ChatRequest = {
-      systemPrompt: null,
-      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
-      tools: null,
-    };
-    mock.queueMany(fnCallOk({}), fnCallOk({}));
-    await provider.chat(req);
-    await provider.chat(req);
-    expect((mock.bodyAt(0).generationConfig as Record<string, unknown>).temperature).toBe(2);
-    const warnings = logs.filter((m) => m.includes("钳制"));
-    expect(warnings).toHaveLength(1); // 每请求都在钳制，告警只一次
-    expect(warnings[0]).toContain("gemini-card"); // 卡片归因
-  });
-
-  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #11）", async () => {
-    const { mock, logs, provider } = setupProviderWithLogs(createGeminiProvider, CARD, {
-      maxTokens: Number.NaN,
-    });
-    mock.queueMany(fnCallOk({}), fnCallOk({}));
-    const req: ChatRequest = {
-      systemPrompt: null,
-      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
-      tools: null,
-    };
-    await provider.chat(req);
-    await provider.chat(req);
-    expect((mock.bodyAt(0).generationConfig as Record<string, unknown>).maxOutputTokens).toBe(
-      16384,
-    );
-    const warnings = logs.filter((m) => m.includes("maxTokens"));
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("gemini-card");
-  });
-
   it("model turn 的 inlineData 静默丢弃（多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(fnCallOk({}));
@@ -769,7 +734,12 @@ describe("响应解析（wire → canonical）", () => {
       },
     ]);
     expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
-    expect(logs.some((m) => m.includes("丢弃形态异常的 functionCall"))).toBe(true);
+    // includes("42") 真正锚定 name 非字符串分档（轮 19 #5）：仅断言短语会被
+    // functionCall 整体非对象分支（"not-an-object"）的同文案喂绿，畸形输出误
+    // 路由进「忽略非请求工具名」档时本用例不再失明
+    expect(logs.some((m) => m.includes("丢弃形态异常的 functionCall") && m.includes("42"))).toBe(
+      true,
+    );
     expect(logs.some((m) => m.includes("丢弃 args 非对象的 functionCall"))).toBe(true);
   });
 
