@@ -425,3 +425,14 @@ smoke 产物摘要：
 - **杂项（#6/#8）**：测试注释「16 位卡号」修正为 19 位（字面量事实）；敏感值空对象与 undefined 的不同代码路径（空 entries 循环 / reversed 空早退）补对称锚定。
 
 测试 301 例全绿（覆盖率 98.42%）。
+
+### 评审轮 23（review-p2-llm-client-23.json，2026-09-25，5/5 采纳；状态 partial——部分文件组未跑完，已出意见有效，下轮全量复审覆盖）
+
+采纳 5 条。要点：
+
+- **baseUrl /v1 误配可观测（#1）**：OpenAI 卡 baseUrl 惯例带 /v1，跨协议复用卡片会拼出 /v1/v1/messages → 404（错误文案不指向根因）——anthropic 拼接处对 /v1 结尾做一次性告警（makeOnceWarn 实例去重），与 maxTokens/temperature 误配口径一致；用例锚定误配 URL 如实拼接 + 单次告警。
+- **dropped 按引用过滤（#2）**：getAction 纵深防御的按名过滤会让「同名目标工具被重复调用」完全静默（find 只取第一条，其余同名调用既被丢弃也不进 dropped）——改 `c !== call` 引用过滤，文案改「丢弃多余工具调用」涵盖重复语义。
+- **smoke toolInput 过 redact（#3）**：模型产物是文件内唯一未脱敏的输出面（模型可能回显输入片段），与 URL/headers/请求体/错误链的脱敏纪律对齐。
+- **测试侧（#4/#5）**：「未配置则零告警」声明改 setupProviderWithLogs 真断言（静音 setup 无回归防护，且 toHaveLength(1) 受 makeOnceWarn 去重保护测不出「无条件告警」回归）；带图 user 消息三处逐字重复收敛 withImageMessages 夹具。
+
+测试 302 例全绿（覆盖率 98.42%）。

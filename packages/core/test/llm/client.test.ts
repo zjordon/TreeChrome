@@ -157,6 +157,19 @@ function historyWithToolResult(
   ];
 }
 
+/** 带图 user 消息夹具（轮 23 #5：三处逐字重复收敛，ImageBlock 形状演进单点改） */
+function withImageMessages(text = "look"): ChatMessage[] {
+  return [
+    {
+      role: "user",
+      blocks: [
+        { kind: "text", text },
+        { kind: "image", mimeType: "image/png", base64: "AAAA" },
+      ],
+    },
+  ];
+}
+
 /** 先锁 kind 再断言产物：短路写法在意外 empty 时失败信息只剩 "false to equal" */
 function assertOk(r: GetActionResult): Extract<GetActionResult, { kind: "ok" }> {
   expect(r.kind).toBe("ok");
@@ -764,15 +777,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
 
   it("滤图：fallback 无视觉 → 后续请求无 image 块；调用方消息不被改动", async () => {
     const { mock, clock, client } = setup({ fallback: FALLBACK });
-    const messages: ChatMessage[] = [
-      {
-        role: "user",
-        blocks: [
-          { kind: "text", text: "look" },
-          { kind: "image", mimeType: "image/png", base64: "AAAA" },
-        ],
-      },
-    ];
+    const messages = withImageMessages();
     mock.queueMany(r429(), toolOk({ done: 1 }));
     const p = client.getAction("sys", messages, TOOL);
     await clock.advance(0);
@@ -789,15 +794,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
 
   it("主卡显式声明 supportsVision=false → 恒滤图（声明即生效）；未声明主卡不滤（偏离 9 取舍）", async () => {
     const declared = setup({ capabilities: { supportsVision: false } });
-    const withImage: ChatMessage[] = [
-      {
-        role: "user",
-        blocks: [
-          { kind: "text", text: "look" },
-          { kind: "image", mimeType: "image/png", base64: "AAAA" },
-        ],
-      },
-    ];
+    const withImage = withImageMessages();
     declared.mock.queueMany(toolOk({ done: 1 }));
     const r = await declared.client.getAction("sys", withImage, TOOL);
     expect(r.kind).toBe("ok");
@@ -833,15 +830,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     // glm-5.1 白名单外且未声明 → 推导 false、不滤（偏离 9 取舍）——图照发但可观测
     const { mock, logs, client } = setupWithLogs({ model: "glm-5.1" });
     mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
-    const withImage: ChatMessage[] = [
-      {
-        role: "user",
-        blocks: [
-          { kind: "text", text: "look" },
-          { kind: "image", mimeType: "image/png", base64: "AAAA" },
-        ],
-      },
-    ];
+    const withImage = withImageMessages();
     const r = await client.getAction("sys", withImage, TOOL);
     expect(r.kind).toBe("ok");
     // 图未被滤（未声明不滤的取舍不变），但致盲可观测

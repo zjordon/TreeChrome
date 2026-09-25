@@ -264,7 +264,9 @@ async function main() {
           );
         }
         console.log("toolInput:");
-        console.log(JSON.stringify(result.toolInput, null, 2));
+        // 模型产物同样过 redact（轮 23 #3）：模型可能回显输入片段，与文件其余
+        // 输出面（URL/headers/请求体/错误链）的脱敏纪律对齐
+        console.log(redact(JSON.stringify(result.toolInput, null, 2)));
         console.log(`usage: ${JSON.stringify(result.usage)}`);
       } else {
         // empty = 解析梯子耗尽仍未产出 agent_response 调用——对 smoke 就是失败，

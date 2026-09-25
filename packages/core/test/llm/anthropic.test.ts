@@ -278,6 +278,22 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("system");
   });
 
+  it("baseUrl 以 /v1 结尾 → 一次性 WARNING（OpenAI 形态误配 /v1/v1/messages → 404 的根因留证据，轮 23 #1）", async () => {
+    const { mock, logs, provider } = setupLogs({
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4/v1",
+    });
+    mock.queueMany(toolOk({}), toolOk({}));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    await provider.chat(req);
+    await provider.chat(req);
+    expect(mock.calls[0].url).toContain("/v1/v1/messages"); // 误配形态如实拼接
+    expect(logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(1);
+  });
+
   it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));

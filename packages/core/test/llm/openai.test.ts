@@ -303,10 +303,13 @@ describe("请求构造（canonical → wire）", () => {
     await suppressed.provider.chat(baseReq());
     await suppressed.provider.chat(baseReq());
     expect(suppressed.logs.filter((m) => m.includes("只接受默认温度"))).toHaveLength(1);
-    const quiet = setup({ model: "gpt-5" });
+    // 未配置则零告警——须真正采集日志断言（轮 23 #4）：静音 setup 的声明无回归
+    // 防护，且 toHaveLength(1) 受 makeOnceWarn 去重保护测不出「无条件告警」回归
+    const quiet = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, { model: "gpt-5" });
     quiet.mock.queueMany(toolOk("{}"));
     await quiet.provider.chat(baseReq());
     expect(quiet.mock.lastBody()).not.toHaveProperty("temperature");
+    expect(quiet.logs.filter((m) => m.includes("只接受默认温度"))).toHaveLength(0);
   });
 
   it("空串 systemPrompt 与 null 同等不发（三协议统一口径，轮 20 #13）", async () => {

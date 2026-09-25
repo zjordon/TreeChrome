@@ -425,11 +425,13 @@ export class LLMClient {
         const call = response.toolCalls.find((c) => c.name === tool.name);
         // 纵深防御（评审轮 8 注明）：getAction 恒发 tools=[tool]，适配器层已按
         // requestedNames 过滤+告警非请求名调用——正常路径 dropped 恒空；此处兜
-        // 未来适配器不做上游过滤的形态，多调用响应只取其一时留 WARNING 证据
-        const dropped = response.toolCalls.filter((c) => c.name !== tool.name);
+        // 未来适配器不做上游过滤的形态。按引用过滤（轮 23 #2）：按名过滤会让
+        // 「同名目标工具被重复调用」的形态完全静默（find 只取第一条，其余同名
+        // 调用既被丢弃也不进 dropped）——重复 functionCall 恰是该覆盖的场景
+        const dropped = response.toolCalls.filter((c) => c !== call);
         if (dropped.length > 0) {
           const names = dropped.map((c) => c.name).join(", ");
-          this.deps.log(`[llm] getAction 丢弃非目标工具调用：${names}（目标 ${tool.name}）`);
+          this.deps.log(`[llm] getAction 丢弃多余工具调用：${names}（目标 ${tool.name}）`);
         }
         if (call !== undefined) {
           return this.okResult(call.args, urlMap, sensitive, response.usage);

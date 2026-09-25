@@ -233,9 +233,19 @@ export function createAnthropicProvider(
   const onTemperatureClamp = makeOnceWarn(deps.log);
   // maxTokens 非法回退的实例级一次性告警（轮 18 #10）
   const onMaxTokensInvalid = makeOnceWarn(deps.log);
+  // baseUrl 疑似 OpenAI 形态（/v1 结尾）的一次性告警（轮 23 #1）
+  const onBaseUrlV1 = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
-    const url = `${stripTrailingSlash(config.baseUrl)}/v1/messages`;
+    const base = stripTrailingSlash(config.baseUrl);
+    // OpenAI 卡 baseUrl 惯例带 /v1，跨协议复用卡片会拼出 /v1/v1/messages → 404
+    //（错误文案不指向根因）——一次性告警留证据，与 maxTokens/temperature 误配口径一致
+    if (base.endsWith("/v1")) {
+      onBaseUrlV1(
+        `baseUrl 以 /v1 结尾，anthropic 协议将拼接 ${base}/v1/messages——疑似 OpenAI 形态误配`,
+      );
+    }
+    const url = `${base}/v1/messages`;
     // dangerous-direct-browser-access 恒发：扩展宿主从 SW 直连时是官方 CORS 逃生门
     //（webbrain 同款；对兼容端点多发无害）。extraHeaders 最后合并（可覆盖）。
     const headers: Record<string, string> = {
