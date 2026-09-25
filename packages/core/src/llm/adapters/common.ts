@@ -62,8 +62,13 @@ export function temperatureEntry(
 ): Record<string, unknown> {
   const temperature = req.temperature ?? config.temperature;
   // 非有限数值（NaN/Infinity）不发：NaN 序列化成 null、Infinity 溢出上送均是
-  // 端点 400（轮 13 #5）——钳制防护的闭环补齐；去重由调用方注入的回调负责
+  // 端点 400（轮 13 #5）——钳制防护的闭环补齐；必留证据（轮 26 #3）：同为宿主
+  // parseFloat 类误配，静默吞掉与 onClamp/resolveMaxTokens 的观测口径不一致；
+  // 去重由调用方注入的回调负责
   if (temperature === undefined || !Number.isFinite(temperature)) {
+    if (temperature !== undefined && onClamp !== undefined) {
+      onClamp(`temperature ${temperature} 非有限数值（NaN/Infinity），不发送（${config.name}）`);
+    }
     return {};
   }
   const max = PROTOCOL_MAX_TEMPERATURE[config.protocol];

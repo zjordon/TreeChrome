@@ -566,7 +566,7 @@ describe("请求构造（canonical → wire）", () => {
     );
   });
 
-  it("顶层 parameters 非 object 归一时剥离 type 域外键（items/enum/format 残留即自相矛盾 schema，轮 25 #7）", async () => {
+  it("顶层 parameters 非 object 归一时剥离 type 域外键（items/enum/format/约束键残留即 400 形态，轮 25 #7 + 轮 26 #5）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(fnCallOk({}));
     await provider.chat({
@@ -576,11 +576,22 @@ describe("请求构造（canonical → wire）", () => {
         {
           name: "arr_tool",
           description: "d",
-          // 原 type:array 带 items 是合法 array schema——强制归一为 object 后
-          // items/enum/format 残留即 400 形态（与 FORMATS_BY_TYPE 分域同口径）
+          // 原 type:array/string 带 items/enum/format/约束键是合法 schema——强制
+          // 归一为 object 后全部残留即 400 形态（与 FORMATS_BY_TYPE 分域同口径）
           parameters: {
             type: "array",
-            items: { type: "string", enum: ["a"], format: "date-time" },
+            items: {
+              type: "string",
+              enum: ["a"],
+              format: "date-time",
+              pattern: "^a",
+              minLength: 1,
+              maxLength: 5,
+              minItems: 1,
+              maxItems: 9,
+              minimum: 0,
+              maximum: 10,
+            },
           },
         },
       ],

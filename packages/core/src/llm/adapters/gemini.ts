@@ -318,9 +318,12 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
                   // {}（清洗兜底成 type:string）——严格端点 400、宽容端点也把工具
                   // 声明成「参数是一个字符串」诱导病态 args；嵌套节点兜底 string
                   // 合理（语义未知），顶层在此调用点收口（轮 22 #7）。
-                  // 归一时同步剥离 type 域外键（轮 25 #7）：items 仅 ARRAY、enum/
-                  // format 仅 STRING 合法——原 type 合法的键残留在 object 节点上
-                  // 是自相矛盾 schema（400 形态，与 FORMATS_BY_TYPE 分域同口径）
+                  // 归一时同步剥离 type 域外键（轮 25 #7 + 轮 26 #5）：items 仅
+                  // ARRAY、enum/format 仅 STRING、pattern/minLength/maxLength 仅
+                  // STRING、minItems/maxItems 仅 ARRAY、minimum/maximum 仅 NUMBER/
+                  // INTEGER——原 type 合法的键残留在 object 节点上要么是 400 形态
+                  //（与 FORMATS_BY_TYPE 分域同口径）要么语义失效，约束丢失已由
+                  // 归一告警可观测
                   if (sanitized.type !== "object") {
                     onSchemaIssue(
                       `顶层 parameters type=${String(sanitized.type)} 归一为 object（函数参数恒为命名参数集）`,
@@ -329,6 +332,13 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
                     delete sanitized.items;
                     delete sanitized.enum;
                     delete sanitized.format;
+                    delete sanitized.pattern;
+                    delete sanitized.minLength;
+                    delete sanitized.maxLength;
+                    delete sanitized.minItems;
+                    delete sanitized.maxItems;
+                    delete sanitized.minimum;
+                    delete sanitized.maximum;
                   }
                   return {
                     name: t.name,

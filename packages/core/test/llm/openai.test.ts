@@ -312,6 +312,23 @@ describe("请求构造（canonical → wire）", () => {
     expect(quiet.logs.filter((m) => m.includes("只接受默认温度"))).toHaveLength(0);
   });
 
+  it("baseUrl 整段端点 URL 误配（以 /chat/completions 结尾）→ 如实拼接 + 一次性告警（轮 26 #2，与 anthropic /v1、gemini /v1beta 同族）", async () => {
+    // 官方 curl 示例端点以 /chat/completions 结尾，整段复制进卡片拼出双重路径 → 404
+    const plain = setupLogs();
+    const misconfigured = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
+      baseUrl: "https://api.example.com/v1/chat/completions",
+    });
+    misconfigured.mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await misconfigured.provider.chat(baseReq());
+    await misconfigured.provider.chat(baseReq());
+    expect(misconfigured.mock.calls[0].url).toContain("/chat/completions/chat/completions");
+    expect(misconfigured.logs.filter((m) => m.includes("整段端点 URL 误配"))).toHaveLength(1);
+    // 无误配的缺省卡片不受影响：不告警（真请求采集，非静音声明）
+    plain.mock.queueMany(toolOk("{}"));
+    await plain.provider.chat(baseReq());
+    expect(plain.logs.filter((m) => m.includes("整段端点 URL 误配"))).toHaveLength(0);
+  });
+
   it("空串 systemPrompt 与 null 同等不发（三协议统一口径，轮 20 #13）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk("{}"));

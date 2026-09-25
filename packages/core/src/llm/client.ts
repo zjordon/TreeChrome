@@ -331,7 +331,7 @@ export class LLMClient {
         );
       }
       // sensitiveMap 病态配置的一次性 WARNING（轮 20 #10/#14——transforms 纯函数
-      // 无告警通道，检测上提到有 deps.log 的入口；轮 21 #8 三检测独立执行，防
+      // 无告警通道，检测上提到有 deps.log 的入口；轮 21 #8 各检测独立执行，防
       // 一类病态掩盖另一类；轮 21 #15 谓词收窄到引擎实际重排的键形态）：
       // ① canonical 数组索引键（非负整数 ≤ 2^32-1 的数字串）：JS 引擎把它们重排
       //    到枚举首位升序（Python dict 恒插入序），含包含关系键时替换顺序静默
@@ -339,8 +339,13 @@ export class LLMClient {
       //    串键恒插入序，无此风险；
       // ② 占位符冲突（多 real 共享同一 placeholder）：还原侧顺序 replaceAll 先
       //    插入者恒胜，后续条目静默失效——还原结果张冠李戴的数据损坏；
-      // ③ 交叉冲突（轮 25 #3）：某条目的 placeholder 恰为另一条目的 real——顺序
-      //    replaceAll 形成替换链（先占位出的值被再次替换），双向静默损坏。
+      // ③ 交叉冲突（轮 25 #3，轮 26 #4 放宽到子串）：占位符与另一条目的真实值
+      //    存在包含关系（精确相等只是特例）——占位符含其它 real 时先占位出的值
+      //    被再次替换（替换链）；其它 real 含占位符时先插入的占位符破坏后续 real
+      //    的完整匹配——双向静默损坏；
+      // ④ URL 缩写 tag 撞型（轮 26 #1）：占位符形如 [uN]（tag 计数从 [u0] 起）——
+      //    okResult 同序还原（先 URL 后敏感）会把模型输出中的该占位符先消费成
+      //    长 URL，敏感还原失配，真实值永不还原且被 URL 顶替。
       // reals 滤空串键（轮 25 #6，与工具载荷/systemPrompt 检测同口径）：空 real
       // 全链路从不参与替换，其占位符计入冲突集会误报并误消费一次性去重标志
       if (sensitive !== undefined && !this.loggedSensitiveMapConfigWarn) {
@@ -351,8 +356,20 @@ export class LLMClient {
         const hasIntKey = reals.some(isArrayIndexKey);
         const placeholders = reals.map((real) => sensitive[real]).filter((ph) => ph !== "");
         const hasConflict = new Set(placeholders).size !== placeholders.length;
-        const realSet = new Set(reals);
-        const hasCrossConflict = placeholders.some((ph) => realSet.has(ph));
+        // 子串包含是启发式检测（宁可误报告警，不让替换链静默损坏）。归属排除用
+        // 条目键（other !== real）而非值比较：评审原式 real !== ph 会把跨条目
+        // 精确撞值（轮 25 #3 的原始形态）一并排除——自包含（ph 含自身 real）
+        // 才是无害形态，单趟 replaceAll 不重扫插入内容
+        const hasCrossConflict = reals.some((real) => {
+          const ph = sensitive[real];
+          if (ph === "") {
+            return false;
+          }
+          return reals.some(
+            (other) => other !== real && (ph === other || ph.includes(other) || other.includes(ph)),
+          );
+        });
+        const hasUrlTagCollision = placeholders.some((ph) => /^\[u\d+\]$/.test(ph));
         if (hasIntKey) {
           this.deps.log(
             "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（≤10 位非负数字串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
@@ -365,10 +382,15 @@ export class LLMClient {
         }
         if (hasCrossConflict) {
           this.deps.log(
-            "[llm] WARNING: sensitiveMap 存在交叉冲突（某条目的占位符恰为另一条目的真实值）——顺序替换形成替换链，占位与还原双向静默数据损坏",
+            "[llm] WARNING: sensitiveMap 存在交叉冲突（占位符与另一条目的真实值存在包含关系）——顺序替换形成替换链，占位与还原双向静默数据损坏",
           );
         }
-        if (hasIntKey || hasConflict || hasCrossConflict) {
+        if (hasUrlTagCollision) {
+          this.deps.log(
+            "[llm] WARNING: sensitiveMap 占位符形如 [uN]，与 URL 缩写 tag 撞型——还原侧先 URL 后敏感，占位符会被长 URL 顶替、真实值丢失，请改用其他占位符形态",
+          );
+        }
+        if (hasIntKey || hasConflict || hasCrossConflict || hasUrlTagCollision) {
           this.loggedSensitiveMapConfigWarn = true;
         }
       }

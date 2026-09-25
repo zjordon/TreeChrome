@@ -267,9 +267,19 @@ export function createOpenAICompletionsProvider(
   const onTemperatureClamp = makeOnceWarn(deps.log);
   // maxTokens 非法回退的实例级一次性告警（轮 18 #12）
   const onMaxTokensInvalid = makeOnceWarn(deps.log);
+  // baseUrl 整段端点 URL 误配的一次性告警（轮 26 #2，与 anthropic /v1、gemini
+  // /v1beta 同族）：官方 curl 示例以 /chat/completions 结尾，整段复制进卡片会
+  // 拼出 …/chat/completions/chat/completions → 404
+  const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
-    const url = `${stripTrailingSlash(config.baseUrl)}/chat/completions`;
+    const base = stripTrailingSlash(config.baseUrl);
+    if (base.endsWith("/chat/completions")) {
+      onBaseUrlEndpoint(
+        `baseUrl 以 /chat/completions 结尾，openai 协议将拼接 ${base}/chat/completions——疑似整段端点 URL 误配`,
+      );
+    }
+    const url = `${base}/chat/completions`;
     const headers: Record<string, string> = {
       "content-type": "application/json",
       authorization: `Bearer ${config.apiKey}`,

@@ -71,6 +71,18 @@ describe("temperatureEntry", () => {
     temperatureEntry(req({ temperature: 0.5 }), c, (m) => clamped.push(m)); // 区间内静默
     expect(clamped).toEqual(["temperature 1.5 超出协议范围 [0, 1]，已钳制为 1（card-x）"]);
   });
+
+  it("NaN/Infinity 不发也经 onClamp 留证据（轮 26 #3：与钳制/回退同观测口径）；缺省不回调", () => {
+    const warned: string[] = [];
+    const c = card("openai-completions", { name: "card-x" });
+    temperatureEntry(req({ temperature: Number.NaN }), c, (m) => warned.push(m));
+    temperatureEntry(req({ temperature: Number.POSITIVE_INFINITY }), c, (m) => warned.push(m));
+    temperatureEntry(req(), c, (m) => warned.push(m)); // 未配置不回调
+    expect(warned).toEqual([
+      "temperature NaN 非有限数值（NaN/Infinity），不发送（card-x）",
+      "temperature Infinity 非有限数值（NaN/Infinity），不发送（card-x）",
+    ]);
+  });
 });
 
 describe("resolveMaxTokens", () => {

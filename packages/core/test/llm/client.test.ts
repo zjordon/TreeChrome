@@ -590,6 +590,26 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     });
     expect(emptyKey.logs.some((m) => m.includes("WARNING"))).toBe(false);
   });
+
+  it("sensitiveMap URL tag 撞型 / 子串交叉冲突（轮 26 #1/#4）", async () => {
+    // 占位符形如 [uN]：okResult 同序还原（先 URL 后敏感）会把模型输出中的该
+    // 占位符先消费成长 URL，敏感还原失配——真实值永不还原且被 URL 顶替
+    const urlTag = setupWithLogs();
+    urlTag.mock.queueMany(toolOk({ done: 1 }));
+    await urlTag.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-x": "[u0]" },
+    });
+    expect(urlTag.logs.some((m) => m.includes("WARNING") && m.includes("撞型"))).toBe(true);
+
+    // 子串形态交叉冲突：占位符 **key** 含另一条目 real "key"——顺序替换形成
+    // 替换链（先占位出的值被再次替换），精确相等检测拦不住（轮 26 #4 放宽）
+    const substring = setupWithLogs();
+    substring.mock.queueMany(toolOk({ done: 1 }));
+    await substring.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "secret-key": "**key**", key: "<PIN>" },
+    });
+    expect(substring.logs.some((m) => m.includes("WARNING") && m.includes("交叉冲突"))).toBe(true);
+  });
 });
 
 describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠）", () => {

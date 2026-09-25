@@ -461,3 +461,14 @@ smoke 产物摘要：
 - **测试/注释侧（#1/#5）**：/v1beta 告警的阴性对照补 chat 调用（不 chat 时 logs 恒空、断言恒绿，防不住「告警条件被误删」回归——轮 24 自写缺陷）；rewriteStrings 复用边界补 symbol 键/不可枚举属性静默丢失声明。
 
 测试 308 例全绿（覆盖率 98.44%）。
+
+### 评审轮 26（review-p2-llm-client-26.json，2026-09-25，5/5 采纳——其中 #4 建议代码有回归，实测修正后落地）
+
+采纳 5 条。要点：
+
+- **sensitiveMap 第 4/5 类病态检测（#1/#4）**：新增「URL tag 撞型」（占位符形如 [uN]——okResult 同序还原先 URL 后敏感，占位符被长 URL 顶替、真实值永不还原）；交叉冲突从精确相等放宽到双向子串包含（`****1111` 含 real `1111` 的替换链 / real 含占位符的占位先行破坏）。**#4 建议谓词 `real !== ph` 用值比较做归属排除，会把轮 25 #3 的跨条目精确撞值一并排除（轮 25 用例当场红）**——改为按条目键归属排除（other !== real），自包含（ph 含自身 real）才是无害形态（单趟 replaceAll 不重扫插入内容）。
+- **openai baseUrl 误配守卫（#2）**：官方 curl 示例端点以 /chat/completions 结尾，整段复制拼出双重路径 → 404——补齐与 anthropic /v1（轮 23 #1）、gemini /v1beta（轮 24 #4）同族的一次性告警；阴性对照真请求采集（轮 25 #1 标准）。
+- **temperature NaN/Infinity 必留证据（#3）**：非有限数值原先静默不发，与 onClamp 钳制/resolveMaxTokens 回退的观测口径不一致——NaN 场景同样经一次性告警。
+- **顶层归一约束键闭环（#5）**：pattern/minLength/maxLength（STRING 域）、minItems/maxItems（ARRAY 域）、minimum/maximum（NUMBER/INTEGER 域）与 items/enum/format 一并在归一 object 时删除——残留按 FORMATS_BY_TYPE 分域同口径是 400 形态或语义失效。
+
+测试 311 例全绿（覆盖率 98.47%）。
