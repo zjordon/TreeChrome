@@ -178,7 +178,9 @@ function rewriteStrings(
     // 仅递归普通对象：Map/Set/Date 等非普通对象的 entries 为空，按原逻辑重建会
     // 静默清空成 {}（现调用点只喂纯 JSON 产物，此处防御未来复用踩坑）。
     // 注意（轮 18 #5）：null 原型对象（Object.create(null)）按普通对象重建，产出
-    // 以 Object.prototype 为原型——复用扩展时注意原型被静默替换
+    // 以 Object.prototype 为原型——复用扩展时注意原型被静默替换。
+    // 注意（轮 25 #5）：Object.entries 仅枚举可枚举字符串键——symbol 键与不可枚举
+    // 属性在重建时静默丢失（当前调用域为纯 JSON 产物，复用扩展时一并评估）
     const proto = Object.getPrototypeOf(obj);
     if (proto !== Object.prototype && proto !== null) {
       return obj;

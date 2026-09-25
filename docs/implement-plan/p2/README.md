@@ -449,3 +449,15 @@ smoke 产物摘要：
 - **测试侧（#6/#7）**：expect 第二实参位的注释上移消除「消息参数写丢」歧义；setupCore 增 fetchOverride 维度，竞态/外部取消两处旁路用例不再内联重建 deps 字面量（防三态展开漂移）。
 
 测试 305 例全绿（覆盖率 98.43%）。
+
+### 评审轮 25（review-p2-llm-client-25.json，2026-09-25，7/7 采纳）
+
+采纳 7 条。要点：
+
+- **sensitiveMap 病态检测补全（#3/#6）**：新增第三类「交叉冲突」（某条目的 placeholder 恰为另一条目的 real——顺序 replaceAll 形成替换链，双向静默数据损坏）；reals 滤空串键（与工具载荷/systemPrompt 检测同口径）——空 real 条目从不参与替换，其占位符计入冲突集会误报并误消费一次性去重标志、让后续真病态永久静默。
+- **空 image 块拦截（#4）**：空 base64/mimeType 的 ImageBlock 同为端点 400 形态——hasEmptyText 扩为 hasEmptyBlock，畸形截图数据在 canonical 层拦截（错误归因到调用方而非端点，不烧退避/fallback），与空 text 拦截（轮 13 #6）同动机。
+- **顶层 parameters 归一剥离域外键（#7）**：强制 object 时同步 delete items/enum/format——原 type 合法的键残留是自相矛盾 schema（400 形态，与 FORMATS_BY_TYPE 分域同口径）。
+- **408 分型注释修正（#2）**：旧注释声称超时分型可规避 fallback 切换——实际 trySwitchToFallback 对全部 LLMError（协议违例除外）触发，408 与 4xx 在切换轴无差异，真实差异只有可重试性；按事实改写。
+- **测试/注释侧（#1/#5）**：/v1beta 告警的阴性对照补 chat 调用（不 chat 时 logs 恒空、断言恒绿，防不住「告警条件被误删」回归——轮 24 自写缺陷）；rewriteStrings 复用边界补 symbol 键/不可枚举属性静默丢失声明。
+
+测试 308 例全绿（覆盖率 98.44%）。

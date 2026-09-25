@@ -570,6 +570,26 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     });
     expect(clean.logs.some((m) => m.includes("WARNING"))).toBe(false);
   });
+
+  it("sensitiveMap 交叉冲突 / 空 real 键误报（轮 25 #3/#6）", async () => {
+    // 交叉冲突：某条目的 placeholder 恰为另一条目的 real——顺序 replaceAll 形成
+    // 替换链，双向静默损坏
+    const cross = setupWithLogs();
+    cross.mock.queueMany(toolOk({ done: 1 }));
+    await cross.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-abc": "TOKEN", TOKEN: "***" },
+    });
+    expect(cross.logs.some((m) => m.includes("WARNING") && m.includes("交叉冲突"))).toBe(true);
+
+    // 空 real 键条目：全链路从不参与替换，占位符不得计入冲突集（误报还会消费
+    // 一次性去重标志，让后续真病态永久静默）
+    const emptyKey = setupWithLogs();
+    emptyKey.mock.queueMany(toolOk({ done: 1 }));
+    await emptyKey.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { secret: "TOKEN", "": "TOKEN" },
+    });
+    expect(emptyKey.logs.some((m) => m.includes("WARNING"))).toBe(false);
+  });
 });
 
 describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠）", () => {

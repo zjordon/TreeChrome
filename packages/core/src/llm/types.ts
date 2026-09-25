@@ -118,14 +118,20 @@ export interface TokenUsage {
  * - user.blocks 非空；assistant 的 blocks 与 toolCalls 不同时为空；
  * - TextBlock.text 非空（轮 13 #6 收口：Anthropic 官方端点对空 text 块直接 400
  *   "text content blocks must be non-empty"——canonical 层一处拦截，三适配器
- *   不再各自猜）。
+ *   不再各自猜）；ImageBlock 的 base64/mimeType 非空（轮 25 #4 同动机）。
  */
 export function assertValidMessages(messages: ChatMessage[], providerName = "canonical"): void {
   const violation = (reason: string): LLMProtocolViolationError =>
     new LLMProtocolViolationError(`消息序列不变量被破坏：${reason}`, { provider: providerName });
 
-  const hasEmptyText = (blocks: ContentBlock[]): boolean =>
-    blocks.some((b) => b.kind === "text" && b.text === "");
+  const hasEmptyBlock = (blocks: ContentBlock[]): boolean =>
+    blocks.some(
+      (b) =>
+        (b.kind === "text" && b.text === "") ||
+        // 空 base64/mimeType 的 image 块同为端点 400 形态（轮 25 #4）：畸形截图
+        // 数据出站烧 400 会错误归因到端点并触发退避/fallback，而非调用方数据
+        (b.kind === "image" && (b.base64 === "" || b.mimeType === "")),
+    );
 
   if (messages.length === 0) {
     throw violation("消息为空");
@@ -141,8 +147,8 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       if (msg.blocks.length === 0) {
         throw violation("user.blocks 为空");
       }
-      if (hasEmptyText(msg.blocks)) {
-        throw violation("user 消息含空文本块（Anthropic 端点对空 text 块 400）");
+      if (hasEmptyBlock(msg.blocks)) {
+        throw violation("user 消息含空块（空 text / 空 image 数据，Anthropic 端点 400 形态）");
       }
       i += 1;
       continue;
@@ -152,8 +158,8 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       if (msg.blocks.length === 0 && calls.length === 0) {
         throw violation("assistant 的 blocks 与 toolCalls 同时为空");
       }
-      if (hasEmptyText(msg.blocks)) {
-        throw violation("assistant 消息含空文本块（Anthropic 端点对空 text 块 400）");
+      if (hasEmptyBlock(msg.blocks)) {
+        throw violation("assistant 消息含空块（空 text / 空 image 数据，端点 400 形态）");
       }
       if (calls.length > 0) {
         // id 空串：请求侧 tool_use id="" 会被官方端点 400（响应侧轮 12 已同款丢弃，

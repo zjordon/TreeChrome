@@ -331,22 +331,28 @@ export class LLMClient {
         );
       }
       // sensitiveMap 病态配置的一次性 WARNING（轮 20 #10/#14——transforms 纯函数
-      // 无告警通道，检测上提到有 deps.log 的入口；轮 21 #8 两检测独立执行，防
+      // 无告警通道，检测上提到有 deps.log 的入口；轮 21 #8 三检测独立执行，防
       // 一类病态掩盖另一类；轮 21 #15 谓词收窄到引擎实际重排的键形态）：
       // ① canonical 数组索引键（非负整数 ≤ 2^32-1 的数字串）：JS 引擎把它们重排
       //    到枚举首位升序（Python dict 恒插入序），含包含关系键时替换顺序静默
       //    偏离插入序——负数与超界数字串（11 位手机号/16-19 位卡号）是普通字符
       //    串键恒插入序，无此风险；
       // ② 占位符冲突（多 real 共享同一 placeholder）：还原侧顺序 replaceAll 先
-      //    插入者恒胜，后续条目静默失效——还原结果张冠李戴的数据损坏
+      //    插入者恒胜，后续条目静默失效——还原结果张冠李戴的数据损坏；
+      // ③ 交叉冲突（轮 25 #3）：某条目的 placeholder 恰为另一条目的 real——顺序
+      //    replaceAll 形成替换链（先占位出的值被再次替换），双向静默损坏。
+      // reals 滤空串键（轮 25 #6，与工具载荷/systemPrompt 检测同口径）：空 real
+      // 全链路从不参与替换，其占位符计入冲突集会误报并误消费一次性去重标志
       if (sensitive !== undefined && !this.loggedSensitiveMapConfigWarn) {
-        const reals = Object.keys(sensitive);
+        const reals = Object.keys(sensitive).filter((real) => real !== "");
         const ARRAY_INDEX_KEY_RE = /^(?:0|[1-9]\d*)$/;
         const isArrayIndexKey = (real: string): boolean =>
           ARRAY_INDEX_KEY_RE.test(real) && Number(real) <= 4294967295;
         const hasIntKey = reals.some(isArrayIndexKey);
         const placeholders = reals.map((real) => sensitive[real]).filter((ph) => ph !== "");
         const hasConflict = new Set(placeholders).size !== placeholders.length;
+        const realSet = new Set(reals);
+        const hasCrossConflict = placeholders.some((ph) => realSet.has(ph));
         if (hasIntKey) {
           this.deps.log(
             "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（≤10 位非负数字串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
@@ -357,7 +363,12 @@ export class LLMClient {
             "[llm] WARNING: sensitiveMap 存在占位符冲突（多个真实值映射到同一占位符）——还原侧先插入者胜、后续条目静默失效，还原结果可能张冠李戴",
           );
         }
-        if (hasIntKey || hasConflict) {
+        if (hasCrossConflict) {
+          this.deps.log(
+            "[llm] WARNING: sensitiveMap 存在交叉冲突（某条目的占位符恰为另一条目的真实值）——顺序替换形成替换链，占位与还原双向静默数据损坏",
+          );
+        }
+        if (hasIntKey || hasConflict || hasCrossConflict) {
           this.loggedSensitiveMapConfigWarn = true;
         }
       }

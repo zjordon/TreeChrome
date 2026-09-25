@@ -88,11 +88,32 @@ describe("assertValidMessages · 违例序列", () => {
     expectViolation([{ role: "user", blocks: [] }], "user.blocks 为空");
   });
 
-  it("空文本块（Anthropic 端点对空 text 块 400——canonical 层拦截，轮 13 #6）", () => {
-    expectViolation([{ role: "user", blocks: [{ kind: "text", text: "" }] }], "含空文本块");
+  it("空文本块（Anthropic 端点对空 text 块 400——canonical 层拦截，轮 13 #6；文案轮 25 #4 扩为「空块」涵盖 image）", () => {
+    expectViolation([{ role: "user", blocks: [{ kind: "text", text: "" }] }], "含空块");
     expectViolation(
       [user("q"), { role: "assistant", blocks: [{ kind: "text", text: "" }] }],
-      "含空文本块",
+      "含空块",
+    );
+  });
+
+  it("空 image 块（空 base64 / 空 mimeType 同为端点 400 形态——canonical 层拦截，轮 25 #4）", () => {
+    expectViolation(
+      [
+        {
+          role: "user",
+          blocks: [{ kind: "image", mimeType: "image/png", base64: "" }],
+        },
+      ],
+      "含空块",
+    );
+    expectViolation(
+      [
+        {
+          role: "user",
+          blocks: [{ kind: "image", mimeType: "", base64: "AAAA" }],
+        },
+      ],
+      "含空块",
     );
   });
 

@@ -566,6 +566,30 @@ describe("请求构造（canonical → wire）", () => {
     );
   });
 
+  it("顶层 parameters 非 object 归一时剥离 type 域外键（items/enum/format 残留即自相矛盾 schema，轮 25 #7）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: [
+        {
+          name: "arr_tool",
+          description: "d",
+          // 原 type:array 带 items 是合法 array schema——强制归一为 object 后
+          // items/enum/format 残留即 400 形态（与 FORMATS_BY_TYPE 分域同口径）
+          parameters: {
+            type: "array",
+            items: { type: "string", enum: ["a"], format: "date-time" },
+          },
+        },
+      ],
+    });
+    const tools = mock.lastBody().tools as Array<Record<string, unknown>>;
+    const decls = tools[0].functionDeclarations as Array<Record<string, unknown>>;
+    expect(decls[0].parameters).toEqual({ type: "object" }); // 顶层只剩归一后的 object
+  });
+
   it("schema 清洗事件告警在 provider 实例级去重（同 schema 逐请求固定，重复只有噪音）", async () => {
     const { mock, logs, provider } = setupLogs();
     const req: ChatRequest = {
@@ -752,7 +776,10 @@ describe("请求构造（canonical → wire）", () => {
     await misconfigured.provider.chat(req);
     expect(misconfigured.mock.calls[0].url).toContain("/v1beta/v1beta/models/"); // 误配形态如实拼接
     expect(misconfigured.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(1);
-    // 无误配的缺省卡片不受影响：不告警
+    // 无误配的缺省卡片不受影响：不告警（须真正走一请求采集日志——不 chat 时
+    // logs 恒空、断言恒绿，防不住「告警条件被误删/改为无条件」回归，轮 25 #1）
+    plain.mock.queueMany(fnCallOk({}));
+    await plain.provider.chat(req);
     expect(plain.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(0);
   });
 });
