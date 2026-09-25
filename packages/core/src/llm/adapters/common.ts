@@ -55,6 +55,7 @@ const PROTOCOL_MAX_TEMPERATURE: Record<LlmProtocol, number> = {
 export function temperatureEntry(
   req: ChatRequest,
   config: ProviderConfig,
+  onClamp?: (message: string) => void,
 ): Record<string, unknown> {
   const temperature = req.temperature ?? config.temperature;
   // 非有限数值（NaN 等）不发：Math.min/max 对 NaN 透传，JSON 序列化成 null 上送
@@ -62,7 +63,27 @@ export function temperatureEntry(
   if (temperature === undefined || !Number.isFinite(temperature)) {
     return {};
   }
-  return {
-    temperature: Math.min(Math.max(temperature, 0), PROTOCOL_MAX_TEMPERATURE[config.protocol]),
+  const max = PROTOCOL_MAX_TEMPERATURE[config.protocol];
+  const clamped = Math.min(Math.max(temperature, 0), max);
+  // 钳制发生必留证据（轮 16 #4）：静默吞掉后模型行为与配置不符且无线索——与
+  // 「丢弃/清洗必留证据」的观测口径一致；去重由调用方注入的回调负责
+  if (clamped !== temperature && onClamp !== undefined) {
+    onClamp(
+      `temperature ${temperature} 超出协议范围 [0, ${max}]，已钳制为 ${clamped}（${config.name}）`,
+    );
+  }
+  return { temperature: clamped };
+}
+
+/** 实例级一次性告警包装（轮 16 #4）：temperatureEntry 每请求调用，agent 长循环下
+ * 同一卡片误配不该每步刷屏——每 provider 实例只警告一次（同 gemini warnedSchemaIssues） */
+export function makeOnceWarn(log: (message: string) => void): (message: string) => void {
+  let warned = false;
+  return (message) => {
+    if (warned) {
+      return;
+    }
+    warned = true;
+    log(`[llm] WARNING: ${message}`);
   };
 }

@@ -230,6 +230,26 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("temperature");
   });
 
+  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4）", async () => {
+    const { mock, logs, provider } = setupProviderWithLogs(createAnthropicProvider, CARD, {
+      temperature: 1.5,
+    });
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    mock.queueMany(toolOk({}), toolOk({}));
+    await provider.chat(req);
+    await provider.chat(req);
+    expect(mock.bodyAt(0).temperature).toBe(1);
+    expect(mock.bodyAt(1).temperature).toBe(1);
+    const warnings = logs.filter((m) => m.includes("钳制"));
+    expect(warnings).toHaveLength(1); // 每请求都在钳制，告警只一次
+    expect(warnings[0]).toContain("1.5");
+    expect(warnings[0]).toContain("glm-anthropic"); // 卡片归因
+  });
+
   it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));
@@ -444,6 +464,26 @@ describe("响应解析（wire → canonical）", () => {
     );
     expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
     expect(logs.some((m) => m.includes("丢弃 input 非对象的 tool_use"))).toBe(true);
+  });
+
+  it("tool_use name 非 string → 丢弃并留形态异常档证据（与 gemini 分档口径一致，轮 16 #11）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        content: [
+          { type: "tool_use", id: "b1", name: 42, input: {} },
+          { type: "tool_use", id: "x1", name: "other_tool", input: {} },
+        ],
+        stop_reason: "tool_use",
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([]);
+    expect(logs.some((m) => m.includes("丢弃形态异常的 tool_use") && m.includes("42"))).toBe(true);
+    // 同响应内两档证据各归各位：畸形→形态异常档，字符串失配→非请求名档
+    expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
   });
 
   it.each([

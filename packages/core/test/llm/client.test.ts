@@ -215,7 +215,7 @@ describe("R4 text-not-tool 梯子（Python _TEXT_RETRY_MAX=2）", () => {
       content: [
         {
           type: "text",
-          text: "Do not explain. Call the agent_response tool now with your evaluation, memory, next goal, and action.",
+          text: `Do not explain. Call the ${TOOL.name} tool now with your evaluation, memory, next goal, and action.`,
         },
       ],
     });
@@ -243,7 +243,7 @@ describe("R1 空响应梯子（thinking-only 同桶）", () => {
     const content = wireMessages[0].content as Array<Record<string, unknown>>;
     expect(content[1]).toEqual({
       type: "text",
-      text: "Your previous response contained no action. Respond now with the agent_response tool, including your evaluation, memory, next goal, and action.",
+      text: `Your previous response contained no action. Respond now with the ${TOOL.name} tool, including your evaluation, memory, next goal, and action.`,
     });
   });
 
@@ -389,6 +389,124 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     const second = JSON.stringify(mock.bodyAt(1).messages);
     expect(second).not.toContain("sk-abc"); // 回显文本占位后才 push 进 work
     expect(second).toContain("<K>");
+  });
+
+  it("R4 回显被删除式 sensitiveMap 整体滤空 → [redacted] 降级（防空文本块进下一轮 wire 与误触 fallback 切换，轮 16 #14）", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(text("topsecret"), toolOk({ done: 1 }));
+    const r = await client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { topsecret: "" },
+    });
+    expect(r.kind).toBe("ok");
+    const second = JSON.stringify(mock.bodyAt(1).messages);
+    expect(second).not.toContain("topsecret");
+    expect(second).toContain("[redacted]");
+  });
+
+  it("args 检测与替换同域（先替换后比较）：real 含引号/反斜杠/换行不再漏报，命中键名/number 值不再谎报（轮 16 #6）", async () => {
+    // 旧 JSON.stringify(args).includes(real) 与文本替换域不一致：real 串化后为
+    // 转义形态（\" \\ \n），includes 永远失配——opt-in 也既不替换也无告警
+    const tricky = 'pa"ss\\w\nord';
+    const history: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "text", text: "q" }] },
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [{ id: "t1", name: TOOL.name, args: { password: tricky } }],
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "ok" },
+    ];
+
+    // 缺省：WARNING 可观测（转义形态不再漏报）
+    const plain = setupWithLogs();
+    plain.mock.queueMany(toolOk({ done: 1 }));
+    await plain.client.getAction("sys", history, TOOL, {
+      sensitiveMap: { [tricky]: "<KEY>" },
+    });
+    expect(plain.logs.some((m) => m.includes("WARNING") && m.includes("args"))).toBe(true);
+
+    // opt-in：深层替换占位出站，调用方原始消息不动
+    const redact = setupWithLogs();
+    redact.mock.queueMany(toolOk({ done: 1 }));
+    await redact.client.getAction("sys", history, TOOL, {
+      sensitiveMap: { [tricky]: "<KEY>" },
+      redactToolPayloads: true,
+    });
+    const wireMessages = redact.mock.lastBody().messages as Array<Record<string, unknown>>;
+    const assistant = wireMessages.find((m) => m.role === "assistant") as Record<string, unknown>;
+    const toolUse = (assistant.content as Array<Record<string, unknown>>).find(
+      (b) => b.type === "tool_use",
+    ) as Record<string, unknown>;
+    expect(toolUse.input).toEqual({ password: "<KEY>" }); // 深层替换后的占位出站
+    const callerCall = history[1];
+    if (callerCall.role !== "assistant") {
+      throw new Error("unreachable");
+    }
+    expect(callerCall.toolCalls?.[0]?.args.password).toBe(tricky);
+
+    // 旧检测的反向谎报面：real 命中 args 键名或 number 值（串化文本包含），但
+    // 深层替换只改写字符串值——先替换后比较后不再误报「包含敏感值」
+    const noLeak = setupWithLogs();
+    noLeak.mock.queueMany(toolOk({ done: 1 }));
+    await noLeak.client.getAction(
+      "sys",
+      [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        {
+          role: "assistant",
+          blocks: [],
+          toolCalls: [{ id: "t1", name: TOOL.name, args: { "sk-secret": 1, code: 12345 } }],
+        },
+        { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "ok" },
+      ],
+      TOOL,
+      {
+        sensitiveMap: { "sk-secret": "<KEY>", "12345": "<N>" },
+      },
+    );
+    expect(noLeak.logs.some((m) => m.includes("WARNING") || m.includes("已占位"))).toBe(false);
+  });
+
+  it("redactToolPayloads + 删除式 sensitiveMap：toolResult 整体即敏感值 → [redacted] 降级防空 text 出站（轮 16 #7）", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ done: 1 }));
+    const r = await client.getAction(
+      "sys",
+      [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args: {} }] },
+        { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "topsecret" },
+      ],
+      TOOL,
+      { sensitiveMap: { topsecret: "" }, redactToolPayloads: true },
+    );
+    expect(r.kind).toBe("ok");
+    const wire = JSON.stringify(mock.lastBody().messages);
+    expect(wire).not.toContain("topsecret");
+    expect(wire).toContain("[redacted]");
+  });
+
+  it("同名工具多轮命中 → WARNING 载荷列表去重（轮 16 #9）", async () => {
+    const { mock, logs, client } = setupWithLogs();
+    mock.queueMany(toolOk({ done: 1 }));
+    const r = await client.getAction(
+      "sys",
+      [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        { role: "assistant", blocks: [], toolCalls: [{ id: "t1", name: TOOL.name, args: {} }] },
+        { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "a sk-secret" },
+        { role: "assistant", blocks: [], toolCalls: [{ id: "t2", name: TOOL.name, args: {} }] },
+        { role: "toolResult", toolCallId: "t2", toolName: TOOL.name, text: "b sk-secret" },
+      ],
+      TOOL,
+      { sensitiveMap: { "sk-secret": "<KEY>" } },
+    );
+    expect(r.kind).toBe("ok");
+    // 逐字符锁定（含去重后的单次出现）
+    const warn = logs.find((m) => m.includes("WARNING"));
+    expect(warn).toBe(
+      `[llm] WARNING: 工具载荷(${TOOL.name}) 包含敏感值，将以明文出站（toolResult/args 不在占位范围，redactToolPayloads:true 可阻断；P4 接 SecretProvider 时收口）`,
+    );
   });
 });
 
@@ -916,7 +1034,7 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     expect(body).toHaveProperty("tools");
     expect(body).not.toHaveProperty("tool_choice");
     expect(body.system).toBe(
-      'sys\n\nIMPORTANT: You must respond by calling the tool "agent_response" with your complete answer as the tool arguments. Do not reply with plain text.',
+      `sys\n\nIMPORTANT: You must respond by calling the tool "${TOOL.name}" with your complete answer as the tool arguments. Do not reply with plain text.`,
     );
   });
 

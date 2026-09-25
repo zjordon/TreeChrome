@@ -2,14 +2,11 @@
 // 移植自 tree_walker/llm/client.py 同名私有方法（03 §3.2-3.4）；期望值锚定 Python 实跑，
 // 见 test/llm/transforms.test.ts 头部命令与输出。
 
+import { isRecord } from "./adapters/common.js";
 import type { ChatMessage } from "./types.js";
 
 /** URL 缩写阈值（Python _URL_MIN_LENGTH=100） */
 export const URL_MIN_LENGTH = 100;
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
 
 /**
  * URL 缩写：长度 ≥100 的 URL 换 [uN] 短标记，同 URL 同 tag（省 token），
@@ -81,8 +78,8 @@ export function replaceSensitiveText(
 
 /**
  * 敏感值深层替换：args 等嵌套 JSON 结构内的字符串走 real→placeholder（轮 15 #7，
- * redactToolPayloads 的 args 分支）。与 restoreInStrings 同款游走：普通对象
- * 递归重建、数组逐项、非普通对象（Map/Set/Date 等）与非字符串原样保留。
+ * redactToolPayloads 的 args 分支）。经 rewriteStrings 游走（方向中立，轮 16 #8）：
+ * 普通对象递归重建、数组逐项、非普通对象（Map/Set/Date 等）与非字符串原样保留。
  */
 export function replaceSensitiveDeep<T>(
   value: T,
@@ -97,7 +94,7 @@ export function replaceSensitiveDeep<T>(
   if (entries.length === 0) {
     return value;
   }
-  return restoreInStrings(value, entries) as T;
+  return rewriteStrings(value, entries) as T;
 }
 
 /**
@@ -137,7 +134,13 @@ export function applySensitiveInMessages(
   }
 }
 
-function restoreInStrings(
+/**
+ * 方向中立的字符串重写游走（轮 16 #8）：replace（real→placeholder）与 restore
+ * （placeholder→real / tag→URL）两方向共用，方向语义由调用方传入的 entries
+ * 决定、收敛在各自包装函数内——游走本体不得掺入任一方向的特有逻辑
+ *（如占位符格式校验），否则静默污染另一方向。
+ */
+function rewriteStrings(
   obj: unknown,
   replacements: ReadonlyArray<readonly [string, string]>,
 ): unknown {
@@ -151,7 +154,7 @@ function restoreInStrings(
     return out;
   }
   if (Array.isArray(obj)) {
-    return obj.map((item) => restoreInStrings(item, replacements));
+    return obj.map((item) => rewriteStrings(item, replacements));
   }
   if (isRecord(obj)) {
     // 仅递归普通对象：Map/Set/Date 等非普通对象的 entries 为空，按原逻辑重建会
@@ -162,7 +165,7 @@ function restoreInStrings(
     }
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
-      out[k] = restoreInStrings(v, replacements);
+      out[k] = rewriteStrings(v, replacements);
     }
     return out;
   }
@@ -174,7 +177,7 @@ export function restoreUrlsInOutput<T>(output: T, urlMap: Map<string, string>): 
   if (urlMap.size === 0) {
     return output;
   }
-  return restoreInStrings(output, [...urlMap.entries()]) as T;
+  return rewriteStrings(output, [...urlMap.entries()]) as T;
 }
 
 /** 响应侧敏感值还原：placeholder→real，结构与 restoreUrlsInOutput 同 */
@@ -195,7 +198,7 @@ export function restoreSensitiveInOutput<T>(
   if (reversed.length === 0) {
     return output;
   }
-  return restoreInStrings(output, reversed) as T;
+  return rewriteStrings(output, reversed) as T;
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | undefined {

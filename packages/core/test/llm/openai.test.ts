@@ -167,6 +167,39 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("tool_choice"); // auto 缺省不发
   });
 
+  it("assistant 仅含 image 块：无 toolCalls → [image omitted] 占位；带 toolCalls → content null（与 anthropic/gemini 口径对齐，轮 16 #3）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        { role: "assistant", blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }] },
+        { role: "user", blocks: [{ kind: "text", text: "next" }] },
+      ],
+      tools: [TOOL],
+    });
+    const first = mock.lastBody().messages as Array<Record<string, unknown>>;
+    expect(first[1]).toEqual({ role: "assistant", content: "[image omitted]" });
+
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        {
+          role: "assistant",
+          blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }],
+          toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+        },
+        { role: "toolResult", toolCallId: "t1", toolName: "agent_response", text: "ok" },
+      ],
+      tools: [TOOL],
+    });
+    const second = mock.lastBody().messages as Array<Record<string, unknown>>;
+    expect(second[1].content).toBe(null); // 图块丢弃后即纯工具调用回合（官方形态）
+    expect(second[1].tool_calls).toBeDefined();
+  });
+
   it("maxTokens 双轨：新契约前缀自动切 max_completion_tokens；卡片声明优先；兼容模型用 max_tokens", async () => {
     const legacy = setup({ model: "gpt-4o" });
     legacy.mock.queueMany(toolOk("{}"));
@@ -236,6 +269,21 @@ describe("请求构造（canonical → wire）", () => {
     mock.queueMany(toolOk("{}"));
     await provider.chat(baseReq());
     expect(mock.lastBody().temperature).toBe(2);
+  });
+
+  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4）", async () => {
+    const { mock, logs, provider } = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
+      temperature: 2.5,
+    });
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat(baseReq());
+    await provider.chat(baseReq());
+    expect(mock.bodyAt(0).temperature).toBe(2);
+    expect(mock.bodyAt(1).temperature).toBe(2);
+    const warnings = logs.filter((m) => m.includes("钳制"));
+    expect(warnings).toHaveLength(1); // 每请求都在钳制，告警只一次
+    expect(warnings[0]).toContain("2.5");
+    expect(warnings[0]).toContain("glm-openai"); // 卡片归因
   });
 
   it("o 系模型抑制 temperature（只接受默认温度，轮 14 #10）；gpt-4o 照常发送", async () => {
@@ -453,6 +501,31 @@ describe("响应解析（wire → canonical）", () => {
     expect(
       logs.some((m) => m.includes("忽略非请求工具名") && m.includes("hallucinated_tool")),
     ).toBe(true);
+  });
+
+  it("tool_call name 非 string → 丢弃并留形态异常档证据（与 gemini 分档口径一致，轮 16 #12）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [{ id: "b1", type: "function", function: { name: 42, arguments: "{}" } }],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([]);
+    expect(logs.some((m) => m.includes("丢弃形态异常的 tool_call") && m.includes("42"))).toBe(true);
+    // 畸形输出不得误标为名字失配档
+    expect(logs.some((m) => m.includes("忽略非请求工具名"))).toBe(false);
   });
 
   it("content 文本 + reasoning_content 捕获；usage cached_tokens 可选", async () => {

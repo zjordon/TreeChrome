@@ -243,7 +243,9 @@ async function main() {
       );
       if (result.kind === "ok") {
         // ok 有两条路径：toolCalls 命中，或模型返回纯文本恰为非空 JSON（text-JSON
-        // 兜底）——后者意味着端点忽略了强制 tool_choice，对 smoke 同样是失败
+        // 兜底）。GetActionResult 不携带路径信息，此处仅能做形状校验：兜底 JSON
+        // 缺 action.name 判失败；兜底 JSON 恰符合 schema（端点忽略强制
+        // tool_choice）会被漏判为通过，人工验收时需结合请求日志复核 tool_calls 形态
         const action = result.toolInput?.action;
         if (typeof action !== "object" || action === null || typeof action.name !== "string") {
           failed = true;

@@ -19,7 +19,13 @@ import type {
   ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
-import { defaultTestConnection, isRecord, stripTrailingSlash, temperatureEntry } from "./common.js";
+import {
+  defaultTestConnection,
+  isRecord,
+  makeOnceWarn,
+  stripTrailingSlash,
+  temperatureEntry,
+} from "./common.js";
 import { postJson } from "./http.js";
 import { sanitizeGeminiSchema } from "./schema-sanitize.js";
 
@@ -259,6 +265,8 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
     warnedSchemaIssues.add(detail);
     deps.log(`[llm] gemini schema 清洗：${detail}（约束丢失，模型可能生成违反原 schema 的参数）`);
   };
+  // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
+  const onTemperatureClamp = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
@@ -299,7 +307,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
       generationConfig: {
         maxOutputTokens: req.maxTokens ?? config.maxTokens,
         // temperature 回退链（common.temperatureEntry）；两级缺省不发
-        ...temperatureEntry(req, config),
+        ...temperatureEntry(req, config, onTemperatureClamp),
       },
     };
     const json = await postJson(deps.fetch, url, headers, body, {

@@ -16,7 +16,13 @@ import type {
   ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
-import { defaultTestConnection, isRecord, stripTrailingSlash, temperatureEntry } from "./common.js";
+import {
+  defaultTestConnection,
+  isRecord,
+  makeOnceWarn,
+  stripTrailingSlash,
+  temperatureEntry,
+} from "./common.js";
 import { postJson } from "./http.js";
 
 /** canonical 内容块 → anthropic content 块 */
@@ -172,7 +178,13 @@ function parseResponse(
     } else if (item.type === "thinking" && typeof item.thinking === "string") {
       reasoningText += item.thinking;
     } else if (item.type === "tool_use") {
-      if (typeof item.name === "string" && requestedNames.has(item.name)) {
+      if (typeof item.name !== "string") {
+        // 形态异常与名字失配分档留证据（轮 16 #11）：与 gemini「丢弃形态异常的
+        // functionCall」口径对齐，畸形输出不得误标为非请求名
+        log(
+          `[llm] anthropic 丢弃形态异常的 tool_use（name 非 string）：${JSON.stringify(item.name)}`,
+        );
+      } else if (requestedNames.has(item.name)) {
         // 缺失/空 id 直接丢弃：回传历史时 tool_use id="" 会被官方端点 400 且难定位
         if (typeof item.id !== "string" || item.id === "") {
           log(`[llm] anthropic tool_use 缺失 id，丢弃调用：${item.name}`);
@@ -190,7 +202,7 @@ function parseResponse(
           args: isRecord(item.input) ? item.input : {},
         });
       } else {
-        log(`[llm] anthropic 忽略非请求工具名的 tool_use：${JSON.stringify(item.name)}`);
+        log(`[llm] anthropic 忽略非请求工具名的 tool_use：${item.name}`);
       }
     }
   }
@@ -211,6 +223,8 @@ export function createAnthropicProvider(
   deps: Required<LlmDeps>,
 ): LLMProvider {
   const capabilities = resolveCapabilities(config);
+  // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
+  const onTemperatureClamp = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     const url = `${stripTrailingSlash(config.baseUrl)}/v1/messages`;
@@ -245,7 +259,7 @@ export function createAnthropicProvider(
         : {}),
       ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
       // temperature 回退链：请求级 ?? 卡片级（common.temperatureEntry）；两级缺省不发
-      ...temperatureEntry(req, config),
+      ...temperatureEntry(req, config, onTemperatureClamp),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

@@ -306,30 +306,40 @@ export class LLMClient {
             if (reals.some((real) => m.text.includes(real))) {
               leaking.push(m.toolName);
               if (opts.redactToolPayloads === true) {
-                m.text = replaceSensitiveText(m.text, sensitive);
+                const replaced = replaceSensitiveText(m.text, sensitive);
+                // 删除式 sensitiveMap 把整条 toolResult 滤成空串时降级 [redacted]
+                //（对齐 applySensitiveInMessages 轮 15 #8）：空 text 出站若被拒收，
+                // 错误会归因到调用方历史而非 redaction 自身
+                m.text = m.text !== "" && replaced === "" ? "[redacted]" : replaced;
               }
             }
             continue;
           }
           if (m.role === "assistant") {
             for (const call of m.toolCalls ?? []) {
-              if (reals.some((real) => JSON.stringify(call.args).includes(real))) {
+              // 先替换后比较（轮 16 #6）：以实际发生的替换为命中证据，检测与替换
+              // 同域。旧 JSON.stringify(args).includes(real) 与文本替换域不一致：
+              // real 含引号/反斜杠/换行时串化转义后失配（既漏报也无告警）；命中
+              // 键名或 number 值时反向谎报「已占位」而明文仍出站
+              const before = JSON.stringify(call.args);
+              const redacted = replaceSensitiveDeep(call.args, sensitive);
+              if (JSON.stringify(redacted) !== before) {
                 leaking.push(`${call.name}.args`);
                 if (opts.redactToolPayloads === true) {
-                  call.args = replaceSensitiveDeep(call.args, sensitive);
+                  call.args = redacted;
                 }
               }
             }
           }
         }
         if (leaking.length > 0) {
+          // 同名工具多轮命中的去重（轮 16 #9）：WARNING 列表出现重复项只伤可读性
+          const names = [...new Set(leaking)].join(", ");
           if (opts.redactToolPayloads === true) {
-            this.deps.log(
-              `[llm] 工具载荷(${leaking.join(", ")}) 敏感值已占位（redactToolPayloads）`,
-            );
+            this.deps.log(`[llm] 工具载荷(${names}) 敏感值已占位（redactToolPayloads）`);
           } else {
             this.deps.log(
-              `[llm] WARNING: 工具载荷(${leaking.join(", ")}) 包含敏感值，将以明文出站（toolResult/args 不在占位范围，redactToolPayloads:true 可阻断；P4 接 SecretProvider 时收口）`,
+              `[llm] WARNING: 工具载荷(${names}) 包含敏感值，将以明文出站（toolResult/args 不在占位范围，redactToolPayloads:true 可阻断；P4 接 SecretProvider 时收口）`,
             );
           }
         }
@@ -377,7 +387,14 @@ export class LLMClient {
           // 不重跑 URL 缩写——其 tag 计数器独立，重跑会与既有 urlMap 的 [uN]
           // 冲突导致还原错乱（保守偏离，回显中的新 URL 保持全量无正确性问题）
           const echo = replaceSensitiveText(response.text, sensitive);
-          work.push({ role: "assistant", blocks: [{ kind: "text", text: echo }] });
+          // 删除式 sensitiveMap 可把回显整体滤空：降级 [redacted]（对齐
+          // applySensitiveInMessages 轮 15 #8）——空文本块在适配器入口
+          // assertValidMessages 抛违例、错误归因到调用方历史，且 LLMError 会先
+          // 烧一次 fallback 单向切换（轮 16 #14）
+          work.push({
+            role: "assistant",
+            blocks: [{ kind: "text", text: echo !== "" ? echo : "[redacted]" }],
+          });
           work.push({ role: "user", blocks: [{ kind: "text", text: r4Directive(tool.name) }] });
           continue;
         }

@@ -149,7 +149,6 @@ export function makeHangingBodyFetch(
 interface FakeTimer {
   due: number;
   resolve: () => void;
-  reject: (e: unknown) => void;
   off?: () => void;
 }
 
@@ -170,7 +169,6 @@ export class FakeClock {
       const timer: FakeTimer = {
         due: this.t + ms,
         resolve,
-        reject,
       };
       const onAbort = () => {
         const i = this.timers.indexOf(timer);

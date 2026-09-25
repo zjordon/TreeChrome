@@ -185,6 +185,22 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     });
   });
 
+  it("type 全 null/病态元素兜底为 string → 上报清洗事件（兜底同样是约束丢失，轮 16 #10）", () => {
+    const issues: string[] = [];
+    expect(sanitizeGeminiSchema({ type: ["null", 5] }, (d) => issues.push(d))).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    // 无 'null' 成员的纯病态数组：连 nullable 都不产出
+    expect(sanitizeGeminiSchema({ type: [null, 42] }, (d) => issues.push(d))).toEqual({
+      type: "string",
+    });
+    expect(issues).toEqual([
+      "type 全 null/病态元素，兜底为 string",
+      "type 全 null/病态元素，兜底为 string",
+    ]);
+  });
+
   it("非对象子 schema（含 draft-06+ 布尔 schema）归一为空 schema、required 非 string[] 删除——原样透传会被端点 400；原始 schema 不被改动", () => {
     const original = { type: "object", properties: { n: 3, s: "x", ok: true }, required: null };
     const snapshot = JSON.parse(JSON.stringify(original)) as Record<string, unknown>;
@@ -502,6 +518,24 @@ describe("请求构造（canonical → wire）", () => {
       tools: null,
     });
     expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
+  });
+
+  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4）", async () => {
+    const { mock, logs, provider } = setupProviderWithLogs(createGeminiProvider, CARD, {
+      temperature: 3,
+    });
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    await provider.chat(req);
+    await provider.chat(req);
+    expect((mock.bodyAt(0).generationConfig as Record<string, unknown>).temperature).toBe(2);
+    const warnings = logs.filter((m) => m.includes("钳制"));
+    expect(warnings).toHaveLength(1); // 每请求都在钳制，告警只一次
+    expect(warnings[0]).toContain("gemini-card"); // 卡片归因
   });
 
   it("model turn 的 inlineData 静默丢弃（多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14）", async () => {

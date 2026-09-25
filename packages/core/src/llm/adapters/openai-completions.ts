@@ -17,7 +17,13 @@ import type {
   ToolCall,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
-import { defaultTestConnection, isRecord, stripTrailingSlash, temperatureEntry } from "./common.js";
+import {
+  defaultTestConnection,
+  isRecord,
+  makeOnceWarn,
+  stripTrailingSlash,
+  temperatureEntry,
+} from "./common.js";
 import { postJson } from "./http.js";
 
 /**
@@ -60,9 +66,18 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       // OpenAI 的 assistant content 仅 string|null：历史中 image 块无 wire 形态，
       // 静默丢弃（与 user 侧 image_url 数组形态的不对称是协议约束，非遗漏）
       const text = msg.blocks.map((b) => (b.kind === "text" ? b.text : "")).join("");
+      const hasCalls = msg.toolCalls !== undefined && msg.toolCalls.length > 0;
       const wire: Record<string, unknown> = {
         role: "assistant",
-        content: msg.blocks.length === 0 ? null : text, // 纯工具调用回合 content 置 null（官方形态）
+        // 纯工具调用回合（blocks 空或过滤后无文本且带调用）content 置 null（官方
+        // 形态）；仅含 image 块且无 toolCalls 过滤后为空串——降级 "[image omitted]"
+        // 与 anthropic/gemini 占位口径对齐（轮 14 #8/#9，轮 16 #3 补齐 openai 侧）
+        content:
+          msg.blocks.length === 0 || (text === "" && hasCalls)
+            ? null
+            : text === ""
+              ? "[image omitted]"
+              : text,
       };
       if (msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
         wire.tool_calls = msg.toolCalls.map((c) => ({
@@ -168,9 +183,15 @@ function parseResponse(
         continue;
       }
       const fn = item.function;
-      if (typeof fn.name !== "string" || !requestedNames.has(fn.name)) {
+      if (typeof fn.name !== "string") {
+        // 形态异常与名字失配分档留证据（轮 16 #12）：与 gemini「丢弃形态异常的
+        // functionCall」口径对齐，畸形输出不得误标为非请求名
+        log(`[llm] openai 丢弃形态异常的 tool_call（name 非 string）：${JSON.stringify(fn.name)}`);
+        continue;
+      }
+      if (!requestedNames.has(fn.name)) {
         // 与 anthropic/gemini 同款观测：忽略的调用留证据（02 §2.3 泛化规则）
-        log(`[llm] openai 忽略非请求工具名的 tool_call：${JSON.stringify(fn.name)}`);
+        log(`[llm] openai 忽略非请求工具名的 tool_call：${fn.name}`);
         continue;
       }
       const args = parseArguments(fn.arguments);
@@ -207,6 +228,8 @@ export function createOpenAICompletionsProvider(
   deps: Required<LlmDeps>,
 ): LLMProvider {
   const capabilities = resolveCapabilities(config);
+  // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
+  const onTemperatureClamp = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     const url = `${stripTrailingSlash(config.baseUrl)}/chat/completions`;
@@ -245,7 +268,7 @@ export function createOpenAICompletionsProvider(
       // 模型（o1/o3/o4 及后继 ^o\d）只接受默认温度——卡片误配（如 o3 配 0.2）即
       // 每请求硬 400 且误触 fallback 单向切换，与 maxTokensField 同源的地雷在此
       // 拆除：o 系前缀命中时抑制发送（gpt-5/gpt-4.1/gpt-oss 支持 0-2 不抑制）
-      ...(/^o\d/.test(config.model) ? {} : temperatureEntry(req, config)),
+      ...(/^o\d/.test(config.model) ? {} : temperatureEntry(req, config, onTemperatureClamp)),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

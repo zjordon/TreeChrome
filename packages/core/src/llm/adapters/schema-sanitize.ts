@@ -79,7 +79,11 @@ export function sanitizeGeminiSchema(
         // 联合窄化同样丢约束（string|number → string），与删键同口径上报
         onSchemaIssue?.(`type 联合窄化 ${nonNull.join("|")} → ${first}`);
       }
-      // 全 null/病态元素：兜底合法枚举，避免产出无 type 或非法 type 的 schema
+      if (first === undefined) {
+        // 全 null/病态元素：兜底合法枚举避免产出无 type 的 schema——兜底同样是
+        // 约束丢失，与联合窄化同口径上报（轮 16 #10），否则此路径无排障线索
+        onSchemaIssue?.("type 全 null/病态元素，兜底为 string");
+      }
       out.type = first ?? "string";
       if (list.includes("null")) {
         out.nullable = true;

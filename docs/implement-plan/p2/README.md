@@ -327,3 +327,17 @@ smoke 产物摘要：
 - **杂项（#2/#4/#5/#6/#10/#11/#12）**：注释常量名修正（RETRY_AFTER_CAP_MS）；两处 `== null` 改显式双分支；http.test 内联桩复用 makeHangingBodyFetch + AbortSignal.abort；整数键重排限制注释；hasImageBlocks 直接用例；errors.test name 精确断言（派生式 + Error 后缀——评审建议的派生式本身漏后缀，已修正）。
 
 测试 258 例全绿（覆盖率 98.68%）。
+
+### 评审轮 16（review-p2-llm-client-16.json，2026-09-25，14 条）
+
+采纳 14 条。要点：
+
+- **args 检测改「先替换后比较」（#6，轮 15 #7 收口的检测域漏洞）**：旧 `JSON.stringify(args).includes(real)` 与文本替换域不一致——real 含引号/反斜杠/换行时串化转义失配（opt-in 也既不替换也无告警）；real 命中键名或 number 值时反向谎报「已占位」而明文仍出站。改为以实际发生的替换为命中证据（替换前后串化比较），检测/替换天然同域；双向用例锚定（转义 real 的 WARNING+占位 / 键名与 number 命中的不谎报）。
+- **删除式空串降级补齐两处（#7/#14，对齐轮 15 #8 的 [redacted] 口径）**：redactToolPayloads 的 toolResult.text 与 R4 回显文本在删除式 sensitiveMap 下可被整体滤空——前者空 text 出站遇拒收会归因到调用方历史，后者空文本块会在适配器入口抛违例且 LLMError 先烧一次 fallback 单向切换；两处均降级 `[redacted]`。
+- **temperature 钳制留证据（#4）**：钳制行为正确但静默，与「丢弃/清洗必留证据」口径不一致——temperatureEntry 增 onClamp 回调，三适配器注入 `makeOnceWarn` 实例级去重（每 provider 只警告一次，含卡片名归因）。
+- **形态异常与名字失配分档（#11/#12）**：anthropic tool_use / openai tool_call 的 name 非 string 原与「非请求名」共用分支，证据被误标——拆分为「丢弃形态异常」与「忽略非请求名」两档（与 gemini 口径对齐），各自留证据。
+- **openai assistant 图块占位对齐（#3）**：仅含 image 块的 assistant 过滤后 content 为空串，与 anthropic/gemini 的 `[image omitted]` 口径不一致——补齐；带 toolCalls 的同形态直接落 null（纯工具调用回合官方形态）。
+- **结构与去重（#2/#8/#9/#13）**：transforms 复用 adapters/common 的 isRecord（删除逐字重复副本）；restoreInStrings 更名 rewriteStrings（方向中立，restore/replace 两方向共用，方向语义收敛在包装函数）；leaking 列表 join 前去重（同名工具多轮命中不重复刷屏）；FakeTimer.reject 死代码删除。
+- **杂项（#1/#5/#10）**：smoke ok 判定注释修正（形状校验无法区分 toolCalls 与 text-JSON 兜底两条 ok 路径，注明漏判面）；client.test 三处 "agent_response" 字面量改 TOOL.name 插值（防实现退化硬编码工具名的回归）；schema-sanitize type 数组全 null/病态元素兜底补 onSchemaIssue 上报（兜底同样是约束丢失）。
+
+测试 269 例全绿（覆盖率 98.71%）。
