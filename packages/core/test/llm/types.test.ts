@@ -87,6 +87,14 @@ describe("assertValidMessages · 违例序列", () => {
     expectViolation([{ role: "user", blocks: [] }], "user.blocks 为空");
   });
 
+  it("空文本块（Anthropic 端点对空 text 块 400——canonical 层拦截，轮 13 #6）", () => {
+    expectViolation([{ role: "user", blocks: [{ kind: "text", text: "" }] }], "含空文本块");
+    expectViolation(
+      [user("q"), { role: "assistant", blocks: [{ kind: "text", text: "" }] }],
+      "含空文本块",
+    );
+  });
+
   it("assistant 的 blocks 与 toolCalls 同时为空", () => {
     expectViolation([user("q"), assistant({})], "同时为空");
   });

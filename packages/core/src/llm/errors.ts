@@ -91,9 +91,20 @@ export class LLMProtocolViolationError extends LLMError {
 }
 
 /**
- * 退避谓词：仅 429 与连接类（对齐 Python is_llm_infra_error——
+ * 退避谓词：429、连接类与单请求级超时（对齐 Python is_llm_infra_error——
  * auth/5xx 不退避，重试无益，维持 fallback-切换-否则-抛）。
+ * LLMTimeoutError 纳入（轮 13 #15）：能到达本谓词的超时只来自单请求级
+ * timeoutMs（无梯子 deadline 的 600s 兜底等，网关挂起类瞬时基建故障）——
+ * Python SDK 侧 APITimeoutError ⊂ APIConnectionError 同为 infra；梯子
+ * deadline 的到点强杀不会以本类型到达（callWithBackoff 的 signal 预检先
+ * 还原为裸 abort 上抛，getAction 层才转 LLMTimeoutError）。
  */
-export function isInfraError(e: unknown): e is LLMRateLimitError | LLMConnectionError {
-  return e instanceof LLMRateLimitError || e instanceof LLMConnectionError;
+export function isInfraError(
+  e: unknown,
+): e is LLMRateLimitError | LLMConnectionError | LLMTimeoutError {
+  return (
+    e instanceof LLMRateLimitError ||
+    e instanceof LLMConnectionError ||
+    e instanceof LLMTimeoutError
+  );
 }

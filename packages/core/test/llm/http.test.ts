@@ -170,6 +170,13 @@ describe("postJson 成功与网络层", () => {
     expect((err as Error).message).toContain("<html>");
   });
 
+  it("MockFetch hangUntilAbort 无 signal → 立即报错（fail-fast，防 5s 挂起，轮 13 #1）", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({ hangUntilAbort: true });
+    const err = await mock.fetch("https://unit.example/api").catch((e: unknown) => e);
+    expect((err as Error).message).toContain("hangUntilAbort 需请求携带 AbortSignal");
+  });
+
   it("网络层 TypeError → LLMConnectionError（cause 保留）", async () => {
     const mock = new MockFetch();
     const netErr = new TypeError("fetch failed");

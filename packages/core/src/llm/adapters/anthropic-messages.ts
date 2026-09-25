@@ -62,7 +62,11 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       continue;
     }
     if (msg.role === "assistant") {
-      const content = blocksToContent(msg.blocks);
+      // assistant 角色输入只接受 text/tool_use 块（thinking 需显式开启）：image 块
+      // 透传会被官方端点 400（"Input tag 'image' found where 'text' or 'tool_use'
+      // was expected"）——与 openai 适配器「assistant 历史 image 块静默丢弃」口径
+      // 对齐（轮 13 #13）
+      const content = blocksToContent(msg.blocks.filter((b) => b.kind === "text"));
       for (const call of msg.toolCalls ?? []) {
         content.push({ type: "tool_use", id: call.id, name: call.name, input: call.args });
       }

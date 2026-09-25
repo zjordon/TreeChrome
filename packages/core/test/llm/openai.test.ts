@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createOpenAICompletionsProvider } from "../../src/llm/adapters/openai-completions.js";
 import { LLMAuthError, LLMProtocolViolationError } from "../../src/llm/errors.js";
-import { AGENT_TOOL, setupProvider, stubDeps } from "./fixtures.js";
-import { MockFetch, type MockResponseSpec } from "./mock-fetch.js";
+import { AGENT_TOOL, setupProvider, setupProviderWithLogs } from "./fixtures.js";
+import type { MockResponseSpec } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
   name: "glm-openai",
@@ -53,6 +53,8 @@ function baseReq(): ChatRequest {
   };
 }
 
+/** 带日志采集的装配（丢弃类/清洗类告警断言共用） */
+const setupLogs = () => setupProviderWithLogs(createOpenAICompletionsProvider, CARD);
 describe("请求构造（canonical → wire）", () => {
   it("全量映射：system 首条、纯文本 user 字符串、含图 user 数组 data-URL、tool_calls 字符串化、toolResult 独立消息", async () => {
     const { mock, provider } = setup();
@@ -269,12 +271,7 @@ describe("请求构造（canonical → wire）", () => {
 
 describe("响应解析（wire → canonical）", () => {
   it("arguments guard-parse：字符串/对象形态直收；截断 JSON 丢弃该调用并留告警（不带病 args 进 canonical）", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const provider = createOpenAICompletionsProvider(CARD, {
-      ...stubDeps(mock),
-      log: (m) => logs.push(m),
-    });
+    const { mock, logs, provider } = setupLogs();
     mock.queueMany(toolOk('{"action": {"name": "click"}}'), {
       status: 200,
       body: {
@@ -348,12 +345,7 @@ describe("响应解析（wire → canonical）", () => {
   });
 
   it("形态异常的 tool_call（item 合法但 function 非对象 / item 非对象）→ 丢弃并留告警（轮 12 #8）", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const provider = createOpenAICompletionsProvider(CARD, {
-      ...stubDeps(mock),
-      log: (m) => logs.push(m),
-    });
+    const { mock, logs, provider } = setupLogs();
     mock.queueMany({
       status: 200,
       body: {
@@ -421,12 +413,7 @@ describe("响应解析（wire → canonical）", () => {
   });
 
   it("非请求工具名的 tool_call 丢弃并留告警（与 anthropic/gemini 观测口径一致）", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const provider = createOpenAICompletionsProvider(CARD, {
-      ...stubDeps(mock),
-      log: (m) => logs.push(m),
-    });
+    const { mock, logs, provider } = setupLogs();
     mock.queueMany({
       status: 200,
       body: {

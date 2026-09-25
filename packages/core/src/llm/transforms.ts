@@ -55,8 +55,29 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
 }
 
 /**
- * 敏感值占位：TextBlock 文本内 real→placeholder（多键按对象插入序替换——
- * 键有包含关系时顺序影响结果，Python dict 序等价，锚定测试覆盖）。
+ * 敏感值文本替换的单一实现（轮 13 #10）：滤空 real 键 + 回调式 replaceAll
+ * 防 $ 替换模式 + 按对象插入序（键有包含关系时顺序影响结果，Python dict 序
+ * 等价，锚定测试覆盖正反两序）。请求侧占位 / R4 回显占位 / redactToolResults
+ * 三处共用，防语义失同步。
+ */
+export function replaceSensitiveText(
+  text: string,
+  sensitiveMap: Record<string, string> | undefined,
+): string {
+  if (!sensitiveMap) {
+    return text;
+  }
+  let out = text;
+  for (const [real, placeholder] of Object.entries(sensitiveMap)) {
+    if (real !== "") {
+      out = out.replaceAll(real, () => placeholder);
+    }
+  }
+  return out;
+}
+
+/**
+ * 敏感值占位：TextBlock 文本内 real→placeholder。
  * 就地改写 work 消息；map 为空/undefined 时不动。
  *
  * 已知取舍（对齐 Python `_filter_sensitive_in_messages` 只处理 type=text block）：
@@ -73,18 +94,13 @@ export function applySensitiveInMessages(
   // 空字符串 real 键会让 replaceAll 逐字符插入占位符（无声损坏全文）——宿主侧
   // 失误防御（Python 不滤）。空占位符条目**保留**：语义即删除敏感值
   //（replaceAll(real, '')，Python 同款不可逆语义），还原侧无从恢复、跳过该条
-  const entries = Object.entries(sensitiveMap).filter(([real]) => real !== "");
   for (const msg of messages) {
     if (msg.role === "toolResult") {
       continue;
     }
     for (const block of msg.blocks) {
-      if (block.kind !== "text") {
-        continue;
-      }
-      for (const [real, placeholder] of entries) {
-        // 回调形式：占位符含 $ 序列（如 "$SECRET_1"）时不被解释为替换模式（#9 同因）
-        block.text = block.text.replaceAll(real, () => placeholder);
+      if (block.kind === "text") {
+        block.text = replaceSensitiveText(block.text, sensitiveMap);
       }
     }
   }

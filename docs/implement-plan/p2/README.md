@@ -282,3 +282,21 @@ smoke 产物摘要：
 - **#14**（白名单补 minProperties/maxProperties）：核验官方 v1beta Schema 经典字段列表不含这两键，社区 Gemini schema 转换器均将其列为不支持项剥离；Nov-2025 扩展的 default/anyOf/$ref 属 response_json_schema 通道非 functionDeclarations.parameters 路径。按评审自己的备选口径「确属不支持则维持现状并在注释记录核验结论」处理，真机有 key 后复核。
 
 测试 239 例全绿（覆盖率 98.65%）；smoke 假 key 复验（SMOKE_TIMEOUT_MS 非法值告警生效）。
+
+### 评审轮 13（review-p2-llm-client-13.json，2026-09-25，15 条）
+
+采纳 13 条 / 驳回 2 条（#7 维持轮 1 裁决；#8 缺省翻转推翻 parity 终裁）。要点：
+
+- **canonical 空文本块拦截（#6，新不变量）**：`TextBlock.text` 非空进 assertValidMessages——Anthropic 官方端点对空 text 块直接 400（"text content blocks must be non-empty"），canonical 层一处收口三适配器；01 §2.1 不变量清单同步补记。
+- **isInfraError 纳入 LLMTimeoutError（#15，语义修正）**：能到达该谓词的超时只来自单请求级 timeoutMs（无梯子 deadline 的 600s 兜底——网关挂起类瞬时基建故障），Python SDK 侧 APITimeoutError ⊂ APIConnectionError 同为 infra；梯子 deadline 的强杀经 callWithBackoff 预检还原为裸 abort 不会以本类型到达。此前 errors.test 的 "timeout → false" 锚定与 http.ts "infra 可重试" 注释互为矛盾，现一致。
+- **assistant 角色图块收口（#13/#14）**：anthropic assistant content 只收 text/tool_use（image 透传 400 "Input tag 'image' found…"）、gemini 多模态仅 user 角色合法（model turn inlineData 400）——两适配器对齐 openai 轮 9 已登记的静默丢弃口径。
+- **format 值封闭枚举校验（#4）**：v1beta Schema 的 format 只收 enum/date-time/float/double/int32/int64——JSON Schema 常见 uri/email/uuid 等值原样透传是 400 形态，删除并上报。
+- **temperature NaN 不发（#5）**：Math 钳制对 NaN 透传、JSON 序列化成 null 上送 400（Infinity 反而能钳）——非有限值直接缺省不发。
+- **致盲 advisory（#9）**：未声明主卡被白名单推导为无视觉却仍带图出站时留一次 WARNING（对称于滤图告警，独立去重标志）——P0 实测的静默致盲缺省形态可观测，不挑战偏离 9 取舍。
+- **实现收敛与守卫（#10/#1/#11/#12/#2/#3）**：`replaceSensitiveText` 单一实现收敛三处替换复制（请求侧/R4 回显/redactToolResults）；MockFetch hangUntilAbort 无 signal 立即报错（fail-fast）；预算作用域注释（每次 callWithBackoff 独立计账，Python parity 有意）；SMOKE_TIMEOUT_MS 用解析有效性标志判定回退（合法值恰等于缺省不再误告警，双场景实测）；setupProviderWithLogs 收敛 7 处日志装配样板；敏感值插入序补反序锚定用例（短键在前的部分替换 hazardous 半边）。
+
+驳回 2 条：
+- **#7**（折叠骨架参数化抽象 anthropic/gemini）：轮 1 #7 已裁决——骨架同构但语义分支（签名携带/结果配对/角色名）已在块形状内，抽象后净收益低于可读性损失；两适配器镜像测试矩阵锁定折叠语义，改一漏二会被测试网捕获。维持。
+- **#8**（sensitiveMap 缺省占位、显式 false 退出）：敏感值议题第五次，本次要求翻转缺省——直接推翻 P5 parity 基准与轮 12 刚落的 opt-in 终裁（缺省 parity + 显式阻断）。偏离 5/10 先例是 TS 内部机制/中文损坏修复，非请求内容 parity；缺省翻转破坏评测对比的请求侧一致性。P4 SecretProvider 时统一裁决缺省姿态。
+
+测试 247 例全绿（覆盖率 98.80%）；smoke 双场景复验（合法值 60000 无误报 / 非法值告警）。

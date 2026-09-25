@@ -62,8 +62,10 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
       // 角色名是 model 不是 assistant；functionCall 与文本同 turn 并置（args 原生对象）。
       // thoughtSignature 随 functionCall part 原样写回（不回传即 400，见 ToolCall.signature），
       // 并同时在下方 functionResponse part 补挂——官方两处口径并存（错误文案 vs SDK
-      // 组装形态），双携带待真机核验（README 风险 3，评审轮 10 #9）
-      const parts = blocksToParts(msg.blocks);
+      // 组装形态），双携带待真机核验（README 风险 3，评审轮 10 #9）。
+      // model 角色不接受多模态输入（inlineData 仅 user 角色合法，透传为官方端点
+      // 400 形态）——与 openai「assistant 历史 image 块静默丢弃」口径对齐（轮 13 #14）
+      const parts = blocksToParts(msg.blocks.filter((b) => b.kind === "text"));
       for (const call of msg.toolCalls ?? []) {
         parts.push({
           functionCall: { name: call.name, args: call.args },

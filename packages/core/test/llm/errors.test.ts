@@ -53,11 +53,14 @@ describe("错误类层级", () => {
   });
 });
 
-describe("isInfraError（退避谓词：仅 429 与连接类）", () => {
+describe("isInfraError（退避谓词：429 + 连接类 + 单请求级超时）", () => {
   it.each([
     ["rateLimit", true],
     ["connection", true],
-    ["timeout", false], // deadline 终点，非退避对象
+    // 轮 13 #15：能到达本谓词的超时只来自单请求级 timeoutMs（挂起类瞬时基建
+    // 故障，Python SDK APITimeoutError ⊂ APIConnectionError 同为 infra）；梯子
+    // deadline 的到点强杀经 callWithBackoff 预检还原为裸 abort，不会以本类型到达
+    ["timeout", true],
     ["auth", false],
     ["invalidRequest", false],
     ["server", false], // 5xx 不退避：重试无益，走 fallback-切换-否则-抛

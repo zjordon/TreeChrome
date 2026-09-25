@@ -10,8 +10,7 @@ import {
   LLMProtocolViolationError,
   LLMRateLimitError,
 } from "../../src/llm/errors.js";
-import { setupProvider, stubDeps } from "./fixtures.js";
-import { MockFetch } from "./mock-fetch.js";
+import { setupProvider, setupProviderWithLogs } from "./fixtures.js";
 
 const CARD: ProviderConfig = {
   name: "gemini-card",
@@ -66,6 +65,8 @@ const fnCallOk = (args: Record<string, unknown>) => ({
   },
 });
 
+/** 带日志采集的装配（丢弃类/清洗类告警断言共用） */
+const setupLogs = () => setupProviderWithLogs(createGeminiProvider, CARD);
 describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
   it("白名单外键删除（$schema/additionalProperties/examples/$id），约束键（minimum）保留透传", () => {
     expect(sanitizeGeminiSchema(TOOL.parameters)).toEqual(SANITIZED);
@@ -93,6 +94,27 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       minItems: 0,
       maxItems: 5,
     });
+  });
+
+  it("format 值按官方封闭枚举集校验：uri/email 等常见 JSON Schema 值删除并上报（轮 13 #4）", () => {
+    const issues: string[] = [];
+    const out = sanitizeGeminiSchema(
+      {
+        type: "string",
+        format: "email",
+        properties: { t: { type: "string", format: "date-time" } },
+      },
+      (d) => issues.push(d),
+    );
+    expect(out).toEqual({
+      type: "string",
+      properties: { t: { type: "string", format: "date-time" } },
+    });
+    expect(issues).toEqual(['format「"email"」不在官方支持集，删除该键']);
+    expect(sanitizeGeminiSchema({ type: "number", format: 42 }, (d) => issues.push(d))).toEqual({
+      type: "number",
+    });
+    expect(issues.length).toBe(2);
   });
 
   it("嵌套 properties/items 递归清洗；type 大小写变体（Type）归一化为小写键", () => {
@@ -365,9 +387,7 @@ describe("请求构造（canonical → wire）", () => {
   });
 
   it("schema 清洗事件告警在 provider 实例级去重（同 schema 逐请求固定，重复只有噪音）", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const provider = createGeminiProvider(CARD, { ...stubDeps(mock), log: (m) => logs.push(m) });
+    const { mock, logs, provider } = setupLogs();
     const req: ChatRequest = {
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
@@ -387,9 +407,7 @@ describe("请求构造（canonical → wire）", () => {
   });
 
   it("去重集条数上限（128）：动态 schema 的无界增长封顶——上限后新事件静默", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const provider = createGeminiProvider(CARD, { ...stubDeps(mock), log: (m) => logs.push(m) });
+    const { mock, logs, provider } = setupLogs();
     // 130 个唯一属性名（各产生一条唯一清洗事件）→ 仅前 128 条告警
     const dynamicProps: Record<string, unknown> = {};
     for (let i = 0; i < 130; i += 1) {
@@ -456,6 +474,30 @@ describe("请求构造（canonical → wire）", () => {
       tools: null,
     });
     expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
+  });
+
+  it("model turn 的 inlineData 静默丢弃（多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        {
+          role: "assistant",
+          blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }],
+          toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+        },
+        { role: "toolResult", toolCallId: "t1", toolName: "agent_response", text: "ok" },
+      ],
+      tools: [TOOL],
+    });
+    const contents = mock.lastBody().contents as Array<Record<string, unknown>>;
+    expect(JSON.stringify(contents)).not.toContain("inlineData");
+    expect(contents[1]).toEqual({
+      role: "model",
+      parts: [{ functionCall: { name: "agent_response", args: {} } }],
+    });
   });
 
   it("连续 user turn 折叠（canonical 允许 [user, user]，Gemini 要求交替）", async () => {
@@ -532,9 +574,7 @@ describe("响应解析（wire → canonical）", () => {
   });
 
   it("丢弃类事件留告警 + 病态分支覆盖：非请求名 / name 非字符串 / functionCall 非对象 / args 非对象（轮 12 #12）", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const provider = createGeminiProvider(CARD, { ...stubDeps(mock), log: (m) => logs.push(m) });
+    const { mock, logs, provider } = setupLogs();
     mock.queueMany({
       status: 200,
       body: {

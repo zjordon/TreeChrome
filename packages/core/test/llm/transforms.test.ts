@@ -137,6 +137,14 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     expect(firstText(messages[0])).toBe("my key <KEY1> and <KEY2> both");
   });
 
+  it("filter：短键在插入序首位 → 部分替换（插入序语义的另一半，防重排无声漂移，轮 13 #3）", () => {
+    const messages: ChatMessage[] = [userMsg("my key sk-abc-def and sk-abc both")];
+    applySensitiveInMessages(messages, { "sk-abc": "<KEY2>", "sk-abc-def": "<KEY1>" });
+    // 按插入序替换：先短键命中，长键不再完整出现 → "-def" 片段残留（hazardous
+    // 半边也是契约——宿主构造 map 时长键应放前）
+    expect(firstText(messages[0])).toBe("my key <KEY2>-def and <KEY2> both");
+  });
+
   it("toolResult.text 不占位（Python 只处理 type=text block 的取舍——与 URL 缩写侧锚定对称；P5 裁决时此用例感知漂移）", () => {
     const messages: ChatMessage[] = [
       userMsg("q"),

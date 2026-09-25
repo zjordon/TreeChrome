@@ -115,11 +115,17 @@ export interface TokenUsage {
  * - 首条消息必须 user（Anthropic 要求；统一最严约束简化适配器）；
  * - toolResult 必须紧跟带 toolCalls 的 assistant，且每个 toolCall 恰有一条结果
  *   （顺序可乱，适配器按 id/name 配对）；
- * - user.blocks 非空；assistant 的 blocks 与 toolCalls 不同时为空。
+ * - user.blocks 非空；assistant 的 blocks 与 toolCalls 不同时为空；
+ * - TextBlock.text 非空（轮 13 #6 收口：Anthropic 官方端点对空 text 块直接 400
+ *   "text content blocks must be non-empty"——canonical 层一处拦截，三适配器
+ *   不再各自猜）。
  */
 export function assertValidMessages(messages: ChatMessage[], providerName = "canonical"): void {
   const violation = (reason: string): LLMProtocolViolationError =>
     new LLMProtocolViolationError(`消息序列不变量被破坏：${reason}`, { provider: providerName });
+
+  const hasEmptyText = (blocks: ContentBlock[]): boolean =>
+    blocks.some((b) => b.kind === "text" && b.text === "");
 
   if (messages.length === 0) {
     throw violation("消息为空");
@@ -135,6 +141,9 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       if (msg.blocks.length === 0) {
         throw violation("user.blocks 为空");
       }
+      if (hasEmptyText(msg.blocks)) {
+        throw violation("user 消息含空文本块（Anthropic 端点对空 text 块 400）");
+      }
       i += 1;
       continue;
     }
@@ -142,6 +151,9 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       const calls = msg.toolCalls ?? [];
       if (msg.blocks.length === 0 && calls.length === 0) {
         throw violation("assistant 的 blocks 与 toolCalls 同时为空");
+      }
+      if (hasEmptyText(msg.blocks)) {
+        throw violation("assistant 消息含空文本块（Anthropic 端点对空 text 块 400）");
       }
       if (calls.length > 0) {
         // id→name 映射：配对校验同时要求 toolName 与 toolCall.name 一致——

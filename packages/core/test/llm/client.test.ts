@@ -559,6 +559,28 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     await client.getAction("sys", imageOnly, TOOL);
     expect(logs.filter((m) => m.includes("滤图生效")).length).toBe(1);
   });
+
+  it("未声明主卡被推导为无视觉却带图出站 → 致盲 WARNING 一次（轮 13 #9，对称于滤图告警）", async () => {
+    // glm-5.1 白名单外且未声明 → 推导 false、不滤（偏离 9 取舍）——图照发但可观测
+    const { mock, logs, client } = setupWithLogs({ model: "glm-5.1" });
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
+    const withImage: ChatMessage[] = [
+      {
+        role: "user",
+        blocks: [
+          { kind: "text", text: "look" },
+          { kind: "image", mimeType: "image/png", base64: "AAAA" },
+        ],
+      },
+    ];
+    const r = await client.getAction("sys", withImage, TOOL);
+    expect(r.kind).toBe("ok");
+    // 图未被滤（未声明不滤的取舍不变），但致盲可观测
+    expect(JSON.stringify(mock.lastBody().messages)).toContain('"image"');
+    expect(logs.filter((m) => m.includes("推导为无视觉的主卡")).length).toBe(1);
+    await client.getAction("sys", withImage, TOOL); // 实例级去重
+    expect(logs.filter((m) => m.includes("推导为无视觉的主卡")).length).toBe(1);
+  });
 });
 
 describe("deadline 与取消", () => {

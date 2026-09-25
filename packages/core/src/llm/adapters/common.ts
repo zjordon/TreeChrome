@@ -57,7 +57,9 @@ export function temperatureEntry(
   config: ProviderConfig,
 ): Record<string, unknown> {
   const temperature = req.temperature ?? config.temperature;
-  if (temperature === undefined) {
+  // 非有限数值（NaN 等）不发：Math.min/max 对 NaN 透传，JSON 序列化成 null 上送
+  // 会被端点 400（Infinity 反而能被正确钳制）——钳制防护的闭环补齐（轮 13 #5）
+  if (temperature === undefined || !Number.isFinite(temperature)) {
     return {};
   }
   return {

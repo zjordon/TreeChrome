@@ -11,8 +11,7 @@ import {
   LLMRateLimitError,
   LLMServerError,
 } from "../../src/llm/errors.js";
-import { AGENT_TOOL, setupProvider, stubDeps } from "./fixtures.js";
-import { MockFetch } from "./mock-fetch.js";
+import { AGENT_TOOL, setupProvider, setupProviderWithLogs } from "./fixtures.js";
 
 const CARD: ProviderConfig = {
   name: "glm-anthropic",
@@ -37,6 +36,8 @@ const toolOk = (input: Record<string, unknown>) => ({
   },
 });
 
+/** 带日志采集的装配（丢弃类/清洗类告警断言共用） */
+const setupLogs = () => setupProviderWithLogs(createAnthropicProvider, CARD);
 describe("请求构造（canonical → wire）", () => {
   it("全量映射：system 独立字段、text/image 块、tool_use、连续 toolResult 折叠进一条 user", async () => {
     const { mock, provider } = setup();
@@ -218,6 +219,38 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody().temperature).toBe(0); // 下界同钳
   });
 
+  it("temperature NaN → 不发（Math 钳制对 NaN 透传会序列化成 null 被端点 400，轮 13 #5）", async () => {
+    const { mock, provider } = setup({ temperature: Number.NaN });
+    mock.queueMany(toolOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(mock.lastBody()).not.toHaveProperty("temperature");
+  });
+
+  it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        {
+          role: "assistant",
+          blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }],
+          toolCalls: [{ id: "t1", name: TOOL.name, args: {} }],
+        },
+        { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "ok" },
+      ],
+      tools: [TOOL],
+    });
+    const wire = JSON.stringify(mock.lastBody().messages);
+    expect(wire).not.toContain('"image"');
+    expect(wire).toContain('"tool_use"');
+  });
+
   it("连续同角色消息折叠：user+user 合并 content；toolResult 折叠出的 user 与紧随 user 观察合并", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));
@@ -372,12 +405,7 @@ describe("响应解析（wire → canonical）", () => {
   });
 
   it("丢弃类事件留告警：缺失 id / 非请求名 / input 病态非对象（轮 12 #11/#13 观测口径锁定）", async () => {
-    const mock = new MockFetch();
-    const logs: string[] = [];
-    const provider = createAnthropicProvider(CARD, {
-      ...stubDeps(mock),
-      log: (m) => logs.push(m),
-    });
+    const { mock, logs, provider } = setupLogs();
     mock.queueMany({
       status: 200,
       body: {

@@ -13,6 +13,7 @@ import type { LLMProvider } from "./provider.js";
 import {
   applySensitiveInMessages,
   cloneWorkMessages,
+  replaceSensitiveText,
   restoreSensitiveInOutput,
   restoreUrlsInOutput,
   shortenUrlsInMessages,
@@ -176,6 +177,8 @@ export class LLMClient {
   private usingFallback = false;
   /** 滤图 WARNING 的实例级去重（首次真正滤到图片时告警一次） */
   private loggedImageFilter = false;
+  /** 致盲 WARNING 的实例级去重（未声明主卡带图出站的首次提示） */
+  private loggedBlindImageSend = false;
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
@@ -297,17 +300,9 @@ export class LLMClient {
         if (leaking.length > 0) {
           if (opts.redactToolResults === true) {
             for (const m of work) {
-              if (m.role !== "toolResult") {
-                continue;
+              if (m.role === "toolResult") {
+                m.text = replaceSensitiveText(m.text, sensitive);
               }
-              let text = m.text;
-              for (const [real, placeholder] of Object.entries(sensitive)) {
-                if (real !== "") {
-                  // 回调形式防占位符 $ 序列被解释为替换模式（#9 同因）
-                  text = text.replaceAll(real, () => placeholder);
-                }
-              }
-              m.text = text;
             }
             this.deps.log(
               `[llm] toolResult(${leaking.join(", ")}) 敏感值已占位（redactToolResults）`,
@@ -361,14 +356,7 @@ export class LLMClient {
           // _filter_sensitive_in_messages，TS 循环结构需手动对齐 parity）；
           // 不重跑 URL 缩写——其 tag 计数器独立，重跑会与既有 urlMap 的 [uN]
           // 冲突导致还原错乱（保守偏离，回显中的新 URL 保持全量无正确性问题）
-          let echo = response.text;
-          if (sensitive !== undefined) {
-            for (const [real, placeholder] of Object.entries(sensitive)) {
-              if (real !== "") {
-                echo = echo.replaceAll(real, () => placeholder);
-              }
-            }
-          }
+          const echo = replaceSensitiveText(response.text, sensitive);
           work.push({ role: "assistant", blocks: [{ kind: "text", text: echo }] });
           work.push({ role: "user", blocks: [{ kind: "text", text: r4Directive(tool.name) }] });
           continue;
@@ -432,6 +420,21 @@ export class LLMClient {
     //   文本主卡（glm-5.1 等）显式配 false 即受静默致盲保护；
     // - 未声明 → 仅 fallback 切换后按白名单推导滤（Python _strip_image_blocks 同款）——
     //   白名单外主卡（qwen-vl/gpt-4o 等真视觉模型缺省推导 false）不被误滤
+    // 致盲可观测（轮 13 #9，对称于滤图 WARNING）：未声明主卡被白名单推导为无视觉
+    // 却仍带图出站——P0 实测的「静默致盲」缺省形态复活时留一次提示（独立去重
+    // 标志，勿与滤图告警混用）；不挑战「未声明不滤」的偏离 9 取舍本身
+    if (
+      this.config.capabilities?.supportsVision === undefined &&
+      !this.usingFallback &&
+      !this.provider.capabilities.supportsVision &&
+      !this.loggedBlindImageSend &&
+      work.some((m) => m.role !== "toolResult" && m.blocks.some((b) => b.kind === "image"))
+    ) {
+      this.loggedBlindImageSend = true;
+      this.deps.log(
+        `[llm] WARNING: 正在向推导为无视觉的主卡（${this.config.name}）发送图片块——文本卡请显式声明 supportsVision:false 启用滤图，真视觉卡请声明 true`,
+      );
+    }
     if (
       this.config.capabilities?.supportsVision === false ||
       (this.usingFallback && !this.provider.capabilities.supportsVision)
@@ -485,6 +488,9 @@ export class LLMClient {
    *   Python 同款）；在飞请求的到点强杀由 getAction 的 ladder signal 负责。
    */
   private async callWithBackoff(buildReq: () => ChatRequest): Promise<ChatResponse> {
+    // 预算作用域（轮 13 #11）：每次 callWithBackoff 调用（R4/R1 梯子的每一轮
+    // 请求）独立计账——梯子总退避墙钟可达 预算×轮数，仅由 ladder deadline
+    //（timeoutMs/setCallWindow）封顶（Python parity，梯子多轮重置为有意）
     const capMs = this.windowBudgetCapMs ?? INFRA_BUDGET_DEFAULT_SEC * 1000;
     const budgetDeadline = this.deps.now() + capMs;
     let deadline = budgetDeadline;

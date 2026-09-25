@@ -28,3 +28,15 @@ export function setupProvider(
   const provider = factory({ ...card, ...over }, stubDeps(mock));
   return { mock, provider };
 }
+
+/** 带日志采集的装配变体（丢弃类/清洗类告警断言用例共用，轮 13 #2） */
+export function setupProviderWithLogs(
+  factory: (config: ProviderConfig, deps: Required<LlmDeps>) => LLMProvider,
+  card: ProviderConfig,
+  over: Partial<ProviderConfig> = {},
+): { mock: MockFetch; logs: string[]; provider: LLMProvider } {
+  const mock = new MockFetch();
+  const logs: string[] = [];
+  const provider = factory({ ...card, ...over }, { ...stubDeps(mock), log: (m) => logs.push(m) });
+  return { mock, logs, provider };
+}

@@ -42,6 +42,13 @@ const EMIT_KEY: Record<string, string> = {
   maxitems: "maxItems",
 };
 
+/**
+ * format 官方支持集（轮 13 #4）：v1beta Schema 的 format 是按 type 限定的封闭
+ * 枚举（string: enum/date-time；number: float/double；integer: int32/int64），
+ * JSON Schema 常见的 uri/email/uuid 等值会被端点 400——不在此集即删除并上报
+ */
+const GEMINI_FORMATS = new Set(["enum", "date-time", "float", "double", "int32", "int64"]);
+
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((t) => typeof t === "string");
 
@@ -123,6 +130,10 @@ export function sanitizeGeminiSchema(
       }
       if (normalized === "nullable" && typeof value !== "boolean") {
         onSchemaIssue?.("nullable 非布尔，删除该键");
+        continue;
+      }
+      if (normalized === "format" && (typeof value !== "string" || !GEMINI_FORMATS.has(value))) {
+        onSchemaIssue?.(`format「${JSON.stringify(value)}」不在官方支持集，删除该键`);
         continue;
       }
       // 写入统一用归一化（小写）键 + 多词约束键的官方 camelCase（"MaxLength" 等

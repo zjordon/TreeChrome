@@ -15,16 +15,25 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
     return Promise.reject(spec.networkError);
   }
   if ("hangUntilAbort" in spec) {
+    if (signal == null) {
+      // fail-fast（轮 13 #1）：无 signal 的挂起永不 settle，只会拖到 vitest 5s
+      // 超时——与队列耗尽/时钟不收敛的显式报错口径对称
+      return Promise.reject(
+        new Error(
+          "MockFetch: hangUntilAbort 需请求携带 AbortSignal（timeoutMs/窗口/外部取消），否则永不 settle",
+        ),
+      );
+    }
     return new Promise((_resolve, reject) => {
       // reject(signal.reason)：真实 fetch 按 signal 的 abort reason 拒绝——
       // AbortSignal.timeout 到点的 reason 是 name="TimeoutError" 的 DOMException
       //（非 AbortError），mock 必须复刻该形态，否则分型测试与真实运行时脱节
-      const onAbort = () => reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
-      if (signal?.aborted) {
+      const onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      if (signal.aborted) {
         onAbort();
         return;
       }
-      signal?.addEventListener("abort", onAbort, { once: true });
+      signal.addEventListener("abort", onAbort, { once: true });
     });
   }
   const headers = new Headers(spec.headers ?? { "content-type": "application/json" });
