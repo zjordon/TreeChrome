@@ -20,6 +20,7 @@ import {
   applySensitiveInMessages,
   cloneWorkMessages,
   hasImageBlocks,
+  redactOrPreserve,
   replaceSensitiveDeep,
   replaceSensitiveText,
   restoreSensitiveInOutput,
@@ -198,6 +199,8 @@ export class LLMClient {
   private loggedBlindImageSend = false;
   /** systemPrompt 敏感命中 WARNING 的实例级去重（轮 18 #3） */
   private loggedSystemPromptLeak = false;
+  /** sensitiveMap 病态配置（整数键/占位符冲突）WARNING 的实例级去重（轮 20 #10/#14） */
+  private loggedSensitiveMapConfigWarn = false;
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
@@ -327,6 +330,30 @@ export class LLMClient {
           "[llm] WARNING: systemPrompt 含 sensitiveMap 命中值，将明文出站（systemPrompt 不在占位范围，由宿主自担）",
         );
       }
+      // sensitiveMap 病态配置的一次性 WARNING（轮 20 #10/#14——transforms 纯函数
+      // 无告警通道，检测上提到有 deps.log 的入口）：
+      // ① 整数形态键（卡号/手机号类）：JS 引擎把 canonical 数字键重排到枚举首位
+      //    （Python dict 恒插入序），含包含关系键时替换顺序静默偏离插入序；
+      // ② 占位符冲突（多 real 共享同一 placeholder）：还原侧顺序 replaceAll 先
+      //    插入者恒胜，后续条目静默失效——还原结果张冠李戴的数据损坏
+      if (sensitive !== undefined && !this.loggedSensitiveMapConfigWarn) {
+        const reals = Object.keys(sensitive);
+        const INTEGER_KEY_RE = /^(?:0|-?[1-9]\d*)$/;
+        if (reals.some((real) => INTEGER_KEY_RE.test(real))) {
+          this.loggedSensitiveMapConfigWarn = true;
+          this.deps.log(
+            "[llm] WARNING: sensitiveMap 含整数形态键——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖，建议避免纯数字敏感值",
+          );
+        } else {
+          const placeholders = reals.map((real) => sensitive[real]).filter((ph) => ph !== "");
+          if (new Set(placeholders).size !== placeholders.length) {
+            this.loggedSensitiveMapConfigWarn = true;
+            this.deps.log(
+              "[llm] WARNING: sensitiveMap 存在占位符冲突（多个真实值映射到同一占位符）——还原侧先插入者胜、后续条目静默失效，还原结果可能张冠李戴",
+            );
+          }
+        }
+      }
       // 工具载荷（toolResult 文本 + assistant.toolCalls[].args）默认不在占位范围
       //（P5 parity，见 applySensitiveInMessages 注释）——命中敏感 real 值时按
       // redactToolPayloads 分流：缺省明文出站但留 WARNING（暴露可观测，P4
@@ -341,11 +368,10 @@ export class LLMClient {
             if (reals.some((real) => m.text.includes(real))) {
               leaking.push(m.toolName);
               if (opts.redactToolPayloads === true) {
-                const replaced = replaceSensitiveText(m.text, sensitive);
                 // 删除式 sensitiveMap 把整条 toolResult 滤成空串时降级 [redacted]
-                //（对齐 applySensitiveInMessages 轮 15 #8）：空 text 出站若被拒收，
-                // 错误会归因到调用方历史而非 redaction 自身
-                m.text = m.text !== "" && replaced === "" ? "[redacted]" : replaced;
+                //（redactOrPreserve 与 applySensitiveInMessages/R4 回显三处同源，
+                // 轮 20 #15）：空 text 出站若被拒收，错误会归因到调用方历史
+                m.text = redactOrPreserve(m.text, replaceSensitiveText(m.text, sensitive));
               }
             }
             continue;
@@ -422,13 +448,13 @@ export class LLMClient {
           // 不重跑 URL 缩写——其 tag 计数器独立，重跑会与既有 urlMap 的 [uN]
           // 冲突导致还原错乱（保守偏离，回显中的新 URL 保持全量无正确性问题）
           const echo = replaceSensitiveText(response.text, sensitive);
-          // 删除式 sensitiveMap 可把回显整体滤空：降级 [redacted]（对齐
-          // applySensitiveInMessages 轮 15 #8）——空文本块在适配器入口
-          // assertValidMessages 抛违例、错误归因到调用方历史，且 LLMError 会先
-          // 烧一次 fallback 单向切换（轮 16 #14）
+          // 删除式 sensitiveMap 可把回显整体滤空：降级 [redacted]（redactOrPreserve
+          // 与 applySensitiveInMessages/redactToolPayloads 三处同源，轮 20 #15）——
+          // 空文本块在适配器入口 assertValidMessages 抛违例、错误归因到调用方
+          // 历史，且 LLMError 会先烧一次 fallback 单向切换（轮 16 #14）
           work.push({
             role: "assistant",
-            blocks: [{ kind: "text", text: echo !== "" ? echo : "[redacted]" }],
+            blocks: [{ kind: "text", text: redactOrPreserve(response.text, echo) }],
           });
           work.push({ role: "user", blocks: [{ kind: "text", text: r4Directive(tool.name) }] });
           continue;
@@ -449,8 +475,19 @@ export class LLMClient {
       // windowExpired 已翻 true，会把取消变形为 LLMTimeoutError（#186 不变形契约）。
       // 二者竞态同时触发时按外部取消处理（穿透原样上抛）
       if (isAbortError(e) && windowExpired && !external?.aborted) {
+        // 归因实际生效的约束来源（轮 20 #8）：该分支同时覆盖仅传 opts.timeoutMs
+        //（从未 setCallWindow）的场景——固定写「窗口预算到期」会把单次调用超时
+        // 误导为步级窗口登记问题（与 callWithBackoff 轮 12 #15 的归因口径一致）
+        let source: string;
+        if (opts.timeoutMs !== undefined && this.windowDeadline !== undefined) {
+          source = "timeoutMs+window";
+        } else if (opts.timeoutMs !== undefined) {
+          source = "timeoutMs";
+        } else {
+          source = "window";
+        }
         throw new LLMTimeoutError(
-          `getAction 窗口预算到期（deadline=${deadlineAt !== undefined ? Math.round(deadlineAt) : "?"}ms）`,
+          `getAction 预算到期（source=${source}，deadline=${deadlineAt !== undefined ? Math.round(deadlineAt) : "?"}ms）`,
           { provider: this.config.name, cause: e },
         );
       }

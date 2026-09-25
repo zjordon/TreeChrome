@@ -80,14 +80,14 @@ describe("resolveMaxTokens", () => {
     expect(resolveMaxTokens(req({ maxTokens: 64 }), c, () => {})).toBe(64);
   });
 
-  it.each([Number.NaN, 0, -3, Number.POSITIVE_INFINITY])(
-    "非法值 %s → 回退 DEFAULT_MAX_TOKENS 并回调（消息含原值与卡片名）",
+  it.each([Number.NaN, 0, -3, Number.POSITIVE_INFINITY, 1024.5])(
+    "非法值 %s → 回退 DEFAULT_MAX_TOKENS 并回调（三协议上限字段均整型，轮 20 #12）",
     (bad) => {
       const invalid: string[] = [];
       expect(
         resolveMaxTokens(req({ maxTokens: bad }), card("gemini"), (m) => invalid.push(m)),
       ).toBe(16384);
-      expect(invalid).toEqual([`maxTokens 非正有限数值（${bad}），回退 16384（unit-card）`]);
+      expect(invalid).toEqual([`maxTokens 非正整数值（${bad}），回退 16384（unit-card）`]);
     },
   );
 });

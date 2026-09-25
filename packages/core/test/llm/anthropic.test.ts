@@ -269,6 +269,17 @@ describe("请求构造（canonical → wire）", () => {
     expect(warnings[0]).toContain("glm-anthropic");
   });
 
+  it("空串 systemPrompt 与 null 同等不发（空 system 文本是端点 400 形态，轮 20 #13）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk({}));
+    await provider.chat({
+      systemPrompt: "",
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(mock.lastBody()).not.toHaveProperty("system");
+  });
+
   it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));

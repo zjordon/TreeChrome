@@ -7,9 +7,7 @@ import type { LlmProtocol } from "../provider.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
 import { ERROR_DETAIL_MAX } from "./http.js";
 
-export function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
+export { isRecord } from "../transforms.js";
 
 export function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -111,8 +109,11 @@ export function resolveMaxTokens(
   onInvalid: (message: string) => void,
 ): number {
   const value = req.maxTokens ?? config.maxTokens;
-  if (!Number.isFinite(value) || value <= 0) {
-    onInvalid(`maxTokens 非正有限数值（${value}），回退 ${DEFAULT_MAX_TOKENS}（${config.name}）`);
+  // 三协议上限字段均整型（anthropic max_tokens / openai 双轨 / gemini int64）：
+  // 小数（宿主 parseFloat 产物）与 NaN/0 同为端点硬 400（轮 20 #12 补齐整数维度，
+  // isInteger 蕴含 isFinite）
+  if (!Number.isInteger(value) || value <= 0) {
+    onInvalid(`maxTokens 非正整数值（${value}），回退 ${DEFAULT_MAX_TOKENS}（${config.name}）`);
     return DEFAULT_MAX_TOKENS;
   }
   return value;

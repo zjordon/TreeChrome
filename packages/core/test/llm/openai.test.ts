@@ -273,16 +273,37 @@ describe("请求构造（canonical → wire）", () => {
   // 钳制告警/maxTokens 回退的纯逻辑矩阵见 common.test.ts（轮 19 #2 收敛）；
   // 接线锚定保留在 anthropic.test.ts（三适配器注入形态一致）
 
-  it("o 系模型抑制 temperature（只接受默认温度，轮 14 #10）；gpt-4o 照常发送", async () => {
+  it("o 系与 gpt-5 系抑制 temperature（只接受默认温度 1；轮 14 #10 + 轮 20 #11 web 核实）；gpt-4o 照常发送", async () => {
     const oSeries = setup({ model: "o3-mini", temperature: 0.2 });
     oSeries.mock.queueMany(toolOk("{}"));
     await oSeries.provider.chat(baseReq());
     expect(oSeries.mock.lastBody()).not.toHaveProperty("temperature");
 
+    // gpt-5 全系同样只接受默认温度（400 "Unsupported value: 'temperature' does
+    // not support X with this model. Only the default (1) value is supported"）
+    for (const model of ["gpt-5", "gpt-5-mini", "gpt-5-pro"]) {
+      const gpt5 = setup({ model, temperature: 0.7 });
+      gpt5.mock.queueMany(toolOk("{}"));
+      await gpt5.provider.chat(baseReq());
+      expect(gpt5.mock.lastBody()).not.toHaveProperty("temperature");
+    }
+
     const normal = setup({ model: "gpt-4o", temperature: 0.2 });
     normal.mock.queueMany(toolOk("{}"));
     await normal.provider.chat(baseReq());
     expect(normal.mock.lastBody().temperature).toBe(0.2);
+  });
+
+  it("空串 systemPrompt 与 null 同等不发（三协议统一口径，轮 20 #13）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk("{}"));
+    await provider.chat({
+      systemPrompt: "",
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: [TOOL],
+    });
+    const messages = mock.lastBody().messages as Array<Record<string, unknown>>;
+    expect(messages[0].role).not.toBe("system");
   });
 
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {

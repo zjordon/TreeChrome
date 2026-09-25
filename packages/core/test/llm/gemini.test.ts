@@ -290,12 +290,29 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     );
     expect(out).toEqual({ type: "string", items: { type: "string" } });
     const nonRecordItems = sanitizeGeminiSchema({ items: "x" }, (d) => issues.push(d));
-    expect(nonRecordItems).toEqual({ type: "string", items: { type: "string" } });
+    expect(nonRecordItems).toEqual({ type: "array", items: { type: "string" } });
     expect(issues).toEqual([
       "type 联合窄化 string|number → string",
       "items 元组形态窄化为首元素",
       "items 非对象形态归一为空 schema",
-      "节点缺 type，补注入缺省 string", // { items: "x" } 自身也无 type
+      "节点缺 type，按 items 推断注入 array", // { items: "x" } 自身也无 type（轮 20 #1）
+    ]);
+  });
+
+  it("缺 type 按结构线索推断：properties→object、items→array、无线索→string（轮 20 #1）", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema({ properties: { a: { type: "string" } }, required: ["a"] }, (d) =>
+        issues.push(d),
+      ),
+    ).toEqual({ type: "object", properties: { a: { type: "string" } }, required: ["a"] });
+    expect(sanitizeGeminiSchema({ items: { type: "number" } }, (d) => issues.push(d))).toEqual({
+      type: "array",
+      items: { type: "number" },
+    });
+    expect(issues).toEqual([
+      "节点缺 type，按 properties 推断注入 object",
+      "节点缺 type，按 items 推断注入 array",
     ]);
   });
 
@@ -579,6 +596,17 @@ describe("请求构造（canonical → wire）", () => {
       tools: null,
     });
     expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
+  });
+
+  it("空串 systemPrompt 与 null 同等不发（空 text part 是 400 形态，轮 20 #13）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: "",
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(mock.lastBody()).not.toHaveProperty("systemInstruction");
   });
 
   it("model turn 的 inlineData 静默丢弃（多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14）", async () => {

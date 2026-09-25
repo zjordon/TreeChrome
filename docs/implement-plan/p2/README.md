@@ -382,3 +382,22 @@ smoke 产物摘要：
 - **#3 issues 文案逐字符断言脆弱**：驳回。逐字符锚定是既定契约——轮 9 #9 已显式裁决「关键词与引号格式是断言契约的一部分」（gemini 去重用例注释自认），这些字符串是可观测性契约本体（日志消费方/排障文档引用），放宽为关键词匹配会让措辞静默漂移；文案变更触发测试红是**有意的摩擦**（迫使有意识地更新契约），toEqual 的期望 diff 本身即可区分「行为回归」与「文案变更」，评审所称「无法区分」不成立。
 
 测试 293 例全绿（覆盖率 98.77%；+11：common.test.ts 纯函数矩阵，净变化含删 4 条重复用例）。
+
+### 评审轮 20（review-p2-llm-client-20.json，2026-09-25，15 条采纳 13 驳回 2）
+
+采纳 13 条。要点：
+
+- **缺 type 注入按结构线索推断（#1，轮 19 注入的语义修正）**：统一注 string 会产出 `{type:"string", properties:…}` 语义错误形态（properties 仅 OBJECT、items 仅 ARRAY 合法）——JSON Schema 中 `{properties}`/`{items}` 不写 type 是合法常见形态，按已有结构推断：有 properties 注 object、有 items 注 array、无线索才兜底 string；`{items:"x"}` 归一产物随之从 string 修正为 array。
+- **gpt-5 系温度抑制（#11，web 核实修正轮 14 注释）**：gpt-5 全系与 o 系一样只接受默认温度 1（400 "Unsupported value: 'temperature' does not support X with this model. Only the default (1) value is supported"，社区广泛实证）——轮 14 注释「gpt-5 支持 0-2」有误；正则扩 `/^(o\d|gpt-5)/`（gpt-4.1/gpt-oss 仍支持 0-2）。
+- **单向分层恢复（#9）+ 占位哨兵单源（#2/#15）**：isRecord 上提为 transforms 导出、adapters/common re-export（transforms 属 canonical 低层，恢复「adapters 依赖 core」方向）；`[image omitted]` 四处与 `[redacted]` 降级三处分别收敛为 transforms 导出常量/辅助函数（redactOrPreserve），防口径漂移。
+- **sensitiveMap 病态配置可观测（#10/#14）**：整数形态键（JS 引擎重排到枚举首位，与插入序不一致）与占位符冲突（还原侧先插入者胜、后续条目静默失效——张冠李戴的数据损坏）在 getAction 入口留一次性 WARNING（transforms 纯函数无告警通道，检测上提）；还原侧注释显式声明「占位符须唯一」约束。
+- **resolveMaxTokens 补整数校验（#12）**：三协议上限字段均整型，小数（宿主 parseFloat 产物）穿透是端点 400——`Number.isInteger` 收口（蕴含 isFinite）。
+- **空串 systemPrompt 与 null 同等不发（#13，三协议统一）**：canonical 已拦空 TextBlock，systemPrompt === "" 仍以 system:""/空 text part 出站（anthropic/gemini 400 形态）——语义等同未填，非空才发送。
+- **超时文案归因（#8）与测试补强（#3/#4/#5）**：超时消息区分约束来源（source=timeoutMs/window/timeoutMs+window），仅传 timeoutMs 的场景不再误导为窗口登记问题；fallback 切换补凭证头断言（防回归为主卡密钥外泄到 fallback 主机）；setupCore 嵌套三元改 if/else；firstText 可选链兜底。
+
+驳回 2 条：
+
+- **#6 预算算式指控**：驳回——评审漏看了窗口派生预算。`setCallWindow(40s)` 时 `cap = max(30s, 40s×0.75) = 30s`，budgetDeadline = 31000 < windowDeadline = 41000，生效 deadline 是预算 31000（标题自述 cap=30s 与算式 31000+30000>31000 内部一致且正确）。
+- **#7 敏感值缺省翻转 secure-by-default**：第 N 次同议题（轮 13 #8 驳回、轮 14 #2 登记缺省风险 + P4 决策项、轮 15 更名 redactToolPayloads），本轮无新事实——「缺省抛错迫使二选一」仍是缺省行为变更，属 P4 SecretProvider 裁决域，维持裁决。
+
+测试 299 例全绿（覆盖率 98.75%）。

@@ -229,13 +229,22 @@ export function sanitizeGeminiSchema(
       out[EMIT_KEY[normalized] ?? normalized] = value;
     }
   }
-  // 缺 type 补注入（轮 19 #1）：端点要求每个 schema 节点显式 type（轮 18 #1 web
-  // 核实）——清洗产物（约束键删空的节点）与调用方未写 type 的子 schema 统一补
-  // string（无类型线索时的缺省枚举，与非法枚举兜底同款口径）；先于 format 分域
-  // 注入，缺 type 节点的 format 按注入后的 type 收口
+  // 缺 type 补注入（轮 19 #1 + 轮 20 #1 结构线索）：端点要求每个 schema 节点显式
+  // type（轮 18 #1 web 核实）——统一注 string 会产出 {type:"string", properties:…}
+  // 语义错误形态（properties 仅 OBJECT、items 仅 ARRAY 合法），按已有结构线索
+  // 推断：有 properties 注 object、有 items 注 array、无线索才兜底 string；
+  // 先于 format 分域校验注入，缺 type 节点的 format 按注入后的 type 收口
   if (out.type === undefined) {
-    onSchemaIssue?.("节点缺 type，补注入缺省 string");
-    out.type = "string";
+    if (out.properties !== undefined) {
+      onSchemaIssue?.("节点缺 type，按 properties 推断注入 object");
+      out.type = "object";
+    } else if (out.items !== undefined) {
+      onSchemaIssue?.("节点缺 type，按 items 推断注入 array");
+      out.type = "array";
+    } else {
+      onSchemaIssue?.("节点缺 type，补注入缺省 string");
+      out.type = "string";
+    }
   }
   // format 按 type 分域的收尾校验（轮 18 #8）：循环内只校验了全集成员——值在
   // 全集但 type 域外的组合在此删除

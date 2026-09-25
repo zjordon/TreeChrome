@@ -96,15 +96,18 @@ function setupCore(
   const mock = new MockFetch();
   const logs: string[] = [];
   const fake = clock === "fake" ? new FakeClock() : null;
+  // 三态展开用 if/else（轮 20 #4：嵌套三元违反清单规范）
+  let clockDeps: { now?: () => number; sleep?: FakeClock["sleep"] } = {};
+  if (fake !== null) {
+    clockDeps = { now: fake.now, sleep: fake.sleep };
+  } else if (clock === "zero") {
+    clockDeps = { now: () => 0, sleep: async () => {} };
+  }
   const client = createLLMClient(
     { ...CARD, ...over },
     {
       fetch: mock.fetch,
-      ...(fake !== null
-        ? { now: fake.now, sleep: fake.sleep }
-        : clock === "zero"
-          ? { now: () => 0, sleep: async () => {} }
-          : {}),
+      ...clockDeps,
       log: collectLogs ? (m) => logs.push(m) : () => {},
     },
   );
@@ -447,7 +450,10 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
         sensitiveMap: { "sk-secret": "<KEY>", "12345": "<N>" },
       },
     );
-    expect(noLeak.logs.some((m) => m.includes("WARNING") || m.includes("已占位"))).toBe(false);
+    expect(
+      noLeak.logs.some((m) => m.includes("工具载荷") || m.includes("已占位")),
+      // 只排除泄露类告警：map 里的整数键 "12345" 会合法触发轮 20 #10 的配置告警
+    ).toBe(false);
   });
 
   it("redactToolPayloads + 删除式 sensitiveMap：toolResult 整体即敏感值 → [redacted] 降级防空 text 出站（轮 16 #7）", async () => {
@@ -505,6 +511,32 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(logs.filter((m) => m.includes("systemPrompt"))).toHaveLength(1);
     // 观测通道自身不泄露明文
     expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
+  });
+
+  it("sensitiveMap 病态配置一次性 WARNING：整数键重排 / 占位符冲突（轮 20 #10/#14）", async () => {
+    // 整数形态键：JS 引擎重排到枚举首位，含包含关系键时替换顺序不可依赖
+    const intKeys = setupWithLogs();
+    intKeys.mock.queueMany(toolOk({ done: 1 }));
+    await intKeys.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "1234": "<A>", "sk-x": "<B>" },
+    });
+    expect(intKeys.logs.some((m) => m.includes("WARNING") && m.includes("整数形态键"))).toBe(true);
+
+    // 占位符冲突：还原侧先插入者胜，后续条目静默失效（还原结果张冠李戴）
+    const conflict = setupWithLogs();
+    conflict.mock.queueMany(toolOk({ done: 1 }));
+    await conflict.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { realA: "<X>", realB: "<X>" },
+    });
+    expect(conflict.logs.some((m) => m.includes("WARNING") && m.includes("占位符冲突"))).toBe(true);
+
+    // 正常配置零告警（反例锚定）
+    const clean = setupWithLogs();
+    clean.mock.queueMany(toolOk({ done: 1 }));
+    await clean.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-x": "<KEY>" },
+    });
+    expect(clean.logs.some((m) => m.includes("WARNING"))).toBe(false);
   });
 });
 
@@ -609,6 +641,10 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     expect(mock.calls.length).toBe(2);
     expect(mock.calls[0].url).toContain("primary.example");
     expect(mock.calls[1].url).toContain("fallback.example");
+    // 凭证随卡片切换的契约锚定（轮 20 #3）：防回归为沿用主卡 apiKey——那会把
+    // 主卡密钥发往 fallback 主机（凭证外泄）且全量 401
+    expect(mock.calls[0].init.headers).toMatchObject({ "x-api-key": "k1" });
+    expect(mock.calls[1].init.headers).toMatchObject({ "x-api-key": "k2" });
     const fb = mock.bodyAt(1);
     expect(fb.model).toBe("glm-5.1");
     expect(fb.max_tokens).toBe(2048);
@@ -690,6 +726,9 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     });
     expect(mock.calls[0].url).toContain("primary.example/v1/messages");
     expect(mock.calls[1].url).toContain("fallback.example/v1/chat/completions");
+    // 凭证随卡片切换（跨协议形态，轮 20 #3）：authorization 而非主卡 x-api-key
+    expect(mock.calls[0].init.headers).toMatchObject({ "x-api-key": "k1" });
+    expect(mock.calls[1].init.headers).toMatchObject({ authorization: "Bearer k3" });
     const fb = mock.bodyAt(1);
     expect(fb.model).toBe("glm-4.7");
     expect(fb.tool_choice).toEqual({ type: "function", function: { name: TOOL.name } });
@@ -871,7 +910,10 @@ describe("deadline 与取消", () => {
     mock.queueMany({ hangUntilAbort: true });
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0); // 冲刷：WARNING + deadline watcher 立即到点强杀在飞请求
-    await expect(p).rejects.toBeInstanceOf(LLMTimeoutError);
+    const err = await p.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMTimeoutError);
+    // 归因实际生效的约束来源（轮 20 #8）：本用例只登记了窗口，source=window
+    expect((err as LLMTimeoutError).message).toContain("source=window");
     const warn = logs.find((m) => m.includes("已过期"));
     expect(warn).toContain("setCallWindow");
     expect(warn).toContain("4ms");

@@ -7,6 +7,7 @@ import { type ProviderConfig, resolveCapabilities } from "../config.js";
 import type { LlmDeps } from "../deps.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
+import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
   ChatMessage,
   ChatRequest,
@@ -76,7 +77,7 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       if (msg.blocks.length === 0 || (text === "" && hasCalls)) {
         content = null;
       } else if (text === "") {
-        content = "[image omitted]";
+        content = IMAGE_OMITTED_PLACEHOLDER;
       } else {
         content = text;
       }
@@ -252,7 +253,7 @@ export function createOpenAICompletionsProvider(
       config.maxTokensField ??
       (NEW_CONTRACT_PREFIX.test(config.model) ? "max_completion_tokens" : "max_tokens");
     const wireMessages: Array<Record<string, unknown>> = [];
-    if (req.systemPrompt !== null) {
+    if (req.systemPrompt !== null && req.systemPrompt !== "") {
       wireMessages.push({ role: "system", content: req.systemPrompt });
     }
     wireMessages.push(...toWireMessages(req.messages));
@@ -274,11 +275,15 @@ export function createOpenAICompletionsProvider(
       ...(req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
-      // temperature 回退链（common.temperatureEntry）；两级缺省不发。o 系新契约
-      // 模型（o1/o3/o4 及后继 ^o\d）只接受默认温度——卡片误配（如 o3 配 0.2）即
-      // 每请求硬 400 且误触 fallback 单向切换，与 maxTokensField 同源的地雷在此
-      // 拆除：o 系前缀命中时抑制发送（gpt-5/gpt-4.1/gpt-oss 支持 0-2 不抑制）
-      ...(/^o\d/.test(config.model) ? {} : temperatureEntry(req, config, onTemperatureClamp)),
+      // temperature 回退链（common.temperatureEntry）；两级缺省不发。o 系与 gpt-5
+      // 系**只接受默认温度 1**（gpt-5 全系 400 "Unsupported value: 'temperature'
+      // does not support X with this model. Only the default (1) value is
+      // supported"，轮 20 #11 web 核实——轮 14 注释「gpt-5 支持 0-2」有误）——卡片
+      // 误配即每请求硬 400 且误触 fallback 单向切换，与 maxTokensField 同源的
+      // 地雷在此拆除：前缀命中时抑制发送（gpt-4.1/gpt-oss 支持 0-2 不抑制）
+      ...(/^(o\d|gpt-5)/.test(config.model)
+        ? {}
+        : temperatureEntry(req, config, onTemperatureClamp)),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

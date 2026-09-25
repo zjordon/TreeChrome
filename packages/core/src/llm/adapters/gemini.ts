@@ -8,6 +8,7 @@ import { type ProviderConfig, resolveCapabilities } from "../config.js";
 import type { LlmDeps } from "../deps.js";
 import { LLMBlockedError, LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
+import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
   ChatMessage,
   ChatRequest,
@@ -84,7 +85,7 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
       // 为空数组——Gemini 报 INVALID_ARGUMENT，占位降级与 stripImageBlocks 口径
       // 一致（轮 14 #9）
       if (parts.length === 0) {
-        parts.push({ text: "[image omitted]" });
+        parts.push({ text: IMAGE_OMITTED_PLACEHOLDER });
       }
       pushMerged("model", parts);
       const results = new Map<string, ToolResultMessage>();
@@ -284,7 +285,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
       ...config.extraHeaders,
     };
     const body: Record<string, unknown> = {
-      ...(req.systemPrompt !== null
+      ...(req.systemPrompt !== null && req.systemPrompt !== ""
         ? { systemInstruction: { parts: [{ text: req.systemPrompt }] } }
         : {}),
       contents: toWireContents(req.messages),

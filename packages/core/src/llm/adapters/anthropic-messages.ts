@@ -5,6 +5,7 @@ import { type ProviderConfig, resolveCapabilities } from "../config.js";
 import type { LlmDeps } from "../deps.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
+import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
   ChatMessage,
   ChatRequest,
@@ -82,7 +83,7 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       // content 数组——Anthropic 对空 content 硬 400，占位降级与 stripImageBlocks
       // 口径一致（轮 14 #8）
       if (content.length === 0) {
-        content.push({ type: "text", text: "[image omitted]" });
+        content.push({ type: "text", text: IMAGE_OMITTED_PLACEHOLDER });
       }
       pushMerged("assistant", content);
       // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排）
@@ -251,7 +252,7 @@ export function createAnthropicProvider(
     const body: Record<string, unknown> = {
       model: config.model,
       max_tokens: resolveMaxTokens(req, config, onMaxTokensInvalid),
-      ...(req.systemPrompt !== null ? { system: req.systemPrompt } : {}),
+      ...(req.systemPrompt !== null && req.systemPrompt !== "" ? { system: req.systemPrompt } : {}),
       messages: toWireMessages(req.messages),
       ...(req.tools !== null && req.tools.length > 0
         ? {

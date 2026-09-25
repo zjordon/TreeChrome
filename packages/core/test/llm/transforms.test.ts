@@ -55,7 +55,8 @@ const firstText = (m: ChatMessage): string => {
     return m.text;
   }
   const block = m.blocks[0];
-  return block.kind === "text" ? block.text : "";
+  // blocks 可为空数组（纯工具调用回合的 assistant）：可选链兜底 TypeError（轮 20 #5）
+  return block?.kind === "text" ? block.text : "";
 };
 
 const userMsg = (text: string): UserMessage => ({ role: "user", blocks: [{ kind: "text", text }] });

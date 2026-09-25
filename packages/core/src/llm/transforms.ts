@@ -2,11 +2,29 @@
 // 移植自 tree_walker/llm/client.py 同名私有方法（03 §3.2-3.4）；期望值锚定 Python 实跑，
 // 见 test/llm/transforms.test.ts 头部命令与输出。
 
-import { isRecord } from "./adapters/common.js";
 import type { ChatMessage } from "./types.js";
 
 /** URL 缩写阈值（Python _URL_MIN_LENGTH=100） */
 export const URL_MIN_LENGTH = 100;
+
+/** 纯对象判别（轮 16 #2 单源；轮 20 #9 上提为中立导出——transforms 属 canonical
+ * 低层，adapters/common 反向引用恢复「adapters 依赖 core」的单向分层） */
+export function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** assistant 历史仅含 image 块时的占位文本（stripImageBlocks + 三适配器空
+ * content/parts 兜底统一口径，轮 14 #8/#9；轮 20 #2 收敛为常量防四处漂移） */
+export const IMAGE_OMITTED_PLACEHOLDER = "[image omitted]";
+
+/** 滤空降级哨兵（轮 20 #15 共享实现）：仅「原始非空、替换后为空」降级，不掩蔽
+ * 调用方自带的空文本违例（归因仍指向调用方）；client.ts 的 redactToolPayloads
+ * 与 R4 回显分支同款复用，防三处判空条件/文案漂移破坏非空文本不变量 */
+export const REDACTED_PLACEHOLDER = "[redacted]";
+
+export function redactOrPreserve(original: string, replaced: string): string {
+  return original !== "" && replaced === "" ? REDACTED_PLACEHOLDER : replaced;
+}
 
 /**
  * URL 缩写：长度 ≥100 的 URL 换 [uN] 短标记，同 URL 同 tag（省 token），
@@ -128,10 +146,7 @@ export function applySensitiveInMessages(
     }
     for (const block of msg.blocks) {
       if (block.kind === "text") {
-        const replaced = replaceSensitiveText(block.text, sensitiveMap);
-        // 仅「原始非空、删除后为空」降级 [redacted]——不掩蔽调用方自带的空文本
-        // 违例（round 13 #6 的归因仍指向调用方）
-        block.text = block.text !== "" && replaced === "" ? "[redacted]" : replaced;
+        block.text = redactOrPreserve(block.text, replaceSensitiveText(block.text, sensitiveMap));
       }
     }
   }
@@ -197,6 +212,9 @@ export function restoreSensitiveInOutput<T>(
   // 空键过滤是还原侧防御（replaceAll('', x) 逐字符插入会损坏全文；Python 不滤）：
   // 滤空 real 与空占位符两类——后者的请求侧语义是删除敏感值（不可逆），无从还原。
   // 恢复集为空时早退（与 restoreUrlsInOutput 对称）：删除语义配置下省掉整树深重建
+  // **占位符须唯一**（轮 20 #14）：多个 real 共享同一 placeholder 时，reversed 的
+  // 重复 from 键顺序 replaceAll 先插入者恒胜，后续条目静默失效——还原结果张冠
+  // 李戴的数据损坏；此处纯函数无告警通道，唯一性检测在 client.getAction 入口
   const reversed = Object.entries(sensitiveMap)
     .filter(([real, placeholder]) => real !== "" && placeholder !== "")
     .map(([real, placeholder]) => [placeholder, real] as const);
@@ -275,7 +293,7 @@ export function stripImageBlocks(messages: ChatMessage[]): void {
     const kept = msg.blocks.filter((b) => b.kind !== "image");
     if (kept.length !== msg.blocks.length) {
       if (kept.length === 0) {
-        msg.blocks = [{ kind: "text", text: "[image omitted]" }];
+        msg.blocks = [{ kind: "text", text: IMAGE_OMITTED_PLACEHOLDER }];
         continue;
       }
       msg.blocks = kept;
