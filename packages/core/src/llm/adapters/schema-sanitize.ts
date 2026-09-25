@@ -49,6 +49,9 @@ const EMIT_KEY: Record<string, string> = {
  */
 const GEMINI_FORMATS = new Set(["enum", "date-time", "float", "double", "int32", "int64"]);
 
+/** type 官方封闭枚举（大小写敏感，轮 15 #17）：值小写归一后校验，未命中删除 */
+const GEMINI_TYPES = new Set(["string", "number", "integer", "boolean", "array", "object"]);
+
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((t) => typeof t === "string");
 
@@ -118,11 +121,26 @@ export function sanitizeGeminiSchema(
       out[normalized] = isRecord(item) ? sanitizeGeminiSchema(item, onSchemaIssue) : {};
     } else {
       // 标量键值形态校验（清洗闭环的最后一格，轮 11 #9）：病态值原样透传会被
-      // 端点 400——type 非字符串兜底合法枚举、enum/nullable 非法形态删除并上报
-      if (normalized === "type" && typeof value !== "string") {
-        onSchemaIssue?.(`type 非字符串形态兜底为 string：${JSON.stringify(value)}`);
-        out.type = "string";
-        continue;
+      // 端点 400——type 非字符串兜底合法枚举、enum/nullable/format 及约束键
+      // 非法形态删除并上报
+      if (normalized === "type") {
+        if (typeof value !== "string") {
+          onSchemaIssue?.(`type 非字符串形态兜底为 string：${JSON.stringify(value)}`);
+          out.type = "string";
+          continue;
+        }
+        if (!GEMINI_TYPES.has(value)) {
+          // 合法字符串但非法枚举值（PascalCase 等病态，轮 15 #17）：小写归一命中
+          // 则发射小写形态，否则删除——Gemini Schema.type 是大小写敏感封闭枚举
+          const lowered = value.toLowerCase();
+          if (GEMINI_TYPES.has(lowered)) {
+            onSchemaIssue?.(`type「${value}」归一化为小写 ${lowered}`);
+            out.type = lowered;
+          } else {
+            onSchemaIssue?.(`type「${JSON.stringify(value)}」不在官方枚举集，删除该键`);
+          }
+          continue;
+        }
       }
       if (normalized === "enum" && !isStringArray(value)) {
         onSchemaIssue?.("enum 非 string[]，删除该键");
@@ -134,6 +152,25 @@ export function sanitizeGeminiSchema(
       }
       if (normalized === "format" && (typeof value !== "string" || !GEMINI_FORMATS.has(value))) {
         onSchemaIssue?.(`format「${JSON.stringify(value)}」不在官方支持集，删除该键`);
+        continue;
+      }
+      // 约束键标量类型校验（轮 15 #13）：官方口径 pattern 为 string、
+      // minLength/maxLength 为 int64（数值）——病态值（pattern: 123 等）上送
+      // 即 400 INVALID_ARGUMENT
+      if (normalized === "pattern" && typeof value !== "string") {
+        onSchemaIssue?.(`约束键「pattern」非字符串，删除该键：${JSON.stringify(value)}`);
+        continue;
+      }
+      if (
+        (normalized === "minlength" ||
+          normalized === "maxlength" ||
+          normalized === "minimum" ||
+          normalized === "maximum" ||
+          normalized === "minitems" ||
+          normalized === "maxitems") &&
+        (typeof value !== "number" || !Number.isFinite(value))
+      ) {
+        onSchemaIssue?.(`约束键「${normalized}」非有限数值，删除该键：${JSON.stringify(value)}`);
         continue;
       }
       // 写入统一用归一化（小写）键 + 多词约束键的官方 camelCase（"MaxLength" 等

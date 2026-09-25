@@ -165,7 +165,10 @@ async function main() {
     console.error(
       "GLM_API_KEY 未设置（智谱开放平台 key）。用法：GLM_API_KEY=xxx node tools/llm-smoke.mjs",
     );
-    process.exit(1);
+    // exitCode 模式（与文件其余失败路径一致，轮 15 #15）：process.exit 立即终止
+    // 时 stderr 管道重定向（2>&1 | tee）下的异步写入可能未刷出而丢失
+    process.exitCode = 1;
+    return;
   }
   const { createLLMClient, DEFAULT_MAX_TOKENS } = await loadCore();
 

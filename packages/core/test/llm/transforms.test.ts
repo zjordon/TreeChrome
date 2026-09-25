@@ -36,6 +36,7 @@ import type { ChatMessage, TextBlock, UserMessage } from "../../src/index.js";
 import {
   applySensitiveInMessages,
   cloneWorkMessages,
+  hasImageBlocks,
   restoreSensitiveInOutput,
   restoreUrlsInOutput,
   shortenUrlsInMessages,
@@ -216,6 +217,16 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     expect(out.d).toBe(d);
   });
 
+  it("删除语义把整块文本滤空 → 降级 [redacted]（不打破非空文本不变量，轮 15 #8）；原始空文本不掩蔽", () => {
+    const messages: ChatMessage[] = [userMsg("sk-abc")];
+    applySensitiveInMessages(messages, { "sk-abc": "" });
+    expect(firstText(messages[0])).toBe("[redacted]");
+    // 原始即空的文本块保持原样（调用方违例仍由 canonical 校验归因）
+    const emptyOwn: ChatMessage[] = [userMsg("")];
+    applySensitiveInMessages(emptyOwn, { "sk-abc": "" });
+    expect(firstText(emptyOwn[0])).toBe("");
+  });
+
   it("map 为空/undefined 时两侧都不动", () => {
     const messages: ChatMessage[] = [userMsg("sk-abc")];
     applySensitiveInMessages(messages, undefined);
@@ -242,6 +253,27 @@ describe("restoreUrlsInOutput", () => {
 
   it("空 map 原样返回", () => {
     expect(restoreUrlsInOutput({ a: "[u0]" }, new Map())).toEqual({ a: "[u0]" });
+  });
+});
+
+describe("hasImageBlocks", () => {
+  it("user/assistant 含图 → true；纯文本与 toolResult 不算（与 stripImageBlocks 跳过规则一致，轮 15 #11）", () => {
+    expect(
+      hasImageBlocks([
+        userMsg("q"),
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "s" },
+            { kind: "image", mimeType: "image/png", base64: "A" },
+          ],
+        },
+      ]),
+    ).toBe(true);
+    expect(hasImageBlocks([userMsg("q")])).toBe(false);
+    expect(
+      hasImageBlocks([{ role: "toolResult", toolCallId: "t", toolName: "n", text: "img" }]),
+    ).toBe(false);
   });
 });
 

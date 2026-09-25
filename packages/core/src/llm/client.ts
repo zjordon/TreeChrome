@@ -14,6 +14,7 @@ import {
   applySensitiveInMessages,
   cloneWorkMessages,
   hasImageBlocks,
+  replaceSensitiveDeep,
   replaceSensitiveText,
   restoreSensitiveInOutput,
   restoreUrlsInOutput,
@@ -58,19 +59,22 @@ const CHAT_HTTP_TIMEOUT_DEFAULT_MS = 600_000;
 export interface GetActionOptions {
   /**
    * 敏感值表：真实值 → 占位符。请求侧替换、响应 toolInput 还原（03 §3.3）。
-   * **缺省风险显式标注（轮 14 #2）**：toolResult 文本不在替换范围（P5 parity，
-   * 见 applySensitiveInMessages 注释）——工具输出中的敏感值会**明文出站**，
-   * sensitiveMap 不覆盖全部出站文本；需阻断时显式传 redactToolResults:true。
-   * P4 接 SecretProvider 时评估缺省翻转为 secure-by-default
+   * **缺省风险显式标注（轮 14 #2）**：工具载荷（toolResult 文本与
+   * assistant.toolCalls[].args）不在替换范围（P5 parity，见 applySensitiveInMessages
+   * 注释）——其中的敏感值会**明文出站**，sensitiveMap 不覆盖全部出站内容；需阻断
+   * 时显式传 redactToolPayloads:true。P4 接 SecretProvider 时评估缺省翻转为
+   * secure-by-default
    */
   sensitiveMap?: Record<string, string>;
   /**
-   * 为 true 时 toolResult 文本同样做敏感值占位（real→placeholder，作用于 work
-   * 副本不动调用方消息；模型回显占位符时响应侧还原自然闭合）。缺省 false 维持
-   * P5 parity（Python 只处理 text block）——明文出站路径仅 WARNING 可观测；
-   * 合规宿主可即刻阻断泄露。P4 接 SecretProvider 时统一收口此开关。
+   * 为 true 时**工具载荷**（toolResult 文本 + assistant.toolCalls[].args）同样做
+   * 敏感值占位（作用于 work 副本不动调用方消息；模型回显占位符时响应侧还原自然
+   * 闭合）。缺省 false 维持 P5 parity（Python 只处理 text block）——工具载荷的
+   * 敏感值会明文出站仅 WARNING 可观测（含 okResult 还原后的真实 args 随历史回放
+   * 的泄露链路）；合规宿主可即刻阻断。P4 接 SecretProvider 时统一收口此开关
+   * 与缺省姿态。
    */
-  redactToolResults?: boolean;
+  redactToolPayloads?: boolean;
   /**
    * 本次 getAction 的墙钟预算（毫秒）。梯子内全部请求与 sleep 共享。
    * 调用契约：无 timeoutMs 且未 setCallWindow 时梯子**总时长无内部上界**（对齐
@@ -288,29 +292,44 @@ export class LLMClient {
       const urlMap = shortenUrlsInMessages(work);
       const sensitive = opts.sensitiveMap;
       applySensitiveInMessages(work, sensitive);
-      // toolResult 文本默认不在占位范围（P5 parity，见 applySensitiveInMessages
-      // 注释）——命中敏感 real 值时按 redactToolResults 分流：缺省明文出站但留
-      // WARNING（暴露可观测，P4 SecretProvider 收口）；opt-in 则占位阻断泄露。
-      // 单趟遍历：检测命中时即时替换（对未命中文本恒等，检测/替换不分离）
+      // 工具载荷（toolResult 文本 + assistant.toolCalls[].args）默认不在占位范围
+      //（P5 parity，见 applySensitiveInMessages 注释）——命中敏感 real 值时按
+      // redactToolPayloads 分流：缺省明文出站但留 WARNING（暴露可观测，P4
+      // SecretProvider 收口）；opt-in 则占位阻断泄露。单趟遍历：检测命中时即时
+      // 替换（对未命中载荷恒等，检测/替换不分离）。args 的泄露链路：okResult 把
+      // 占位符还原为真实值 → 调用方回灌 assistant 历史 → 下一轮 args 明文出站
       if (sensitive !== undefined) {
         const reals = Object.keys(sensitive).filter((real) => real !== "");
         const leaking: string[] = [];
         for (const m of work) {
-          if (m.role === "toolResult" && reals.some((real) => m.text.includes(real))) {
-            leaking.push(m.toolName);
-            if (opts.redactToolResults === true) {
-              m.text = replaceSensitiveText(m.text, sensitive);
+          if (m.role === "toolResult") {
+            if (reals.some((real) => m.text.includes(real))) {
+              leaking.push(m.toolName);
+              if (opts.redactToolPayloads === true) {
+                m.text = replaceSensitiveText(m.text, sensitive);
+              }
+            }
+            continue;
+          }
+          if (m.role === "assistant") {
+            for (const call of m.toolCalls ?? []) {
+              if (reals.some((real) => JSON.stringify(call.args).includes(real))) {
+                leaking.push(`${call.name}.args`);
+                if (opts.redactToolPayloads === true) {
+                  call.args = replaceSensitiveDeep(call.args, sensitive);
+                }
+              }
             }
           }
         }
         if (leaking.length > 0) {
-          if (opts.redactToolResults === true) {
+          if (opts.redactToolPayloads === true) {
             this.deps.log(
-              `[llm] toolResult(${leaking.join(", ")}) 敏感值已占位（redactToolResults）`,
+              `[llm] 工具载荷(${leaking.join(", ")}) 敏感值已占位（redactToolPayloads）`,
             );
           } else {
             this.deps.log(
-              `[llm] WARNING: toolResult(${leaking.join(", ")}) 文本包含敏感值，将以明文出站（toolResult 不在占位范围，redactToolResults:true 可阻断；P4 接 SecretProvider 时收口）`,
+              `[llm] WARNING: 工具载荷(${leaking.join(", ")}) 包含敏感值，将以明文出站（toolResult/args 不在占位范围，redactToolPayloads:true 可阻断；P4 接 SecretProvider 时收口）`,
             );
           }
         }

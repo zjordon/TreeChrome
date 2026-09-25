@@ -242,7 +242,11 @@ function parseResponse(
 
 export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmDeps>): LLMProvider {
   const capabilities = resolveCapabilities(config);
-  // 合成 id 的实例级自增序号（跨响应唯一；每 provider 从 0 起）
+  // 合成 id 的实例级随机盐 + 自增序号（轮 15 #14）：fallback 切换
+  //（client.ts trySwitchToFallback）会在会话中途重建 provider 实例，纯自增
+  // 序号会在同一会话内复用 id（历史已存 gemini-call-0 时新实例再产出同 id）——
+  // 盐前缀保证跨实例唯一（宿主可能以 toolCallId 作跨回合键）
+  const synthSalt = Math.random().toString(36).slice(2, 8);
   let synthSeq = 0;
   // schema 清洗事件告警的去重集：工具 schema 逐请求固定，同一事件重复告警只有
   // 噪音；每条一次即保留「约束被清洗丢失」的排障线索。设条数上限防动态工具
@@ -308,7 +312,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
       json,
       requestedNames,
       deps.log,
-      () => `gemini-call-${synthSeq++}`,
+      () => `gemini-call-${synthSalt}-${synthSeq++}`,
       config.name,
     );
   };

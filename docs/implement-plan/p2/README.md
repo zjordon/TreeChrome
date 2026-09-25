@@ -313,3 +313,17 @@ smoke 产物摘要：
 - **测试基建（#1/#4/#5/#6）**：makeHangingBodyFetch 补无 signal fail-fast 守卫（与 hangUntilAbort 口径对称）；setupClockWithLogs 收敛第 4 处内联构造；assertOk 辅助收敛 kind 收窄样板；blocked（gemini promptFeedback，非 infra 第三分支）触发 fallback 切换的行为层对称用例。
 
 测试 252 例全绿（覆盖率 98.86%）。
+
+### 评审轮 15（review-p2-llm-client-15.json，2026-09-25，17 条）
+
+采纳 17 条。要点：
+
+- **args 泄露链收口（#7，敏感值家族最隐蔽的一条）**：assistant.toolCalls[].args 不在占位范围且零观测——okResult 把占位符还原为真实值 → 调用方回灌 assistant 历史 → 下一轮 args 明文出站（比 toolResult 更隐蔽，连 WARNING 都没有）。按轮 12/14 先例对称处理：WARNING 检测 + opt-in 深层占位（`replaceSensitiveDeep` 与还原侧同款游走）；**开关由 redactToolResults 更名 redactToolPayloads**（分支未合并，更名零成本）以覆盖 args 语义。
+- **type 枚举校验（#17）+ 约束键标量校验（#13）**：`type: "STRING"/"str"` 等合法字符串但非法枚举值原样透传是 400 形态——小写归一命中发射、否则删除上报；约束键 pattern（string）/minLength/maxLength/minimum/maximum/minItems/maxItems（有限数值，**修正了评审建议片段自身把 minLength/maxLength 当 string 的笔误**——官方口径 int64）病态值删除上报。
+- **合成 id 实例盐（#14）**：fallback 切换在会话中途重建 provider 实例，纯自增序号会跨实例复用 id（宿主以 toolCallId 作跨回合键则冲突）——`gemini-call-${salt}-${seq}`，测试锚定改 salt 模式断言 + 跨实例唯一用例。
+- **删除语义空文本兜底（#8）**：空占位符把整块文本滤成空串会打破轮 13 的非空文本不变量、适配器二次校验错误归因到调用方——降级 `[redacted]`（仅原始非空且滤后为空，不掩蔽调用方自带违例）。
+- **围栏正则去 /s（#16，未登记 parity 漂移的回收）**：Python 基线 `.` 不匹配换行，我们的 /s 属无登记漂移——去掉后逐字对齐（多行围栏对象落三级解析，结果等价）。
+- **工具与契约（#1/#9/#3/#15）**：fallback 类型 `Omit<ProviderConfig, "fallback">` 禁嵌套（类型收口「至多一档」不变量）；cloneWorkMessages 防御性拷贝 toolCalls（args 深层替换不再可能泄漏回调用方消息）；MASK_QUERY_RE 值容忍空白（token 含空格不残留明文）；smoke 缺 key 改 exitCode 模式（管道重定向下 stderr 不丢）。
+- **杂项（#2/#4/#5/#6/#10/#11/#12）**：注释常量名修正（RETRY_AFTER_CAP_MS）；两处 `== null` 改显式双分支；http.test 内联桩复用 makeHangingBodyFetch + AbortSignal.abort；整数键重排限制注释；hasImageBlocks 直接用例；errors.test name 精确断言（派生式 + Error 后缀——评审建议的派生式本身漏后缀，已修正）。
+
+测试 258 例全绿（覆盖率 98.68%）。

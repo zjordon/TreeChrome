@@ -15,7 +15,7 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
     return Promise.reject(spec.networkError);
   }
   if ("hangUntilAbort" in spec) {
-    if (signal == null) {
+    if (signal === null || signal === undefined) {
       // fail-fast（轮 13 #1）：无 signal 的挂起永不 settle，只会拖到 vitest 5s
       // 超时——与队列耗尽/时钟不收敛的显式报错口径对称
       return Promise.reject(
@@ -121,7 +121,7 @@ export function makeHangingBodyFetch(
         return new Promise<string>((_resolve, reject) => {
           // fail-fast（与 MockFetch hangUntilAbort 同款，轮 14 #1）：无 signal 的
           // 挂起永不 settle，只会拖到 vitest 5s 超时
-          if (init?.signal == null) {
+          if (init?.signal === null || init?.signal === undefined) {
             reject(
               new Error(
                 "makeHangingBodyFetch 需请求携带 AbortSignal（timeoutMs/窗口/外部取消），否则 text() 永不 settle",

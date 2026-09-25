@@ -5,7 +5,7 @@ export interface LLMErrorOptions {
   provider: string;
   /** HTTP 状态码（网络层错误无） */
   status?: number;
-  /** 可解析的 Retry-After（毫秒，已封顶 RETRY_AFTER_CAP_SEC=60s） */
+  /** 可解析的 Retry-After（毫秒，已封顶：http.ts RETRY_AFTER_CAP_MS = 60_000） */
   retryAfterMs?: number;
   cause?: unknown;
 }

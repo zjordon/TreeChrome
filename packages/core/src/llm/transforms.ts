@@ -57,8 +57,11 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
 /**
  * 敏感值文本替换的单一实现（轮 13 #10）：滤空 real 键 + 回调式 replaceAll
  * 防 $ 替换模式 + 按对象插入序（键有包含关系时顺序影响结果，Python dict 序
- * 等价，锚定测试覆盖正反两序）。请求侧占位 / R4 回显占位 / redactToolResults
+ * 等价，锚定测试覆盖正反两序）。请求侧占位 / R4 回显占位 / redactToolPayloads
  * 三处共用，防语义失同步。
+ * 注意（轮 15 #10）：整数形态键（纯数字敏感值，如卡号）会被 JS 引擎重排到
+ * 枚举首位（Python dict 恒插入序）——含此类键且存在包含关系时替换序不可
+ * 依赖，宿主应避免纯数字键。
  */
 export function replaceSensitiveText(
   text: string,
@@ -77,12 +80,35 @@ export function replaceSensitiveText(
 }
 
 /**
+ * 敏感值深层替换：args 等嵌套 JSON 结构内的字符串走 real→placeholder（轮 15 #7，
+ * redactToolPayloads 的 args 分支）。与 restoreInStrings 同款游走：普通对象
+ * 递归重建、数组逐项、非普通对象（Map/Set/Date 等）与非字符串原样保留。
+ */
+export function replaceSensitiveDeep<T>(
+  value: T,
+  sensitiveMap: Record<string, string> | undefined,
+): T {
+  if (!sensitiveMap) {
+    return value;
+  }
+  const entries = Object.entries(sensitiveMap)
+    .filter(([real]) => real !== "")
+    .map(([real, placeholder]) => [real, placeholder] as const);
+  if (entries.length === 0) {
+    return value;
+  }
+  return restoreInStrings(value, entries) as T;
+}
+
+/**
  * 敏感值占位：TextBlock 文本内 real→placeholder。
  * 就地改写 work 消息；map 为空/undefined 时不动。
  *
  * 已知取舍（对齐 Python `_filter_sensitive_in_messages` 只处理 type=text block）：
- * toolResult.text **不占位**——工具输出中的敏感值会明文发往端点。Python 原实现
- * 如此（P5 parity），修约属上游契约变更；P4 接 SecretProvider 时一并裁决。
+ * toolResult.text 与 assistant.toolCalls[].args **不占位**——工具输出与回灌的
+ * 真实 args 会明文发往端点（client.ts 以 WARNING + redactToolPayloads 分流兜底，
+ * 后者覆盖两者的 opt-in 占位）。Python 原实现如此（P5 parity），修约属上游
+ * 契约变更；P4 接 SecretProvider 时一并裁决。
  */
 export function applySensitiveInMessages(
   messages: ChatMessage[],
@@ -93,14 +119,19 @@ export function applySensitiveInMessages(
   }
   // 空字符串 real 键会让 replaceAll 逐字符插入占位符（无声损坏全文）——宿主侧
   // 失误防御（Python 不滤）。空占位符条目**保留**：语义即删除敏感值
-  //（replaceAll(real, '')，Python 同款不可逆语义），还原侧无从恢复、跳过该条
+  //（replaceAll(real, '')，Python 同款不可逆语义），还原侧无从恢复、跳过该条。
+  // 删除结果为空串时降级 "[redacted]"：空文本块会打破 canonical 非空不变量
+  //（types.ts 轮 13 #6），适配器二次校验抛出的违例会错误归因到调用方历史
   for (const msg of messages) {
     if (msg.role === "toolResult") {
       continue;
     }
     for (const block of msg.blocks) {
       if (block.kind === "text") {
-        block.text = replaceSensitiveText(block.text, sensitiveMap);
+        const replaced = replaceSensitiveText(block.text, sensitiveMap);
+        // 仅「原始非空、删除后为空」降级 [redacted]——不掩蔽调用方自带的空文本
+        // 违例（round 13 #6 的归因仍指向调用方）
+        block.text = block.text !== "" && replaced === "" ? "[redacted]" : replaced;
       }
     }
   }
@@ -192,7 +223,9 @@ export function tryParseJson(text: string): Record<string, unknown> | undefined 
       return direct;
     }
   }
-  const fence = /```(?:json)?\s*(\{.*?\})\s*```/s.exec(stripped);
+  // 无 /s（dotAll）：Python 基线 ```(?:json)?\s*(\{.*?\})\s*``` 的 `.` 不匹配换行，
+  // 围栏内多行对象在二级不命中、落三级（首 { … 末 }）——逐字对齐（轮 15 #16）
+  const fence = /```(?:json)?\s*(\{.*?\})\s*```/.exec(stripped);
   if (fence !== null) {
     const parsed = parseJsonObject(fence[1]);
     if (parsed !== undefined) {
@@ -251,6 +284,16 @@ export function cloneWorkMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((msg) => {
     if (msg.role === "toolResult") {
       return { ...msg };
+    }
+    if (msg.role === "assistant") {
+      return {
+        ...msg,
+        blocks: msg.blocks.map((b) => (b.kind === "text" ? { ...b } : b)),
+        // toolCalls 防御性拷贝（数组 + 调用对象 + args 顶层，轮 15 #9）：请求侧
+        // 变换扩展到 args 时（redactToolPayloads 的深层替换）原地改写不会泄漏
+        // 回调用方原始消息——「变换只落在副本上（03 偏离 1）」不再靠隐式约定维持
+        toolCalls: msg.toolCalls?.map((c) => ({ ...c, args: { ...c.args } })),
+      };
     }
     return {
       ...msg,

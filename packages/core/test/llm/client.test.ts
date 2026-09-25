@@ -315,7 +315,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
   });
 
-  it("redactToolResults:true → toolResult 文本占位出站（明文阻断）；模型回显占位符经还原闭合（轮 12 #4）", async () => {
+  it("redactToolPayloads:true → toolResult 文本占位出站（明文阻断）；模型回显占位符经还原闭合（轮 12 #4）", async () => {
     const { mock, logs, client } = setupWithLogs();
     mock.queueMany(toolOk({ next_goal: "used <KEY>", action: { name: "done" } }));
     const messages: ChatMessage[] = [
@@ -325,7 +325,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     ];
     const r = await client.getAction("sys", messages, TOOL, {
       sensitiveMap: { "sk-secret": "<KEY>" },
-      redactToolResults: true,
+      redactToolPayloads: true,
     });
     const wire = JSON.stringify(mock.lastBody());
     expect(wire).not.toContain("sk-secret"); // 占位阻断，不再明文出站
@@ -334,6 +334,49 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     const ok = assertOk(r);
     // 模型回显占位符 → 响应 toolInput 还原为真实值（往返闭合）
     expect(ok.toolInput.next_goal).toBe("used sk-secret");
+  });
+
+  it("历史 args 含敏感值（okResult 还原回灌的泄露链）→ 缺省 WARNING / redactToolPayloads 深层占位（轮 15 #7）", async () => {
+    const history: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "text", text: "q" }] },
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [
+          {
+            id: "t1",
+            name: TOOL.name,
+            args: { creds: "sk-secret", nested: { token: "sk-secret" } },
+          },
+        ],
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "ok" },
+    ];
+
+    // 缺省：args 明文出站 + WARNING 可观测
+    const plain = setupWithLogs();
+    plain.mock.queueMany(toolOk({ done: 1 }));
+    await plain.client.getAction("sys", history, TOOL, {
+      sensitiveMap: { "sk-secret": "<KEY>" },
+    });
+    expect(JSON.stringify(plain.mock.lastBody().messages)).toContain("sk-secret");
+    expect(plain.logs.some((m) => m.includes("WARNING") && m.includes("args"))).toBe(true);
+
+    // opt-in：深层占位（嵌套对象内的字符串同样替换），调用方原始消息不被改动
+    const redact = setupWithLogs();
+    redact.mock.queueMany(toolOk({ done: 1 }));
+    await redact.client.getAction("sys", history, TOOL, {
+      sensitiveMap: { "sk-secret": "<KEY>" },
+      redactToolPayloads: true,
+    });
+    const wire = JSON.stringify(redact.mock.lastBody().messages);
+    expect(wire).not.toContain("sk-secret");
+    expect(wire).toContain("<KEY>");
+    const callerCall = history[1];
+    if (callerCall.role !== "assistant") {
+      throw new Error("unreachable");
+    }
+    expect(callerCall.toolCalls?.[0]?.args.creds).toBe("sk-secret"); // 原消息未动（副本替换）
   });
 
   it("R4 回显文本复用敏感值占位（Python 递归重跑 filter 的 parity 对齐，轮 12 #5）", async () => {

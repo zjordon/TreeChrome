@@ -148,6 +148,34 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     expect(sanitizeGeminiSchema({ type: ["null"] })).toEqual({ type: "string", nullable: true });
   });
 
+  it("type 字符串值枚举校验：PascalCase/小写归一，未知值删除并上报（轮 15 #17）", () => {
+    const issues: string[] = [];
+    expect(sanitizeGeminiSchema({ type: "STRING" }, (d) => issues.push(d))).toEqual({
+      type: "string",
+    });
+    expect(sanitizeGeminiSchema({ type: "str" }, (d) => issues.push(d))).toEqual({});
+    expect(issues).toEqual([
+      "type「STRING」归一化为小写 string",
+      'type「"str"」不在官方枚举集，删除该键',
+    ]);
+  });
+
+  it("约束键标量类型校验：pattern/minLength 非字符串、minimum/minItems 非有限数值删除并上报（轮 15 #13）", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema(
+        { pattern: 123, minLength: true, minimum: "5", minItems: Number.NaN },
+        (d) => issues.push(d),
+      ),
+    ).toEqual({});
+    expect(issues).toEqual([
+      "约束键「pattern」非字符串，删除该键：123",
+      "约束键「minlength」非有限数值，删除该键：true",
+      '约束键「minimum」非有限数值，删除该键："5"',
+      "约束键「minitems」非有限数值，删除该键：null",
+    ]);
+  });
+
   it("单值 type:'null' 与数组含非字符串病态元素 → 同一兜底路径收口（'null' 不在 Gemini 枚举内）", () => {
     expect(sanitizeGeminiSchema({ type: "null" })).toEqual({ type: "string", nullable: true });
     expect(sanitizeGeminiSchema({ type: ["null", 5] })).toEqual({ type: "string", nullable: true });
@@ -581,8 +609,16 @@ describe("响应解析（wire → canonical）", () => {
       text: "answer",
       reasoningText: "hmm",
       toolCalls: [
-        { id: "gemini-call-0", name: "agent_response", args: { a: 1 } },
-        { id: "gemini-call-1", name: "agent_response", args: { b: 2 } },
+        {
+          id: expect.stringMatching(/^gemini-call-[a-z0-9]{6}-0$/),
+          name: "agent_response",
+          args: { a: 1 },
+        },
+        {
+          id: expect.stringMatching(/^gemini-call-[a-z0-9]{6}-1$/),
+          name: "agent_response",
+          args: { b: 2 },
+        },
       ],
       stopReason: "tool_call",
       usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3 },
@@ -614,7 +650,11 @@ describe("响应解析（wire → canonical）", () => {
     });
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([
-      { id: "gemini-call-0", name: "agent_response", args: { ok: 1 } },
+      {
+        id: expect.stringMatching(/^gemini-call-[a-z0-9]{6}-0$/),
+        name: "agent_response",
+        args: { ok: 1 },
+      },
     ]);
     expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
     expect(logs.some((m) => m.includes("丢弃形态异常的 functionCall"))).toBe(true);
@@ -647,15 +687,19 @@ describe("响应解析（wire → canonical）", () => {
       fnCallOk({}),
     );
     const first = await provider.chat(baseReq());
-    expect(first.toolCalls).toEqual([
-      { id: "gemini-call-0", name: "agent_response", args: { a: 1 }, signature: "sig-1" },
-    ]);
+    expect(first.toolCalls[0]?.id).toMatch(/^gemini-call-[a-z0-9]{6}-0$/);
+    expect(first.toolCalls[0]?.signature).toBe("sig-1");
     await provider.chat({
       systemPrompt: null,
       messages: [
         { role: "user", blocks: [{ kind: "text", text: "q" }] },
         { role: "assistant", blocks: [], toolCalls: first.toolCalls },
-        { role: "toolResult", toolCallId: "gemini-call-0", toolName: "agent_response", text: "ok" },
+        {
+          role: "toolResult",
+          toolCallId: first.toolCalls[0]!.id,
+          toolName: "agent_response",
+          text: "ok",
+        },
       ],
       tools: [TOOL],
     });
@@ -680,13 +724,24 @@ describe("响应解析（wire → canonical）", () => {
     });
   });
 
+  it("跨实例盐唯一（fallback 切换重建 provider 后 id 不复用，轮 15 #14）", async () => {
+    const a = setup();
+    a.mock.queueMany(fnCallOk({}));
+    const b = setup();
+    b.mock.queueMany(fnCallOk({}));
+    const ra = await a.provider.chat(baseReq());
+    const rb = await b.provider.chat(baseReq());
+    expect(ra.toolCalls[0]?.id).not.toBe(rb.toolCalls[0]?.id); // 不同实例不同盐
+  });
+
   it("合成 id 跨响应持续自增（宿主可能以 toolCallId 作跨回合键，不碰撞）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(fnCallOk({}), fnCallOk({}));
     const first = await provider.chat(baseReq());
     const second = await provider.chat(baseReq());
-    expect(first.toolCalls[0]?.id).toBe("gemini-call-0");
-    expect(second.toolCalls[0]?.id).toBe("gemini-call-1");
+    // 同实例同盐自增；跨实例（fallback 重建）不同盐不碰撞（轮 15 #14）
+    expect(first.toolCalls[0]?.id).toMatch(/^gemini-call-[a-z0-9]{6}-0$/);
+    expect(second.toolCalls[0]?.id).toMatch(/^gemini-call-[a-z0-9]{6}-1$/);
   });
 
   it("只有被丢弃的 functionCall（非请求名）→ stopReason 按 finishReason 归一，不因丢弃变形", async () => {
@@ -730,8 +785,16 @@ describe("响应解析（wire → canonical）", () => {
     });
     const res = await provider.chat(baseReq());
     expect(res.toolCalls).toEqual([
-      { id: "gemini-call-0", name: "agent_response", args: {} },
-      { id: "gemini-call-1", name: "agent_response", args: {} },
+      {
+        id: expect.stringMatching(/^gemini-call-[a-z0-9]{6}-0$/),
+        name: "agent_response",
+        args: {},
+      },
+      {
+        id: expect.stringMatching(/^gemini-call-[a-z0-9]{6}-1$/),
+        name: "agent_response",
+        args: {},
+      },
     ]);
   });
 

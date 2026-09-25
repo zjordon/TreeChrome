@@ -35,8 +35,9 @@ export interface ProviderConfig {
   maxTokensField?: "max_tokens" | "max_completion_tokens";
   /** 宿主注入（代理/网关） */
   extraHeaders?: Record<string, string>;
-  /** fallback 卡片：完整独立 ProviderConfig（可跨协议），单向切换，至多一档 */
-  fallback?: ProviderConfig | null;
+  /** fallback 卡片：完整独立卡片（可跨协议），单向切换，至多一档——类型上禁止
+   *  再嵌套 fallback（嵌套会被消费侧静默忽略，轮 15 #1 以类型收口该不变量） */
+  fallback?: Omit<ProviderConfig, "fallback"> | null;
 }
 
 /**

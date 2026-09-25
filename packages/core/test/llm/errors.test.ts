@@ -29,7 +29,9 @@ describe("错误类层级", () => {
     for (const [label, err] of mk()) {
       expect(err, label).toBeInstanceOf(LLMError);
       expect(err, label).toBeInstanceOf(Error);
-      expect(err.name, label).toMatch(/^LLM/);
+      // 精确锁定 name（轮 15 #12）：拼写错误或写重时前缀断言不红——name 是
+      // JSON.stringify/日志分类的公共可观测契约
+      expect(err.name, label).toBe(`LLM${label[0].toUpperCase()}${label.slice(1)}Error`);
     }
   });
 
