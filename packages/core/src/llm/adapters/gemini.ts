@@ -34,8 +34,9 @@ import {
 import { postJson } from "./http.js";
 import { sanitizeGeminiSchema } from "./schema-sanitize.js";
 
-/** schema 清洗事件去重集条数上限（防动态 schema 无界增长；上限后新事件静默） */
-const SCHEMA_ISSUE_DEDUP_MAX = 128;
+/** schema 清洗事件去重集条数上限（防动态 schema 无界增长；上限后新事件静默）。
+ *  导出仅为测试锚定派生（轮 29 #5 常量单源） */
+export const SCHEMA_ISSUE_DEDUP_MAX = 128;
 
 function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
   return blocks.map((b) => {
@@ -206,11 +207,13 @@ function parseResponse(
       } else {
         text += part.text;
       }
-      // 不 continue（轮 28 #4）：官方 proto Part 内容域为 oneof（text 与 functionCall
-      // 互斥）此路径端点不可达，但转换型网关可能产出并存 part——continue 会静默
-      // 丢弃并存 functionCall（本函数唯一无证据的丢弃路径）；纯 text part 的
-      // functionCall 为 undefined，下方分支自然跳过
+    } else if (part.text !== undefined) {
+      // 存在但非 string 的畸形 text 域留证据（轮 29 #2）：undefined 是 functionCall
+      // part 的正常形态不告警，仅「存在但形态异常」（如网关产出 text:123）丢弃留证
+      log(`[llm] gemini 丢弃形态异常的 text part（text 非 string）：${stringifyForLog(part.text)}`);
     }
+    // 官方 proto Part 内容域为 oneof（text 与 functionCall 互斥）——并存形态由
+    // 转换型网关产出时两者都处理（轮 28 #4：continue 会静默丢弃并存 functionCall）
     if (isRecord(part.functionCall)) {
       const name = part.functionCall.name;
       if (typeof name !== "string") {

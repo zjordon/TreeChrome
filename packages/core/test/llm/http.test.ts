@@ -2,7 +2,12 @@
 // 直接对 postJson/parseRetryAfterMs/isAbortError 断言（不经适配器）；
 // 适配器测试只保留 provider 集成路径的矩阵（状态→类型经适配器走通即可）。
 import { describe, expect, it } from "vitest";
-import { isAbortError, parseRetryAfterMs, postJson } from "../../src/llm/adapters/http.js";
+import {
+  ERROR_DETAIL_MAX,
+  isAbortError,
+  parseRetryAfterMs,
+  postJson,
+} from "../../src/llm/adapters/http.js";
 import {
   LLMAuthError,
   LLMConnectionError,
@@ -99,14 +104,14 @@ describe("postJson 状态→错误类与错误体提取", () => {
     expect((err as Error).message).toContain(expected);
   });
 
-  it("非 JSON 长 error 页 → 原文截断到 500 字符（rawBody 形态）", async () => {
+  it(`非 JSON 长 error 页 → 原文截断到 ERROR_DETAIL_MAX（${ERROR_DETAIL_MAX}，常量单源轮 29 #10）`, async () => {
     const mock = new MockFetch();
-    const long = "x".repeat(600);
+    const long = "x".repeat(ERROR_DETAIL_MAX + 100);
     mock.queueMany({ status: 502, rawBody: long, headers: { "content-type": "text/plain" } });
     const err = await post(mock).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LLMServerError);
-    expect((err as LLMServerError).message).toBe(`HTTP 502: ${long.slice(0, 500)}`);
-    expect((err as LLMServerError).message.length).toBe("HTTP 502: ".length + 500);
+    expect((err as LLMServerError).message).toBe(`HTTP 502: ${long.slice(0, ERROR_DETAIL_MAX)}`);
+    expect((err as LLMServerError).message.length).toBe("HTTP 502: ".length + ERROR_DETAIL_MAX);
   });
 
   it("空错误体（body 缺失）→ 消息只有状态码", async () => {
@@ -157,16 +162,18 @@ describe("postJson 成功与网络层", () => {
     expect((err as Error).message).toContain("<html>oops");
   });
 
-  it("2xx 非 JSON 长响应体 → 消息截断在 ERROR_DETAIL_MAX=500（阈值统一，轮 22 #4；网关 200 回整页 HTML 时不无上限膨胀）", async () => {
+  it(`2xx 非 JSON 长响应体 → 消息截断在 ERROR_DETAIL_MAX（阈值统一，轮 22 #4；网关 200 回整页 HTML 时不无上限膨胀）`, async () => {
     const mock = new MockFetch();
     mock.queueMany({
       status: 200,
-      rawBody: `<html>${"x".repeat(600)}`,
+      rawBody: `<html>${"x".repeat(ERROR_DETAIL_MAX + 100)}`,
       headers: { "content-type": "text/html" },
     });
     const err = await post(mock).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LLMProtocolViolationError);
-    expect((err as Error).message.length).toBeLessThanOrEqual("响应体不是合法 JSON：".length + 500);
+    expect((err as Error).message.length).toBeLessThanOrEqual(
+      "响应体不是合法 JSON：".length + ERROR_DETAIL_MAX,
+    );
     expect((err as Error).message).toContain("<html>");
   });
 

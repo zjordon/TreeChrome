@@ -128,6 +128,15 @@ describe("shortenUrlsInMessages（Python 锚定：tag 分配顺序 = 首次出�
     expect(firstText(messages[0])).toBe("打开 [u0]，然后点击按钮。");
   });
 
+  it("URL 直接紧邻表意字符（无标点无空白）→ 尾界截断不吞中文（轮 29 #7 补 \\p{Script=Han}）", () => {
+    const messages = [userMsg(`打开${U0}然后点击按钮`)];
+    const map = shortenUrlsInMessages(messages);
+    // 旧排除集只覆盖全角标点——无标点紧邻时匹配仍从 URL 延伸吞掉「然后……」
+    // 直到句末（偏离 10 要修的同款失败形态，仅触发条件不同）
+    expect(map).toEqual(new Map([["[u0]", U0]]));
+    expect(firstText(messages[0])).toBe("打开[u0]然后点击按钮");
+  });
+
   it("ASCII 尾随标点保持 Python \\S+ 同款吞入（尾界偏离仅限全角，与上一用例对偶，轮 18 #9）", () => {
     const messages = [userMsg(`see ${U0}.`)];
     const map = shortenUrlsInMessages(messages);

@@ -197,10 +197,20 @@ export class LLMClient {
   private loggedImageFilter = false;
   /** 致盲 WARNING 的实例级去重（未声明主卡带图出站的首次提示） */
   private loggedBlindImageSend = false;
-  /** systemPrompt 敏感命中 WARNING 的实例级去重（轮 18 #3） */
-  private loggedSystemPromptLeak = false;
-  /** sensitiveMap 病态配置（整数键/占位符冲突）WARNING 的实例级去重（轮 20 #10/#14） */
-  private loggedSensitiveMapConfigWarn = false;
+  /** systemPrompt 敏感命中 WARNING 的按 map 去重（轮 18 #3；轮 29 #6 改 WeakSet）：
+   *  (systemPrompt, sensitiveMap) 是 per-call 输入，单一布尔会让首个命中掩蔽后续
+   *  不同 map 的命中——按 map 身份去重，同一 map 跨步复用只告警一次（防刷屏），
+   *  新 map 各自获得一次告警机会 */
+  private readonly loggedSystemPromptLeaks = new WeakSet<object>();
+  /** sensitiveMap 四类病态 WARNING 的分类去重（轮 20 #10/#14；轮 29 #4 拆分）：
+   *  sensitiveMap 是 per-call 选项，单一总标志会让首次命中的类别掩蔽后续调用中
+   *  其它类别的病态（跨调用对齐轮 21 #8「防一类病态掩盖另一类」的意图） */
+  private readonly warnedSensitiveMapPathology = {
+    intKey: false,
+    conflict: false,
+    crossConflict: false,
+    urlTagCollision: false,
+  };
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
@@ -272,11 +282,10 @@ export class LLMClient {
    *    okResult 同序还原（先 URL 后敏感）会把模型输出中的该占位符先消费成
    *    长 URL，敏感还原失配，真实值永不还原且被 URL 顶替。
    * reals 滤空串键（轮 25 #6，与工具载荷/systemPrompt 检测同口径）：空 real
-   * 全链路从不参与替换，其占位符计入冲突集会误报并误消费一次性去重标志 */
+   * 全链路从不参与替换，其占位符计入冲突集会误报并误消费去重标志。
+   * 去重按四类各自独立（轮 29 #4）：sensitiveMap 是 per-call 选项，单一总标志
+   * 会让首次命中的类别掩蔽后续调用中其它类别的病态 */
   private warnSensitiveMapPathologies(sensitive: Record<string, string>): void {
-    if (this.loggedSensitiveMapConfigWarn) {
-      return;
-    }
     const reals = Object.keys(sensitive).filter((real) => real !== "");
     const ARRAY_INDEX_KEY_RE = /^(?:0|[1-9]\d*)$/;
     const isArrayIndexKey = (real: string): boolean =>
@@ -298,28 +307,29 @@ export class LLMClient {
       );
     });
     const hasUrlTagCollision = placeholders.some((ph) => /^\[u\d+\]$/.test(ph));
-    if (hasIntKey) {
+    if (hasIntKey && !this.warnedSensitiveMapPathology.intKey) {
+      this.warnedSensitiveMapPathology.intKey = true;
       this.deps.log(
         "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（≤10 位非负数字串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
       );
     }
-    if (hasConflict) {
+    if (hasConflict && !this.warnedSensitiveMapPathology.conflict) {
+      this.warnedSensitiveMapPathology.conflict = true;
       this.deps.log(
         "[llm] WARNING: sensitiveMap 存在占位符冲突（多个真实值映射到同一占位符）——还原侧先插入者胜、后续条目静默失效，还原结果可能张冠李戴",
       );
     }
-    if (hasCrossConflict) {
+    if (hasCrossConflict && !this.warnedSensitiveMapPathology.crossConflict) {
+      this.warnedSensitiveMapPathology.crossConflict = true;
       this.deps.log(
         "[llm] WARNING: sensitiveMap 存在交叉冲突（占位符与另一条目的真实值存在包含关系）——顺序替换形成替换链，占位与还原双向静默数据损坏",
       );
     }
-    if (hasUrlTagCollision) {
+    if (hasUrlTagCollision && !this.warnedSensitiveMapPathology.urlTagCollision) {
+      this.warnedSensitiveMapPathology.urlTagCollision = true;
       this.deps.log(
         "[llm] WARNING: sensitiveMap 占位符形如 [uN]，与 URL 缩写 tag 撞型——还原侧先 URL 后敏感，占位符会被长 URL 顶替、真实值丢失，请改用其他占位符形态",
       );
-    }
-    if (hasIntKey || hasConflict || hasCrossConflict || hasUrlTagCollision) {
-      this.loggedSensitiveMapConfigWarn = true;
     }
   }
 
@@ -387,15 +397,16 @@ export class LLMClient {
       const sensitive = opts.sensitiveMap;
       applySensitiveInMessages(work, sensitive);
       // systemPrompt 不在占位范围（三适配器原样透传，轮 18 #3 核实）且连命中
-      // WARNING 都没有——与工具载荷/滤图/致盲的可观测姿态对齐：命中留一次性
-      // WARNING（实例级去重），宿主误写密钥时至少有运行时证据；消息文本不含
-      // 告警内容，观测通道自身不泄露明文
+      // WARNING 都没有——与工具载荷/滤图/致盲的可观测姿态对齐：命中留 WARNING
+      //（按 map 身份去重：同一 map 跨步复用只告警一次，新 map 各自告警一次，
+      // 轮 29 #6），宿主误写密钥时至少有运行时证据；消息文本不含告警内容，
+      // 观测通道自身不泄露明文
       if (
         sensitive !== undefined &&
-        !this.loggedSystemPromptLeak &&
+        !this.loggedSystemPromptLeaks.has(sensitive) &&
         Object.keys(sensitive).some((real) => real !== "" && systemPrompt.includes(real))
       ) {
-        this.loggedSystemPromptLeak = true;
+        this.loggedSystemPromptLeaks.add(sensitive);
         this.deps.log(
           "[llm] WARNING: systemPrompt 含 sensitiveMap 命中值，将明文出站（systemPrompt 不在占位范围，由宿主自担）",
         );

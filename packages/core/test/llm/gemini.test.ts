@@ -3,7 +3,7 @@
 // 真机差异等有 key 实测后修订（README 风险 3——验收以 mock 为准，标注待实测）。
 import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
-import { createGeminiProvider } from "../../src/llm/adapters/gemini.js";
+import { createGeminiProvider, SCHEMA_ISSUE_DEDUP_MAX } from "../../src/llm/adapters/gemini.js";
 import { sanitizeGeminiSchema } from "../../src/llm/adapters/schema-sanitize.js";
 import {
   LLMBlockedError,
@@ -621,11 +621,11 @@ describe("请求构造（canonical → wire）", () => {
     expect(droppedKeys).toEqual(["$schema", "additionalproperties"]);
   });
 
-  it("去重集条数上限（128）：动态 schema 的无界增长封顶——上限后新事件静默", async () => {
+  it(`去重集条数上限（SCHEMA_ISSUE_DEDUP_MAX=${SCHEMA_ISSUE_DEDUP_MAX}）：动态 schema 的无界增长封顶——上限后新事件静默`, async () => {
     const { mock, logs, provider } = setupLogs();
-    // 130 个唯一属性名（各产生一条唯一清洗事件）→ 仅前 128 条告警
+    // 上限 + 2 个唯一属性名（各产生一条唯一清洗事件）→ 仅前 SCHEMA_ISSUE_DEDUP_MAX 条告警
     const dynamicProps: Record<string, unknown> = {};
-    for (let i = 0; i < 130; i += 1) {
+    for (let i = 0; i < SCHEMA_ISSUE_DEDUP_MAX + 2; i += 1) {
       dynamicProps[`p${i}`] = i; // 非对象子 schema → 每属性一条唯一事件
     }
     const tool = { ...TOOL, parameters: { type: "object", properties: dynamicProps } };
@@ -637,7 +637,7 @@ describe("请求构造（canonical → wire）", () => {
     });
     // 只计 schema 清洗事件（与姊妹用例的过滤口径对齐）：适配器未来新增的无关
     // 日志不应误红本断言
-    expect(logs.filter((m) => m.includes("schema 清洗")).length).toBe(128);
+    expect(logs.filter((m) => m.includes("schema 清洗")).length).toBe(SCHEMA_ISSUE_DEDUP_MAX);
   });
 
   it("maxTokens 请求级覆盖与 temperature 显式", async () => {
@@ -889,6 +889,32 @@ describe("响应解析（wire → canonical）", () => {
     expect(res.text).toBe("prefix");
     expect(res.toolCalls).toHaveLength(1);
     expect(res.toolCalls[0].name).toBe("agent_response");
+  });
+
+  it("text 存在但非 string 的畸形 part → 丢弃留证据；undefined 不告警（轮 29 #2）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: {
+              role: "model",
+              // text:123 是网关畸形形态；functionCall part 无 text 域是正常形态
+              parts: [{ text: 123 }, { functionCall: { name: "agent_response", args: {} } }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.text).toBe(""); // 畸形 text 不进拼接
+    expect(res.toolCalls).toHaveLength(1); // 正常 functionCall 不受影响
+    expect(logs.some((m) => m.includes("丢弃形态异常的 text part"))).toBe(true);
+    // functionCall part 的 text 缺失（undefined）是正常形态，不产生告警
+    expect(logs.filter((m) => m.includes("丢弃形态异常的 text part"))).toHaveLength(1);
   });
 
   it("丢弃类事件留告警 + 病态分支覆盖：非请求名 / name 非字符串 / functionCall 非对象 / args 非对象（轮 12 #12）", async () => {

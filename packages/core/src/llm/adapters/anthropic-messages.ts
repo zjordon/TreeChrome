@@ -182,8 +182,17 @@ function parseResponse(
     if (!isRecord(item)) {
       continue;
     }
-    if (item.type === "text" && typeof item.text === "string") {
-      text += item.text;
+    if (item.type === "text") {
+      // 形态异常留证据（轮 29 #1）：type:"text" 但 text 非 string 的畸形块原先被
+      // 内联条件静默丢弃——与 tool_use 形态异常（轮 16 #11）口径对齐，这是本函数
+      // 唯一无证据的丢弃路径
+      if (typeof item.text === "string") {
+        text += item.text;
+      } else {
+        log(
+          `[llm] anthropic 丢弃形态异常的 text 块（text 非 string）：${stringifyForLog(item.text)}`,
+        );
+      }
     } else if (item.type === "thinking" && typeof item.thinking === "string") {
       reasoningText += item.thinking;
     } else if (item.type === "tool_use") {

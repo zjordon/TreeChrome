@@ -33,6 +33,11 @@ export interface ProviderConfig {
   /** openai 专属：输出上限字段名。缺省 "max_tokens"；
    *  OpenAI 新契约模型（gpt-5/4.1/o 系）须声明 "max_completion_tokens" */
   maxTokensField?: "max_tokens" | "max_completion_tokens";
+  /** openai 专属：温度抑制开关（轮 29 #3）。缺省走 TEMPERATURE_UNSUPPORTED_PREFIX
+   *  前缀启发式（o 系/gpt-5 全系只接受默认温度 1，发送即 400）；前缀会误命中同前缀
+   *  的自定义/网关模型名（o1-finetune 等实际支持温度）——显式 false 恢复发送，
+   *  显式 true 对未入清单的新模型强制抑制（与 maxTokensField 同款逃生门） */
+  temperatureSuppressed?: boolean;
   /** 宿主注入（代理/网关） */
   extraHeaders?: Record<string, string>;
   /** fallback 卡片：完整独立卡片（可跨协议），单向切换，至多一档——类型上禁止

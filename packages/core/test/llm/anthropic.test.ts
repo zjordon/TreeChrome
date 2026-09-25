@@ -559,6 +559,24 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
   });
 
+  it("type:text 但 text 非 string 的畸形块 → 丢弃留证据（原先内联条件静默吞，轮 29 #1）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        content: [
+          { type: "text", text: 123 },
+          { type: "text", text: "ok" },
+        ],
+        stop_reason: "end_turn",
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.text).toBe("ok"); // 合法块不受影响，畸形块不进拼接
+    expect(logs.some((m) => m.includes("丢弃形态异常的 text 块"))).toBe(true);
+  });
+
   it.each([
     ["end_turn", "stop"],
     ["stop_sequence", "stop"],

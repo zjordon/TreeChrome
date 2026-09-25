@@ -494,3 +494,15 @@ smoke 产物摘要：
 - **smoke 可观测（#1/#2）**：文件头 SMOKE_* 变量清单补 SMOKE_TIMEOUT_MS（「对照」注释承诺与事实不符）；SMOKE_TIMEOUT_MS 空串归一为 unset（`VAR= node` 形态不再误报「非法值」，与 baseUrl/model 的 `||` 口径一致）。
 
 测试 318 例全绿（覆盖率 98.38%）。
+
+### 评审轮 29（review-p2-llm-client-29.json，2026-09-25，10/10 采纳）
+
+采纳 10 条。要点：
+
+- **三协议畸形内容留证据对齐（#1/#2/#8）**：anthropic type:text 但 text 非 string、gemini text 存在但非 string（undefined 是 functionCall part 正常形态不告警）、openai message.content 存在但非 string/null/undefined（null=纯工具回合 benign）——三处原先都是内联条件静默丢弃，文本丢失只见空响应无线索；三协议「丢弃留证据」口径至此闭环。
+- **去重粒度修正（#4/#6，跨调用掩蔽真缺口）**：四类病态检测拆分独立去重标志（sensitiveMap 是 per-call 选项，单一总标志让首调整数键掩蔽次调占位符冲突）；systemPrompt 泄露改 WeakSet 按 map 身份去重（同一 map 跨步一次防刷屏，新 map 各自一次）——轮 18 旧用例同步改同 map 引用。
+- **temperatureSuppressed 逃生门（#3）**：TEMPERATURE_UNSUPPORTED_PREFIX 前缀会误命中 o1-finetune 等自定义模型（注释已自知），误命中时温度静默抑制且无配置手段恢复——ProviderConfig 增显式覆盖字段（与 maxTokensField 同款逃生门）。
+- **URL 尾界补 CJK 表意字符（#7，偏离 10 目标内的真缺口）**：旧排除集只覆盖全角标点——URL 直接紧邻表意字符（无标点无空白，如 `打开${url}然后点击`）时匹配仍吞掉后续中文直到句末，正是偏离 10 要修的失败形态；补 \p{Script=Han}/假名/谚文（u flag），03 §4 偏离 10 同步修订（代价：裸 CJK 路径 IRI 截断，取舍同前）。
+- **常量单源（#5/#9/#10）**：SCHEMA_ISSUE_DEDUP_MAX 导出 + 测试派生（128/130 双硬编码消除）；ERROR_DETAIL_MAX 导入派生（common.test/http.test 共 4 处 500 硬编码消除）。
+
+测试 324 例全绿（覆盖率 98.49%）。

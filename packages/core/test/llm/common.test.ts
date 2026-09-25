@@ -12,6 +12,7 @@ import {
   stripTrailingSlash,
   temperatureEntry,
 } from "../../src/llm/adapters/common.js";
+import { ERROR_DETAIL_MAX } from "../../src/llm/adapters/http.js";
 import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
 import type { ChatRequest } from "../../src/llm/types.js";
 
@@ -128,9 +129,9 @@ describe("stringifyForLog", () => {
     expect(stringifyForLog(undefined)).toBe("undefined");
   });
 
-  it("超长输入截断 500（与 http.ts ERROR_DETAIL_MAX 同源）", () => {
-    const long = "x".repeat(600);
-    expect(stringifyForLog(long)).toHaveLength(500);
+  it(`超长输入截断到 ERROR_DETAIL_MAX（${ERROR_DETAIL_MAX}，常量单源轮 29 #9）`, () => {
+    const long = "x".repeat(ERROR_DETAIL_MAX + 100);
+    expect(stringifyForLog(long)).toHaveLength(ERROR_DETAIL_MAX);
   });
 });
 

@@ -305,6 +305,25 @@ describe("请求构造（canonical → wire）", () => {
       expect(dual.mock.lastBody()).toHaveProperty("max_completion_tokens");
     }
 
+    // temperatureSuppressed 逃生门（轮 29 #3）：前缀误命中自定义/网关模型时
+    // 显式 false 恢复发送；显式 true 对任意模型强制抑制——与 maxTokensField 同款
+    const escapeHatch = setup({
+      model: "o1-finetune",
+      temperature: 0.3,
+      temperatureSuppressed: false,
+    });
+    escapeHatch.mock.queueMany(toolOk("{}"));
+    await escapeHatch.provider.chat(baseReq());
+    expect(escapeHatch.mock.lastBody().temperature).toBe(0.3);
+    const forced = setup({
+      model: "some-new-model",
+      temperature: 0.3,
+      temperatureSuppressed: true,
+    });
+    forced.mock.queueMany(toolOk("{}"));
+    await forced.provider.chat(baseReq());
+    expect(forced.mock.lastBody()).not.toHaveProperty("temperature");
+
     // 抑制可观测（轮 21 #11）：配置了 temperature 却被忽略 → 一次性 WARNING
     //（与「两级缺省不发」不同，静默忽略无线索）；未配置则零告警
     const suppressed = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
@@ -537,6 +556,43 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("丢弃形态异常的 tool_call") && m.includes("bad1"))).toBe(
       true,
     );
+  });
+
+  it("message.content 存在但非 string/null/undefined → 折叠空文本但留证据；null（纯工具回合）不告警（轮 29 #8）", async () => {
+    const partsForm = setupLogs();
+    partsForm.mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            // 转换型网关回传 content-parts 数组形态
+            message: { role: "assistant", content: [{ type: "text", text: "hi" }] },
+            finish_reason: "stop",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await partsForm.provider.chat(baseReq());
+    expect(res.text).toBe(""); // 非 string 折叠为空文本
+    expect(partsForm.logs.some((m) => m.includes("丢弃形态异常的 message.content"))).toBe(true);
+
+    const nullForm = setupLogs();
+    nullForm.mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            // null = 纯工具调用回合的合法形态
+            message: { role: "assistant", content: null, tool_calls: [] },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    await nullForm.provider.chat(baseReq());
+    expect(nullForm.logs.some((m) => m.includes("丢弃形态异常的 message.content"))).toBe(false);
   });
 
   it("arguments 缺失/null/空串兜底 {}（兼容端点无参工具形态，与 anthropic/gemini 口径对齐）", async () => {

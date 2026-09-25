@@ -505,22 +505,20 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     );
   });
 
-  it("systemPrompt 敏感命中 → 一次性 WARNING 可观测（不在占位范围、明文出站由宿主自担，轮 18 #3）", async () => {
+  it("systemPrompt 敏感命中 → 按 map 去重 WARNING 可观测（不在占位范围、明文出站由宿主自担，轮 18 #3；轮 29 #6 改按身份）", async () => {
     const { mock, logs, client } = setupWithLogs();
     mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
-    await client.getAction("use sk-secret wisely", msgs(), TOOL, {
-      sensitiveMap: { "sk-secret": "<KEY>" },
-    });
+    const sensitiveMap = { "sk-secret": "<KEY>" };
+    await client.getAction("use sk-secret wisely", msgs(), TOOL, { sensitiveMap });
     const hits = logs.filter((m) => m.includes("systemPrompt"));
     expect(hits).toHaveLength(1);
     expect(hits[0]).toContain("WARNING");
     // systemPrompt 原样出站（占位只覆盖 messages 的 TextBlock）
     expect(JSON.stringify(mock.lastBody())).not.toContain("<KEY>");
     expect(JSON.stringify(mock.lastBody())).toContain("sk-secret");
-    // 实例级去重：第二次调用不重复告警
-    await client.getAction("use sk-secret wisely", msgs(), TOOL, {
-      sensitiveMap: { "sk-secret": "<KEY>" },
-    });
+    // 按 map 身份去重（轮 29 #6）：同一 map 对象跨调用只告警一次（新 map 各自一次
+    // 的锚定见姊妹用例）
+    await client.getAction("use sk-secret wisely", msgs(), TOOL, { sensitiveMap });
     expect(logs.filter((m) => m.includes("systemPrompt"))).toHaveLength(1);
     // 观测通道自身不泄露明文
     expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
@@ -609,6 +607,30 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       sensitiveMap: { "secret-key": "**key**", key: "<PIN>" },
     });
     expect(substring.logs.some((m) => m.includes("WARNING") && m.includes("交叉冲突"))).toBe(true);
+  });
+
+  it("四类病态跨调用独立去重：首调整数键不再掩蔽次调占位符冲突（轮 29 #4）", async () => {
+    const { mock, client, logs } = setupWithLogs();
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 1 }));
+    await client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "1234": "<A>" },
+    });
+    await client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { realA: "<X>", realB: "<X>" },
+    });
+    expect(logs.some((m) => m.includes("数组索引键"))).toBe(true);
+    expect(logs.some((m) => m.includes("占位符冲突"))).toBe(true);
+  });
+
+  it("systemPrompt 泄露按 map 身份去重：同一 map 一次、新 map 各自一次（轮 29 #6）", async () => {
+    const { mock, client, logs } = setupWithLogs();
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 1 }), toolOk({ done: 1 }));
+    const mapA = { "sk-a": "<A>" };
+    await client.getAction("use sk-a here", msgs(), TOOL, { sensitiveMap: mapA });
+    await client.getAction("use sk-a again", msgs(), TOOL, { sensitiveMap: mapA }); // 同 map 不重复
+    await client.getAction("use sk-b here", msgs(), TOOL, { sensitiveMap: { "sk-b": "<B>" } });
+    const leaks = logs.filter((m) => m.includes("systemPrompt 含 sensitiveMap 命中值"));
+    expect(leaks).toHaveLength(2); // mapA 一次 + mapB 一次
   });
 });
 
