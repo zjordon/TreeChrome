@@ -2,7 +2,8 @@
 // 各发一次最小 agent_response 强制调用，打印请求体摘要（key 脱敏）/响应 toolInput/usage/耗时。
 // 手动跑，不入 CI（费用与密钥纪律）：GLM_API_KEY=xxx node tools/llm-smoke.mjs
 // 模型/端点可用 SMOKE_OPENAI_MODEL / SMOKE_ANTHROPIC_MODEL / SMOKE_OPENAI_BASE_URL /
-// SMOKE_ANTHROPIC_BASE_URL 覆盖（模型以账号可用为准；baseUrl 供代理/网关验收）。
+// SMOKE_ANTHROPIC_BASE_URL 覆盖（模型以账号可用为准；baseUrl 供代理/网关验收）；
+// 梯子墙钟预算可用 SMOKE_TIMEOUT_MS 覆盖（正数毫秒，缺省 60s；含重试退避，慢网络可调大）。
 // gemini 不在本次 smoke（无 key；2.4 验收以 mock 为准，README 风险 3 顺延）。
 //
 // 宿主侧脚本（tools/ 不受核心包边界约束，可读 process.env）；核心代码经 esbuild
@@ -210,7 +211,9 @@ async function main() {
   // 梯子墙钟预算（解析梯子含 R4/R1 重试与退避，慢网络/慢模型 60s 可能不够）。
   // 非法值显式告警后回退：静默回退会让「配置未生效」在 60s 超时处被误导向端点问题。
   // 用解析有效性标志（非值比较）判定回退——显式合法值恰等于缺省值不该误告警
-  const rawTimeoutEnv = process.env.SMOKE_TIMEOUT_MS;
+  // || 归一空串为 unset（轮 28 #2，与上方 baseUrl/model 的 `VAR= node` 口径一致），
+  // 避免变量空置形态被误报为「非法值」
+  const rawTimeoutEnv = process.env.SMOKE_TIMEOUT_MS || undefined;
   const rawTimeoutMs = Number(rawTimeoutEnv);
   const isValidTimeout = Number.isFinite(rawTimeoutMs) && rawTimeoutMs > 0;
   const timeoutMs = isValidTimeout ? rawTimeoutMs : DEFAULT_SMOKE_TIMEOUT_MS;

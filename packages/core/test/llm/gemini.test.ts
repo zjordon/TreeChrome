@@ -771,6 +771,27 @@ describe("请求构造（canonical → wire）", () => {
     );
   });
 
+  it("image 块 mimeType 别名归一：image/jpg → image/jpeg（normalizeImageMime 单源，轮 28 #3）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", mimeType: "image/jpg", base64: "AAAA" },
+          ],
+        },
+      ],
+      tools: null,
+    });
+    const contents = mock.lastBody().contents as Array<Record<string, unknown>>;
+    const parts = contents[0].parts as Array<Record<string, unknown>>;
+    expect((parts[1].inlineData as Record<string, unknown>).mimeType).toBe("image/jpeg");
+  });
+
   it("baseUrl 整段误配官方端点（含 /v1beta）→ 如实拼接 + 一次性告警（轮 24 #4，与 anthropic /v1 同族）", async () => {
     // 官方文档 URL 本身以 /v1beta 结尾，整段复制进卡片会拼出 /v1beta/v1beta → 404
     const plain = setupLogs();
@@ -844,6 +865,30 @@ describe("响应解析（wire → canonical）", () => {
       stopReason: "tool_call",
       usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3 },
     });
+  });
+
+  it("text 与 functionCall 并存的畸形 part → 两者都处理（转换型网关形态，轮 28 #4：旧 continue 静默丢弃并存调用）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: {
+              role: "model",
+              // 官方 proto oneof 互斥、端点不可达——转换型网关可能产出此形态
+              parts: [{ text: "prefix", functionCall: { name: "agent_response", args: {} } }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.text).toBe("prefix");
+    expect(res.toolCalls).toHaveLength(1);
+    expect(res.toolCalls[0].name).toBe("agent_response");
   });
 
   it("丢弃类事件留告警 + 病态分支覆盖：非请求名 / name 非字符串 / functionCall 非对象 / args 非对象（轮 12 #12）", async () => {

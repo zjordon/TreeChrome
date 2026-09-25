@@ -96,6 +96,12 @@ export function makeOnceWarn(log: (message: string) => void): (message: string) 
   };
 }
 
+/** image 媒体类型别名归一（轮 28 #3/#5 单源化）：image/jpg 是 jpeg 的常见别名，
+ * anthropic/gemini 官方均为封闭枚举、裸透传即 400——三适配器共用防 mime 口径漂移 */
+export function normalizeImageMime(mimeType: string): string {
+  return mimeType === "image/jpg" ? "image/jpeg" : mimeType;
+}
+
 /**
  * 丢弃类日志的安全串化（轮 17 #5/#6/#14/#15）：网关畸形输出长度无上限，直接
  * stringify 会无界膨胀日志；JSON.stringify(undefined) 返回 undefined（非字符串）

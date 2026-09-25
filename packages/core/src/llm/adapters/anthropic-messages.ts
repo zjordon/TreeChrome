@@ -21,6 +21,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  normalizeImageMime,
   resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
@@ -37,11 +38,10 @@ function blocksToContent(blocks: ContentBlock[]): Array<Record<string, unknown>>
     } else if (b.kind === "image") {
       // anthropic 官方 media_type 是封闭枚举（jpeg/png/gif/webp）：image/jpg 等
       // 常见别名裸透传即 400（不可重试且烧 fallback 切换）——别名归一收口
-      //（轮 27 #1；白名单外 mime 的丢弃留证据口径待后续按需收口）
-      const mediaType = b.mimeType === "image/jpg" ? "image/jpeg" : b.mimeType;
+      //（轮 27 #1；轮 28 #3 提取 normalizeImageMime 三适配器单源）
       content.push({
         type: "image",
-        source: { type: "base64", media_type: mediaType, data: b.base64 },
+        source: { type: "base64", media_type: normalizeImageMime(b.mimeType), data: b.base64 },
       });
     } else {
       // 穷尽断言（轮 21 #6）：ContentBlock 联合扩展新成员（types.ts 注释明示

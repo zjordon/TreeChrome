@@ -484,3 +484,13 @@ smoke 产物摘要：
 - **结构与测试收敛（#3/#4/#5/#10/#11）**：/v1 告警补阴性对照（三协议误配守卫至此全部有回归防护）；16384 硬编码改引用 DEFAULT_MAX_TOKENS（值锁定收敛到 config.test 一处）；sensitiveMap 四类病态检测提取私有方法 warnSensitiveMapPathologies（getActionInner 已超 300 行）；resolveMaxTokens 补合法值零回调阴性对照；openai 两前缀清单的分叉成员（gpt-4.1/gpt-oss：新上限字段 + 温度照发）锁定温度维度，防清单被「统一」后静默丢温控。
 
 测试 315 例全绿（覆盖率 98.37%）。
+
+### 评审轮 28（review-p2-llm-client-28.json，2026-09-25，5/5 采纳）
+
+采纳 5 条。要点：
+
+- **image mime 别名归一单源化（#3/#5）**：轮 27 #1 只在 anthropic 收口，gemini inlineData 与 openai data-URL 两处漏网——提取 common.normalizeImageMime 三适配器共用（anthropic 字面量同步替换），防 mime 口径三处漂移；gemini/openai 各补 image/jpg wire 锚定。
+- **gemini text-part 去除 continue（#4）**：官方 proto Part 内容域 oneof 互斥、端点不可达，但转换型网关可能产出 {text, functionCall} 并存 part——旧 continue 是该函数唯一无证据的丢弃路径；去除后并存 functionCall 自然由下方分支处理（纯 text part 不受影响），补并存形态用例。
+- **smoke 可观测（#1/#2）**：文件头 SMOKE_* 变量清单补 SMOKE_TIMEOUT_MS（「对照」注释承诺与事实不符）；SMOKE_TIMEOUT_MS 空串归一为 unset（`VAR= node` 形态不再误报「非法值」，与 baseUrl/model 的 `||` 口径一致）。
+
+测试 318 例全绿（覆盖率 98.38%）。

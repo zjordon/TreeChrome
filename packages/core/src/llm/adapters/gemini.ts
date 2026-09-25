@@ -24,6 +24,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  normalizeImageMime,
   resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
@@ -42,7 +43,9 @@ function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
       return { text: b.text };
     }
     if (b.kind === "image") {
-      return { inlineData: { mimeType: b.mimeType, data: b.base64 } };
+      // mimeType 别名归一（轮 28 #3）：gemini 官方受校验的封闭枚举，image/jpg
+      // 裸透传有 400 风险——normalizeImageMime 三适配器单源
+      return { inlineData: { mimeType: normalizeImageMime(b.mimeType), data: b.base64 } };
     }
     // 穷尽断言（轮 21 #6）：联合扩展新成员时编译期报错（同 anthropic blocksToContent）
     const _exhaustive: never = b;
@@ -203,7 +206,10 @@ function parseResponse(
       } else {
         text += part.text;
       }
-      continue;
+      // 不 continue（轮 28 #4）：官方 proto Part 内容域为 oneof（text 与 functionCall
+      // 互斥）此路径端点不可达，但转换型网关可能产出并存 part——continue 会静默
+      // 丢弃并存 functionCall（本函数唯一无证据的丢弃路径）；纯 text part 的
+      // functionCall 为 undefined，下方分支自然跳过
     }
     if (isRecord(part.functionCall)) {
       const name = part.functionCall.name;

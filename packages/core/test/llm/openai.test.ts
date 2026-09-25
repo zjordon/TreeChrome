@@ -324,6 +324,26 @@ describe("请求构造（canonical → wire）", () => {
     expect(quiet.logs.filter((m) => m.includes("只接受默认温度"))).toHaveLength(0);
   });
 
+  it("image 块 mimeType 别名归一：image/jpg → data:image/jpeg（normalizeImageMime 单源，轮 28 #5）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk("{}"));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", mimeType: "image/jpg", base64: "AAAA" },
+          ],
+        },
+      ],
+      tools: [TOOL],
+    });
+    const wire = JSON.stringify(mock.lastBody().messages);
+    expect(wire).toContain("data:image/jpeg;base64,AAAA");
+  });
+
   it("baseUrl 整段端点 URL 误配（以 /chat/completions 结尾）→ 如实拼接 + 一次性告警（轮 26 #2，与 anthropic /v1、gemini /v1beta 同族）", async () => {
     // 官方 curl 示例端点以 /chat/completions 结尾，整段复制进卡片拼出双重路径 → 404
     const plain = setupLogs();

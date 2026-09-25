@@ -23,6 +23,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  normalizeImageMime,
   resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
@@ -79,7 +80,11 @@ function userContent(blocks: ContentBlock[]): string | Array<Record<string, unkn
       return { type: "text", text: b.text };
     }
     if (b.kind === "image") {
-      return { type: "image_url", image_url: { url: `data:${b.mimeType};base64,${b.base64}` } };
+      // mimeType 别名归一（轮 28 #5）：与 anthropic/gemini 同口径（normalizeImageMime 单源）
+      return {
+        type: "image_url",
+        image_url: { url: `data:${normalizeImageMime(b.mimeType)};base64,${b.base64}` },
+      };
     }
     const _exhaustive: never = b;
     return _exhaustive;
