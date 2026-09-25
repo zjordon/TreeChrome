@@ -286,6 +286,20 @@ describe("请求构造（canonical → wire）", () => {
     expect(warnings[0]).toContain("glm-openai"); // 卡片归因
   });
 
+  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #12，双轨字段同守卫）", async () => {
+    const { mock, logs, provider } = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
+      maxTokens: Number.NaN,
+    });
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat(baseReq());
+    await provider.chat(baseReq());
+    expect(mock.bodyAt(0).max_tokens).toBe(16384); // NaN 序列化 null 是端点硬 400
+    expect(mock.bodyAt(1).max_tokens).toBe(16384);
+    const warnings = logs.filter((m) => m.includes("maxTokens"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("glm-openai");
+  });
+
   it("o 系模型抑制 temperature（只接受默认温度，轮 14 #10）；gpt-4o 照常发送", async () => {
     const oSeries = setup({ model: "o3-mini", temperature: 0.2 });
     oSeries.mock.queueMany(toolOk("{}"));
@@ -376,6 +390,35 @@ describe("响应解析（wire → canonical）", () => {
       logs.some((m) => m.includes("arguments 解析失败，丢弃调用") && m.includes("agent_response")),
     ).toBe(true);
     expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
+  });
+
+  it('arguments "null" 字符串兜底 {}（网关字符串化的 null args 与原生 null 同义，轮 18 #7）', async () => {
+    const { mock, provider } = setup();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "c1",
+                  type: "function",
+                  function: { name: "agent_response", arguments: "null" },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toEqual([{ id: "c1", name: "agent_response", args: {} }]);
+    expect(res.stopReason).toBe("tool_call"); // 不再按解析失败丢弃
   });
 
   it('tool_call 缺失/空 id → 丢弃（回传历史 tool_call_id="" 会被官方端点 400）', async () => {

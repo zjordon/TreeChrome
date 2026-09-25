@@ -250,6 +250,25 @@ describe("请求构造（canonical → wire）", () => {
     expect(warnings[0]).toContain("glm-anthropic"); // 卡片归因
   });
 
+  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #10）", async () => {
+    const { mock, logs, provider } = setupProviderWithLogs(createAnthropicProvider, CARD, {
+      maxTokens: Number.NaN,
+    });
+    mock.queueMany(toolOk({}), toolOk({}));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    await provider.chat(req);
+    await provider.chat(req);
+    expect(mock.bodyAt(0).max_tokens).toBe(16384); // NaN 序列化 null 是端点硬 400
+    expect(mock.bodyAt(1).max_tokens).toBe(16384);
+    const warnings = logs.filter((m) => m.includes("maxTokens"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("glm-anthropic");
+  });
+
   it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));

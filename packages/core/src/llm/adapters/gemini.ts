@@ -23,6 +23,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
   temperatureEntry,
@@ -270,6 +271,8 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   };
   // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
   const onTemperatureClamp = makeOnceWarn(deps.log);
+  // maxTokens 非法回退的实例级一次性告警（轮 18 #11）
+  const onMaxTokensInvalid = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
@@ -308,7 +311,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
           }
         : {}),
       generationConfig: {
-        maxOutputTokens: req.maxTokens ?? config.maxTokens,
+        maxOutputTokens: resolveMaxTokens(req, config, onMaxTokensInvalid),
         // temperature 回退链（common.temperatureEntry）；两级缺省不发
         ...temperatureEntry(req, config, onTemperatureClamp),
       },

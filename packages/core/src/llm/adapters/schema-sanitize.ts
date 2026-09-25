@@ -49,8 +49,20 @@ const EMIT_KEY: Record<string, string> = {
  */
 const GEMINI_FORMATS = new Set(["enum", "date-time", "float", "double", "int32", "int64"]);
 
-/** type 官方封闭枚举（大小写敏感，轮 15 #17）：值小写归一后校验，未命中删除 */
+/** type 官方封闭枚举（大小写敏感，轮 15 #17）：值小写归一后校验，未命中兜底
+ * string（轮 18 #1：端点要求节点显式 type，删键产出无 type schema 同为 400） */
 const GEMINI_TYPES = new Set(["string", "number", "integer", "boolean", "array", "object"]);
+
+/** format 按 type 限定的官方分域（轮 18 #8）：全集校验之外，「值在全集但 type
+ * 域外」的组合（{type:"number",format:"date-time"}）同样是 400 形态 */
+const FORMATS_BY_TYPE: Record<string, ReadonlySet<string>> = {
+  string: new Set(["enum", "date-time"]),
+  number: new Set(["float", "double"]),
+  integer: new Set(["int32", "int64"]),
+};
+
+/** boolean/array/object 无任何合法 format（分域表缺项 = 全部删除） */
+const NO_FORMATS: ReadonlySet<string> = new Set();
 
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((t) => typeof t === "string");
@@ -70,32 +82,41 @@ export function sanitizeGeminiSchema(
     }
     if (normalized === "type" && (Array.isArray(value) || value === "null")) {
       // JSON Schema 联合类型 type: ["string","null"] / 单值 "null" → 取首个非 null
-      // 字符串 + nullable（Gemini Schema.type 只收单个字符串枚举，"null" 不在枚举
-      // 内、数组形态会被拒收——三种形态统一收口，元素非字符串的病态值跳过取兜底）
+      // 成员 + nullable（Gemini Schema.type 只收单个字符串枚举，"null" 不在枚举
+      // 内、数组形态会被拒收）。端点要求每个 schema 节点显式 type（"missing a
+      // type" 400，轮 18 #1 web 核实 livekit/agents#5044）——任何病态形态都兜底
+      // 合法枚举、不删键；成员逐一过标量枚举口径（小写归一、非法跳过），首个
+      // 合法成员胜出（比盲目兜底 string 更保真：["str","object"] 取 object）
       const list = Array.isArray(value) ? value : [value];
       const nonNull = list.filter((t) => typeof t === "string" && t !== "null");
-      const first = nonNull[0];
+      const skipped: string[] = [];
+      let chosen: string | undefined;
+      for (const t of nonNull) {
+        const lowered = t.toLowerCase();
+        if (!GEMINI_TYPES.has(lowered)) {
+          skipped.push(t);
+          continue;
+        }
+        if (lowered !== t) {
+          onSchemaIssue?.(`type「${t}」归一化为小写 ${lowered}`);
+        }
+        chosen = lowered;
+        break;
+      }
+      if (skipped.length > 0) {
+        onSchemaIssue?.(`type 成员「${skipped.join("、")}」不在官方枚举集，跳过`);
+      }
       if (nonNull.length > 1) {
         // 联合窄化同样丢约束（string|number → string），与删键同口径上报
-        onSchemaIssue?.(`type 联合窄化 ${nonNull.join("|")} → ${first}`);
+        onSchemaIssue?.(`type 联合窄化 ${nonNull.join("|")} → ${chosen ?? "string"}`);
       }
-      if (first === undefined) {
-        // 全 null/病态元素：兜底合法枚举避免产出无 type 的 schema——兜底同样是
-        // 约束丢失，与联合窄化同口径上报（轮 16 #10），否则此路径无排障线索
+      if (chosen === undefined) {
+        // 全 null/病态/非法枚举成员：兜底合法枚举——兜底同样是约束丢失，与联合
+        // 窄化同口径上报（轮 16 #10），否则此路径无排障线索
         onSchemaIssue?.("type 全 null/病态元素，兜底为 string");
         out.type = "string";
       } else {
-        // 联合窄化结果复用标量分支的枚举校验/归一口径（轮 17 #13）：数组内的
-        // PascalCase/非法枚举值同样会被端点 400，原样透传是清洗闭环的盲区
-        const lowered = first.toLowerCase();
-        if (!GEMINI_TYPES.has(lowered)) {
-          onSchemaIssue?.(`type「${JSON.stringify(first)}」不在官方枚举集，删除该键`);
-        } else {
-          if (lowered !== first) {
-            onSchemaIssue?.(`type「${first}」归一化为小写 ${lowered}`);
-          }
-          out.type = lowered;
-        }
+        out.type = chosen;
       }
       if (list.includes("null")) {
         out.nullable = true;
@@ -147,16 +168,26 @@ export function sanitizeGeminiSchema(
         }
         if (!GEMINI_TYPES.has(value)) {
           // 合法字符串但非法枚举值（PascalCase 等病态，轮 15 #17）：小写归一命中
-          // 则发射小写形态，否则删除——Gemini Schema.type 是大小写敏感封闭枚举
+          // 则发射小写形态，否则兜底 string——Gemini Schema.type 是大小写敏感封闭
+          // 枚举，且端点要求每个 schema 节点显式 type（"missing a type" 400，轮
+          // 18 #1 web 核实 livekit/agents#5044），删键产出无 type 的 schema 同样
+          // 是 400 形态（三档口径统一：非字符串/全病态数组/非法枚举都兜底）
           const lowered = value.toLowerCase();
           if (GEMINI_TYPES.has(lowered)) {
             onSchemaIssue?.(`type「${value}」归一化为小写 ${lowered}`);
             out.type = lowered;
           } else {
-            onSchemaIssue?.(`type「${JSON.stringify(value)}」不在官方枚举集，删除该键`);
+            onSchemaIssue?.(`type「${JSON.stringify(value)}」不在官方枚举集，兜底为 string`);
+            out.type = "string";
           }
           continue;
         }
+      }
+      if (normalized === "description" && typeof value !== "string") {
+        // description 是 proto string 字段，非字符串上送即 400——白名单内最后
+        // 一个未做值形态校验的标量键（轮 18 #6 补齐闭环）
+        onSchemaIssue?.(`description 非字符串，删除该键：${JSON.stringify(value)}`);
+        continue;
       }
       if (normalized === "enum" && !isStringArray(value)) {
         onSchemaIssue?.("enum 非 string[]，删除该键");
@@ -192,6 +223,16 @@ export function sanitizeGeminiSchema(
       // 写入统一用归一化（小写）键 + 多词约束键的官方 camelCase（"MaxLength" 等
       // 变体原样透传仍会被端点拒收，清洗必须闭环）
       out[EMIT_KEY[normalized] ?? normalized] = value;
+    }
+  }
+  // format 按 type 分域的收尾校验（轮 18 #8）：循环内只校验了全集成员——值在
+  // 全集但 type 域外的组合在此删除；type 缺失（调用方未写 type 键）不限定，
+  // 交由端点/真机核验（README 风险 3）
+  if (typeof out.format === "string" && typeof out.type === "string") {
+    const allowed = FORMATS_BY_TYPE[out.type] ?? NO_FORMATS;
+    if (!allowed.has(out.format)) {
+      onSchemaIssue?.(`format「${out.format}」不在 type=${out.type} 的官方支持集，删除该键`);
+      delete out.format;
     }
   }
   return out;

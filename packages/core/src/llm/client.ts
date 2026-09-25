@@ -196,6 +196,8 @@ export class LLMClient {
   private loggedImageFilter = false;
   /** 致盲 WARNING 的实例级去重（未声明主卡带图出站的首次提示） */
   private loggedBlindImageSend = false;
+  /** systemPrompt 敏感命中 WARNING 的实例级去重（轮 18 #3） */
+  private loggedSystemPromptLeak = false;
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
@@ -262,6 +264,14 @@ export class LLMClient {
     let deadlineAt: number | undefined =
       opts.timeoutMs !== undefined ? now + opts.timeoutMs : undefined;
     if (this.windowDeadline !== undefined) {
+      // 陈旧窗口可观测（轮 18 #4）：跨步复用实例漏重登记/漏清除时 deadline 已过
+      // 期，梯子首请求即被强杀恒抛 LLMTimeoutError——调用方无法区分「预算真耗尽」
+      // 与「陈旧登记」，把已知 footgun 从注释纪律变成运行时证据
+      if (this.windowDeadline <= now) {
+        this.deps.log(
+          `[llm] WARNING: setCallWindow 登记的 deadline 已过期 ${Math.round(now - this.windowDeadline)}ms，本轮梯子将立即超时（跨步复用实例应每步重登记或 setCallWindow(null) 清除）`,
+        );
+      }
       deadlineAt =
         deadlineAt === undefined ? this.windowDeadline : Math.min(deadlineAt, this.windowDeadline);
     }
@@ -303,6 +313,20 @@ export class LLMClient {
       const urlMap = shortenUrlsInMessages(work);
       const sensitive = opts.sensitiveMap;
       applySensitiveInMessages(work, sensitive);
+      // systemPrompt 不在占位范围（三适配器原样透传，轮 18 #3 核实）且连命中
+      // WARNING 都没有——与工具载荷/滤图/致盲的可观测姿态对齐：命中留一次性
+      // WARNING（实例级去重），宿主误写密钥时至少有运行时证据；消息文本不含
+      // 告警内容，观测通道自身不泄露明文
+      if (
+        sensitive !== undefined &&
+        !this.loggedSystemPromptLeak &&
+        Object.keys(sensitive).some((real) => real !== "" && systemPrompt.includes(real))
+      ) {
+        this.loggedSystemPromptLeak = true;
+        this.deps.log(
+          "[llm] WARNING: systemPrompt 含 sensitiveMap 命中值，将明文出站（systemPrompt 不在占位范围，由宿主自担）",
+        );
+      }
       // 工具载荷（toolResult 文本 + assistant.toolCalls[].args）默认不在占位范围
       //（P5 parity，见 applySensitiveInMessages 注释）——命中敏感 real 值时按
       // redactToolPayloads 分流：缺省明文出站但留 WARNING（暴露可观测，P4

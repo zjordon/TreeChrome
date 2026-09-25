@@ -126,6 +126,15 @@ describe("shortenUrlsInMessages（Python 锚定：tag 分配顺序 = 首次出�
     expect(map).toEqual(new Map([["[u0]", U0]]));
     expect(firstText(messages[0])).toBe("打开 [u0]，然后点击按钮。");
   });
+
+  it("ASCII 尾随标点保持 Python \\S+ 同款吞入（尾界偏离仅限全角，与上一用例对偶，轮 18 #9）", () => {
+    const messages = [userMsg(`see ${U0}.`)];
+    const map = shortenUrlsInMessages(messages);
+    // 句点被吞进 URL 整体换 tag——与 Python \S+ 一致（transform 注释明示「ASCII
+    // 标点保持吞入」）；防排除集日后扩到 ASCII 后与 Python 静默漂移
+    expect(map).toEqual(new Map([["[u0]", `${U0}.`]]));
+    expect(firstText(messages[0])).toBe("see [u0]");
+  });
 });
 
 describe("敏感值占位/还原（Python 锚定：包含关系键按插入序）", () => {
@@ -337,5 +346,32 @@ describe("cloneWorkMessages", () => {
     }
     expect(originalUser.blocks.length).toBe(1);
     expect(originalUser.blocks[0]).toEqual({ kind: "text", text: "a" });
+  });
+
+  it("副本不共享 toolCalls 与 args（改副本不泄漏回原消息，实现轮 15 #9，轮 18 #2 补测）", () => {
+    const original: ChatMessage[] = [
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: { a: 1 } }],
+      },
+    ];
+    const work = cloneWorkMessages(original);
+    const workAssistant = work[0];
+    if (workAssistant.role !== "assistant") {
+      throw new Error("unreachable");
+    }
+    const workCalls = workAssistant.toolCalls;
+    if (workCalls === undefined) {
+      throw new Error("unreachable");
+    }
+    workCalls.push({ id: "t2", name: AGENT_TOOL.name, args: {} });
+    workCalls[0].args.a = 2;
+    const originalAssistant = original[0];
+    if (originalAssistant.role !== "assistant") {
+      throw new Error("unreachable");
+    }
+    expect(originalAssistant.toolCalls).toHaveLength(1);
+    expect(originalAssistant.toolCalls?.[0].args).toEqual({ a: 1 });
   });
 });

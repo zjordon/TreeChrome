@@ -161,6 +161,12 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
         if (calls.some((c) => c.id === "")) {
           throw violation("assistant 的 toolCall id 为空串（端点 400 形态）");
         }
+        // name 空串：Anthropic 工具名受 ^[a-zA-Z0-9_-]{1,128}$ 约束（openai/gemini
+        // 同为必填非空）——空名 tool_use 回放历史同样烧 400；toolResult.toolName
+        // 空串经下方配对一致性校验兜住（空名调用在此已先拦截，轮 18 #13）
+        if (calls.some((c) => c.name === "")) {
+          throw violation("assistant 的 toolCall name 为空串（端点 400 形态）");
+        }
         // id→name 映射：配对校验同时要求 toolName 与 toolCall.name 一致——
         // gemini 的 functionResponse 按 name 关联，失配发到端点才 400（canonical 层拦截）
         const callsById = new Map(calls.map((c) => [c.id, c.name]));

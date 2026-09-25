@@ -20,6 +20,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
   temperatureEntry,
@@ -227,6 +228,8 @@ export function createAnthropicProvider(
   const capabilities = resolveCapabilities(config);
   // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
   const onTemperatureClamp = makeOnceWarn(deps.log);
+  // maxTokens 非法回退的实例级一次性告警（轮 18 #10）
+  const onMaxTokensInvalid = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     const url = `${stripTrailingSlash(config.baseUrl)}/v1/messages`;
@@ -247,7 +250,7 @@ export function createAnthropicProvider(
         : undefined;
     const body: Record<string, unknown> = {
       model: config.model,
-      max_tokens: req.maxTokens ?? config.maxTokens,
+      max_tokens: resolveMaxTokens(req, config, onMaxTokensInvalid),
       ...(req.systemPrompt !== null ? { system: req.systemPrompt } : {}),
       messages: toWireMessages(req.messages),
       ...(req.tools !== null && req.tools.length > 0

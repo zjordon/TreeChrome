@@ -509,6 +509,27 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       `[llm] WARNING: 工具载荷(${TOOL.name}) 包含敏感值，将以明文出站（toolResult/args 不在占位范围，redactToolPayloads:true 可阻断；P4 接 SecretProvider 时收口）`,
     );
   });
+
+  it("systemPrompt 敏感命中 → 一次性 WARNING 可观测（不在占位范围、明文出站由宿主自担，轮 18 #3）", async () => {
+    const { mock, logs, client } = setupWithLogs();
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
+    await client.getAction("use sk-secret wisely", msgs(), TOOL, {
+      sensitiveMap: { "sk-secret": "<KEY>" },
+    });
+    const hits = logs.filter((m) => m.includes("systemPrompt"));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toContain("WARNING");
+    // systemPrompt 原样出站（占位只覆盖 messages 的 TextBlock）
+    expect(JSON.stringify(mock.lastBody())).not.toContain("<KEY>");
+    expect(JSON.stringify(mock.lastBody())).toContain("sk-secret");
+    // 实例级去重：第二次调用不重复告警
+    await client.getAction("use sk-secret wisely", msgs(), TOOL, {
+      sensitiveMap: { "sk-secret": "<KEY>" },
+    });
+    expect(logs.filter((m) => m.includes("systemPrompt"))).toHaveLength(1);
+    // 观测通道自身不泄露明文
+    expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
+  });
 });
 
 describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠）", () => {
@@ -865,6 +886,19 @@ describe("deadline 与取消", () => {
     cleared.mock.queueMany(toolOk({ ok: 1 }));
     const r = await cleared.client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
+  });
+
+  it("过期窗口留 WARNING（含过期毫秒数）：陈旧登记从注释纪律变运行时可观测（轮 18 #4）", async () => {
+    const { mock, clock, logs, client } = setupClockWithLogs();
+    client.setCallWindow(1); // deadline = 1001（FakeClock 起点 1000）
+    await clock.advance(5); // t = 1005 → 登记已过期 4ms
+    mock.queueMany({ hangUntilAbort: true });
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0); // 冲刷：WARNING + deadline watcher 立即到点强杀在飞请求
+    await expect(p).rejects.toBeInstanceOf(LLMTimeoutError);
+    const warn = logs.find((m) => m.includes("已过期"));
+    expect(warn).toContain("setCallWindow");
+    expect(warn).toContain("4ms");
   });
 
   it("外部 signal 恰逢错误响应体读取 → AbortError 穿透且不消耗 fallback 单向锁（评审轮 5 #12）", async () => {

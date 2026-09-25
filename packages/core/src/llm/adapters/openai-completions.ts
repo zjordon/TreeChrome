@@ -21,6 +21,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
   temperatureEntry,
@@ -148,6 +149,11 @@ function parseArguments(raw: unknown): Record<string, unknown> | undefined {
   }
   try {
     const parsed: unknown = JSON.parse(raw);
+    if (parsed === null) {
+      // "null" 字符串（OpenAI→Gemini 转换型网关把 null args 字符串化的形态）与
+      // 原生 null 同义——兜底 {} 而非按解析失败丢弃（轮 18 #7，与上方原生 null 口径对齐）
+      return {};
+    }
     return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;
@@ -232,6 +238,8 @@ export function createOpenAICompletionsProvider(
   const capabilities = resolveCapabilities(config);
   // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
   const onTemperatureClamp = makeOnceWarn(deps.log);
+  // maxTokens 非法回退的实例级一次性告警（轮 18 #12）
+  const onMaxTokensInvalid = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     const url = `${stripTrailingSlash(config.baseUrl)}/chat/completions`;
@@ -251,7 +259,7 @@ export function createOpenAICompletionsProvider(
     const body: Record<string, unknown> = {
       model: config.model,
       messages: wireMessages,
-      [maxTokensField]: req.maxTokens ?? config.maxTokens,
+      [maxTokensField]: resolveMaxTokens(req, config, onMaxTokensInvalid),
       ...(req.tools !== null && req.tools.length > 0
         ? {
             tools: req.tools.map((t) => ({

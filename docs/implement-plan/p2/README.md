@@ -354,3 +354,17 @@ smoke 产物摘要：
 - **测试侧（#2/#3/#11/#12）**：types/transforms 两测试文件的 "agent_response" 字面量改 AGENT_TOOL.name 插值（惰性填充单一事实源）；URL_MIN_LENGTH 锚定用例从 tryParseJson 块归位 shortenUrlsInMessages 块；provider 字段断言前置 toBeInstanceOf（不抛时以 TypeError 失败而非清晰断言）。
 
 测试 273 例全绿（覆盖率 98.72%）。
+
+### 评审轮 18（review-p2-llm-client-18.json，2026-09-25，13 条）
+
+采纳 13 条。要点：
+
+- **type 兜底口径统一（#1，web 核实后统一）**：非法枚举字符串原走删键、产出无 type 的 schema——网检证实 Gemini 端点要求**每个 schema 节点显式 type**（"missing a type" 400，livekit/agents#5044、awslabs/mcp#661），删键同样是 400 形态。三档统一兜底：非字符串/全病态数组/非法枚举字符串均兜底 string；联合分支升级为**成员级校验、首个合法成员胜出**（`["str","object"]` 取 object，比盲目兜底 string 保真；非法成员跳过留独立证据）。
+- **format 按 type 分域收尾校验（#8）**：全集校验之外的盲区——值在全集但 type 域外（`{type:"number",format:"date-time"}`）原样透传；循环后按官方分域表（string: enum/date-time；number: float/double；integer: int32/int64；boolean/array/object 无合法 format）收尾删除并上报；type 缺失不限定（真机核验项）。
+- **maxTokens 有限性守卫（#10/#11/#12，三适配器同源雷）**：卡片值 NaN/Infinity/0 序列化 null 或原样上送是端点硬 400（temperature NaN 同款，轮 13 #5），三协议 max_tokens 必填不能走「缺省不发」——common.resolveMaxTokens 统一守卫（回退 DEFAULT_MAX_TOKENS + makeOnceWarn 一次性告警含卡片归因）。
+- **canonical 补 name 空串不变量（#13）**：Anthropic 工具名受 ^[a-zA-Z0-9_-]{1,128}$ 约束（openai/gemini 同为必填非空），与轮 17 id 空串对称；toolResult.toolName 空串经既有配对一致性校验兜住；01 §2.1 同步。
+- **systemPrompt 泄露可观测（#3）**：systemPrompt 不在占位范围（三适配器原样透传，已核实）且连命中 WARNING 都没有——补一次性告警（实例级去重，观测通道不含明文），与工具载荷/滤图/致盲的可观测姿态对齐。
+- **陈旧窗口可观测（#4）**：跨步复用实例漏重登记/清除时 deadline 已过期、首请求即被强杀恒抛 LLMTimeoutError——合并 deadline 处发现过期打 WARNING（含过期毫秒数），把已知 footgun 从注释纪律变成运行时证据。
+- **杂项（#2/#5/#6/#7/#9）**：cloneWorkMessages 的 toolCalls/args 副本隔离补对偶用例（轮 15 #9 实现零测试锁定）；rewriteStrings 注 null 原型对象重建会静默换原型；description 非字符串删除上报（白名单标量键值校验最后一块）；openai arguments `"null"` 字符串兜底 {}（网关字符串化 null args 与原生 null 同义，不再误报解析失败）；ASCII 尾随标点吞入行为补对偶锚定（防排除集日后扩到 ASCII 后与 Python 静默漂移）。
+
+测试 284 例全绿（覆盖率 98.77%）。

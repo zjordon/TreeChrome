@@ -161,7 +161,9 @@ function rewriteStrings(
   }
   if (isRecord(obj)) {
     // 仅递归普通对象：Map/Set/Date 等非普通对象的 entries 为空，按原逻辑重建会
-    // 静默清空成 {}（现调用点只喂纯 JSON 产物，此处防御未来复用踩坑）
+    // 静默清空成 {}（现调用点只喂纯 JSON 产物，此处防御未来复用踩坑）。
+    // 注意（轮 18 #5）：null 原型对象（Object.create(null)）按普通对象重建，产出
+    // 以 Object.prototype 为原型——复用扩展时注意原型被静默替换
     const proto = Object.getPrototypeOf(obj);
     if (proto !== Object.prototype && proto !== null) {
       return obj;

@@ -2,7 +2,7 @@
 // temperatureEntry。折叠连续 toolResult、块形状转换等协议差异逻辑不在此抽象
 //（改一漏二的风险主要来自逐字重复的小件与完全同构的探测逻辑）。
 
-import type { ProviderConfig } from "../config.js";
+import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
 import type { LlmProtocol } from "../provider.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
 import { ERROR_DETAIL_MAX } from "./http.js";
@@ -96,4 +96,24 @@ export function makeOnceWarn(log: (message: string) => void): (message: string) 
  */
 export function stringifyForLog(value: unknown): string {
   return String(JSON.stringify(value)).slice(0, ERROR_DETAIL_MAX);
+}
+
+/**
+ * 输出上限解析（轮 18 #10/#11/#12）：卡片值经宿主设置层 parseFloat 等产出时
+ * 可能为 NaN/Infinity/0——NaN 序列化成 null、其余上送均为端点硬 400（非 infra
+ * 不重试，还可能误触 fallback 单向切换），与 temperature NaN 守卫（轮 13 #5）
+ * 同款雷；三协议 max_tokens 均必填，不能走「缺省不发」——回退 DEFAULT_MAX_TOKENS
+ * 并经 onInvalid 一次性告警（适配器注入 makeOnceWarn 实例）
+ */
+export function resolveMaxTokens(
+  req: ChatRequest,
+  config: ProviderConfig,
+  onInvalid: (message: string) => void,
+): number {
+  const value = req.maxTokens ?? config.maxTokens;
+  if (!Number.isFinite(value) || value <= 0) {
+    onInvalid(`maxTokens 非正有限数值（${value}），回退 ${DEFAULT_MAX_TOKENS}（${config.name}）`);
+    return DEFAULT_MAX_TOKENS;
+  }
+  return value;
 }

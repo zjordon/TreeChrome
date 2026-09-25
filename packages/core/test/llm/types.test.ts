@@ -178,6 +178,13 @@ describe("assertValidMessages · 违例序列", () => {
     );
   });
 
+  it("toolCall name 为空串 → 拒绝（Anthropic 工具名 ^[a-zA-Z0-9_-]{1,128}$ 约束，轮 18 #13）", () => {
+    expectViolation(
+      [user("q"), assistant({ toolCalls: [{ id: "t1", name: "", args: {} }] })],
+      "name 为空串",
+    );
+  });
+
   it("toolResult 文本为空 → 拒绝（anthropic 字符串 content 直发空串是 400 形态，轮 17 #8）", () => {
     expectViolation(
       [

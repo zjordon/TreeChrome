@@ -148,15 +148,19 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     expect(sanitizeGeminiSchema({ type: ["null"] })).toEqual({ type: "string", nullable: true });
   });
 
-  it("type 字符串值枚举校验：PascalCase/小写归一，未知值删除并上报（轮 15 #17）", () => {
+  it("type 字符串值枚举校验：PascalCase 小写归一，非法枚举值兜底 string 并上报（轮 15 #17 + 轮 18 #1）", () => {
     const issues: string[] = [];
     expect(sanitizeGeminiSchema({ type: "STRING" }, (d) => issues.push(d))).toEqual({
       type: "string",
     });
-    expect(sanitizeGeminiSchema({ type: "str" }, (d) => issues.push(d))).toEqual({});
+    // 非法枚举不删键：端点要求每个 schema 节点显式 type（"missing a type" 400，
+    // 轮 18 #1 web 核实）——与全病态数组/非字符串形态统一兜底 string
+    expect(sanitizeGeminiSchema({ type: "str" }, (d) => issues.push(d))).toEqual({
+      type: "string",
+    });
     expect(issues).toEqual([
       "type「STRING」归一化为小写 string",
-      'type「"str"」不在官方枚举集，删除该键',
+      'type「"str"」不在官方枚举集，兜底为 string',
     ]);
   });
 
@@ -201,20 +205,58 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
-  it("联合 type 成员复用标量枚举口径：PascalCase 归一、非法枚举值删除并上报（轮 17 #13）", () => {
+  it("联合 type 成员复用标量枚举口径：PascalCase 归一、非法成员跳过取首个合法成员（轮 17 #13 + 轮 18 #1 兜底统一）", () => {
     const issues: string[] = [];
     expect(sanitizeGeminiSchema({ type: ["STRING", "null"] }, (d) => issues.push(d))).toEqual({
       type: "string",
       nullable: true,
     });
-    // 首个非 null 成员非法：type 键整体删除（与标量分支同口径），nullable 不产出；
-    // 多成员先报联合窄化、再报枚举删除（两条独立证据）
-    expect(sanitizeGeminiSchema({ type: ["str", "object"] }, (d) => issues.push(d))).toEqual({});
+    // 非法成员跳过、首个合法成员胜出（比盲目兜底 string 保真）；skip 与窄化
+    // 两条独立证据各归各位
+    expect(sanitizeGeminiSchema({ type: ["str", "object"] }, (d) => issues.push(d))).toEqual({
+      type: "object",
+    });
     expect(issues).toEqual([
       "type「STRING」归一化为小写 string",
-      "type 联合窄化 str|object → str",
-      'type「"str"」不在官方枚举集，删除该键',
+      "type 成员「str」不在官方枚举集，跳过",
+      "type 联合窄化 str|object → object",
     ]);
+  });
+
+  it("format 按 type 分域收尾校验：值在全集但 type 域外删除并上报，域内组合保留（轮 18 #8）", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema({ type: "number", format: "date-time" }, (d) => issues.push(d)),
+    ).toEqual({ type: "number" });
+    expect(
+      sanitizeGeminiSchema({ type: "string", format: "int64" }, (d) => issues.push(d)),
+    ).toEqual({ type: "string" });
+    // boolean/array/object 无任何合法 format（分域表缺项 = 全部删除）
+    expect(
+      sanitizeGeminiSchema({ type: "boolean", format: "enum" }, (d) => issues.push(d)),
+    ).toEqual({ type: "boolean" });
+    // 域内组合保留：string+date-time、integer+int64
+    expect(sanitizeGeminiSchema({ type: "string", format: "date-time" })).toEqual({
+      type: "string",
+      format: "date-time",
+    });
+    expect(sanitizeGeminiSchema({ type: "integer", format: "int64" })).toEqual({
+      type: "integer",
+      format: "int64",
+    });
+    expect(issues).toEqual([
+      "format「date-time」不在 type=number 的官方支持集，删除该键",
+      "format「int64」不在 type=string 的官方支持集，删除该键",
+      "format「enum」不在 type=boolean 的官方支持集，删除该键",
+    ]);
+  });
+
+  it("description 非字符串删除并上报（白名单标量键值形态校验的最后一块，轮 18 #6）", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema({ type: "string", description: 123 }, (d) => issues.push(d)),
+    ).toEqual({ type: "string" });
+    expect(issues).toEqual(["description 非字符串，删除该键：123"]);
   });
 
   it("非对象子 schema（含 draft-06+ 布尔 schema）归一为空 schema、required 非 string[] 删除——原样透传会被端点 400；原始 schema 不被改动", () => {
@@ -552,6 +594,26 @@ describe("请求构造（canonical → wire）", () => {
     const warnings = logs.filter((m) => m.includes("钳制"));
     expect(warnings).toHaveLength(1); // 每请求都在钳制，告警只一次
     expect(warnings[0]).toContain("gemini-card"); // 卡片归因
+  });
+
+  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #11）", async () => {
+    const { mock, logs, provider } = setupProviderWithLogs(createGeminiProvider, CARD, {
+      maxTokens: Number.NaN,
+    });
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    await provider.chat(req);
+    await provider.chat(req);
+    expect((mock.bodyAt(0).generationConfig as Record<string, unknown>).maxOutputTokens).toBe(
+      16384,
+    );
+    const warnings = logs.filter((m) => m.includes("maxTokens"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("gemini-card");
   });
 
   it("model turn 的 inlineData 静默丢弃（多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14）", async () => {
