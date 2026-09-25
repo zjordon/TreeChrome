@@ -23,6 +23,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  stringifyForLog,
   stripTrailingSlash,
   temperatureEntry,
 } from "./common.js";
@@ -197,7 +198,9 @@ function parseResponse(
     if (isRecord(part.functionCall)) {
       const name = part.functionCall.name;
       if (typeof name !== "string") {
-        log(`[llm] gemini 丢弃形态异常的 functionCall：${JSON.stringify(name)}`);
+        // String 包装（轮 17 #15）：name 可能 undefined，JSON.stringify(undefined)
+        // 返回 undefined 非字符串，直挂 .slice 会 TypeError
+        log(`[llm] gemini 丢弃形态异常的 functionCall：${stringifyForLog(name)}`);
         continue;
       }
       if (!requestedNames.has(name)) {
@@ -226,8 +229,8 @@ function parseResponse(
       });
     } else if (part.functionCall !== undefined) {
       // functionCall 存在但非对象（网关畸形输出，如 "foo"）——与 name 非字符串同款
-      // 「丢弃留证据」口径，不静默跳过
-      log(`[llm] gemini 丢弃形态异常的 functionCall：${JSON.stringify(part.functionCall)}`);
+      // 「丢弃留证据」口径，不静默跳过；串化截断（轮 17 #6）与 http.ts 错误体同口径
+      log(`[llm] gemini 丢弃形态异常的 functionCall：${stringifyForLog(part.functionCall)}`);
     }
   }
   const response: ChatResponse = {

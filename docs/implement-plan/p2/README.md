@@ -341,3 +341,16 @@ smoke 产物摘要：
 - **杂项（#1/#5/#10）**：smoke ok 判定注释修正（形状校验无法区分 toolCalls 与 text-JSON 兜底两条 ok 路径，注明漏判面）；client.test 三处 "agent_response" 字面量改 TOOL.name 插值（防实现退化硬编码工具名的回归）；schema-sanitize type 数组全 null/病态元素兜底补 onSchemaIssue 上报（兜底同样是约束丢失）。
 
 测试 269 例全绿（覆盖率 98.71%）。
+
+### 评审轮 17（review-p2-llm-client-17.json，2026-09-25，16 条）
+
+采纳 16 条。要点：
+
+- **协议违例不再触发 fallback 切换（#9，Python parity 修正）**：2xx 畸形响应体（网关 200 + HTML 错误页）分型为 LLMProtocolViolationError 后原会烧掉单向切换——核实 Python 侧 SDK 对该形态抛 APIResponseValidationError（非 APIError 子类），`_create_with_backoff` 与外层 except 元组均不捕获，即 Python 从不因响应解析失败换卡。trySwitchToFallback 排除该类型：不切换不退避直接上抛（canonical 校验违例换卡同样无济于事）；用例锚定 200+HTML → LLMProtocolViolationError 归因主卡、1 次请求、零切换。
+- **canonical 新不变量（#8，web 核实后采纳）**：toolCall.id 非空串（请求侧 tool_use id="" 是端点 400 形态，响应侧轮 12 已同款丢弃）与 toolResult.text 非空（anthropic 把 text 直映射 tool_result 字符串 content，空串是 400 形态 "content field is empty"，社区报告证实）——宿主回灌历史在 canonical 层拦截，而非烧一次 400 后错误归因；01 §2.1 同步。
+- **联合 type 枚举校验（#13，清洗闭环盲区）**：`type: ["STRING","null"]` 走数组分支直接透传首个成员，绕过轮 15 #17 的标量三档口径（归一/删除）——窄化结果复用同款枚举校验，非法值删键上报、PascalCase 归一。
+- **丢弃类日志统一截断（#5/#6/#14/#15）**：四处形态异常丢弃日志的 JSON.stringify 无上限（网关畸形输出长度无界，长循环刷屏）——common.stringifyForLog 单源收口（String 包装 + 复用 http.ts ERROR_DETAIL_MAX=500；name 可能 undefined，JSON.stringify 返回非字符串不能直挂 .slice——评审自己点出的 TypeError 陷阱）。
+- **契约与结构（#1/#4/#7/#10/#16）**：smoke 缺省端点/型号/超时收敛为文件顶常量（消除 6 处字面量散落，文案与回退值同源）；openai assistant content 三层嵌套三元改 if/else（清单规则）；sensitiveMap JSDoc 不覆盖清单补全 systemPrompt 与 ImageBlock.base64（含「宿主可信自持」前提）；redactToolPayloads 覆盖边界显式化（仅字符串值不含对象键名，键位敏感 P4 裁决）。
+- **测试侧（#2/#3/#11/#12）**：types/transforms 两测试文件的 "agent_response" 字面量改 AGENT_TOOL.name 插值（惰性填充单一事实源）；URL_MIN_LENGTH 锚定用例从 tryParseJson 块归位 shortenUrlsInMessages 块；provider 字段断言前置 toBeInstanceOf（不抛时以 TypeError 失败而非清晰断言）。
+
+测试 273 例全绿（覆盖率 98.72%）。

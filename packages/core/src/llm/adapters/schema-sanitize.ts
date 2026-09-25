@@ -83,8 +83,20 @@ export function sanitizeGeminiSchema(
         // 全 null/病态元素：兜底合法枚举避免产出无 type 的 schema——兜底同样是
         // 约束丢失，与联合窄化同口径上报（轮 16 #10），否则此路径无排障线索
         onSchemaIssue?.("type 全 null/病态元素，兜底为 string");
+        out.type = "string";
+      } else {
+        // 联合窄化结果复用标量分支的枚举校验/归一口径（轮 17 #13）：数组内的
+        // PascalCase/非法枚举值同样会被端点 400，原样透传是清洗闭环的盲区
+        const lowered = first.toLowerCase();
+        if (!GEMINI_TYPES.has(lowered)) {
+          onSchemaIssue?.(`type「${JSON.stringify(first)}」不在官方枚举集，删除该键`);
+        } else {
+          if (lowered !== first) {
+            onSchemaIssue?.(`type「${first}」归一化为小写 ${lowered}`);
+          }
+          out.type = lowered;
+        }
       }
-      out.type = first ?? "string";
       if (list.includes("null")) {
         out.nullable = true;
       }

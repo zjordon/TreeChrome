@@ -8,6 +8,7 @@ import type {
 } from "../../src/index.js";
 import { LLMProtocolViolationError } from "../../src/index.js";
 import { assertValidMessages } from "../../src/llm/types.js";
+import { AGENT_TOOL } from "./fixtures.js";
 
 const user = (text: string): UserMessage => ({ role: "user", blocks: [{ kind: "text", text }] });
 const assistant = (opts: {
@@ -18,7 +19,7 @@ const assistant = (opts: {
   blocks: opts.text === undefined ? [] : [{ kind: "text", text: opts.text }],
   toolCalls: opts.toolCalls,
 });
-const toolResult = (id: string, name = "agent_response"): ToolResultMessage => ({
+const toolResult = (id: string, name = AGENT_TOOL.name): ToolResultMessage => ({
   role: "toolResult",
   toolCallId: id,
   toolName: name,
@@ -36,8 +37,8 @@ describe("assertValidMessages · 合法序列", () => {
       assistant({
         text: "thinking...",
         toolCalls: [
-          { id: "t1", name: "agent_response", args: {} },
-          { id: "t2", name: "agent_response", args: {} },
+          { id: "t1", name: AGENT_TOOL.name, args: {} },
+          { id: "t2", name: AGENT_TOOL.name, args: {} },
         ],
       }),
       toolResult("t2"),
@@ -50,7 +51,7 @@ describe("assertValidMessages · 合法序列", () => {
   it("纯工具调用回合（blocks 空、toolCalls 非空）合法", () => {
     const msgs: ChatMessage[] = [
       user("q"),
-      assistant({ toolCalls: [{ id: "t1", name: "agent_response", args: {} }] }),
+      assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] }),
       toolResult("t1"),
     ];
     expect(() => assertValidMessages(msgs)).not.toThrow();
@@ -107,7 +108,7 @@ describe("assertValidMessages · 违例序列", () => {
     expectViolation(
       [
         user("q"),
-        assistant({ toolCalls: [{ id: "t1", name: "agent_response", args: {} }] }),
+        assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] }),
         toolResult("other"),
       ],
       "不在紧邻 assistant 的 toolCalls 中",
@@ -118,7 +119,7 @@ describe("assertValidMessages · 违例序列", () => {
     expectViolation(
       [
         user("q"),
-        assistant({ toolCalls: [{ id: "t1", name: "agent_response", args: {} }] }),
+        assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] }),
         toolResult("t1"),
         toolResult("t1"),
       ],
@@ -132,8 +133,8 @@ describe("assertValidMessages · 违例序列", () => {
         user("q"),
         assistant({
           toolCalls: [
-            { id: "t1", name: "agent_response", args: {} },
-            { id: "t1", name: "agent_response", args: {} },
+            { id: "t1", name: AGENT_TOOL.name, args: {} },
+            { id: "t1", name: AGENT_TOOL.name, args: {} },
           ],
         }),
         toolResult("t1"),
@@ -146,7 +147,7 @@ describe("assertValidMessages · 违例序列", () => {
     expectViolation(
       [
         user("q"),
-        assistant({ toolCalls: [{ id: "t1", name: "agent_response", args: {} }] }),
+        assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] }),
         { role: "toolResult", toolCallId: "t1", toolName: "other_tool", text: "ok" },
       ],
       "不一致",
@@ -159,14 +160,32 @@ describe("assertValidMessages · 违例序列", () => {
         user("q"),
         assistant({
           toolCalls: [
-            { id: "t1", name: "agent_response", args: {} },
-            { id: "t2", name: "agent_response", args: {} },
+            { id: "t1", name: AGENT_TOOL.name, args: {} },
+            { id: "t2", name: AGENT_TOOL.name, args: {} },
           ],
         }),
         toolResult("t1"),
         user("next"),
       ],
       "仅收到 1 条结果",
+    );
+  });
+
+  it('toolCall id 为空串 → 拒绝（请求侧 tool_use id="" 是端点 400 形态，轮 17 #8）', () => {
+    expectViolation(
+      [user("q"), assistant({ toolCalls: [{ id: "", name: AGENT_TOOL.name, args: {} }] })],
+      "id 为空串",
+    );
+  });
+
+  it("toolResult 文本为空 → 拒绝（anthropic 字符串 content 直发空串是 400 形态，轮 17 #8）", () => {
+    expectViolation(
+      [
+        user("q"),
+        assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] }),
+        { role: "toolResult", toolCallId: "t1", toolName: AGENT_TOOL.name, text: "" },
+      ],
+      "文本为空",
     );
   });
 
@@ -177,6 +196,9 @@ describe("assertValidMessages · 违例序列", () => {
     } catch (e) {
       caught = e;
     }
+    // 先锁类型再断言字段（轮 17 #12）：不抛时 caught 为 undefined，裸 cast 访问
+    // 会以 TypeError 形态失败而非清晰断言信息
+    expect(caught).toBeInstanceOf(LLMProtocolViolationError);
     expect((caught as LLMProtocolViolationError).provider).toBe("glm-anthropic");
   });
 });

@@ -201,6 +201,22 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
+  it("联合 type 成员复用标量枚举口径：PascalCase 归一、非法枚举值删除并上报（轮 17 #13）", () => {
+    const issues: string[] = [];
+    expect(sanitizeGeminiSchema({ type: ["STRING", "null"] }, (d) => issues.push(d))).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    // 首个非 null 成员非法：type 键整体删除（与标量分支同口径），nullable 不产出；
+    // 多成员先报联合窄化、再报枚举删除（两条独立证据）
+    expect(sanitizeGeminiSchema({ type: ["str", "object"] }, (d) => issues.push(d))).toEqual({});
+    expect(issues).toEqual([
+      "type「STRING」归一化为小写 string",
+      "type 联合窄化 str|object → str",
+      'type「"str"」不在官方枚举集，删除该键',
+    ]);
+  });
+
   it("非对象子 schema（含 draft-06+ 布尔 schema）归一为空 schema、required 非 string[] 删除——原样透传会被端点 400；原始 schema 不被改动", () => {
     const original = { type: "object", properties: { n: 3, s: "x", ok: true }, required: null };
     const snapshot = JSON.parse(JSON.stringify(original)) as Record<string, unknown>;

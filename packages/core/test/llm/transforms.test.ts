@@ -44,7 +44,7 @@ import {
   tryParseJson,
   URL_MIN_LENGTH,
 } from "../../src/llm/transforms.js";
-import { LONG_URL } from "./fixtures.js";
+import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
 
 const U0 = LONG_URL; // 110 字符 ≥ 100（fixtures.LONG_URL）
 const U1 = `https://example.org/${"b".repeat(90)}`;
@@ -75,13 +75,12 @@ describe("tryParseJson（Python 锚定 9 例）", () => {
   it.each(cases)("%j → %j", (input, expected) => {
     expect(tryParseJson(input)).toEqual(expected);
   });
-
-  it("URL_MIN_LENGTH 锚定 Python _URL_MIN_LENGTH=100", () => {
-    expect(URL_MIN_LENGTH).toBe(100);
-  });
 });
 
 describe("shortenUrlsInMessages（Python 锚定：tag 分配顺序 = 首次出现顺序）", () => {
+  it("URL_MIN_LENGTH 锚定 Python _URL_MIN_LENGTH=100（轮 17 #11 归位：常量属 URL 缩写域）", () => {
+    expect(URL_MIN_LENGTH).toBe(100);
+  });
   const buildMessages = (): ChatMessage[] => [
     userMsg(`see ${U0} and ${U1}`),
     { role: "assistant", blocks: [{ kind: "text", text: `i saw ${U0}` }] },
@@ -110,9 +109,9 @@ describe("shortenUrlsInMessages（Python 锚定：tag 分配顺序 = 首次出�
       {
         role: "assistant",
         blocks: [],
-        toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+        toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }],
       },
-      { role: "toolResult", toolCallId: "t1", toolName: "agent_response", text: `result ${U0}` },
+      { role: "toolResult", toolCallId: "t1", toolName: AGENT_TOOL.name, text: `result ${U0}` },
     ];
     const map = shortenUrlsInMessages(messages);
     expect(map.size).toBe(0);
@@ -152,12 +151,12 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
       {
         role: "assistant",
         blocks: [],
-        toolCalls: [{ id: "t1", name: "agent_response", args: {} }],
+        toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }],
       },
       {
         role: "toolResult",
         toolCallId: "t1",
-        toolName: "agent_response",
+        toolName: AGENT_TOOL.name,
         text: "tool echoed sk-abc-def",
       },
     ];

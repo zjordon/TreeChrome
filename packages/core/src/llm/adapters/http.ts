@@ -58,7 +58,7 @@ export function parseRetryAfterMs(raw: string | null): number | undefined {
  * {error:"纯字符串"} 与顶层 {message}；都不可用则原文。**全部路径统一截断 500 字符**
  *（网关把整页 HTML 塞进 error.message 时异常消息不无上限膨胀）。
  */
-const ERROR_DETAIL_MAX = 500;
+export const ERROR_DETAIL_MAX = 500;
 
 function extractErrorMessage(raw: string): string {
   try {

@@ -80,6 +80,9 @@ export function replaceSensitiveText(
  * 敏感值深层替换：args 等嵌套 JSON 结构内的字符串走 real→placeholder（轮 15 #7，
  * redactToolPayloads 的 args 分支）。经 rewriteStrings 游走（方向中立，轮 16 #8）：
  * 普通对象递归重建、数组逐项、非普通对象（Map/Set/Date 等）与非字符串原样保留。
+ * **覆盖边界（轮 17 #16）**：只重写字符串**值**，对象键名原样保留——敏感 real 值
+ * 出现在键位（如 {"sk-abc": …}）时不替换；扩展键名改写需评估 restore 方向共用
+ * 游走的影响，P4 收口时一并裁决
  */
 export function replaceSensitiveDeep<T>(
   value: T,

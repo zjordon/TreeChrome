@@ -20,6 +20,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  stringifyForLog,
   stripTrailingSlash,
   temperatureEntry,
 } from "./common.js";
@@ -180,9 +181,10 @@ function parseResponse(
     } else if (item.type === "tool_use") {
       if (typeof item.name !== "string") {
         // 形态异常与名字失配分档留证据（轮 16 #11）：与 gemini「丢弃形态异常的
-        // functionCall」口径对齐，畸形输出不得误标为非请求名
+        // functionCall」口径对齐，畸形输出不得误标为非请求名；String 包装（轮 17
+        // #14）：name 可能 undefined，JSON.stringify(undefined) 非 string 不能 .slice
         log(
-          `[llm] anthropic 丢弃形态异常的 tool_use（name 非 string）：${JSON.stringify(item.name)}`,
+          `[llm] anthropic 丢弃形态异常的 tool_use（name 非 string）：${stringifyForLog(item.name)}`,
         );
       } else if (requestedNames.has(item.name)) {
         // 缺失/空 id 直接丢弃：回传历史时 tool_use id="" 会被官方端点 400 且难定位

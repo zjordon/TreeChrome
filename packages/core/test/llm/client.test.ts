@@ -10,6 +10,7 @@ import {
   LLMConnectionError,
   LLMError,
   LLMInvalidRequestError,
+  LLMProtocolViolationError,
   LLMRateLimitError,
   LLMServerError,
   LLMTimeoutError,
@@ -630,6 +631,16 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
     expect(mock.calls[1].url).toContain("fallback.example");
+  });
+
+  it("协议违例（2xx 畸形体）不触发切换：直接上抛、类型不变形（Python SDK APIResponseValidationError 不入 except 元组，轮 17 #9）", async () => {
+    const { mock, client } = setup({ fallback: FALLBACK });
+    mock.queueMany({ status: 200, rawBody: "<html>gateway oops</html>" });
+    const err = await client.getAction("sys", msgs(), TOOL).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMProtocolViolationError);
+    expect((err as LLMProtocolViolationError).provider).toBe("primary"); // 归因主卡
+    expect(mock.calls.length).toBe(1); // 不切换不重试：瞬时网关抖动不烧单向切换
+    expect(mock.calls[0].url).toContain("primary.example");
   });
 
   it("blocked（非 infra 第三分支，gemini promptFeedback）同样触发切换且类型不变形（轮 14 #6）", async () => {

@@ -21,6 +21,7 @@ import {
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
+  stringifyForLog,
   stripTrailingSlash,
   temperatureEntry,
 } from "./common.js";
@@ -67,18 +68,18 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       // 静默丢弃（与 user 侧 image_url 数组形态的不对称是协议约束，非遗漏）
       const text = msg.blocks.map((b) => (b.kind === "text" ? b.text : "")).join("");
       const hasCalls = msg.toolCalls !== undefined && msg.toolCalls.length > 0;
-      const wire: Record<string, unknown> = {
-        role: "assistant",
-        // 纯工具调用回合（blocks 空或过滤后无文本且带调用）content 置 null（官方
-        // 形态）；仅含 image 块且无 toolCalls 过滤后为空串——降级 "[image omitted]"
-        // 与 anthropic/gemini 占位口径对齐（轮 14 #8/#9，轮 16 #3 补齐 openai 侧）
-        content:
-          msg.blocks.length === 0 || (text === "" && hasCalls)
-            ? null
-            : text === ""
-              ? "[image omitted]"
-              : text,
-      };
+      // 纯工具调用回合（blocks 空或过滤后无文本且带调用）content 置 null（官方
+      // 形态）；仅含 image 块且无 toolCalls 过滤后为空串——降级 "[image omitted]"
+      // 与 anthropic/gemini 占位口径对齐（轮 14 #8/#9，轮 16 #3 补齐 openai 侧）
+      let content: string | null;
+      if (msg.blocks.length === 0 || (text === "" && hasCalls)) {
+        content = null;
+      } else if (text === "") {
+        content = "[image omitted]";
+      } else {
+        content = text;
+      }
+      const wire: Record<string, unknown> = { role: "assistant", content };
       if (msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
         wire.tool_calls = msg.toolCalls.map((c) => ({
           id: c.id,
@@ -178,15 +179,16 @@ function parseResponse(
   if (Array.isArray(message.tool_calls)) {
     for (const item of message.tool_calls) {
       if (!isRecord(item) || !isRecord(item.function)) {
-        // 形态异常（item 合法但 function 非对象等）——与 gemini「丢弃留证据」口径一致
-        log(`[llm] openai 丢弃形态异常的 tool_call：${JSON.stringify(item)}`);
+        // 形态异常（item 合法但 function 非对象等）——与 gemini「丢弃留证据」口径一致；
+        // 串化截断（轮 17 #5）：畸形输出长度无上限，与 http.ts 错误体同口径
+        log(`[llm] openai 丢弃形态异常的 tool_call：${stringifyForLog(item)}`);
         continue;
       }
       const fn = item.function;
       if (typeof fn.name !== "string") {
         // 形态异常与名字失配分档留证据（轮 16 #12）：与 gemini「丢弃形态异常的
         // functionCall」口径对齐，畸形输出不得误标为非请求名
-        log(`[llm] openai 丢弃形态异常的 tool_call（name 非 string）：${JSON.stringify(fn.name)}`);
+        log(`[llm] openai 丢弃形态异常的 tool_call（name 非 string）：${stringifyForLog(fn.name)}`);
         continue;
       }
       if (!requestedNames.has(fn.name)) {

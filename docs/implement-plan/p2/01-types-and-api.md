@@ -72,7 +72,9 @@ export interface ToolResultMessage {
 - 首条消息必须 `user`（Anthropic 要求；openai/gemini 不介意，统一最严约束简化适配器）；
 - `toolResult` 必须紧跟在带 `toolCalls` 的 `assistant` 消息之后，且每个 toolCall 恰有一条结果（顺序可乱，适配器按 id/name 配对）；
 - `user.blocks` 非空；`assistant` 的 `blocks` 与 `toolCalls` 不同时为空；
-- `TextBlock.text` 非空（评审轮 13 补入：Anthropic 官方端点对空 text 块直接 400 "text content blocks must be non-empty"——canonical 层一处拦截）。
+- `TextBlock.text` 非空（评审轮 13 补入：Anthropic 官方端点对空 text 块直接 400 "text content blocks must be non-empty"——canonical 层一处拦截）；
+- `toolCall.id` 非空串（评审轮 17 补入：请求侧 tool_use id="" 是端点 400 形态，响应侧轮 12 已同款丢弃——宿主回灌历史在此拦截，而非烧一次 400 后才暴露）；
+- `toolResult.text` 非空（评审轮 17 补入：anthropic 适配器把 text 直映射为 tool_result 字符串 content，空串是端点 400 形态 "content field is empty"——canonical 层拦截防错误归因到端点/网络）。
 
 > 交错规则说明：Python 端消息由 step 层以 Anthropic 形状直接组装，无独立校验；TS 把"什么消息序列合法"提前到 canonical 层一次性裁决，三适配器不再各自猜。
 

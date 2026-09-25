@@ -8,7 +8,13 @@ import { isAbortError } from "./adapters/http.js";
 import { createOpenAICompletionsProvider } from "./adapters/openai-completions.js";
 import type { ProviderConfig } from "./config.js";
 import type { LlmDeps } from "./deps.js";
-import { isInfraError, LLMError, LLMInvalidRequestError, LLMTimeoutError } from "./errors.js";
+import {
+  isInfraError,
+  LLMError,
+  LLMInvalidRequestError,
+  LLMProtocolViolationError,
+  LLMTimeoutError,
+} from "./errors.js";
 import type { LLMProvider } from "./provider.js";
 import {
   applySensitiveInMessages,
@@ -59,20 +65,25 @@ const CHAT_HTTP_TIMEOUT_DEFAULT_MS = 600_000;
 export interface GetActionOptions {
   /**
    * 敏感值表：真实值 → 占位符。请求侧替换、响应 toolInput 还原（03 §3.3）。
-   * **缺省风险显式标注（轮 14 #2）**：工具载荷（toolResult 文本与
-   * assistant.toolCalls[].args）不在替换范围（P5 parity，见 applySensitiveInMessages
-   * 注释）——其中的敏感值会**明文出站**，sensitiveMap 不覆盖全部出站内容；需阻断
-   * 时显式传 redactToolPayloads:true。P4 接 SecretProvider 时评估缺省翻转为
+   * **缺省风险显式标注（轮 14 #2，轮 17 #10 补全清单）**：工具载荷（toolResult
+   * 文本与 assistant.toolCalls[].args）不在替换范围（P5 parity，见
+   * applySensitiveInMessages 注释）——其中的敏感值会**明文出站**；systemPrompt 与
+   * ImageBlock.base64 同样不在替换范围（仅 messages 的 TextBlock 参与，且连命中
+   * WARNING 都没有——systemPrompt 视为宿主可信自持内容，注入密钥类上下文由宿主
+   * 自担）。sensitiveMap 不覆盖全部出站内容；需阻断工具载荷时显式传
+   * redactToolPayloads:true。P4 接 SecretProvider 时评估缺省翻转为
    * secure-by-default
    */
   sensitiveMap?: Record<string, string>;
   /**
    * 为 true 时**工具载荷**（toolResult 文本 + assistant.toolCalls[].args）同样做
    * 敏感值占位（作用于 work 副本不动调用方消息；模型回显占位符时响应侧还原自然
-   * 闭合）。缺省 false 维持 P5 parity（Python 只处理 text block）——工具载荷的
-   * 敏感值会明文出站仅 WARNING 可观测（含 okResult 还原后的真实 args 随历史回放
-   * 的泄露链路）；合规宿主可即刻阻断。P4 接 SecretProvider 时统一收口此开关
-   * 与缺省姿态。
+   * 闭合）。**覆盖边界（轮 17 #16）**：args 的深层替换只作用于字符串**值**，对象
+   * 键名位置出现的敏感 real 值不替换也不告警（键位敏感属罕见形态，扩展需评估
+   * restore 方向共用游走的键名改写影响，P4 收口时一并裁决）。缺省 false 维持
+   * P5 parity（Python 只处理 text block）——工具载荷的敏感值会明文出站仅
+   * WARNING 可观测（含 okResult 还原后的真实 args 随历史回放的泄露链路）；
+   * 合规宿主可即刻阻断。P4 接 SecretProvider 时统一收口此开关与缺省姿态。
    */
   redactToolPayloads?: boolean;
   /**
@@ -579,6 +590,16 @@ export class LLMClient {
   /** 单向切换到 fallback 整卡（可跨协议）；无 fallback / 已切换返回 false */
   private trySwitchToFallback(err: LLMError): boolean {
     if (this.usingFallback || this.fallbackConfig === null) {
+      return false;
+    }
+    // 协议违例不触发切换（轮 17 #9，Python parity）：2xx 畸形响应体在 Python SDK
+    // 抛 APIResponseValidationError（非 APIError 子类），_create_with_backoff 的
+    // except (RateLimitError, APIConnectionError) 与外层 except (RateLimitError,
+    // APIError) 均不捕获——瞬时网关抖动（200 + HTML 错误页）一次性烧掉单向切换、
+    // 此后全部流量落到可能更弱的 fallback 卡，是 TS 侧此前未登记的偏离；canonical
+    // 校验违例（调用方消息问题）换卡同样无济于事。不切换也不退避（非 infra），
+    // 直接上抛与 Python 一致
+    if (err instanceof LLMProtocolViolationError) {
       return false;
     }
     // 先在局部变量构造成功再统一提交——构造抛出时 this.config/provider 保持旧卡

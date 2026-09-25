@@ -156,6 +156,11 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
         throw violation("assistant 消息含空文本块（Anthropic 端点对空 text 块 400）");
       }
       if (calls.length > 0) {
+        // id 空串：请求侧 tool_use id="" 会被官方端点 400（响应侧轮 12 已同款丢弃，
+        // canonical 历史来自宿主回灌——在此拦截而非烧一次 400 后才暴露，轮 17 #8）
+        if (calls.some((c) => c.id === "")) {
+          throw violation("assistant 的 toolCall id 为空串（端点 400 形态）");
+        }
         // id→name 映射：配对校验同时要求 toolName 与 toolCall.name 一致——
         // gemini 的 functionResponse 按 name 关联，失配发到端点才 400（canonical 层拦截）
         const callsById = new Map(calls.map((c) => [c.id, c.name]));
@@ -184,6 +189,11 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
           }
           if (seen.has(cur.toolCallId)) {
             throw violation(`toolCall ${cur.toolCallId} 有重复结果`);
+          }
+          // 空文本：anthropic 以字符串 content 直发 tool_result，空串是端点 400 形态
+          //（"content field is empty"）；canonical 层拦截而非 400 后错误归因（轮 17 #8）
+          if (cur.text === "") {
+            throw violation(`toolResult（toolCallId=${cur.toolCallId}）文本为空`);
           }
           seen.add(cur.toolCallId);
           j += 1;

@@ -127,6 +127,14 @@ const MESSAGES = [
   },
 ];
 
+// —— 缺省值集中声明（与文件头 SMOKE_* 变量清单对照；轮 17 #1/#7：字面量散落
+// 4 处会让端点/型号变更漏改，文案与实际回退值失配）——
+const DEFAULT_OPENAI_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
+const DEFAULT_ANTHROPIC_BASE_URL = "https://open.bigmodel.cn/api/anthropic";
+const DEFAULT_OPENAI_MODEL = "glm-4.7";
+const DEFAULT_ANTHROPIC_MODEL = "glm-5.1";
+const DEFAULT_SMOKE_TIMEOUT_MS = 60_000;
+
 // —— 脱敏与错误格式化（主循环与兜底 catch 共用同一份实现，防两处口径漂移）——
 
 // URL query 掩码：SMOKE_*_BASE_URL 携带 ?token=… 时不能明文出现在任何输出面。
@@ -178,9 +186,9 @@ async function main() {
       protocol: "openai-completions",
       // || 而非 ??：`VAR= node`（shell 变量未设的常见形态）会把空串带进来，
       // baseUrl="" 会让 fetch 抛与端点无关的 "Failed to parse URL"
-      baseUrl: process.env.SMOKE_OPENAI_BASE_URL || "https://open.bigmodel.cn/api/paas/v4",
+      baseUrl: process.env.SMOKE_OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL,
       apiKey,
-      model: process.env.SMOKE_OPENAI_MODEL || "glm-4.7",
+      model: process.env.SMOKE_OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
       // 16384（非 4096）：glm 系思考模型的 reasoning 计入输出额度，4096 会被思考
       // 写满 → getAction 落 empty → smoke 产生与端点无关的假失败（TreeWalker 教训）
       maxTokens: DEFAULT_MAX_TOKENS,
@@ -188,9 +196,9 @@ async function main() {
     {
       name: "zhipu-anthropic",
       protocol: "anthropic-messages",
-      baseUrl: process.env.SMOKE_ANTHROPIC_BASE_URL || "https://open.bigmodel.cn/api/anthropic",
+      baseUrl: process.env.SMOKE_ANTHROPIC_BASE_URL || DEFAULT_ANTHROPIC_BASE_URL,
       apiKey,
-      model: process.env.SMOKE_ANTHROPIC_MODEL || "glm-5.1",
+      model: process.env.SMOKE_ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
       maxTokens: DEFAULT_MAX_TOKENS,
     },
   ];
@@ -201,9 +209,11 @@ async function main() {
   const rawTimeoutEnv = process.env.SMOKE_TIMEOUT_MS;
   const rawTimeoutMs = Number(rawTimeoutEnv);
   const isValidTimeout = Number.isFinite(rawTimeoutMs) && rawTimeoutMs > 0;
-  const timeoutMs = isValidTimeout ? rawTimeoutMs : 60_000;
+  const timeoutMs = isValidTimeout ? rawTimeoutMs : DEFAULT_SMOKE_TIMEOUT_MS;
   if (rawTimeoutEnv !== undefined && !isValidTimeout) {
-    console.warn(`SMOKE_TIMEOUT_MS="${rawTimeoutEnv}" 非法（需正数毫秒），已回退缺省 60000ms`);
+    console.warn(
+      `SMOKE_TIMEOUT_MS="${rawTimeoutEnv}" 非法（需正数毫秒），已回退缺省 ${DEFAULT_SMOKE_TIMEOUT_MS}ms`,
+    );
   }
 
   let failed = false;

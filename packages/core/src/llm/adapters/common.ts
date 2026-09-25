@@ -5,6 +5,7 @@
 import type { ProviderConfig } from "../config.js";
 import type { LlmProtocol } from "../provider.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
+import { ERROR_DETAIL_MAX } from "./http.js";
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -86,4 +87,13 @@ export function makeOnceWarn(log: (message: string) => void): (message: string) 
     warned = true;
     log(`[llm] WARNING: ${message}`);
   };
+}
+
+/**
+ * 丢弃类日志的安全串化（轮 17 #5/#6/#14/#15）：网关畸形输出长度无上限，直接
+ * stringify 会无界膨胀日志；JSON.stringify(undefined) 返回 undefined（非字符串）
+ * 不能直挂 .slice——String 包装 + 与 http.ts 错误体同源截断
+ */
+export function stringifyForLog(value: unknown): string {
+  return String(JSON.stringify(value)).slice(0, ERROR_DETAIL_MAX);
 }
