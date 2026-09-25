@@ -199,6 +199,9 @@ function parseResponse(
   const toolCalls: ToolCall[] = [];
   for (const part of content) {
     if (!isRecord(part)) {
+      // 非对象 part 留证据（轮 30 #4）：网关畸形输出（如字符串 part）的静默
+      // continue 是无证据丢弃路径
+      log(`[llm] gemini 丢弃非对象形态的 part：${stringifyForLog(part)}`);
       continue;
     }
     if (typeof part.text === "string") {

@@ -254,8 +254,16 @@ export function sanitizeGeminiSchema(
         continue;
       }
       // 写入统一用归一化（小写）键 + 多词约束键的官方 camelCase（"MaxLength" 等
-      // 变体原样透传仍会被端点拒收，清洗必须闭环）
-      out[EMIT_KEY[normalized] ?? normalized] = value;
+      // 变体原样透传仍会被端点拒收，清洗必须闭环）。归一后撞键时后写者覆盖先写者
+      //（轮 30 #1）：如 "MaxLength" 与 "maxlength" 并存——覆盖留证据，约束静默
+      // 丢失无排障线索
+      const emitKey = EMIT_KEY[normalized] ?? normalized;
+      if (out[emitKey] !== undefined) {
+        onSchemaIssue?.(
+          `键「${stringifyForLog(key)}」与已写入键归一后均为「${emitKey}」，后者覆盖前者`,
+        );
+      }
+      out[emitKey] = value;
     }
   }
   // 缺 type 补注入（轮 19 #1 + 轮 20 #1 结构线索）：端点要求每个 schema 节点显式

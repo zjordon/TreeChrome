@@ -506,3 +506,17 @@ smoke 产物摘要：
 - **常量单源（#5/#9/#10）**：SCHEMA_ISSUE_DEDUP_MAX 导出 + 测试派生（128/130 双硬编码消除）；ERROR_DETAIL_MAX 导入派生（common.test/http.test 共 4 处 500 硬编码消除）。
 
 测试 324 例全绿（覆盖率 98.49%）。
+
+### 评审轮 30（review-p2-llm-client-30.json，2026-09-25，10 条采纳 9 驳回 1——循环额度告罄轮）
+
+采纳 9 条。要点：
+
+- **transforms `__proto__` 原型污染收口（#9，真坑）**：rewriteStrings 重建对象 `out[k] = ...` 对 `__proto__` 键命中原型 setter——模型输出 JSON 完全可控该键名（JSON.parse 保留自有可枚举键），子树静默丢失 + 原型被改写；与 schema-sanitize 轮 22 #5 同款 defineProperty 收口，往返用例锁定。
+- **三协议无证据丢弃路径清零（#3/#4/#5/#10）**：anthropic 非对象 content 项/未知 type/畸形 thinking 域、gemini 非对象 part、openai reasoning 字段非 string——「丢弃留证据」口径在三适配器响应解析内全部闭环。
+- **schema 归一撞键留证据（#1）**："MaxLength" 与 "maxlength" 并存时归一后同键后写者覆盖先写者——上报冲突，约束静默丢失有线索。
+- **嵌套三元提取（#6）**：轮 29 自写的 temperatureSuppressed 嵌套三元违反清单规范（轮 20 #4 同款），提取具名布尔恢复单层。
+- **smoke userInfo 掩码（#7）**：`https://user:pass@host` 形态代理凭据与 GLM_API_KEY 无关，replaceAll 拦不住——补 MASK_USERINFO_RE（路径内嵌 token 残留风险已注明）。
+- **extraHeaders 接线锚定（#8）**：gemini/openai 两处「最后合并可覆盖」实现是三处独立拷贝，补最小接线断言（对齐 anthropic 侧）。
+- **#2 驳回**：白名单外 mime 丢弃——拿「响亮的 400（可归因不可重试）」换「静默丢图（模型失明无响应级证据）」，对截图驱动的 agent 是更差的缺省；轮 27 #1 注释已显式登记为待议决策，评审自身标注 low。
+
+测试 330 例全绿（覆盖率 98.70%）。

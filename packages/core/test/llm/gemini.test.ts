@@ -203,6 +203,13 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     });
   });
 
+  it("大小写归一撞键（MaxLength 与 maxlength 并存）→ 后写者覆盖但留证据（轮 30 #1）", () => {
+    const issues: string[] = [];
+    const out = sanitizeGeminiSchema({ maxLength: 5, MaxLength: 9 }, (d) => issues.push(d));
+    expect(out).toEqual({ maxLength: 9, type: "string" }); // 插入序后写者覆盖
+    expect(issues).toContain('键「"MaxLength"」与已写入键归一后均为「maxLength」，后者覆盖前者');
+  });
+
   it("单值 type:'null' 与数组含非字符串病态元素 → 同一兜底路径收口（'null' 不在 Gemini 枚举内）", () => {
     expect(sanitizeGeminiSchema({ type: "null" })).toEqual({ type: "string", nullable: true });
     expect(sanitizeGeminiSchema({ type: ["null", 5] })).toEqual({ type: "string", nullable: true });
@@ -792,6 +799,23 @@ describe("请求构造（canonical → wire）", () => {
     expect((parts[1].inlineData as Record<string, unknown>).mimeType).toBe("image/jpeg");
   });
 
+  it("extraHeaders 最后合并（可覆盖 x-goog-api-key）——三处独立实现的接线锚定（轮 30 #8，对齐 anthropic 侧）", async () => {
+    const { mock, provider } = setup({
+      extraHeaders: { "x-goog-api-key": "override", "x-custom": "1" },
+    });
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    });
+    expect(mock.calls[0].init.headers).toEqual({
+      "content-type": "application/json",
+      "x-goog-api-key": "override",
+      "x-custom": "1",
+    });
+  });
+
   it("baseUrl 整段误配官方端点（含 /v1beta）→ 如实拼接 + 一次性告警（轮 24 #4，与 anthropic /v1 同族）", async () => {
     // 官方文档 URL 本身以 /v1beta 结尾，整段复制进卡片会拼出 /v1beta/v1beta → 404
     const plain = setupLogs();
@@ -915,6 +939,25 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("丢弃形态异常的 text part"))).toBe(true);
     // functionCall part 的 text 缺失（undefined）是正常形态，不产生告警
     expect(logs.filter((m) => m.includes("丢弃形态异常的 text part"))).toHaveLength(1);
+  });
+
+  it("非对象形态的 part（网关畸形，如字符串）→ 丢弃留证据（轮 30 #4）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: { role: "model", parts: ["str-part", { text: "ok" }] },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.text).toBe("ok");
+    expect(logs.some((m) => m.includes("丢弃非对象形态的 part"))).toBe(true);
   });
 
   it("丢弃类事件留告警 + 病态分支覆盖：非请求名 / name 非字符串 / functionCall 非对象 / args 非对象（轮 12 #12）", async () => {

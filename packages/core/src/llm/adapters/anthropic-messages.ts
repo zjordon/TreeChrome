@@ -180,12 +180,13 @@ function parseResponse(
   const toolCalls: ToolCall[] = [];
   for (const item of content) {
     if (!isRecord(item)) {
+      // 非对象项留证据（轮 30 #3）：网关畸形输出的静默 continue 是无证据丢弃路径
+      log(`[llm] anthropic 丢弃非对象形态的 content 块：${stringifyForLog(item)}`);
       continue;
     }
     if (item.type === "text") {
       // 形态异常留证据（轮 29 #1）：type:"text" 但 text 非 string 的畸形块原先被
-      // 内联条件静默丢弃——与 tool_use 形态异常（轮 16 #11）口径对齐，这是本函数
-      // 唯一无证据的丢弃路径
+      // 内联条件静默丢弃——与 tool_use 形态异常（轮 16 #11）口径对齐
       if (typeof item.text === "string") {
         text += item.text;
       } else {
@@ -193,8 +194,16 @@ function parseResponse(
           `[llm] anthropic 丢弃形态异常的 text 块（text 非 string）：${stringifyForLog(item.text)}`,
         );
       }
-    } else if (item.type === "thinking" && typeof item.thinking === "string") {
-      reasoningText += item.thinking;
+    } else if (item.type === "thinking") {
+      // thinking 域形态异常留证据（轮 30 #10）：内联条件短路会静默丢弃已知 type
+      // 的畸形块（与 openai reasoning_content 轮 29 #8 同族）
+      if (typeof item.thinking === "string") {
+        reasoningText += item.thinking;
+      } else {
+        log(
+          `[llm] anthropic 丢弃形态异常的 thinking 块（thinking 非 string）：${stringifyForLog(item.thinking)}`,
+        );
+      }
     } else if (item.type === "tool_use") {
       if (typeof item.name !== "string") {
         // 形态异常与名字失配分档留证据（轮 16 #11）：与 gemini「丢弃形态异常的
@@ -223,6 +232,10 @@ function parseResponse(
       } else {
         log(`[llm] anthropic 忽略非请求工具名的 tool_use：${item.name}`);
       }
+    } else {
+      // 未知 type 留证据（轮 30 #3）：redacted_thinking/server_tool_use 等官方类型
+      // 或网关私货的丢弃至少记录 type 值
+      log(`[llm] anthropic 丢弃未知 type 的 content 块：${stringifyForLog(item.type)}`);
     }
   }
   const response: ChatResponse = {

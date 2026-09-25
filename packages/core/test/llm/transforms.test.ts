@@ -257,6 +257,24 @@ describe("敏感值占位/还原（Python 锚定：包含关系键按插入序�
     expect(firstText(messages[0])).toBe("sk-abc");
     expect(restoreSensitiveInOutput({ v: "x" }, {})).toEqual({ v: "x" });
   });
+
+  it("模型输出 JSON 的 __proto__ 自有键经重建不丢子树、不污染原型（轮 30 #9，同 schema-sanitize 轮 22 #5）", () => {
+    // JSON.parse 保留 __proto__ 为自有可枚举键（模型输出的 JSON 完全可控该键名）；
+    // 旧实现直接赋值命中 Object.prototype setter——子树静默丢失 + 原型被改写
+    const parsed = JSON.parse('{"__proto__": {"inner": "<KEY1>"}, "ok": "<KEY1>"}');
+    const restored = restoreSensitiveInOutput(parsed, { "sk-abc": "<KEY1>" }) as Record<
+      string,
+      unknown
+    >;
+    const own = Object.getOwnPropertyDescriptor(restored, "__proto__")?.value as Record<
+      string,
+      unknown
+    >;
+    expect(own).toEqual({ inner: "sk-abc" }); // 子树保留且深层替换生效
+    expect((restored as { ok?: string }).ok).toBe("sk-abc");
+    // 原型未被输入数据改写（污染会使空对象凭空长出属性）
+    expect(({} as Record<string, unknown>).inner).toBeUndefined();
+  });
 });
 
 describe("restoreUrlsInOutput", () => {

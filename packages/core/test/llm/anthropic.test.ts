@@ -559,14 +559,17 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("忽略非请求工具名") && m.includes("other_tool"))).toBe(true);
   });
 
-  it("type:text 但 text 非 string 的畸形块 → 丢弃留证据（原先内联条件静默吞，轮 29 #1）", async () => {
+  it("type:text 但 text 非 string 的畸形块 → 丢弃留证据（原先内联条件静默吞，轮 29 #1）；非对象项/未知 type/畸形 thinking 同款（轮 30 #3/#10）", async () => {
     const { mock, logs, provider } = setupLogs();
     mock.queueMany({
       status: 200,
       body: {
         content: [
+          42, // 非对象项（网关畸形）
           { type: "text", text: 123 },
           { type: "text", text: "ok" },
+          { type: "thinking", thinking: 456 }, // 已知 type 的畸形 thinking 域
+          { type: "redacted_thinking", data: "x" }, // 未知 type（官方类型）
         ],
         stop_reason: "end_turn",
         usage: null,
@@ -575,6 +578,9 @@ describe("响应解析（wire → canonical）", () => {
     const res = await provider.chat(baseReq());
     expect(res.text).toBe("ok"); // 合法块不受影响，畸形块不进拼接
     expect(logs.some((m) => m.includes("丢弃形态异常的 text 块"))).toBe(true);
+    expect(logs.some((m) => m.includes("丢弃非对象形态的 content 块"))).toBe(true);
+    expect(logs.some((m) => m.includes("丢弃形态异常的 thinking 块"))).toBe(true);
+    expect(logs.some((m) => m.includes("丢弃未知 type 的 content 块"))).toBe(true);
   });
 
   it.each([

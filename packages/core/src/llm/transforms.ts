@@ -192,7 +192,19 @@ function rewriteStrings(
     }
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
-      out[k] = rewriteStrings(v, replacements);
+      // "__proto__" 键走 defineProperty（轮 30 #9，同 schema-sanitize 轮 22 #5）：
+      // JSON.parse 产物可含自有 __proto__ 键（模型输出的 JSON 完全可控该键名），
+      // 直接赋值命中普通字面量的原型 setter——子树静默丢失 + out 原型被输入改写
+      if (k === "__proto__") {
+        Object.defineProperty(out, k, {
+          value: rewriteStrings(v, replacements),
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      } else {
+        out[k] = rewriteStrings(v, replacements);
+      }
     }
     return out;
   }

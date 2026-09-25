@@ -140,7 +140,11 @@ const DEFAULT_SMOKE_TIMEOUT_MS = 60_000;
 
 // URL query 掩码：SMOKE_*_BASE_URL 携带 ?token=… 时不能明文出现在任何输出面。
 // 键名收非分隔符字符（[^&=]+）——网关常见 ?api.key= / ?auth/token= 形态的键含 ./，
-// 字符集过窄会让整条匹配失败、token 明文漏出
+// 字符集过窄会让整条匹配失败、token 明文漏出。
+// userInfo 掩码（轮 30 #7）：https://user:pass@host 形态的代理凭据与 GLM_API_KEY
+// 无关，replaceAll(apiKey) 拦不住。残留风险：路径内嵌 token（https://proxy/<key>/v1
+// 形态）难以枚举，未掩码——排障留档前自查这类网关形态
+const MASK_USERINFO_RE = /(:\/\/)[^/@\s]+:[^/@\s]+@/g;
 const MASK_QUERY_RE = /([?&][^&=]+=)[^&"'\s]+/g;
 // 已知安全头名（大小写不敏感）——白名单外一律脱敏（轮 24 #1）：extraHeaders 可
 // 注入任意名字的网关认证头（独立 token 值与 apiKey 无关，按名字/按值都拦不住），
@@ -151,7 +155,9 @@ const SAFE_HEADERS = new Set([
   "anthropic-dangerous-direct-browser-access",
 ]);
 const makeRedact = (apiKey) => (s) => {
-  let out = String(s).replaceAll(MASK_QUERY_RE, "$1<MASKED>");
+  let out = String(s)
+    .replaceAll(MASK_QUERY_RE, "$1<MASKED>")
+    .replaceAll(MASK_USERINFO_RE, "$1<MASKED>@");
   if (apiKey) {
     out = out.replaceAll(apiKey, "<REDACTED>");
   }

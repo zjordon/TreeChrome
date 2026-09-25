@@ -217,8 +217,15 @@ function parseResponse(
   if (typeof rawContent !== "string" && rawContent !== null && rawContent !== undefined) {
     log(`[llm] openai 丢弃形态异常的 message.content（非 string）：${stringifyForLog(rawContent)}`);
   }
-  const rawReasoning = message.reasoning_content ?? message.reasoning; // GLM/DeepSeek 思考字段
+  const rawReasoning: unknown = message.reasoning_content ?? message.reasoning; // GLM/DeepSeek 思考字段
   const reasoningText = typeof rawReasoning === "string" ? rawReasoning : "";
+  // 思考字段形态异常留证据（轮 30 #5）：存在但非 string（网关畸形输出）原先静默
+  // 折叠为空串——与 message.content（轮 29 #8）同款口径；null/缺失不告警
+  if (typeof rawReasoning !== "string" && rawReasoning !== null && rawReasoning !== undefined) {
+    log(
+      `[llm] openai 丢弃形态异常的 reasoning 字段（非 string）：${stringifyForLog(rawReasoning)}`,
+    );
+  }
 
   const toolCalls: ToolCall[] = [];
   if (Array.isArray(message.tool_calls)) {
@@ -305,6 +312,14 @@ export function createOpenAICompletionsProvider(
       wireMessages.push({ role: "system", content: req.systemPrompt });
     }
     wireMessages.push(...toWireMessages(req.messages));
+    // temperature 抑制判定（轮 30 #6 提取为具名布尔，恢复单层三元——嵌套三元
+    // 违反清单规范）：缺省走 TEMPERATURE_UNSUPPORTED_PREFIX 前缀启发式，
+    // temperatureSuppressed（轮 29 #3）是显式逃生门——前缀误命中自定义/网关模型
+    //（o1-finetune 等实际支持温度）时显式 false 恢复发送，未入清单新模型可显式 true
+    const temperatureSuppressed =
+      config.temperatureSuppressed === undefined
+        ? TEMPERATURE_UNSUPPORTED_PREFIX.test(config.model)
+        : config.temperatureSuppressed;
     const body: Record<string, unknown> = {
       model: config.model,
       messages: wireMessages,
@@ -324,17 +339,10 @@ export function createOpenAICompletionsProvider(
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
       // temperature 回退链（common.temperatureEntry）；两级缺省不发。o 系与
-      // gpt-5 系只接受默认温度（TEMPERATURE_UNSUPPORTED_PREFIX，轮 20 #11 web
-      // 核实）——卡片误配即每请求硬 400 且误触 fallback 单向切换，与
-      // maxTokensField 同源的地雷在此拆除：前缀命中时抑制发送并留一次性告警
-      //（轮 21 #11；gpt-4.1/gpt-oss 支持 0-2 不抑制）。temperatureSuppressed
-      //（轮 29 #3）是显式逃生门：前缀误命中自定义/网关模型（o1-finetune 等
-      // 实际支持温度）时显式 false 恢复发送，未入清单新模型可显式 true 抑制
-      ...((
-        config.temperatureSuppressed === undefined
-          ? TEMPERATURE_UNSUPPORTED_PREFIX.test(config.model)
-          : config.temperatureSuppressed
-      )
+      // gpt-5 系只接受默认温度——卡片误配即每请求硬 400 且误触 fallback 单向切换，
+      // 与 maxTokensField 同源的地雷在此拆除：抑制时不发送并留一次性告警
+      //（轮 21 #11；gpt-4.1/gpt-oss 支持 0-2 不抑制）
+      ...(temperatureSuppressed
         ? suppressedTemperatureEntry(req, config, onTemperatureClamp)
         : temperatureEntry(req, config, onTemperatureClamp)),
     };

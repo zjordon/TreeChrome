@@ -363,6 +363,19 @@ describe("请求构造（canonical → wire）", () => {
     expect(wire).toContain("data:image/jpeg;base64,AAAA");
   });
 
+  it("extraHeaders 最后合并（可覆盖 authorization）——三处独立实现的接线锚定（轮 30 #8，对齐 anthropic 侧）", async () => {
+    const { mock, provider } = setup({
+      extraHeaders: { authorization: "Bearer override", "x-custom": "1" },
+    });
+    mock.queueMany(toolOk("{}"));
+    await provider.chat(baseReq());
+    expect(mock.calls[0].init.headers).toEqual({
+      "content-type": "application/json",
+      authorization: "Bearer override",
+      "x-custom": "1",
+    });
+  });
+
   it("baseUrl 整段端点 URL 误配（以 /chat/completions 结尾）→ 如实拼接 + 一次性告警（轮 26 #2，与 anthropic /v1、gemini /v1beta 同族）", async () => {
     // 官方 curl 示例端点以 /chat/completions 结尾，整段复制进卡片拼出双重路径 → 404
     const plain = setupLogs();
@@ -593,6 +606,26 @@ describe("响应解析（wire → canonical）", () => {
     });
     await nullForm.provider.chat(baseReq());
     expect(nullForm.logs.some((m) => m.includes("丢弃形态异常的 message.content"))).toBe(false);
+  });
+
+  it("reasoning_content 存在但非 string → 折叠空串但留证据（轮 30 #5，与 content 轮 29 #8 同款）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: { role: "assistant", content: "ok", reasoning_content: 123 },
+            finish_reason: "stop",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.text).toBe("ok");
+    expect(res.reasoningText).toBeFalsy(); // 非 string 折叠为空（字段缺省或空串）
+    expect(logs.some((m) => m.includes("丢弃形态异常的 reasoning 字段"))).toBe(true);
   });
 
   it("arguments 缺失/null/空串兜底 {}（兼容端点无参工具形态，与 anthropic/gemini 口径对齐）", async () => {
