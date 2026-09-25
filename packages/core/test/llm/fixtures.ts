@@ -21,15 +21,25 @@ export function stubDeps(mock: MockFetch): Required<LlmDeps> {
   return { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: () => {} };
 }
 
-/** 三适配器测试共用的装配样板（卡片由调用方传入——协议差异不共享的既定取舍不变） */
+/** 三适配器测试共用的装配样板（卡片由调用方传入——协议差异不共享的既定取舍不变；
+ * log 注入点差异由 setupProvider / setupProviderWithLogs 分化，轮 31 #2 收敛装配主体） */
+function assemble(
+  factory: (config: ProviderConfig, deps: Required<LlmDeps>) => LLMProvider,
+  card: ProviderConfig,
+  over: Partial<ProviderConfig>,
+  log?: (message: string) => void,
+): { mock: MockFetch; provider: LLMProvider } {
+  const mock = new MockFetch();
+  const deps = log === undefined ? stubDeps(mock) : { ...stubDeps(mock), log };
+  return { mock, provider: factory({ ...card, ...over }, deps) };
+}
+
 export function setupProvider(
   factory: (config: ProviderConfig, deps: Required<LlmDeps>) => LLMProvider,
   card: ProviderConfig,
   over: Partial<ProviderConfig> = {},
 ): { mock: MockFetch; provider: LLMProvider } {
-  const mock = new MockFetch();
-  const provider = factory({ ...card, ...over }, stubDeps(mock));
-  return { mock, provider };
+  return assemble(factory, card, over);
 }
 
 /** 带日志采集的装配变体（丢弃类/清洗类告警断言用例共用，轮 13 #2） */
@@ -38,8 +48,7 @@ export function setupProviderWithLogs(
   card: ProviderConfig,
   over: Partial<ProviderConfig> = {},
 ): { mock: MockFetch; logs: string[]; provider: LLMProvider } {
-  const mock = new MockFetch();
   const logs: string[] = [];
-  const provider = factory({ ...card, ...over }, { ...stubDeps(mock), log: (m) => logs.push(m) });
+  const { mock, provider } = assemble(factory, card, over, (m) => logs.push(m));
   return { mock, logs, provider };
 }

@@ -520,3 +520,13 @@ smoke 产物摘要：
 - **#2 驳回**：白名单外 mime 丢弃——拿「响亮的 400（可归因不可重试）」换「静默丢图（模型失明无响应级证据）」，对截图驱动的 agent 是更差的缺省；轮 27 #1 注释已显式登记为待议决策，评审自身标注 low。
 
 测试 330 例全绿（覆盖率 98.70%）。
+
+### 评审轮 31（review-p2-llm-client-31.json，2026-09-25，14/14 采纳；第二轮循环额度轮 31-40 起）
+
+采纳 14 条。要点：
+
+- **sensitiveMap 检测三处补强（#9/#10/#14）**：URL tag 撞型去锚定（还原侧 replaceAll 匹配任意位置，"xx[u0]yy" 嵌入形态原检测静默漏报）；新增第 5 类「占位符互相包含」（"AB"/"ABc" 嵌套占位符还原侧先短者胜、外层撕裂失配——括号定界形态天然免疫误报）；去重粒度对齐 systemPrompt 泄露——改 WeakMap 按 (map, 类别) 去重（实例级类别布尔会让第二个 map 的同类别病态被首个 map 掩蔽）。
+- **schema 归一撞键闭环到全分支（#3）**：轮 30 #1 只收口了标量分支——properties/items/type/nullable 写入点统一走 emit 出口（"properties" 与 "Properties" 并存原先整棵子树静默丢失）。
+- **观测缺口（#5/#11）**：gemini 去重集达 128 上限时留一次性达限提示（「事件已停止上报」本身是运维线索，文案避开既有计数过滤词）；无已知内容域的对象 part（inlineData 等官方类型/图像输出模型/网关私货）按键名留证据（不 stringify 防 base64 刷屏）。
+- **openai tool_call type 校验（#4）**：显式非 function 类型（custom/mcp 等新式形态）function 域恰为对象也会混入执行链——丢弃留证据；缺失 type 容忍（兼容端点省略）。
+- **测试结构（#1/#2/#6/#7/#8/#12/#13）**：mock-fetch abortReason 三处单源 + null-body 状态降 null（204/205/304 显式 body 会在构造处抛 TypeError 被分型成网络层假象）；fixtures assemble 收敛装配主体；gemini/openai setupLogs 补 over 参数（三文件签名统一）；夹具 minimum 挪到数值域属性（object 节点挂 minimum 与顶层归一剥离口径自相矛盾）；温度巨型用例按行为维度拆为四条。

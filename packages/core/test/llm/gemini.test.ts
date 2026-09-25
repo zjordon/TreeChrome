@@ -29,8 +29,11 @@ const TOOL = {
     type: "object",
     additionalProperties: false,
     properties: {
-      // minimum 数值约束键：官方 Schema 支持的约束键（轮 10 起白名单收录，透传保留）
-      action: { type: "object", description: "the action", additionalProperties: true, minimum: 1 },
+      action: { type: "object", description: "the action", additionalProperties: true },
+      // minimum 数值约束键：官方 Schema 支持的约束键（轮 10 起白名单收录，透传
+      // 保留）——挂数值域属性演示，与分域口径自洽（minimum/maximum 仅 NUMBER/
+      // INTEGER，轮 31 #12：此前挂在 object 属性上与顶层归一剥离口径矛盾）
+      count: { type: "number", minimum: 1 },
       tags: { type: "array", items: { type: "string", enum: ["a", "b"] } },
     },
     required: ["action"],
@@ -40,7 +43,8 @@ const TOOL = {
 const SANITIZED = {
   type: "object",
   properties: {
-    action: { type: "object", description: "the action", minimum: 1 },
+    action: { type: "object", description: "the action" },
+    count: { type: "number", minimum: 1 },
     tags: { type: "array", items: { type: "string", enum: ["a", "b"] } },
   },
   required: ["action"],
@@ -65,8 +69,9 @@ const fnCallOk = (args: Record<string, unknown>) => ({
   },
 });
 
-/** 带日志采集的装配（丢弃类/清洗类告警断言共用） */
-const setupLogs = () => setupProviderWithLogs(createGeminiProvider, CARD);
+/** 带日志采集的装配（丢弃类/清洗类告警断言共用；over 覆盖卡片级配置，对齐 anthropic 侧轮 21 #13） */
+const setupLogs = (over: Partial<ProviderConfig> = {}) =>
+  setupProviderWithLogs(createGeminiProvider, CARD, over);
 describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
   it("白名单外键删除（$schema/additionalProperties/examples/$id），约束键（minimum）保留透传", () => {
     expect(sanitizeGeminiSchema(TOOL.parameters)).toEqual(SANITIZED);
@@ -208,6 +213,23 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     const out = sanitizeGeminiSchema({ maxLength: 5, MaxLength: 9 }, (d) => issues.push(d));
     expect(out).toEqual({ maxLength: 9, type: "string" }); // 插入序后写者覆盖
     expect(issues).toContain('键「"MaxLength"」与已写入键归一后均为「maxLength」，后者覆盖前者');
+  });
+
+  it("properties/items 分支的归一撞键同样上报（轮 31 #3——子树整棵静默丢失比标量更严重）", () => {
+    const issues: string[] = [];
+    const out = sanitizeGeminiSchema(
+      { properties: { a: { type: "string" } }, Properties: { b: { type: "number" } } },
+      (d) => issues.push(d),
+    );
+    expect(out).toEqual({ properties: { b: { type: "number" } }, type: "object" }); // 后写者覆盖
+    expect(issues).toContain('键「"Properties"」与已写入键归一后均为「properties」，后者覆盖前者');
+    const itemsIssues: string[] = [];
+    const itemsOut = sanitizeGeminiSchema(
+      { items: { type: "string" }, Items: { type: "number" } },
+      (d) => itemsIssues.push(d),
+    );
+    expect(itemsOut).toEqual({ items: { type: "number" }, type: "array" });
+    expect(itemsIssues).toContain('键「"Items"」与已写入键归一后均为「items」，后者覆盖前者');
   });
 
   it("单值 type:'null' 与数组含非字符串病态元素 → 同一兜底路径收口（'null' 不在 Gemini 枚举内）", () => {
@@ -645,6 +667,9 @@ describe("请求构造（canonical → wire）", () => {
     // 只计 schema 清洗事件（与姊妹用例的过滤口径对齐）：适配器未来新增的无关
     // 日志不应误红本断言
     expect(logs.filter((m) => m.includes("schema 清洗")).length).toBe(SCHEMA_ISSUE_DEDUP_MAX);
+    // 达限一次性提示（轮 31 #5）：运维需知道「事件已停止上报」这一事实本身；
+    // 文案避开「schema 清洗」关键词不进上方计数，且只发一次
+    expect(logs.filter((m) => m.includes("告警去重集已达")).length).toBe(1);
   });
 
   it("maxTokens 请求级覆盖与 temperature 显式", async () => {
@@ -958,6 +983,30 @@ describe("响应解析（wire → canonical）", () => {
     const res = await provider.chat(baseReq());
     expect(res.text).toBe("ok");
     expect(logs.some((m) => m.includes("丢弃非对象形态的 part"))).toBe(true);
+  });
+
+  it("无已知内容域的对象 part（inlineData 等官方类型/网关私货）→ 丢弃留键名证据（轮 31 #11）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            // 图像输出模型的响应 part 即 inlineData 形态——静默丢弃后只见空响应
+            content: {
+              role: "model",
+              parts: [{ inlineData: { mimeType: "image/png", data: "AAAA" } }, { text: "ok" }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.text).toBe("ok");
+    const dropped = logs.find((m) => m.includes("丢弃无已知内容域的 part"));
+    expect(dropped).toContain("keys=inlineData"); // 键名证据而非整 part 串化（防 base64 刷屏）
   });
 
   it("丢弃类事件留告警 + 病态分支覆盖：非请求名 / name 非字符串 / functionCall 非对象 / args 非对象（轮 12 #12）", async () => {

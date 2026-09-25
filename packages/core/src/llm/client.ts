@@ -202,15 +202,11 @@ export class LLMClient {
    *  不同 map 的命中——按 map 身份去重，同一 map 跨步复用只告警一次（防刷屏），
    *  新 map 各自获得一次告警机会 */
   private readonly loggedSystemPromptLeaks = new WeakSet<object>();
-  /** sensitiveMap 四类病态 WARNING 的分类去重（轮 20 #10/#14；轮 29 #4 拆分）：
-   *  sensitiveMap 是 per-call 选项，单一总标志会让首次命中的类别掩蔽后续调用中
-   *  其它类别的病态（跨调用对齐轮 21 #8「防一类病态掩盖另一类」的意图） */
-  private readonly warnedSensitiveMapPathology = {
-    intKey: false,
-    conflict: false,
-    crossConflict: false,
-    urlTagCollision: false,
-  };
+  /** sensitiveMap 五类病态 WARNING 的按 (map, 类别) 去重（轮 20 #10/#14 起源；
+   *  轮 29 #4 拆分类别、轮 31 #10 补 map 维度，与 loggedSystemPromptLeaks 同口径）：
+   *  sensitiveMap 是 per-call 选项，实例级单一/总类别标志会让首个 map 的命中
+   *  掩蔽后续 map 的病态或其它类别 */
+  private readonly warnedSensitiveMapPathologies = new WeakMap<object, Set<string>>();
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
@@ -283,9 +279,21 @@ export class LLMClient {
    *    长 URL，敏感还原失配，真实值永不还原且被 URL 顶替。
    * reals 滤空串键（轮 25 #6，与工具载荷/systemPrompt 检测同口径）：空 real
    * 全链路从不参与替换，其占位符计入冲突集会误报并误消费去重标志。
-   * 去重按四类各自独立（轮 29 #4）：sensitiveMap 是 per-call 选项，单一总标志
-   * 会让首次命中的类别掩蔽后续调用中其它类别的病态 */
+   * 去重按 (map 身份, 类别)（轮 29 #4 拆分类别，轮 31 #10 补 map 维度——与
+   * loggedSystemPromptLeaks 同口径）：同一 map 跨步复用每类只告警一次，新 map
+   * 各自获得告警机会（长生命周期实例换 map 时第二个 map 的病态不被首个掩蔽） */
   private warnSensitiveMapPathologies(sensitive: Record<string, string>): void {
+    let warned = this.warnedSensitiveMapPathologies.get(sensitive);
+    if (warned === undefined) {
+      warned = new Set();
+      this.warnedSensitiveMapPathologies.set(sensitive, warned);
+    }
+    const once = (category: string, hit: boolean, message: string): void => {
+      if (hit && !warned.has(category)) {
+        warned.add(category);
+        this.deps.log(message);
+      }
+    };
     const reals = Object.keys(sensitive).filter((real) => real !== "");
     const ARRAY_INDEX_KEY_RE = /^(?:0|[1-9]\d*)$/;
     const isArrayIndexKey = (real: string): boolean =>
@@ -306,31 +314,41 @@ export class LLMClient {
         (other) => other !== real && (ph === other || ph.includes(other) || other.includes(ph)),
       );
     });
-    const hasUrlTagCollision = placeholders.some((ph) => /^\[u\d+\]$/.test(ph));
-    if (hasIntKey && !this.warnedSensitiveMapPathology.intKey) {
-      this.warnedSensitiveMapPathology.intKey = true;
-      this.deps.log(
-        "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（≤10 位非负数字串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
-      );
-    }
-    if (hasConflict && !this.warnedSensitiveMapPathology.conflict) {
-      this.warnedSensitiveMapPathology.conflict = true;
-      this.deps.log(
-        "[llm] WARNING: sensitiveMap 存在占位符冲突（多个真实值映射到同一占位符）——还原侧先插入者胜、后续条目静默失效，还原结果可能张冠李戴",
-      );
-    }
-    if (hasCrossConflict && !this.warnedSensitiveMapPathology.crossConflict) {
-      this.warnedSensitiveMapPathology.crossConflict = true;
-      this.deps.log(
-        "[llm] WARNING: sensitiveMap 存在交叉冲突（占位符与另一条目的真实值存在包含关系）——顺序替换形成替换链，占位与还原双向静默数据损坏",
-      );
-    }
-    if (hasUrlTagCollision && !this.warnedSensitiveMapPathology.urlTagCollision) {
-      this.warnedSensitiveMapPathology.urlTagCollision = true;
-      this.deps.log(
-        "[llm] WARNING: sensitiveMap 占位符形如 [uN]，与 URL 缩写 tag 撞型——还原侧先 URL 后敏感，占位符会被长 URL 顶替、真实值丢失，请改用其他占位符形态",
-      );
-    }
+    // 嵌入形态检测（轮 31 #9）：restoreUrlsInOutput 用 replaceAll 匹配任意出现
+    // 位置——"xx[u0]yy" 形态的占位符同样会被 [u0]→长 URL 还原消费，不能只锚定
+    // 整串形态（"[value0]" 等仍不会误命中）
+    const hasUrlTagCollision = placeholders.some((ph) => /\[u\d+\]/.test(ph));
+    // ⑤ 占位符互相包含（轮 31 #14）：还原侧顺序 replaceAll 先短者胜，嵌套占位符
+    //（"AB" 与 "ABc"）被内层先还原撕裂后外层失配，真实值永不还原——与 ③ 同属
+    // 替换链静默损坏；括号定界形态（[SECRET-1]/[SECRET-10]）天然免疫误报
+    const hasPlaceholderNesting = placeholders.some((ph) =>
+      placeholders.some((other) => other !== ph && (other.includes(ph) || ph.includes(other))),
+    );
+    once(
+      "intKey",
+      hasIntKey,
+      "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（≤10 位非负数字串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
+    );
+    once(
+      "conflict",
+      hasConflict,
+      "[llm] WARNING: sensitiveMap 存在占位符冲突（多个真实值映射到同一占位符）——还原侧先插入者胜、后续条目静默失效，还原结果可能张冠李戴",
+    );
+    once(
+      "crossConflict",
+      hasCrossConflict,
+      "[llm] WARNING: sensitiveMap 存在交叉冲突（占位符与另一条目的真实值存在包含关系）——顺序替换形成替换链，占位与还原双向静默数据损坏",
+    );
+    once(
+      "urlTagCollision",
+      hasUrlTagCollision,
+      "[llm] WARNING: sensitiveMap 占位符含 [uN] 形态，与 URL 缩写 tag 撞型——还原侧先 URL 后敏感，占位符会被长 URL 顶替、真实值丢失，请改用其他占位符形态",
+    );
+    once(
+      "placeholderNesting",
+      hasPlaceholderNesting,
+      "[llm] WARNING: sensitiveMap 存在占位符互相包含（嵌套占位符）——还原侧顺序替换先短者胜，外层占位符被撕裂后失配，真实值永不还原",
+    );
   }
 
   private async getActionInner(

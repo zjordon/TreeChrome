@@ -82,6 +82,17 @@ export function sanitizeGeminiSchema(
   onSchemaIssue?: (detail: string) => void,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  // 归一撞键统一上报出口（轮 30 #1，轮 31 #3 扩到全部分支）：归一化（大小写/
+  // camelCase 发射）后同键后写者覆盖先写者（"properties" 与 "Properties" 并存
+  // 会整棵子树静默丢失）——覆盖必留证据，全部分支共用防口径漂移
+  const emit = (sourceKey: string, emitKey: string, value: unknown): void => {
+    if (out[emitKey] !== undefined) {
+      onSchemaIssue?.(
+        `键「${stringifyForLog(sourceKey)}」与已写入键归一后均为「${emitKey}」，后者覆盖前者`,
+      );
+    }
+    out[emitKey] = value;
+  };
   for (const [key, value] of Object.entries(schema)) {
     const normalized = key.toLowerCase();
     if (!ALLOWED_KEYS.has(normalized)) {
@@ -124,12 +135,12 @@ export function sanitizeGeminiSchema(
         // 全 null/病态/非法枚举成员：兜底合法枚举——兜底同样是约束丢失，与联合
         // 窄化同口径上报（轮 16 #10），否则此路径无排障线索
         onSchemaIssue?.("type 全 null/病态元素，兜底为 string");
-        out.type = "string";
+        emit(key, "type", "string");
       } else {
-        out.type = chosen;
+        emit(key, "type", chosen);
       }
       if (list.includes("null")) {
-        out.nullable = true;
+        emit(key, "nullable", true);
       }
       continue;
     }
@@ -159,7 +170,7 @@ export function sanitizeGeminiSchema(
         }
         props[name] = sanitizeGeminiSchema(sub, onSchemaIssue);
       }
-      out[normalized] = props;
+      emit(key, normalized, props);
     } else if (normalized === "items") {
       // 元组形态 items:[{…},{…}] 窄化为首元素（Gemini 的 items 只收单个 Schema）；
       // 非对象值兜底空 schema 并补缺省 type（节点须显式 type，轮 19 #1）——不原样
@@ -170,9 +181,11 @@ export function sanitizeGeminiSchema(
       } else if (!isRecord(item)) {
         onSchemaIssue?.("items 非对象形态归一为空 schema");
       }
-      out[normalized] = isRecord(item)
-        ? sanitizeGeminiSchema(item, onSchemaIssue)
-        : { type: "string" };
+      emit(
+        key,
+        normalized,
+        isRecord(item) ? sanitizeGeminiSchema(item, onSchemaIssue) : { type: "string" },
+      );
     } else {
       // 标量键值形态校验（清洗闭环的最后一格，轮 11 #9）：病态值原样透传会被
       // 端点 400——type 非字符串兜底合法枚举、enum/nullable/format 及约束键
@@ -180,7 +193,7 @@ export function sanitizeGeminiSchema(
       if (normalized === "type") {
         if (typeof value !== "string") {
           onSchemaIssue?.(`type 非字符串形态兜底为 string：${stringifyForLog(value)}`);
-          out.type = "string";
+          emit(key, "type", "string");
           continue;
         }
         if (!GEMINI_TYPES.has(value)) {
@@ -192,10 +205,10 @@ export function sanitizeGeminiSchema(
           const lowered = value.toLowerCase();
           if (GEMINI_TYPES.has(lowered)) {
             onSchemaIssue?.(`type「${value}」归一化为小写 ${lowered}`);
-            out.type = lowered;
+            emit(key, "type", lowered);
           } else {
             onSchemaIssue?.(`type「${stringifyForLog(value)}」不在官方枚举集，兜底为 string`);
-            out.type = "string";
+            emit(key, "type", "string");
           }
           continue;
         }
@@ -254,16 +267,8 @@ export function sanitizeGeminiSchema(
         continue;
       }
       // 写入统一用归一化（小写）键 + 多词约束键的官方 camelCase（"MaxLength" 等
-      // 变体原样透传仍会被端点拒收，清洗必须闭环）。归一后撞键时后写者覆盖先写者
-      //（轮 30 #1）：如 "MaxLength" 与 "maxlength" 并存——覆盖留证据，约束静默
-      // 丢失无排障线索
-      const emitKey = EMIT_KEY[normalized] ?? normalized;
-      if (out[emitKey] !== undefined) {
-        onSchemaIssue?.(
-          `键「${stringifyForLog(key)}」与已写入键归一后均为「${emitKey}」，后者覆盖前者`,
-        );
-      }
-      out[emitKey] = value;
+      // 变体原样透传仍会被端点拒收，清洗必须闭环）；撞键上报经 emit 统一出口
+      emit(key, EMIT_KEY[normalized] ?? normalized, value);
     }
   }
   // 缺 type 补注入（轮 19 #1 + 轮 20 #1 结构线索）：端点要求每个 schema 节点显式

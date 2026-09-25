@@ -236,6 +236,13 @@ function parseResponse(
         log(`[llm] openai 丢弃形态异常的 tool_call：${stringifyForLog(item)}`);
         continue;
       }
+      // 显式非 function 类型（custom/code_interpreter/mcp 等新式形态，轮 31 #4）：
+      // function 域恰为对象也会以合法调用身份混入执行链——丢弃留证据；缺失 type
+      // 容忍（vLLM/Ollama 等兼容端点可能省略）
+      if (item.type !== undefined && item.type !== "function") {
+        log(`[llm] openai 丢弃非 function 类型的 tool_call：${stringifyForLog(item.type)}`);
+        continue;
+      }
       const fn = item.function;
       if (typeof fn.name !== "string") {
         // 形态异常与名字失配分档留证据（轮 16 #12）：与 gemini「丢弃形态异常的

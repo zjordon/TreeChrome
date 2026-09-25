@@ -10,6 +10,14 @@ export type MockResponseSpec =
   /** 永不 resolve，直到 signal 中止才 reject AbortError（测 deadline 强杀在飞请求） */
   | { hangUntilAbort: true };
 
+/** 真实 fetch 按 signal 的 abort reason 拒绝（AbortSignal.timeout 到点 reason 为
+ * name="TimeoutError" 的 DOMException）；无 reason 回退标准 AbortError 形态。
+ * applySpec / makeHangingBodyFetch / FakeClock.sleep 三处共同复刻该运行时形态
+ * （轮 31 #1 单源化），任一处演进（TimeoutError 特判等）不再手工同步 */
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("Aborted", "AbortError");
+}
+
 function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise<Response> {
   if ("networkError" in spec) {
     return Promise.reject(spec.networkError);
@@ -28,7 +36,7 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
       // reject(signal.reason)：真实 fetch 按 signal 的 abort reason 拒绝——
       // AbortSignal.timeout 到点的 reason 是 name="TimeoutError" 的 DOMException
       //（非 AbortError），mock 必须复刻该形态，否则分型测试与真实运行时脱节
-      const onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      const onAbort = () => reject(abortReason(signal));
       if (signal.aborted) {
         onAbort();
         return;
@@ -43,8 +51,12 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
   } else {
     bodyText = spec.body === undefined ? "" : JSON.stringify(spec.body);
   }
+  // null-body 状态（204/205/304，轮 31 #8）：真 Response 构造约束——显式 body
+  //（含空串）直接抛 TypeError，会被 postJson 分型成网络层假象；类型契约
+  // status: number 允许这些值，显式降为 null 保持真解析路径可用
+  const nullBodyStatus = spec.status === 204 || spec.status === 205 || spec.status === 304;
   return Promise.resolve(
-    new Response(bodyText, {
+    new Response(nullBodyStatus ? null : bodyText, {
       status: spec.status,
       headers,
     }),
@@ -130,11 +142,7 @@ export function makeHangingBodyFetch(
             return;
           }
           const signal = init.signal;
-          const onAbort = () =>
-            setTimeout(
-              () => reject(signal.reason ?? new DOMException("Aborted", "AbortError")),
-              rejectDelayMs,
-            );
+          const onAbort = () => setTimeout(() => reject(abortReason(signal)), rejectDelayMs);
           if (signal.aborted) {
             onAbort();
             return;
@@ -177,7 +185,11 @@ export class FakeClock {
         }
         timer.off?.();
         // 透传 abort reason（与 client.defaultSleep 同款：宿主自定义 reason 不变形）
-        reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+        if (signal !== undefined) {
+          reject(abortReason(signal));
+        } else {
+          reject(new DOMException("Aborted", "AbortError"));
+        }
       };
       timer.off = () => signal?.removeEventListener("abort", onAbort);
       if (signal?.aborted) {

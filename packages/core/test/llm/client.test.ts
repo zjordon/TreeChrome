@@ -589,7 +589,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(emptyKey.logs.some((m) => m.includes("WARNING"))).toBe(false);
   });
 
-  it("sensitiveMap URL tag 撞型 / 子串交叉冲突（轮 26 #1/#4）", async () => {
+  it("sensitiveMap URL tag 撞型 / 子串交叉冲突（轮 26 #1/#4；嵌入形态与占位符嵌套为轮 31 #9/#14）", async () => {
     // 占位符形如 [uN]：okResult 同序还原（先 URL 后敏感）会把模型输出中的该
     // 占位符先消费成长 URL，敏感还原失配——真实值永不还原且被 URL 顶替
     const urlTag = setupWithLogs();
@@ -599,6 +599,15 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     });
     expect(urlTag.logs.some((m) => m.includes("WARNING") && m.includes("撞型"))).toBe(true);
 
+    // 嵌入形态（轮 31 #9）：还原侧 replaceAll 匹配任意位置——"xx[u0]yy" 同样被
+    // [u0]→长 URL 还原消费，整串锚定的旧检测静默漏报
+    const embedded = setupWithLogs();
+    embedded.mock.queueMany(toolOk({ done: 1 }));
+    await embedded.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-x": "xx[u0]yy" },
+    });
+    expect(embedded.logs.some((m) => m.includes("WARNING") && m.includes("撞型"))).toBe(true);
+
     // 子串形态交叉冲突：占位符 **key** 含另一条目 real "key"——顺序替换形成
     // 替换链（先占位出的值被再次替换），精确相等检测拦不住（轮 26 #4 放宽）
     const substring = setupWithLogs();
@@ -607,6 +616,29 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       sensitiveMap: { "secret-key": "**key**", key: "<PIN>" },
     });
     expect(substring.logs.some((m) => m.includes("WARNING") && m.includes("交叉冲突"))).toBe(true);
+
+    // 占位符互相包含（轮 31 #14）："AB" 与 "ABc"——还原侧顺序替换先短者胜，
+    // 嵌套占位符被撕裂后外层失配，真实值永不还原
+    const nesting = setupWithLogs();
+    nesting.mock.queueMany(toolOk({ done: 1 }));
+    await nesting.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { realA: "AB", realB: "ABc" },
+    });
+    expect(nesting.logs.some((m) => m.includes("WARNING") && m.includes("占位符互相包含"))).toBe(
+      true,
+    );
+  });
+
+  it("病态去重按 (map, 类别)：换 map 后同类别病态各自告警（轮 31 #10，与 systemPrompt 泄露同口径）", async () => {
+    const { mock, client, logs } = setupWithLogs();
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 1 }));
+    await client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { realA: "<X>", realB: "<X>" },
+    });
+    await client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { realC: "<Y>", realD: "<Y>" }, // 新 map 的同类别（占位符冲突）
+    });
+    expect(logs.filter((m) => m.includes("占位符冲突")).length).toBe(2); // 各自一次
   });
 
   it("四类病态跨调用独立去重：首调整数键不再掩蔽次调占位符冲突（轮 29 #4）", async () => {

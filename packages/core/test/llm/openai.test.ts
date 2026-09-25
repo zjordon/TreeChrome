@@ -53,8 +53,9 @@ function baseReq(): ChatRequest {
   };
 }
 
-/** 带日志采集的装配（丢弃类/清洗类告警断言共用） */
-const setupLogs = () => setupProviderWithLogs(createOpenAICompletionsProvider, CARD);
+/** 带日志采集的装配（丢弃类/清洗类告警断言共用；over 覆盖卡片级配置，对齐 anthropic 侧轮 21 #13） */
+const setupLogs = (over: Partial<ProviderConfig> = {}) =>
+  setupProviderWithLogs(createOpenAICompletionsProvider, CARD, over);
 describe("请求构造（canonical → wire）", () => {
   it("全量映射：system 首条、纯文本 user 字符串、含图 user 数组 data-URL、tool_calls 字符串化、toolResult 独立消息", async () => {
     const { mock, provider } = setup();
@@ -273,7 +274,7 @@ describe("请求构造（canonical → wire）", () => {
   // 钳制告警/maxTokens 回退的纯逻辑矩阵见 common.test.ts（轮 19 #2 收敛）；
   // 接线锚定保留在 anthropic.test.ts（三适配器注入形态一致）
 
-  it("o 系与 gpt-5 系抑制 temperature（只接受默认温度 1；轮 14 #10 + 轮 20 #11 web 核实）；gpt-4o 照常发送", async () => {
+  it("o 系与 gpt-5 系抑制 temperature（只接受默认温度 1，轮 14 #10 + 轮 20 #11 web 核实）；gpt-4o 照常发送", async () => {
     const oSeries = setup({ model: "o3-mini", temperature: 0.2 });
     oSeries.mock.queueMany(toolOk("{}"));
     await oSeries.provider.chat(baseReq());
@@ -292,11 +293,12 @@ describe("请求构造（canonical → wire）", () => {
     normal.mock.queueMany(toolOk("{}"));
     await normal.provider.chat(baseReq());
     expect(normal.mock.lastBody().temperature).toBe(0.2);
+  });
 
-    // 两清单「刻意不同」的分叉成员（轮 27 #11）：gpt-4.1/gpt-oss 在
-    // NEW_CONTRACT_PREFIX（新上限字段 max_completion_tokens）但不在
-    // TEMPERATURE_UNSUPPORTED_PREFIX（温度照发）——锁定温度维度，防两前缀清单
-    // 被「统一」重构后静默丢温控且全套无红测
+  it("两清单刻意不同的分叉成员（gpt-4.1/gpt-oss）：新上限字段但温度照发（轮 27 #11）", async () => {
+    // NEW_CONTRACT_PREFIX（max_completion_tokens）与 TEMPERATURE_UNSUPPORTED_PREFIX
+    //（温度抑制）成员集刻意不同——锁定温度维度，防两前缀清单被「统一」重构后
+    // gpt-4.1/gpt-oss 用户静默丢温控且全套无红测
     for (const model of ["gpt-4.1", "gpt-oss-120b"]) {
       const dual = setup({ model, temperature: 0.4 });
       dual.mock.queueMany(toolOk("{}"));
@@ -304,9 +306,10 @@ describe("请求构造（canonical → wire）", () => {
       expect(dual.mock.lastBody().temperature).toBe(0.4);
       expect(dual.mock.lastBody()).toHaveProperty("max_completion_tokens");
     }
+  });
 
-    // temperatureSuppressed 逃生门（轮 29 #3）：前缀误命中自定义/网关模型时
-    // 显式 false 恢复发送；显式 true 对任意模型强制抑制——与 maxTokensField 同款
+  it("temperatureSuppressed 逃生门：显式 false 恢复发送 / 显式 true 强制抑制（轮 29 #3，与 maxTokensField 同款）", async () => {
+    // 前缀误命中自定义/网关模型（o1-finetune 等实际支持温度）时恢复发送
     const escapeHatch = setup({
       model: "o1-finetune",
       temperature: 0.3,
@@ -315,6 +318,7 @@ describe("请求构造（canonical → wire）", () => {
     escapeHatch.mock.queueMany(toolOk("{}"));
     await escapeHatch.provider.chat(baseReq());
     expect(escapeHatch.mock.lastBody().temperature).toBe(0.3);
+    // 未入清单的新模型可显式抑制
     const forced = setup({
       model: "some-new-model",
       temperature: 0.3,
@@ -323,20 +327,19 @@ describe("请求构造（canonical → wire）", () => {
     forced.mock.queueMany(toolOk("{}"));
     await forced.provider.chat(baseReq());
     expect(forced.mock.lastBody()).not.toHaveProperty("temperature");
+  });
 
-    // 抑制可观测（轮 21 #11）：配置了 temperature 却被忽略 → 一次性 WARNING
-    //（与「两级缺省不发」不同，静默忽略无线索）；未配置则零告警
-    const suppressed = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
-      model: "gpt-5",
-      temperature: 0.7,
-    });
+  it("抑制可观测：配置被忽略留一次性 WARNING，未配置零告警（轮 21 #11 + 轮 23 #4 真请求阴性对照）", async () => {
+    // 配置了 temperature 却被忽略 → 一次性 WARNING（与「两级缺省不发」不同，
+    // 静默忽略无线索）
+    const suppressed = setupLogs({ model: "gpt-5", temperature: 0.7 });
     suppressed.mock.queueMany(toolOk("{}"), toolOk("{}"));
     await suppressed.provider.chat(baseReq());
     await suppressed.provider.chat(baseReq());
     expect(suppressed.logs.filter((m) => m.includes("只接受默认温度"))).toHaveLength(1);
     // 未配置则零告警——须真正采集日志断言（轮 23 #4）：静音 setup 的声明无回归
     // 防护，且 toHaveLength(1) 受 makeOnceWarn 去重保护测不出「无条件告警」回归
-    const quiet = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, { model: "gpt-5" });
+    const quiet = setupLogs({ model: "gpt-5" });
     quiet.mock.queueMany(toolOk("{}"));
     await quiet.provider.chat(baseReq());
     expect(quiet.mock.lastBody()).not.toHaveProperty("temperature");
@@ -626,6 +629,35 @@ describe("响应解析（wire → canonical）", () => {
     expect(res.text).toBe("ok");
     expect(res.reasoningText).toBeFalsy(); // 非 string 折叠为空（字段缺省或空串）
     expect(logs.some((m) => m.includes("丢弃形态异常的 reasoning 字段"))).toBe(true);
+  });
+
+  it("显式非 function 类型的 tool_call 丢弃留证据；缺失 type 容忍（轮 31 #4）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                // function 域恰为对象——type 不查会以合法调用身份混入执行链
+                { id: "c1", type: "custom", function: { name: "agent_response", arguments: "{}" } },
+                // 缺失 type：vLLM/Ollama 兼容端点形态，照常解析
+                { id: "c2", function: { name: "agent_response", arguments: "{}" } },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const res = await provider.chat(baseReq());
+    expect(res.toolCalls).toHaveLength(1); // 仅缺失 type 的合法项
+    expect(res.toolCalls[0].name).toBe("agent_response");
+    expect(logs.some((m) => m.includes("丢弃非 function 类型的 tool_call"))).toBe(true);
   });
 
   it("arguments 缺失/null/空串兜底 {}（兼容端点无参工具形态，与 anthropic/gemini 口径对齐）", async () => {

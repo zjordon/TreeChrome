@@ -253,6 +253,12 @@ function parseResponse(
       // functionCall 存在但非对象（网关畸形输出，如 "foo"）——与 name 非字符串同款
       // 「丢弃留证据」口径，不静默跳过；串化截断（轮 17 #6）与 http.ts 错误体同口径
       log(`[llm] gemini 丢弃形态异常的 functionCall：${stringifyForLog(part.functionCall)}`);
+    } else if (part.text === undefined) {
+      // 对象 part 但无任何已知内容域（inlineData/fileData/executableCode 等官方
+      // part 类型、图像输出模型或网关私货，轮 31 #11）——与 anthropic「未知 type
+      // 留证据」（轮 30 #3）口径对齐：只记键名集合不 stringify（防大体积 base64
+      // 刷屏），无证据的空响应会误导排障
+      log(`[llm] gemini 丢弃无已知内容域的 part（keys=${Object.keys(part).join(",")}）`);
     }
   }
   const response: ChatResponse = {
@@ -281,10 +287,21 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   let synthSeq = 0;
   // schema 清洗事件告警的去重集：工具 schema 逐请求固定，同一事件重复告警只有
   // 噪音；每条一次即保留「约束被清洗丢失」的排障线索。设条数上限防动态工具
-  // schema（属性名随页面变化）在长生命周期实例上无界增长——上限后新事件静默
+  // schema（属性名随页面变化）在长生命周期实例上无界增长——达限留一次性提示
+  //（轮 31 #5：运维需知道「事件已停止上报」这一事实本身），此后新事件静默
   const warnedSchemaIssues = new Set<string>();
+  let warnedSchemaIssueCapReached = false;
   const onSchemaIssue = (detail: string): void => {
-    if (warnedSchemaIssues.has(detail) || warnedSchemaIssues.size >= SCHEMA_ISSUE_DEDUP_MAX) {
+    if (warnedSchemaIssues.size >= SCHEMA_ISSUE_DEDUP_MAX) {
+      if (!warnedSchemaIssueCapReached) {
+        warnedSchemaIssueCapReached = true;
+        deps.log(
+          `[llm] gemini schema 告警去重集已达 ${SCHEMA_ISSUE_DEDUP_MAX} 条上限，后续清洗事件将不再上报`,
+        );
+      }
+      return;
+    }
+    if (warnedSchemaIssues.has(detail)) {
       return;
     }
     warnedSchemaIssues.add(detail);
