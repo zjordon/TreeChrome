@@ -204,6 +204,21 @@ function parseResponse(
     );
   }
   const first = candidates.length > 0 ? candidates[0] : undefined;
+  // 嵌套承载域「存在但形态异常」留证据（轮 33 #1，与 openai message 域轮 32 #9
+  // 同族）：candidate/content/parts 三级任一畸形静默归空，网关畸形载荷退化为无
+  // 线索空响应——缺失（undefined）是合法形态不告警
+  if (first !== undefined && !isRecord(first)) {
+    log(`[llm] gemini 丢弃形态异常的 candidate（非对象）：${stringifyForLog(first)}`);
+  } else if (isRecord(first) && first.content !== undefined && !isRecord(first.content)) {
+    log(`[llm] gemini 丢弃形态异常的 content（非对象）：${stringifyForLog(first.content)}`);
+  } else if (
+    isRecord(first) &&
+    isRecord(first.content) &&
+    first.content.parts !== undefined &&
+    !Array.isArray(first.content.parts)
+  ) {
+    log(`[llm] gemini 丢弃形态异常的 parts（非数组）：${stringifyForLog(first.content.parts)}`);
+  }
   const content =
     isRecord(first) && isRecord(first.content) && Array.isArray(first.content.parts)
       ? first.content.parts

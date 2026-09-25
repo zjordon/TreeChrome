@@ -213,6 +213,11 @@ function parseResponse(
     log(`[llm] openai 丢弃形态异常的顶层 choices（非数组）：${stringifyForLog(json.choices)}`);
   }
   const first = choices.length > 0 ? choices[0] : undefined;
+  // choice 元素本身非对象（网关畸形输出）留证据（轮 33 #2）：与下方 message 域
+  // 口径同族，静默归空是无证据丢弃路径
+  if (first !== undefined && !isRecord(first)) {
+    log(`[llm] openai 丢弃形态异常的 choice（非对象）：${stringifyForLog(first)}`);
+  }
   const message = isRecord(first) && isRecord(first.message) ? first.message : {};
   if (first !== undefined && isRecord(first) && !isRecord(first.message)) {
     // 同族（轮 32 #9）：message 域「存在但非对象」静默归空同样无证据
@@ -236,6 +241,14 @@ function parseResponse(
     );
   }
 
+  // message.tool_calls「存在但非数组」留证据（轮 33 #6）：本文件响应解析唯一
+  // 遗漏的承载域——转换型网关回传 {tool_calls: "..."} 等形态时调用全部静默丢失
+  // 且 finish_reason:"tool_calls" 被映射为 other，client 只见空响应无线索
+  if (message.tool_calls !== undefined && !Array.isArray(message.tool_calls)) {
+    log(
+      `[llm] openai 丢弃形态异常的 message.tool_calls（非数组）：${stringifyForLog(message.tool_calls)}`,
+    );
+  }
   const toolCalls: ToolCall[] = [];
   if (Array.isArray(message.tool_calls)) {
     for (const item of message.tool_calls) {

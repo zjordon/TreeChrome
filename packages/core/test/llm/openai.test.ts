@@ -629,6 +629,35 @@ describe("响应解析（wire → canonical）", () => {
     const r2 = await messageForm.provider.chat(baseReq());
     expect(r2.text).toBe("");
     expect(messageForm.logs.some((m) => m.includes("丢弃形态异常的 message（非对象）"))).toBe(true);
+
+    // choice 元素本身非对象（轮 33 #2）
+    const choiceForm = setupLogs();
+    choiceForm.mock.queueMany({
+      status: 200,
+      body: { choices: ["junk"], usage: null },
+    });
+    await choiceForm.provider.chat(baseReq());
+    expect(choiceForm.logs.some((m) => m.includes("丢弃形态异常的 choice（非对象）"))).toBe(true);
+
+    // message.tool_calls 存在但非数组（轮 33 #6）：调用全部静默丢失的网关畸形形态
+    const toolCallsForm = setupLogs();
+    toolCallsForm.mock.queueMany({
+      status: 200,
+      body: {
+        choices: [
+          {
+            message: { role: "assistant", content: null, tool_calls: "junk" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: null,
+      },
+    });
+    const r4 = await toolCallsForm.provider.chat(baseReq());
+    expect(r4.toolCalls).toEqual([]);
+    expect(toolCallsForm.logs.some((m) => m.includes("丢弃形态异常的 message.tool_calls"))).toBe(
+      true,
+    );
   });
 
   it("reasoning_content 存在但非 string → 折叠空串但留证据（轮 30 #5，与 content 轮 29 #8 同款）", async () => {

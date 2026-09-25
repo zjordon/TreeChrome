@@ -328,10 +328,24 @@ export class LLMClient {
     const hasPlaceholderNesting = placeholders.some((ph) =>
       placeholders.some((other) => other !== ph && (other.includes(ph) || ph.includes(other))),
     );
+    // ⑥ 跨条目 real 互相包含（轮 33 #3）：短 real 插入序在前时请求侧先撕裂长 real
+    //（"sk-abc" 先吃掉 "sk-abcdef" → "[K1]def"），长条目失配 → 敏感值明文残留
+    // 出站（泄露方向，比既有各类的数据损坏更重）；方向判定 jdx < idx 精确到
+    // 有害形态（短者在后无害），共享前缀的 key/路径类配置是常见来源
+    const hasRealNesting = reals.some((real, idx) =>
+      reals.some((other, jdx) => jdx < idx && real.includes(other)),
+    );
+    // ⑦ 自条目占位符为真实值的真子串（轮 33 #4）：请求侧正常但还原侧 replaceAll
+    // (ph, real) 会把模型输出中天然出现的该子串全部还原（过度替换，toolInput
+    // 数据损坏）；ph 极短时是灾难性替换。ph === real（恒等映射）与空 ph 无害排除
+    const hasSelfContainedPh = reals.some((real) => {
+      const ph = sensitive[real];
+      return ph !== "" && ph !== real && real.includes(ph);
+    });
     once(
       "intKey",
       hasIntKey,
-      "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（≤10 位非负数字串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
+      "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（0–4294967295 的非负整数串）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
     );
     once(
       "conflict",
@@ -352,6 +366,16 @@ export class LLMClient {
       "placeholderNesting",
       hasPlaceholderNesting,
       "[llm] WARNING: sensitiveMap 存在占位符互相包含（嵌套占位符）——还原侧顺序替换先短者胜，外层占位符被撕裂后失配，真实值永不还原",
+    );
+    once(
+      "realNesting",
+      hasRealNesting,
+      "[llm] WARNING: sensitiveMap 存在真实值互相包含（短者在插入序之前）——请求侧顺序替换先撕裂长真实值，长条目失配后敏感值明文残留出站，请调整插入顺序或收窄条目",
+    );
+    once(
+      "selfContainedPh",
+      hasSelfContainedPh,
+      "[llm] WARNING: sensitiveMap 存在占位符为自身真实值子串的条目——还原侧会把输出中天然出现的该子串一并还原为真实值（toolInput 数据损坏），请改用与真实值无包含关系的占位符形态",
     );
   }
 
@@ -433,7 +457,7 @@ export class LLMClient {
           "[llm] WARNING: systemPrompt 含 sensitiveMap 命中值，将明文出站（systemPrompt 不在占位范围，由宿主自担）",
         );
       }
-      // sensitiveMap 病态配置的一次性 WARNING（轮 27 #5 提取为私有方法：四类检测
+      // sensitiveMap 病态配置的一次性 WARNING（轮 27 #5 提取为私有方法：多类检测
       // 与请求组装/梯子状态机职责正交，病态清单多轮评审持续增长不再挤压主流程）
       if (sensitive !== undefined) {
         this.warnSensitiveMapPathologies(sensitive);

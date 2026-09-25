@@ -1051,6 +1051,22 @@ describe("响应解析（wire → canonical）", () => {
     const r2 = await feedbackForm.provider.chat(baseReq());
     expect(r2.text).toBe("");
     expect(feedbackForm.logs.some((m) => m.includes("丢弃形态异常的 promptFeedback"))).toBe(true);
+
+    // 嵌套三级（轮 33 #1）：candidate 非对象 / content 非对象 / parts 非数组——各自留证据
+    for (const [label, first] of [
+      ["candidate", "junk"],
+      ["content", { content: "junk" }],
+      ["parts", { content: { parts: "junk" } }],
+    ] as const) {
+      const nested = setupLogs();
+      nested.mock.queueMany({
+        status: 200,
+        body: { candidates: [first], usageMetadata: { promptTokenCount: 1 } },
+      });
+      const r = await nested.provider.chat(baseReq());
+      expect(r.text).toBe("");
+      expect(nested.logs.some((m) => m.includes(`丢弃形态异常的 ${label}`))).toBe(true);
+    }
   });
 
   it("非对象形态的 part（网关畸形，如字符串）→ 丢弃留证据（轮 30 #4）", async () => {

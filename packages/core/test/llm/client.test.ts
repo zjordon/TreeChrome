@@ -627,6 +627,35 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(nesting.logs.some((m) => m.includes("WARNING") && m.includes("占位符互相包含"))).toBe(
       true,
     );
+
+    // ⑥ real 互相包含且短者在插入序之前（轮 33 #3）：请求侧 "sk-abc" 先撕裂
+    // "sk-abcdef" → "[K1]def"，长条目失配后敏感值明文残留出站（泄露方向）
+    const realNesting = setupWithLogs();
+    realNesting.mock.queueMany(toolOk({ done: 1 }));
+    await realNesting.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-abc": "[K1]", "sk-abcdef": "[K2]" },
+    });
+    expect(
+      realNesting.logs.some((m) => m.includes("WARNING") && m.includes("真实值互相包含")),
+    ).toBe(true);
+    // 方向反排（短者在后）无害：请求侧长 real 先替换，不撕裂
+    const reversed = setupWithLogs();
+    reversed.mock.queueMany(toolOk({ done: 1 }));
+    await reversed.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-abcdef": "[K2]", "sk-abc": "[K1]" },
+    });
+    expect(reversed.logs.some((m) => m.includes("真实值互相包含"))).toBe(false);
+
+    // ⑦ 自条目占位符为真实值真子串（轮 33 #4）：还原侧把输出中天然出现的子串
+    // 全部还原成 real（过度替换，toolInput 数据损坏）
+    const selfContained = setupWithLogs();
+    selfContained.mock.queueMany(toolOk({ done: 1 }));
+    await selfContained.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "path/to/secret": "secret" },
+    });
+    expect(
+      selfContained.logs.some((m) => m.includes("WARNING") && m.includes("自身真实值子串")),
+    ).toBe(true);
   });
 
   it("病态去重按 (map, 类别)：换 map 后同类别病态各自告警（轮 31 #10，与 systemPrompt 泄露同口径）", async () => {
