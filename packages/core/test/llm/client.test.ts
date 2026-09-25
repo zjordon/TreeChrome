@@ -1055,13 +1055,11 @@ describe("deadline 与取消", () => {
     expect(resolveChatHttpTimeoutMs(12345)).toBeUndefined();
   });
 
-  it("并发 getAction → 重入哨兵显式失败（轮 12 #6）；完成后哨兵复位可串行复用", async () => {
+  it("并发 getAction → 重入哨兵显式失败（轮 12 #6；哨兵异常 TypeError 非 LLMError 家族，轮 27 #7——本地编程错误不进端点分罪轴）；完成后哨兵复位可串行复用", async () => {
     const { mock, client } = setup();
     mock.queueMany(toolOk({ ok: 1 }), toolOk({ ok: 2 }));
     const p1 = client.getAction("sys", msgs(), TOOL);
-    await expect(client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(
-      LLMInvalidRequestError,
-    );
+    await expect(client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(TypeError);
     const r1 = await p1; // 第一个调用不受影响
     expect(r1.kind).toBe("ok");
     const r2 = await client.getAction("sys", msgs(), TOOL); // 哨兵已复位

@@ -472,3 +472,15 @@ smoke 产物摘要：
 - **顶层归一约束键闭环（#5）**：pattern/minLength/maxLength（STRING 域）、minItems/maxItems（ARRAY 域）、minimum/maximum（NUMBER/INTEGER 域）与 items/enum/format 一并在归一 object 时删除——残留按 FORMATS_BY_TYPE 分域同口径是 400 形态或语义失效。
 
 测试 311 例全绿（覆盖率 98.47%）。
+
+### 评审轮 27（review-p2-llm-client-27.json，2026-09-25，11/11 采纳）
+
+采纳 11 条。要点：
+
+- **http 层取消分型状态判别（#8/#9，直连 provider 路径真缺口）**：classifyFailure 与错误体读取 catch 原先只认 AbortError/TimeoutError 的 name——宿主以自定义 reason 中止（`controller.abort("user-stop")`，#186 我们明确支持透传）时被分型为 LLMConnectionError（infra 可重试 + 误触 fallback 切换）；经 LLMClient 有 callWithBackoff 预检兜底，但 provider.chat 是公共导出、直连宿主无防护——补 `init.signal?.aborted` 状态判别（与 throwIfTimedOut 同款状态优先）。
+- **序列化提前到 try 外（#2）**：宿主病态 body（循环引用/BigInt）的同步 TypeError 原先落入 classifyFailure 分型为可重试网络故障，空转 5 轮退避 + 烧一次 fallback 切换——现原样穿透（client 对非 LLMError 的编程错误穿透路径既有）。
+- **哨兵异常改 TypeError（#7 + #6 既有用例更新）**：并发误用原先抛 LLMInvalidRequestError（P4 分罪轴上是端点侧 4xx 语义）——本地编程错误改 TypeError，天然不进分罪/退避/fallback 轴；轮 12 #6 既有用例同步更新断言。
+- **anthropic media_type 别名归一（#1）**：官方封闭枚举（jpeg/png/gif/webp），image/jpg 常见别名裸透传即 400——适配器侧归一收口。
+- **结构与测试收敛（#3/#4/#5/#10/#11）**：/v1 告警补阴性对照（三协议误配守卫至此全部有回归防护）；16384 硬编码改引用 DEFAULT_MAX_TOKENS（值锁定收敛到 config.test 一处）；sensitiveMap 四类病态检测提取私有方法 warnSensitiveMapPathologies（getActionInner 已超 300 行）；resolveMaxTokens 补合法值零回调阴性对照；openai 两前缀清单的分叉成员（gpt-4.1/gpt-oss：新上限字段 + 温度照发）锁定温度维度，防清单被「统一」后静默丢温控。
+
+测试 315 例全绿（覆盖率 98.37%）。

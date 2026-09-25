@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createAnthropicProvider } from "../../src/llm/adapters/anthropic-messages.js";
+import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
 import {
   LLMAuthError,
   LLMConnectionError,
@@ -260,8 +261,8 @@ describe("请求构造（canonical → wire）", () => {
     };
     await provider.chat(req);
     await provider.chat(req);
-    expect(mock.bodyAt(0).max_tokens).toBe(16384); // NaN 序列化 null 是端点硬 400
-    expect(mock.bodyAt(1).max_tokens).toBe(16384);
+    expect(mock.bodyAt(0).max_tokens).toBe(DEFAULT_MAX_TOKENS); // NaN 序列化 null 是端点硬 400
+    expect(mock.bodyAt(1).max_tokens).toBe(DEFAULT_MAX_TOKENS);
     const warnings = logs.filter((m) => m.includes("maxTokens"));
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("glm-anthropic");
@@ -292,6 +293,12 @@ describe("请求构造（canonical → wire）", () => {
     await provider.chat(req);
     expect(mock.calls[0].url).toContain("/v1/v1/messages"); // 误配形态如实拼接
     expect(logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(1);
+    // 阴性对照（轮 27 #3，与 gemini 轮 25 #1、openai 轮 23 #4 同族口径）：无误配
+    // 的缺省卡片不告警——makeOnceWarn 去重下 toHaveLength(1) 测不出「误改为无条件」
+    const plain = setupLogs();
+    plain.mock.queueMany(toolOk({}));
+    await plain.provider.chat(req);
+    expect(plain.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(0);
   });
 
   it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
@@ -313,6 +320,28 @@ describe("请求构造（canonical → wire）", () => {
     const wire = JSON.stringify(mock.lastBody().messages);
     expect(wire).not.toContain('"image"');
     expect(wire).toContain('"tool_use"');
+  });
+
+  it("image 块 mimeType 别名归一：image/jpg → image/jpeg（官方 media_type 封闭枚举，裸透传即 400，轮 27 #1）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", mimeType: "image/jpg", base64: "AAAA" },
+          ],
+        },
+      ],
+      tools: null,
+    });
+    const messages = mock.lastBody().messages as Array<Record<string, unknown>>;
+    const content = messages[0].content as Array<Record<string, unknown>>;
+    const image = content.find((b) => b.type === "image") as Record<string, unknown>;
+    expect((image.source as Record<string, unknown>).media_type).toBe("image/jpeg");
   });
 
   it("image-only 且无 toolCalls 的 assistant → 过滤后空 content 以 [image omitted] 占位（空 content 是硬 400，轮 14 #8）", async () => {

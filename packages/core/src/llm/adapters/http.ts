@@ -154,11 +154,15 @@ export async function postJson(
     }
   };
 
-  // 状态优先：先超时分型；外部中止（AbortError）原样上抛由 client 分类；
-  // 其余按网络层失败
+  // 状态优先：先超时分型；外部中止原样上抛由 client 分类；其余按网络层失败。
+  // 外部 signal 状态判别先于 name 鸭子判别（轮 27 #8）：fetch 按 spec 以 abort
+  // reason（可为任意形态——宿主 controller.abort("user-stop") 等自定义 reason
+  // 我们明确支持透传，#186 不变形）拒绝，name 判别对非缺省形态失效会把确定性
+  // 取消分型成 LLMConnectionError（infra 可重试 + 误触 fallback 切换；直连
+  // provider.chat 的宿主无 callWithBackoff 预检兜底）
   const classifyFailure: (e: unknown) => never = (e) => {
     throwIfTimedOut(e);
-    if (isAbortError(e)) {
+    if (init.signal?.aborted || isAbortError(e)) {
       throw e;
     }
     throw new LLMConnectionError(`网络层失败：${e instanceof Error ? e.message : String(e)}`, {
@@ -168,11 +172,16 @@ export async function postJson(
   };
 
   let resp: Response;
+  // 序列化提前到 try 外（轮 27 #2）：循环引用/BigInt 等宿主数据的确定性
+  // TypeError 不落入 classifyFailure 被分型为 LLMConnectionError（infra 可重试
+  // + 触发 fallback 单向切换，空转 5 轮退避）——原样穿透由 client 按「编程
+  // 错误原样穿透」处理，不重试不切换
+  const wireBody = JSON.stringify(body);
   try {
     resp = await fetchFn(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(body),
+      body: wireBody,
       signal,
     });
   } catch (e) {
@@ -187,10 +196,11 @@ export async function postJson(
       // 错误体读取阶段的超时仍按超时分型（LLMTimeoutError/infra 可重试）——吞成
       // 空体会把超时误报为状态码错误（4xx 不可重试且会触发 fallback 切换）。
       // 外部取消与成功体路径（classifyFailure）同口径原样上抛，不被状态码错误
-      // 吞掉（取消误报为 429 还会误触发 fallback 单向切换）；其余读体失败
-      //（连接中断等）保持状态码错误优先、空体兜底
+      // 吞掉（取消误报为 429 还会误触发 fallback 单向切换；signal 状态判别与
+      // classifyFailure 轮 27 #9 同步：自定义 abort reason 同样是取消）；其余
+      // 读体失败（连接中断等）保持状态码错误优先、空体兜底
       throwIfTimedOut(e);
-      if (isAbortError(e)) {
+      if (init.signal?.aborted || isAbortError(e)) {
         throw e;
       }
     }

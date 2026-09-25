@@ -293,6 +293,18 @@ describe("请求构造（canonical → wire）", () => {
     await normal.provider.chat(baseReq());
     expect(normal.mock.lastBody().temperature).toBe(0.2);
 
+    // 两清单「刻意不同」的分叉成员（轮 27 #11）：gpt-4.1/gpt-oss 在
+    // NEW_CONTRACT_PREFIX（新上限字段 max_completion_tokens）但不在
+    // TEMPERATURE_UNSUPPORTED_PREFIX（温度照发）——锁定温度维度，防两前缀清单
+    // 被「统一」重构后静默丢温控且全套无红测
+    for (const model of ["gpt-4.1", "gpt-oss-120b"]) {
+      const dual = setup({ model, temperature: 0.4 });
+      dual.mock.queueMany(toolOk("{}"));
+      await dual.provider.chat(baseReq());
+      expect(dual.mock.lastBody().temperature).toBe(0.4);
+      expect(dual.mock.lastBody()).toHaveProperty("max_completion_tokens");
+    }
+
     // 抑制可观测（轮 21 #11）：配置了 temperature 却被忽略 → 一次性 WARNING
     //（与「两级缺省不发」不同，静默忽略无线索）；未配置则零告警
     const suppressed = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {

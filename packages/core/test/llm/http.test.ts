@@ -230,4 +230,51 @@ describe("postJson 成功与网络层", () => {
     expect(err).toBe(signal.reason);
     expect(err).not.toBeInstanceOf(LLMTimeoutError);
   });
+
+  it("外部 signal 以自定义 reason（字符串）中止 → 原样穿透，不落入 ConnectionError 可重试分型（轮 27 #8）", async () => {
+    // fetch 按 spec 以 abort reason（任意形态）拒绝——宿主 controller.abort("user-stop")
+    // 类自定义 reason 我们明确支持透传（#186 不变形），name 鸭子判别对它失效；
+    // 直连 provider.chat 的宿主无 callWithBackoff 预检兜底，取消会被当瞬时网络故障退避
+    const mock = new MockFetch();
+    mock.queueMany({ hangUntilAbort: true });
+    const err = await postJson(
+      mock.fetch,
+      "https://unit.example/api",
+      {},
+      {},
+      { provider: "unit", signal: AbortSignal.abort("user-stop") },
+    ).catch((e: unknown) => e);
+    expect(err).toBe("user-stop");
+  });
+
+  it("宿主病态 body（循环引用）→ 序列化 TypeError 原样穿透，不出站不重试（轮 27 #2）", async () => {
+    // 序列化在 fetch try 外：确定性编程错误不落入 classifyFailure 被分型为
+    // LLMConnectionError（infra 可重试 + 触发 fallback 单向切换，空转 5 轮退避）
+    const mock = new MockFetch();
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const err = await postJson(mock.fetch, "https://unit.example/api", {}, circular, {
+      provider: "unit",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err).not.toBeInstanceOf(LLMConnectionError);
+    expect(mock.calls.length).toBe(0); // 序列化失败无网络出站
+  });
+
+  it("错误体读取期间外部 signal 以自定义 reason 中止 → 原样穿透，不伪造 429（轮 27 #9）", async () => {
+    const fetchFn = makeHangingBodyFetch({
+      ok: false,
+      status: 429,
+      headers: { "retry-after": "5" },
+    });
+    const err = await postJson(
+      fetchFn,
+      "https://unit.example/api",
+      { "content-type": "application/json" },
+      { ping: 1 },
+      { provider: "unit", signal: AbortSignal.abort("user-stop") },
+    ).catch((e: unknown) => e);
+    expect(err).toBe("user-stop");
+    expect(err).not.toBeInstanceOf(LLMRateLimitError);
+  });
 });

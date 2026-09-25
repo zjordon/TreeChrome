@@ -12,6 +12,7 @@ import {
   stripTrailingSlash,
   temperatureEntry,
 } from "../../src/llm/adapters/common.js";
+import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
 import type { ChatRequest } from "../../src/llm/types.js";
 
 const card = (
@@ -86,20 +87,26 @@ describe("temperatureEntry", () => {
 });
 
 describe("resolveMaxTokens", () => {
-  it("有限正值直通；请求级覆盖卡片级", () => {
+  it("有限正值直通且不回调；请求级覆盖卡片级（轮 27 #10 合法值零回调阴性对照）", () => {
     const c = card("openai-completions", { maxTokens: 512 });
-    expect(resolveMaxTokens(req(), c, () => {})).toBe(512);
-    expect(resolveMaxTokens(req({ maxTokens: 64 }), c, () => {})).toBe(64);
+    const warned: string[] = [];
+    expect(resolveMaxTokens(req(), c, (m) => warned.push(m))).toBe(512);
+    expect(resolveMaxTokens(req({ maxTokens: 64 }), c, (m) => warned.push(m))).toBe(64);
+    // 合法值零回调（与 temperatureEntry「区间内不回调」同口径）：onInvalid 被误改
+    // 为无条件调用时，此处是唯一能红的断言（接线锚定经 makeOnceWarn 去重测不出）
+    expect(warned).toEqual([]);
   });
 
   it.each([Number.NaN, 0, -3, Number.POSITIVE_INFINITY, 1024.5])(
-    "非法值 %s → 回退 DEFAULT_MAX_TOKENS 并回调（三协议上限字段均整型，轮 20 #12）",
+    "非法值 %s → 回退 DEFAULT_MAX_TOKENS 并回调（三协议上限字段均整型，轮 20 #12；回退值引用常量，轮 27 #4）",
     (bad) => {
       const invalid: string[] = [];
       expect(
         resolveMaxTokens(req({ maxTokens: bad }), card("gemini"), (m) => invalid.push(m)),
-      ).toBe(16384);
-      expect(invalid).toEqual([`maxTokens 非正整数值（${bad}），回退 16384（unit-card）`]);
+      ).toBe(DEFAULT_MAX_TOKENS);
+      expect(invalid).toEqual([
+        `maxTokens 非正整数值（${bad}），回退 ${DEFAULT_MAX_TOKENS}（unit-card）`,
+      ]);
     },
   );
 });
