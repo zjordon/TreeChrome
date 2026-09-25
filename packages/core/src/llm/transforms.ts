@@ -156,10 +156,14 @@ export function restoreSensitiveInOutput<T>(
   }
   // entries 是 real→placeholder，还原方向取反（顺序仍按插入序，与 Python dict 一致）。
   // 空键过滤是还原侧防御（replaceAll('', x) 逐字符插入会损坏全文；Python 不滤）：
-  // 滤空 real 与空占位符两类——后者的请求侧语义是删除敏感值（不可逆），无从还原
+  // 滤空 real 与空占位符两类——后者的请求侧语义是删除敏感值（不可逆），无从还原。
+  // 恢复集为空时早退（与 restoreUrlsInOutput 对称）：删除语义配置下省掉整树深重建
   const reversed = Object.entries(sensitiveMap)
     .filter(([real, placeholder]) => real !== "" && placeholder !== "")
     .map(([real, placeholder]) => [placeholder, real] as const);
+  if (reversed.length === 0) {
+    return output;
+  }
   return restoreInStrings(output, reversed) as T;
 }
 
@@ -204,6 +208,15 @@ export function tryParseJson(text: string): Record<string, unknown> | undefined 
     }
   }
   return undefined;
+}
+
+/**
+ * 「work 中是否存在可滤图片」的共享判定（轮 14 #11）：与 stripImageBlocks 的
+ * 跳过规则（toolResult 不算）同处维护——滤图 WARNING 与致盲 advisory 两处
+ * 调用点复用，防判定与实际滤图行为漂移。
+ */
+export function hasImageBlocks(messages: ChatMessage[]): boolean {
+  return messages.some((m) => m.role !== "toolResult" && m.blocks.some((b) => b.kind === "image"));
 }
 
 /**

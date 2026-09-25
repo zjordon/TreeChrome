@@ -13,6 +13,7 @@ import type { LLMProvider } from "./provider.js";
 import {
   applySensitiveInMessages,
   cloneWorkMessages,
+  hasImageBlocks,
   replaceSensitiveText,
   restoreSensitiveInOutput,
   restoreUrlsInOutput,
@@ -57,9 +58,10 @@ const CHAT_HTTP_TIMEOUT_DEFAULT_MS = 600_000;
 export interface GetActionOptions {
   /**
    * 敏感值表：真实值 → 占位符。请求侧替换、响应 toolInput 还原（03 §3.3）。
-   * 注意：**toolResult 文本当前不在替换范围**（对齐 Python 只处理 text block 的
-   * 取舍，见 applySensitiveInMessages 注释）——工具输出中的敏感值会明文出站，
-   * P4 接 SecretProvider 时一并裁决
+   * **缺省风险显式标注（轮 14 #2）**：toolResult 文本不在替换范围（P5 parity，
+   * 见 applySensitiveInMessages 注释）——工具输出中的敏感值会**明文出站**，
+   * sensitiveMap 不覆盖全部出站文本；需阻断时显式传 redactToolResults:true。
+   * P4 接 SecretProvider 时评估缺省翻转为 secure-by-default
    */
   sensitiveMap?: Record<string, string>;
   /**
@@ -288,22 +290,21 @@ export class LLMClient {
       applySensitiveInMessages(work, sensitive);
       // toolResult 文本默认不在占位范围（P5 parity，见 applySensitiveInMessages
       // 注释）——命中敏感 real 值时按 redactToolResults 分流：缺省明文出站但留
-      // WARNING（暴露可观测，P4 SecretProvider 收口）；opt-in 则占位阻断泄露
+      // WARNING（暴露可观测，P4 SecretProvider 收口）；opt-in 则占位阻断泄露。
+      // 单趟遍历：检测命中时即时替换（对未命中文本恒等，检测/替换不分离）
       if (sensitive !== undefined) {
         const reals = Object.keys(sensitive).filter((real) => real !== "");
         const leaking: string[] = [];
         for (const m of work) {
           if (m.role === "toolResult" && reals.some((real) => m.text.includes(real))) {
             leaking.push(m.toolName);
+            if (opts.redactToolResults === true) {
+              m.text = replaceSensitiveText(m.text, sensitive);
+            }
           }
         }
         if (leaking.length > 0) {
           if (opts.redactToolResults === true) {
-            for (const m of work) {
-              if (m.role === "toolResult") {
-                m.text = replaceSensitiveText(m.text, sensitive);
-              }
-            }
             this.deps.log(
               `[llm] toolResult(${leaking.join(", ")}) 敏感值已占位（redactToolResults）`,
             );
@@ -428,7 +429,7 @@ export class LLMClient {
       !this.usingFallback &&
       !this.provider.capabilities.supportsVision &&
       !this.loggedBlindImageSend &&
-      work.some((m) => m.role !== "toolResult" && m.blocks.some((b) => b.kind === "image"))
+      hasImageBlocks(work)
     ) {
       this.loggedBlindImageSend = true;
       this.deps.log(
@@ -441,16 +442,11 @@ export class LLMClient {
     ) {
       // 滤图零观测会掩盖能力静默降级：图片确实被滤时留一次 WARNING（实例级去重，
       // 截图型 agent 逐步带图不逐请求刷屏）——白名单外真视觉卡误滤时宿主有迹可循
-      if (!this.loggedImageFilter) {
-        const hasImage = work.some(
-          (m) => m.role !== "toolResult" && m.blocks.some((b) => b.kind === "image"),
+      if (!this.loggedImageFilter && hasImageBlocks(work)) {
+        this.loggedImageFilter = true;
+        this.deps.log(
+          `[llm] WARNING: 滤图生效（${this.config.name} 判定无视觉能力）——图片块将不出站，若为真视觉卡请显式声明 supportsVision:true`,
         );
-        if (hasImage) {
-          this.loggedImageFilter = true;
-          this.deps.log(
-            `[llm] WARNING: 滤图生效（${this.config.name} 判定无视觉能力）——图片块将不出站，若为真视觉卡请显式声明 supportsVision:true`,
-          );
-        }
       }
       stripImageBlocks(work);
     }

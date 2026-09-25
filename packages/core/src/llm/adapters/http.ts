@@ -104,6 +104,12 @@ function statusToError(
   if (status === 401 || status === 403) {
     return new LLMAuthError(message, { provider, status });
   }
+  // 408 是网关/代理上游超时的常见形态：OpenAI/Anthropic Python SDK 均映射为
+  // timeout（可重试）——归入 4xx 兜底会误判不可重试并误触 fallback 单向切换
+  //（一次瞬时超时被放大成永久换卡）；LLMTimeoutError 已是 infra 成员自然获得退避
+  if (status === 408) {
+    return new LLMTimeoutError(message, { provider, status });
+  }
   if (status >= 500) {
     return new LLMServerError(message, { provider, status });
   }

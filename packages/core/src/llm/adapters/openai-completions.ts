@@ -241,9 +241,11 @@ export function createOpenAICompletionsProvider(
       ...(req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
-      // temperature 回退链（common.temperatureEntry）；两级缺省不发。新契约模型
-      //（NEW_CONTRACT_PREFIX）只接受默认温度——卡片显式配置属宿主自担的选择
-      ...temperatureEntry(req, config),
+      // temperature 回退链（common.temperatureEntry）；两级缺省不发。o 系新契约
+      // 模型（o1/o3/o4 及后继 ^o\d）只接受默认温度——卡片误配（如 o3 配 0.2）即
+      // 每请求硬 400 且误触 fallback 单向切换，与 maxTokensField 同源的地雷在此
+      // 拆除：o 系前缀命中时抑制发送（gpt-5/gpt-4.1/gpt-oss 支持 0-2 不抑制）
+      ...(/^o\d/.test(config.model) ? {} : temperatureEntry(req, config)),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

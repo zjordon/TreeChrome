@@ -238,6 +238,18 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody().temperature).toBe(2);
   });
 
+  it("o 系模型抑制 temperature（只接受默认温度，轮 14 #10）；gpt-4o 照常发送", async () => {
+    const oSeries = setup({ model: "o3-mini", temperature: 0.2 });
+    oSeries.mock.queueMany(toolOk("{}"));
+    await oSeries.provider.chat(baseReq());
+    expect(oSeries.mock.lastBody()).not.toHaveProperty("temperature");
+
+    const normal = setup({ model: "gpt-4o", temperature: 0.2 });
+    normal.mock.queueMany(toolOk("{}"));
+    await normal.provider.chat(baseReq());
+    expect(normal.mock.lastBody().temperature).toBe(0.2);
+  });
+
   it("tools null + forced toolChoice → 不发孤立 tool_choice（ChatRequest 契约）", async () => {
     const { mock, provider } = setup();
     mock.queueMany({

@@ -63,6 +63,7 @@ describe("postJson 状态→错误类与错误体提取", () => {
     [401, LLMAuthError],
     [403, LLMAuthError],
     [400, LLMInvalidRequestError],
+    [408, LLMTimeoutError],
     [500, LLMServerError],
     [503, LLMServerError],
   ] as const)("HTTP %s → %s（error.message 提取 + status 归因）", async (status, klass) => {

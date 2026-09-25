@@ -119,16 +119,27 @@ export function makeHangingBodyFetch(
       text: () => {
         onBodyRead?.();
         return new Promise<string>((_resolve, reject) => {
+          // fail-fast（与 MockFetch hangUntilAbort 同款，轮 14 #1）：无 signal 的
+          // 挂起永不 settle，只会拖到 vitest 5s 超时
+          if (init?.signal == null) {
+            reject(
+              new Error(
+                "makeHangingBodyFetch 需请求携带 AbortSignal（timeoutMs/窗口/外部取消），否则 text() 永不 settle",
+              ),
+            );
+            return;
+          }
+          const signal = init.signal;
           const onAbort = () =>
             setTimeout(
-              () => reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError")),
+              () => reject(signal.reason ?? new DOMException("Aborted", "AbortError")),
               rejectDelayMs,
             );
-          if (init?.signal?.aborted) {
+          if (signal.aborted) {
             onAbort();
             return;
           }
-          init?.signal?.addEventListener("abort", onAbort, { once: true });
+          signal.addEventListener("abort", onAbort, { once: true });
         });
       },
     } as unknown as Response;

@@ -251,6 +251,22 @@ describe("请求构造（canonical → wire）", () => {
     expect(wire).toContain('"tool_use"');
   });
 
+  it("image-only 且无 toolCalls 的 assistant → 过滤后空 content 以 [image omitted] 占位（空 content 是硬 400，轮 14 #8）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(toolOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        { role: "assistant", blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }] },
+        { role: "user", blocks: [{ kind: "text", text: "next" }] },
+      ],
+      tools: [TOOL],
+    });
+    const messages = mock.lastBody().messages as Array<Record<string, unknown>>;
+    expect(messages[1].content).toEqual([{ type: "text", text: "[image omitted]" }]);
+  });
+
   it("连续同角色消息折叠：user+user 合并 content；toolResult 折叠出的 user 与紧随 user 观察合并", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));

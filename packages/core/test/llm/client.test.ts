@@ -2,7 +2,7 @@
 // 滤图 / 窗口共享 / 取消穿透 / 变换往返 / 承重墙。退避组用 FakeClock 冻结时钟；
 // R4/R1 指令文案逐字符断言（Python client.py:503-506/:529-532 泛化 tool.name）。
 import { describe, expect, it } from "vitest";
-import type { ChatMessage, ProviderConfig } from "../../src/index.js";
+import type { ChatMessage, GetActionResult, ProviderConfig } from "../../src/index.js";
 import {
   createLLMClient,
   createProvider,
@@ -43,6 +43,16 @@ const OPENAI_FALLBACK: ProviderConfig = {
   baseUrl: "https://fallback.example/v1",
   apiKey: "k3",
   model: "glm-4.7",
+  maxTokens: 4096,
+};
+
+/** gemini 主卡（blocked 切换用例——LLMBlockedError 只有 gemini 适配器产出） */
+const GEMINI_CARD: ProviderConfig = {
+  name: "gemini-primary",
+  protocol: "gemini",
+  baseUrl: "https://gemini.example",
+  apiKey: "gk",
+  model: "gemini-2.5-pro",
   maxTokens: 4096,
 };
 
@@ -107,6 +117,32 @@ function setupRealClock(over: Partial<ProviderConfig> = {}) {
   const mock = new MockFetch();
   const client = createLLMClient({ ...CARD, ...over }, { fetch: mock.fetch, log: () => {} });
   return { mock, client };
+}
+
+/** FakeClock + 日志采集组合（预算归因类用例）——三工厂外的第 4 形态收敛 */
+function setupClockWithLogs(over: Partial<ProviderConfig> = {}) {
+  const mock = new MockFetch();
+  const clock = new FakeClock();
+  const logs: string[] = [];
+  const client = createLLMClient(
+    { ...CARD, ...over },
+    {
+      fetch: mock.fetch,
+      now: clock.now,
+      sleep: clock.sleep,
+      log: (m) => logs.push(m),
+    },
+  );
+  return { mock, clock, logs, client };
+}
+
+/** 先锁 kind 再断言产物：短路写法在意外 empty 时失败信息只剩 "false to equal" */
+function assertOk(r: GetActionResult): Extract<GetActionResult, { kind: "ok" }> {
+  expect(r.kind).toBe("ok");
+  if (r.kind !== "ok") {
+    throw new Error("unreachable");
+  }
+  return r;
 }
 
 /** 退避梯子推进（锚定常量 2,4,8,16,30）：完整走完 5 次退避的用例共享此时钟序列 */
@@ -243,12 +279,8 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(wire).toContain("<KEY>");
     expect(wire).not.toContain("sk-secret");
     expect(wire).not.toContain(U0);
-    // 先锁 kind 再断言产物：短路写法在意外 empty 时失败信息只剩 "false to equal"
-    expect(r.kind).toBe("ok");
-    if (r.kind !== "ok") {
-      throw new Error("unreachable");
-    }
-    expect(r.toolInput).toEqual({
+    const ok = assertOk(r);
+    expect(ok.toolInput).toEqual({
       next_goal: `open ${U0} with sk-secret`,
       action: { url: U0 },
     });
@@ -299,12 +331,9 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(wire).not.toContain("sk-secret"); // 占位阻断，不再明文出站
     expect(wire).toContain("<KEY>");
     expect(logs.some((m) => m.includes("已占位"))).toBe(true);
-    expect(r.kind).toBe("ok");
-    if (r.kind !== "ok") {
-      throw new Error("unreachable");
-    }
+    const ok = assertOk(r);
     // 模型回显占位符 → 响应 toolInput 还原为真实值（往返闭合）
-    expect(r.toolInput.next_goal).toBe("used sk-secret");
+    expect(ok.toolInput.next_goal).toBe("used sk-secret");
   });
 
   it("R4 回显文本复用敏感值占位（Python 递归重跑 filter 的 parity 对齐，轮 12 #5）", async () => {
@@ -440,6 +469,22 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r.kind).toBe("ok");
     expect(mock.calls[1].url).toContain("fallback.example");
+  });
+
+  it("blocked（非 infra 第三分支，gemini promptFeedback）同样触发切换且类型不变形（轮 14 #6）", async () => {
+    const mock = new MockFetch();
+    const client = createLLMClient(
+      { ...GEMINI_CARD, fallback: FALLBACK },
+      { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: () => {} },
+    );
+    mock.queueMany(
+      { status: 200, body: { promptFeedback: { blockReason: "SAFETY" } } },
+      toolOk({ via: "fb" }),
+    );
+    const r = await client.getAction("sys", msgs(), TOOL);
+    expect(r.kind).toBe("ok");
+    expect(mock.calls[0].url).toContain("gemini.example");
+    expect(mock.calls[1].url).toContain("fallback.example"); // 切换发生，类型未被吞
   });
 
   it("跨协议切换：主 anthropic + fallback openai（完整卡片组合的独有测试点）", async () => {
@@ -761,15 +806,7 @@ describe("deadline 与取消", () => {
   });
 
   it("预算耗尽日志归因实际生效约束：窗口先到标 window deadline 而非预算秒数（轮 12 #15）", async () => {
-    const mock = new MockFetch();
-    const clock = new FakeClock();
-    const logs: string[] = [];
-    const client = createLLMClient(CARD, {
-      fetch: mock.fetch,
-      now: clock.now,
-      sleep: clock.sleep,
-      log: (m) => logs.push(m),
-    });
+    const { mock, clock, logs, client } = setupClockWithLogs();
     // t=20s → cap=max(30s, 0.75×20s)=30s > 窗口 20s：实际生效约束是窗口
     client.setCallWindow(20_000);
     mock.queueMany(r429(), r429(), r429(), r429());

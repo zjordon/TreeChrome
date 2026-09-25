@@ -500,6 +500,22 @@ describe("请求构造（canonical → wire）", () => {
     });
   });
 
+  it("image-only 且无 toolCalls 的 assistant → 过滤后空 parts 以 [image omitted] 占位（空 parts 是 INVALID_ARGUMENT，轮 14 #9）", async () => {
+    const { mock, provider } = setup();
+    mock.queueMany(fnCallOk({}));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        { role: "user", blocks: [{ kind: "text", text: "q" }] },
+        { role: "assistant", blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }] },
+        { role: "user", blocks: [{ kind: "text", text: "next" }] },
+      ],
+      tools: [TOOL],
+    });
+    const contents = mock.lastBody().contents as Array<Record<string, unknown>>;
+    expect(contents[1]).toEqual({ role: "model", parts: [{ text: "[image omitted]" }] });
+  });
+
   it("连续 user turn 折叠（canonical 允许 [user, user]，Gemini 要求交替）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(fnCallOk({}));

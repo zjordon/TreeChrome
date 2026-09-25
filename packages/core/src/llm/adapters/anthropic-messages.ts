@@ -70,6 +70,12 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       for (const call of msg.toolCalls ?? []) {
         content.push({ type: "tool_use", id: call.id, name: call.name, input: call.args });
       }
+      // 仅含 image 块且无 toolCalls 的 assistant（canonical 校验放行）过滤后为空
+      // content 数组——Anthropic 对空 content 硬 400，占位降级与 stripImageBlocks
+      // 口径一致（轮 14 #8）
+      if (content.length === 0) {
+        content.push({ type: "text", text: "[image omitted]" });
+      }
       pushMerged("assistant", content);
       // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排）
       const results = new Map<string, ToolResultMessage>();

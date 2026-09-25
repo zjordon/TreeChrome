@@ -72,6 +72,12 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
           ...(call.signature !== undefined ? { thoughtSignature: call.signature } : {}),
         });
       }
+      // 仅含 image 块且无 toolCalls 的 assistant（canonical 校验放行）过滤后 parts
+      // 为空数组——Gemini 报 INVALID_ARGUMENT，占位降级与 stripImageBlocks 口径
+      // 一致（轮 14 #9）
+      if (parts.length === 0) {
+        parts.push({ text: "[image omitted]" });
+      }
       pushMerged("model", parts);
       const results = new Map<string, ToolResultMessage>();
       let j = i + 1;

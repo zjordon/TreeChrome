@@ -300,3 +300,16 @@ smoke 产物摘要：
 - **#8**（sensitiveMap 缺省占位、显式 false 退出）：敏感值议题第五次，本次要求翻转缺省——直接推翻 P5 parity 基准与轮 12 刚落的 opt-in 终裁（缺省 parity + 显式阻断）。偏离 5/10 先例是 TS 内部机制/中文损坏修复，非请求内容 parity；缺省翻转破坏评测对比的请求侧一致性。P4 SecretProvider 时统一裁决缺省姿态。
 
 测试 247 例全绿（覆盖率 98.80%）；smoke 双场景复验（合法值 60000 无误报 / 非法值告警）。
+
+### 评审轮 14（review-p2-llm-client-14.json，2026-09-25，12 条）
+
+采纳 12 条（#2 采纳其文档子项，缺省翻转随其主诉求 deferred 到 P4）。要点：
+
+- **408 → LLMTimeoutError（#7，本轮最重要）**：408 是网关/代理上游超时的常见形态，OpenAI/Anthropic Python SDK 均映射为可重试——此前落入 4xx 兜底成 LLMInvalidRequestError（非 infra 不退避 + 误触 fallback 单向切换，一次瞬时超时被放大为永久换卡）。轮 13 把 TimeoutError 纳入 infra 后此修复自然获得退避；http.test 矩阵补 408 行。
+- **assistant 空 content/parts 兜底（#8/#9）**：image-only 且无 toolCalls 的 assistant（canonical 放行形态）过滤图块后产生空 content/parts 数组——anthropic 硬 400 / gemini INVALID_ARGUMENT。补 `[image omitted]` 占位降级，与 stripImageBlocks 口径一致。
+- **o 系 temperature 抑制（#10）**：o1/o3/o4 只接受默认温度，卡片误配（o3 配 0.2）即每请求硬 400 且误触切换——与 maxTokensField 同源的地雷同源拆除（`^o\d` 前缀命中抑制发送；gpt-5/4.1/gpt-oss 支持 0-2 不抑制），config.temperature JSDoc 同步声明。
+- **sensitiveMap 缺省风险显式标注（#2，敏感值议题第六次的落点）**：评审主诉求已是「P4 收口时翻转缺省为 secure-by-default + 至少文档标注」——与既有裁决一致。GetActionOptions.sensitiveMap JSDoc 显式声明「sensitiveMap 不覆盖全部出站文本，需阻断显式 redactToolResults:true」；缺省翻转方向登记为 P4 决策项。
+- **实现收敛（#3/#11/#12）**：toolResult 敏感值检测/替换单趟合并（命中即换，未命中恒等）；`hasImageBlocks` 共享判定导出（滤图 WARNING 与致盲 advisory 复用，与 stripImageBlocks 跳过规则同处维护）；restoreSensitiveInOutput 恢复集空早退（与 restoreUrlsInOutput 对称）。
+- **测试基建（#1/#4/#5/#6）**：makeHangingBodyFetch 补无 signal fail-fast 守卫（与 hangUntilAbort 口径对称）；setupClockWithLogs 收敛第 4 处内联构造；assertOk 辅助收敛 kind 收窄样板；blocked（gemini promptFeedback，非 infra 第三分支）触发 fallback 切换的行为层对称用例。
+
+测试 252 例全绿（覆盖率 98.86%）。

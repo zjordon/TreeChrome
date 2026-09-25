@@ -20,6 +20,9 @@ export interface ProviderConfig {
   model: string;
   /** 输出上限；缺省值参考 DEFAULT_MAX_TOKENS=16384 */
   maxTokens: number;
+  /** 采样温度（0-2，按协议上限钳制；两级缺省不发）。openai 的 o 系模型
+   *  （o1/o3/o4…）只接受默认温度，适配器对 ^o\d 前缀**抑制发送**——卡片配置
+   *  对这些模型无效而非报错 */
   temperature?: number;
   /** 缺省走启发式（resolveCapabilities）。注意：fallback 卡未声明时按白名单推导
    *  supportsVision——白名单外的真视觉卡（gpt-4o/qwen-vl/gemini 等）作 fallback
