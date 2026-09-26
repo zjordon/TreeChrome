@@ -298,6 +298,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.bodyAt(1).max_tokens).toBe(DEFAULT_MAX_TOKENS);
     const warnings = logs.filter((m) => m.includes("maxTokens"));
     expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("glm-openai"); // 卡片归因（轮 42 #16，对齐 anthropic/gemini 侧同族用例）
   });
 
   it("o 系与 gpt-5 系抑制 temperature（只接受默认温度 1，轮 14 #10 + 轮 20 #11 web 核实）；gpt-4o 照常发送", async () => {
@@ -446,9 +447,34 @@ describe("请求构造（canonical → wire）", () => {
     await provider.chat(req);
     expect(
       logs.filter((m) =>
-        m.includes("openai assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块"),
+        m.includes(
+          "openai(glm-openai) assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块",
+        ),
       ),
     ).toHaveLength(1);
+  });
+
+  it("usage 存在但非对象 / prompt_tokens_details 非对象 → 两级留证据归 null/空（轮 42 #22）；缺失不告警", async () => {
+    const { mock, provider, logs } = setupLogs();
+    const resp = (usage: unknown) => ({
+      status: 200,
+      body: {
+        choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "stop" }],
+        usage,
+      },
+    });
+    mock.queueMany(
+      resp("nope"),
+      resp({ prompt_tokens: 1, completion_tokens: 2, prompt_tokens_details: "bad" }),
+    );
+    const r1 = await provider.chat(baseReq());
+    expect(r1.usage).toBeNull();
+    const r2 = await provider.chat(baseReq());
+    expect(r2.usage?.outputTokens).toBe(2); // details 畸形仅丢 cache 统计
+    expect(logs.some((m) => m.includes('openai 丢弃形态异常的 usage（非对象）："nope"'))).toBe(
+      true,
+    );
+    expect(logs.some((m) => m.includes('usage.prompt_tokens_details（非对象）："bad"'))).toBe(true);
   });
 
   it("choice 缺失 message 键（兼容端点省略）→ 不告警（缺失是 benign 形态，轮 39 #19）；「存在但非对象」仍留证据", async () => {
@@ -718,6 +744,10 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("丢弃形态异常的 tool_call") && m.includes("bad1"))).toBe(
       true,
     );
+    // item 非对象分支锚定（轮 42 #18）：与 function 非对象分支同 if 同文案，仅有
+    // bad1 锚定测不出 item 侧证据；!isRecord(item) 的独占价值在 null item 的
+    // TypeError 防护
+    expect(logs.some((m) => m.includes("丢弃形态异常的 tool_call") && m.includes("42"))).toBe(true);
   });
 
   it("message.content 存在但非 string/null/undefined → 折叠空文本但留证据；null（纯工具回合）不告警（轮 29 #8）", async () => {

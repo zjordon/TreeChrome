@@ -512,18 +512,16 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     );
   });
 
-  it("工具载荷泄露 WARNING 按 (map, 工具名) 跨调用去重（轮 40 #17：历史回灌只累积不消失，逐步重复告警会刷屏淹没其它一次性证据）；新工具名各自告警", async () => {
+  it("工具载荷泄露 WARNING 按 (map, 工具名) 跨调用去重（轮 40 #17：历史回灌只累积不消失，逐步重复告警会刷屏淹没其它一次性证据）；新 map/新工具名各自告警", async () => {
     const { mock, logs, client } = setupWithLogs();
-    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }), toolOk({ done: 3 }));
-    const history = (): ChatMessage[] => [
-      { role: "user", blocks: [{ kind: "text", text: "q" }] },
-      {
-        role: "assistant",
-        blocks: [],
-        toolCalls: [{ id: "t1", name: TOOL.name, args: {} }],
-      },
-      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "a sk-secret" },
-    ];
+    mock.queueMany(
+      toolOk({ done: 1 }),
+      toolOk({ done: 2 }),
+      toolOk({ done: 3 }),
+      toolOk({ done: 4 }),
+    );
+    // 三段式委托夹具（轮 42 #14：与 historyWithToolResult 逐字同构的残留）
+    const history = (): ChatMessage[] => historyWithToolResult("a sk-secret");
     const map = { "sk-secret": "<KEY>" };
     await client.getAction("sys", history(), TOOL, { sensitiveMap: map });
     await client.getAction("sys", history(), TOOL, { sensitiveMap: map }); // 同 map 同工具名
@@ -531,6 +529,23 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     // 新 map 各自获得一次告警机会（与 systemPrompt/病态检测同口径）
     await client.getAction("sys", history(), TOOL, { sensitiveMap: { "sk-secret": "<K2>" } });
     expect(logs.filter((m) => m.includes("包含敏感值")).length).toBe(2);
+    // 同 map 新工具名各自告警（轮 42 #26：标题承诺的另一半维度——per-map 单布尔
+    // 回归时此处会红）
+    await client.getAction(
+      "sys",
+      [
+        ...history(),
+        {
+          role: "assistant",
+          blocks: [],
+          toolCalls: [{ id: "t2", name: "other_tool", args: {} }],
+        },
+        { role: "toolResult", toolCallId: "t2", toolName: "other_tool", text: "b sk-secret" },
+      ],
+      TOOL,
+      { sensitiveMap: map },
+    );
+    expect(logs.filter((m) => m.includes("包含敏感值")).length).toBe(3);
   });
 
   it("systemPrompt 敏感命中 → 按 map 去重 WARNING 可观测（不在占位范围、明文出站由宿主自担，轮 18 #3；轮 29 #6 改按身份）", async () => {

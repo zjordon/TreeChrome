@@ -217,9 +217,21 @@ function mapFinishReason(
   return "other";
 }
 
-function mapUsage(raw: unknown): TokenUsage | null {
+function mapUsage(raw: unknown, log: (message: string) => void): TokenUsage | null {
   if (!isRecord(raw)) {
+    // 「存在但形态异常」留证据（轮 42 #22，与 choices 域轮 32 #9 口径对齐）；
+    // 缺失是 benign 形态不告警
+    if (raw !== undefined) {
+      log(`[llm] openai 丢弃形态异常的 usage（非对象）：${stringifyForLog(raw)}`);
+    }
     return null;
+  }
+  // 字段级同款：prompt_tokens_details 存在但非 record 时静默归 {} 会让
+  // cached_tokens 统计丢失无证据
+  if (raw.prompt_tokens_details !== undefined && !isRecord(raw.prompt_tokens_details)) {
+    log(
+      `[llm] openai 丢弃形态异常的 usage.prompt_tokens_details（非对象）：${stringifyForLog(raw.prompt_tokens_details)}`,
+    );
   }
   const details = isRecord(raw.prompt_tokens_details) ? raw.prompt_tokens_details : {};
   return {
@@ -369,7 +381,7 @@ function parseResponse(
       toolCalls.length > 0,
       log,
     ),
-    usage: mapUsage(json.usage),
+    usage: mapUsage(json.usage, log),
   };
   if (reasoningText.length > 0) {
     response.reasoningText = reasoningText;
@@ -403,6 +415,7 @@ export function createOpenAICompletionsProvider(
       req.messages,
       onAssistantImageDropped,
       "openai",
+      config.name,
       "协议约束：assistant content 仅 string|null",
     );
     const base = stripTrailingSlash(config.baseUrl);

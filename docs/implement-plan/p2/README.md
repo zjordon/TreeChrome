@@ -665,3 +665,19 @@ smoke 产物摘要：
 - **测试补齐**：gemini maxTokens 锚定双请求都断言（#6，仅锁 lastBody 会漏首请求回归）；gemini 侧 image 丢弃告警接线锚定（#8——轮 39 #21 改标题时声称「已锁定」实无测试，一并补上）；窗口用例注释记法对齐（#5）。
 
 测试 406 例全绿（覆盖率 98.50%）。
+
+### 评审轮 42（review-p2-llm-client-42.json，2026-09-26，27/28 采纳（#8 驳回）；轨迹 17→8→28）
+
+采纳 27 条。要点：
+
+- **args 病态闭环（#4+#24 配对）**：canonical 层补「args 非普通对象（null/数组/原始值——JS 宿主宽化输入）」前置拦截（请求侧 input 原样序列化出站即 400；响应侧轮 12 #13 已兜底，两方向对称）；cloneWorkMessages 的浅拷贝对非 record 原样透传——此前 `{...null}` 会把 null 静默归一成 {} 掩盖 400，现 canonical 拦截是唯一权威。
+- **refusal/pause_turn 收进 deliberate 已知档（#10，修正轮 39 #9 的口径）**：Anthropic 官方安全拒答/长任务暂停值与 gemini SAFETY/RECITATION、openai content_filter 同为已知映射（→ other 不告警——真实 refusal 场景每实例告警会把官方拒答误判为网关私货）；未知网关值仍留证据。
+- **timeoutMs 谓词与文案单源（#25）**：http.ts 导出 isInvalidTimeoutMs + invalidTimeoutMessage，client 侧派生/复用——此前两层互为逻辑逆的平行实现与两份近似文案任一演进会静默分叉。
+- **usage 畸形留证据三连（#19/#20/#22）**：usage/usageMetadata「存在但非对象」静默归 null 会让 token 统计失真无线索——三适配器 mapUsage 补日志（openai 另含 prompt_tokens_details 字段级）；缺失不告警。
+- **归因粒度（#11/#12）**：collectToolResults 三条防御日志补协议前缀（多 provider 并发可定位）；warnDroppedAssistantNonTextBlocks 告警带卡片名（多卡同协议可区分）。
+- **smoke 四处（#1/#2/#3/#15）**：loggingFetch 调用计数断言（deps.fetch 键名漂移时 resolveDeps 静默回落全局 fetch，请求/响应证据无声消失还可能假通过——比轮 39 #14 的 log 键漂移更隐蔽）；DEFAULT_* 与测试卡片同源注释；truncate 单源；toolInput 缺 action 按 toolCall 有无区分归因。
+- **单源与杂项**：okResult 浅拷贝拆 toolInput/toolCall.args 引用（宿主原地规范化不再污染回放历史，#6）；restoreSensitiveInOutput 复用 nonEmptySensitiveReals（#5）；assertToolContract 补 parameters 非对象拦截（#13）；gemini text part 签名剥离改实例级一次性告警（#21，thinking 模型常态形态防刷屏）；DOMAIN_SCOPED_KEYS 由域表派生（#23）；deps.log 单通道取舍记录（#7）。
+- **测试锚定**：RECITATION 行使（#9）、三处分支独立锚定（#17/#18）、泄露去重工具名维度（#26）、history 夹具委托（#14）、归因断言补齐（#16）、config/types 测试转走 index.js（#27/#28）。
+- **#8 驳回**：「平台无关铁律无机械锚定、建议加测试扫描」前提不实——biome.json overrides 的 noRestrictedImports/noRestrictedGlobals（AST 级）+ gate.mjs boundaries（正则，pre-commit 与 PostToolUse 即时）+ ZCode hooks 三层已机械强制，vitest 再扫描是第四份冗余机制。
+
+测试 412 例全绿（覆盖率 98.53%）。

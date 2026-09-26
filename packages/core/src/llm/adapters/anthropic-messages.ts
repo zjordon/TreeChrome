@@ -122,7 +122,13 @@ function toWireMessages(
       pushMerged("assistant", content);
       // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排——collectToolResults
       // 与 gemini 单源，轮 37 #10）
-      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? [], log);
+      const { pairs, next } = collectToolResults(
+        messages,
+        i + 1,
+        msg.toolCalls ?? [],
+        log,
+        "anthropic",
+      );
       if (pairs.length > 0) {
         pushMerged(
           "user",
@@ -162,17 +168,27 @@ function mapStopReason(
   if (raw === "max_tokens") {
     return "length";
   }
+  // 官方安全拒答/长任务暂停（轮 42 #10）：与 gemini SAFETY/RECITATION、openai
+  // content_filter 同为 deliberate 已知值——按 other 让梯子处理且不告警（真实
+  // refusal 场景每实例告警一次会把官方拒答误判为网关私货）；网关私货/拼写
+  // 变体仍走未知档留证据（轮 39 #9）；缺失（undefined）是兼容端点 benign 形态
+  if (raw === "refusal" || raw === "pause_turn") {
+    return "other";
+  }
   if (raw !== undefined) {
-    // 未知值（官方 refusal/pause_turn 或网关私货/拼写变体）留证据（轮 39 #9）——
-    // 安全拒答等形态退化为 other 空响应时排障有线索；缺失（undefined）是兼容
-    // 端点 benign 形态不告警（与 content/message 域守卫「缺失不告警」同口径）
     log(`[llm] anthropic 未知 stop_reason 映射为 other：${stringifyForLog(raw)}`);
   }
   return "other";
 }
 
-function mapUsage(raw: unknown): TokenUsage | null {
+function mapUsage(raw: unknown, log: (message: string) => void): TokenUsage | null {
   if (!isRecord(raw)) {
+    // 「存在但形态异常」留证据（轮 42 #19，与顶层 content 域轮 32 #8 口径对齐）：
+    // 畸形形态静默归 null 会让 token 统计/成本核算失真且无排障线索；缺失是
+    // benign 形态不告警
+    if (raw !== undefined) {
+      log(`[llm] anthropic 丢弃形态异常的 usage（非对象）：${stringifyForLog(raw)}`);
+    }
     return null;
   }
   return {
@@ -272,7 +288,7 @@ function parseResponse(
     text,
     toolCalls,
     stopReason: mapStopReason(json.stop_reason, toolCalls.length > 0, log),
-    usage: mapUsage(json.usage),
+    usage: mapUsage(json.usage, log),
   };
   if (reasoningText.length > 0) {
     response.reasoningText = reasoningText;
@@ -309,6 +325,7 @@ export function createAnthropicProvider(
       req.messages,
       onAssistantImageDropped,
       "anthropic",
+      config.name,
       "协议约束：assistant 角色只收 text/tool_use",
     );
     const base = stripTrailingSlash(config.baseUrl);

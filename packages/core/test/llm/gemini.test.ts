@@ -957,7 +957,9 @@ describe("请求构造（canonical → wire）", () => {
     await provider.chat(req); // 重放：仍只告警一次（warnDroppedAssistantNonTextBlocks 接线锚定）
     expect(
       logs.filter((m) =>
-        m.includes("gemini assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块"),
+        m.includes(
+          "gemini(gemini-card) assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块",
+        ),
       ),
     ).toHaveLength(1);
   });
@@ -1143,6 +1145,30 @@ describe("响应解析（wire → canonical）", () => {
     messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
     tools: [TOOL],
   });
+  it("usageMetadata 存在但非对象（网关畸形）→ 留证据归 null（轮 42 #20，与 candidates 域口径对齐）；缺失不告警", async () => {
+    const { mock, provider, logs } = setupLogs();
+    const resp = (usageMetadata: unknown) => ({
+      status: 200,
+      body: {
+        candidates: [{ content: { role: "model", parts: [{ text: "t" }] }, finishReason: "STOP" }],
+        usageMetadata,
+      },
+    });
+    mock.queueMany(
+      resp([1]),
+      resp(undefined),
+      resp({ promptTokenCount: 1, candidatesTokenCount: 2 }),
+    );
+    const r1 = await provider.chat(baseReq());
+    expect(r1.usage).toBeNull();
+    await provider.chat(baseReq());
+    const r3 = await provider.chat(baseReq());
+    expect(r3.usage?.outputTokens).toBe(2);
+    expect(logs.some((m) => m.includes("gemini 丢弃形态异常的 usageMetadata（非对象）：[1]"))).toBe(
+      true,
+    );
+    expect(logs.filter((m) => m.includes("丢弃形态异常的 usageMetadata"))).toHaveLength(1);
+  });
 
   it("未知 finishReason（网关私货）→ other 且留证据；SAFETY/RECITATION 是 deliberate 设计不告警（轮 39 #9）", async () => {
     const resp = (finishReason: string) => ({
@@ -1158,9 +1184,12 @@ describe("响应解析（wire → canonical）", () => {
       },
     });
     const { mock, provider, logs } = setupLogs();
-    mock.queueMany(resp("WEIRD_FINISH"), resp("SAFETY"));
+    // RECITATION 同为 deliberate 档（轮 42 #9）：误入未知告警档时下方计数变 2——
+    // 此前只行使 SAFETY，mapFinishReason 误删该条件无红测
+    mock.queueMany(resp("WEIRD_FINISH"), resp("SAFETY"), resp("RECITATION"));
     const r1 = await provider.chat(baseReq());
     expect(r1.stopReason).toBe("other");
+    await provider.chat(baseReq());
     await provider.chat(baseReq());
     expect(
       logs.some((m) => m.includes('gemini 未知 finishReason 映射为 other："WEIRD_FINISH"')),
@@ -1384,6 +1413,11 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("丢弃形态异常的 functionCall") && m.includes("42"))).toBe(
       true,
     );
+    // 整体非对象分支独立锚定（轮 42 #17）：与 name 分支共享文案，else-if 被误删时
+    // 该 part 落入「无已知内容域」档，仅靠上方的 42 断言测不出
+    expect(
+      logs.some((m) => m.includes("丢弃形态异常的 functionCall") && m.includes("not-an-object")),
+    ).toBe(true);
     expect(logs.some((m) => m.includes("丢弃 args 非对象的 functionCall"))).toBe(true);
   });
 
@@ -1437,7 +1471,11 @@ describe("响应解析（wire → canonical）", () => {
     expect(r.text).toBe("reasoning..."); // 文本照常处理
     expect(r.toolCalls).toHaveLength(0); // 无 functionCall，签名无处安放
     expect(
-      logs.some((m) => m.includes('丢弃非 functionCall part 携带的 thoughtSignature："sig-text"')),
+      logs.some((m) =>
+        m.includes(
+          '丢弃非 functionCall part 携带的 thoughtSignature（thinking 模型常态形态，canonical 无槽位）："sig-text"',
+        ),
+      ),
     ).toBe(true);
   });
 

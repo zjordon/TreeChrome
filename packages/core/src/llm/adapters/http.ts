@@ -21,6 +21,19 @@ export const RETRY_AFTER_CAP_MS = 60_000;
  *  「立即超时」，与 NaN/0/负值同族（每请求超时 + 误触 fallback 切换） */
 export const MAX_TIMEOUT_MS = 2_147_483_647;
 
+/** timeoutMs 非法值判定（轮 42 #25 单源导出）：http postJson 守卫与 client 的
+ *  isValidDeadlineMs 派生同一谓词——两层平行实现任一演进（如增加下限）会静默
+ *  分叉，恰好违背轮 39 #7 的「防两层口径漂移」目标 */
+export function isInvalidTimeoutMs(v: number): boolean {
+  return !Number.isFinite(v) || v <= 0 || v > MAX_TIMEOUT_MS;
+}
+
+/** timeoutMs 非法值告警文案（轮 42 #25 单源）：http onInvalidTimeout 与 client
+ *  WARNING 共用——措辞演进两处同步 */
+export function invalidTimeoutMessage(timeoutMs: number, provider: string): string {
+  return `timeoutMs ${timeoutMs} 非法（NaN/0/负值/超 ${MAX_TIMEOUT_MS}ms 上限），视为未设置（${provider}）`;
+}
+
 export interface PostJsonInit {
   /** 错误归因用（provider 卡片 name） */
   provider: string;
@@ -164,13 +177,9 @@ export async function postJson(
   // 单向切换、空转 5 轮退避）；非法值视为未设置（上界与 client.ts isValidDeadlineMs
   // 单源共享 MAX_TIMEOUT_MS）
   const timeoutMs = init.timeoutMs;
-  const invalidTimeout =
-    timeoutMs !== undefined &&
-    (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS);
+  const invalidTimeout = timeoutMs !== undefined && isInvalidTimeoutMs(timeoutMs);
   if (invalidTimeout) {
-    init.onInvalidTimeout?.(
-      `timeoutMs ${timeoutMs} 非法（NaN/0/负值/超 ${MAX_TIMEOUT_MS}ms 上限），视为未设置（${init.provider}）`,
-    );
+    init.onInvalidTimeout?.(invalidTimeoutMessage(timeoutMs, init.provider));
   }
   const timeoutSignal =
     !invalidTimeout && timeoutMs !== undefined ? AbortSignal.timeout(timeoutMs) : undefined;

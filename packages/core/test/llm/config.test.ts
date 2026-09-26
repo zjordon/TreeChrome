@@ -11,11 +11,7 @@
 //   glm-5.1/5.2/4/4.5、gpt-4o、gemini-2.0-flash、''、None=False；大小写/首尾空白不敏感（GLM-4V、'  glm-5.3-flash  '）
 import { describe, expect, it } from "vitest";
 import type { ProviderConfig } from "../../src/index.js";
-import {
-  DEFAULT_MAX_TOKENS,
-  modelSupportsVision,
-  resolveCapabilities,
-} from "../../src/llm/config.js";
+import { DEFAULT_MAX_TOKENS, modelSupportsVision, resolveCapabilities } from "../../src/index.js";
 
 const card = (over: Partial<ProviderConfig> = {}): ProviderConfig => ({
   name: "test",

@@ -182,6 +182,16 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
             "assistant 的 toolCall signature 为空串（gemini thoughtSignature 端点 400 形态）",
           );
         }
+        // args 非普通对象（轮 42 #4，null/数组/原始值——JS 宿主可绕过 TS 类型
+        // 回灌自构历史；判别内联避免 types↔transforms 运行时循环依赖）：
+        // anthropic input/gemini args 原样序列化出站即端点 400（非 infra 不退避
+        // 还烧一次 fallback 切换）——响应侧轮 12 #13 已兜底，请求侧对称拦截；
+        // cloneWorkMessages 对非 record 原样透传（轮 42 #24），此层是唯一权威
+        if (
+          calls.some((c) => typeof c.args !== "object" || c.args === null || Array.isArray(c.args))
+        ) {
+          throw violation("assistant 的 toolCall args 非普通对象（端点 400 形态）");
+        }
         // id→name 映射：配对校验同时要求 toolName 与 toolCall.name 一致——
         // gemini 的 functionResponse 按 name 关联，失配发到端点才 400（canonical 层拦截）
         const callsById = new Map(calls.map((c) => [c.id, c.name]));

@@ -13,6 +13,9 @@ export interface LLMDeps {
   /**
    * 观测日志通道（退避每轮/fallback 切换/丢弃 toolCall 等.WARNING 级证据链，03 §3.6），
    * 缺省 console.warn。库不该写死宿主控制台：P4 接通 EventBus 后由宿主注入事件路由。
+   * 取舍记录（轮 42 #7）：当前为单通道——信息级消息（backoff 进度/切换通知/
+   * 已占位通知）与 WARNING 级证据混载，缺省统一 console.warn 呈现；P4 分级
+   * 路由时扩展 level 参数，勿在宿主侧按消息前缀猜级别。
    */
   log?: (message: string) => void;
 }

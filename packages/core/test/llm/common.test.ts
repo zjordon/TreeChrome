@@ -229,8 +229,8 @@ describe("collectToolResults（轮 37 #10 单源：anthropic/gemini 折叠骨架
     });
     expect(pairs.map((p) => p.result.toolCallId)).toEqual(["a"]);
     expect(logged).toEqual([
-      "[llm] toolResult（zzz）未匹配前置 assistant 的 toolCalls，丢弃（canonical 校验漂移的防御分支）",
-      "[llm] assistant 的 2 个 toolCall 仅配对 1 条结果（wire 将缺失对应 tool_result，端点 400 形态）",
+      "[llm] llm toolResult（zzz）未匹配前置 assistant 的 toolCalls，丢弃（canonical 校验漂移的防御分支）",
+      "[llm] llm assistant 的 2 个 toolCall 仅配对 1 条结果（wire 将缺失对应 tool_result，端点 400 形态）",
     ]);
     // 完备配对零上报（阴性对照）
     const clean: string[] = [];
@@ -254,7 +254,7 @@ describe("collectToolResults（轮 37 #10 单源：anthropic/gemini 折叠骨架
     expect(pairs.map((p) => p.result.text)).toEqual(["second"]); // 后写者胜（既有行为）
     expect(next).toBe(2);
     expect(logged).toEqual([
-      "[llm] toolCallId（a）存在重复结果，后写覆盖先写（canonical 校验漂移的防御分支）",
+      "[llm] llm toolCallId（a）存在重复结果，后写覆盖先写（canonical 校验漂移的防御分支）",
     ]);
   });
 });
@@ -278,5 +278,18 @@ describe("assertToolContract 工具名唯一性（轮 37 #14）", () => {
     expect(() => assertToolContract(req({ tools: [tool("")] }), card("gemini"))).toThrow(
       LLMProtocolViolationError,
     );
+  });
+
+  it("parameters 非对象（undefined/数组，轮 42 #13）→ LLMProtocolViolationError；对象放行", () => {
+    const bad = (parameters: unknown): ToolDefinition =>
+      ({ name: "t", description: "d", parameters }) as ToolDefinition;
+    const c = card("openai-completions");
+    expect(() => assertToolContract(req({ tools: [bad(undefined)] }), c)).toThrow(
+      LLMProtocolViolationError,
+    );
+    expect(() => assertToolContract(req({ tools: [bad([1])] }), c)).toThrow(
+      LLMProtocolViolationError,
+    );
+    expect(() => assertToolContract(req({ tools: [tool("ok")] }), c)).not.toThrow();
   });
 });

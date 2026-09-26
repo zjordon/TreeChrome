@@ -264,9 +264,12 @@ export function restoreSensitiveInOutput<T>(
   // **占位符须唯一**（轮 20 #14）：多个 real 共享同一 placeholder 时，reversed 的
   // 重复 from 键顺序 replaceAll 先插入者恒胜，后续条目静默失效——还原结果张冠
   // 李戴的数据损坏；此处纯函数无告警通道，唯一性检测在 client.getAction 入口
-  const reversed = Object.entries(sensitiveMap)
-    .filter(([real, placeholder]) => real !== "" && placeholder !== "")
-    .map(([real, placeholder]) => [placeholder, real] as const);
+  // real 侧过滤复用 nonEmptySensitiveReals 单源（轮 42 #5，轮 40 #16 口径——
+  // 替换侧与检测侧的过滤条件任一演进不静默分叉），仅叠加还原方向特有的
+  //「空占位符（删除语义不可逆、无从还原）」过滤
+  const reversed = nonEmptySensitiveReals(sensitiveMap)
+    .filter((real) => sensitiveMap[real] !== "")
+    .map((real) => [sensitiveMap[real], real] as const);
   if (reversed.length === 0) {
     return output;
   }
@@ -375,7 +378,13 @@ export function cloneWorkMessages(messages: ChatMessage[]): ChatMessage[] {
         // 注意（轮 32 #1）：args 仅顶层浅拷贝，嵌套对象在副本与原件间共享——
         // replaceSensitiveDeep 为重建式改写故现无泄漏，引入就地改写嵌套 args 的
         // 变换前必须先加深拷贝
-        toolCalls: msg.toolCalls?.map((c) => ({ ...c, args: { ...c.args } })),
+        // 注意（轮 42 #24）：非 record 形态（JS 宿主宽化输入）原样透传，交由
+        // canonical 层（assertValidMessages 轮 42 #4）拦截——浅拷贝展开会把
+        // null→{}、数组→{"0":…} 静默归一，无证据地改写出站形状
+        toolCalls: msg.toolCalls?.map((c) => ({
+          ...c,
+          args: isRecord(c.args) ? { ...c.args } : c.args,
+        })),
       };
     }
     return {

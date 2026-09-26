@@ -140,7 +140,13 @@ function toWireContents(
       pushMerged("model", parts);
       // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排——collectToolResults
       // 与 anthropic 单源，轮 37 #10）
-      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? [], log);
+      const { pairs, next } = collectToolResults(
+        messages,
+        i + 1,
+        msg.toolCalls ?? [],
+        log,
+        "gemini",
+      );
       if (pairs.length > 0) {
         pushMerged(
           "user",
@@ -197,8 +203,13 @@ function mapFinishReason(
   return "other";
 }
 
-function mapUsage(raw: unknown): TokenUsage | null {
+function mapUsage(raw: unknown, log: (message: string) => void): TokenUsage | null {
   if (!isRecord(raw)) {
+    // 「存在但形态异常」留证据（轮 42 #20，与 candidates 域轮 32 #10 口径对齐）；
+    // 缺失是 benign 形态不告警
+    if (raw !== undefined) {
+      log(`[llm] gemini 丢弃形态异常的 usageMetadata（非对象）：${stringifyForLog(raw)}`);
+    }
     return null;
   }
   return {
@@ -216,6 +227,7 @@ function parseResponse(
   log: (message: string) => void,
   nextCallId: () => string,
   providerName: string,
+  onTextPartSignatureDropped: (message: string) => void,
 ): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(`gemini 响应不是对象：${stringifyForLog(json)}`, {
@@ -290,8 +302,8 @@ function parseResponse(
     //（AssistantMessage 无处安放），剥离留证据（与 functionCall 分支轮 39 #8
     // 的畸形签名观测同口径，至少保留推理连续性退化的线索）
     if (part.thoughtSignature !== undefined && !isRecord(part.functionCall)) {
-      log(
-        `[llm] gemini 丢弃非 functionCall part 携带的 thoughtSignature：${stringifyForLog(part.thoughtSignature)}`,
+      onTextPartSignatureDropped(
+        `gemini 丢弃非 functionCall part 携带的 thoughtSignature（thinking 模型常态形态，canonical 无槽位）：${stringifyForLog(part.thoughtSignature)}`,
       );
     }
     // 官方 proto Part 内容域为 oneof（text 与 functionCall 互斥）——并存形态由
@@ -356,7 +368,7 @@ function parseResponse(
       toolCalls.length > 0,
       log,
     ),
-    usage: mapUsage(json.usageMetadata),
+    usage: mapUsage(json.usageMetadata, log),
   };
   if (reasoningText.length > 0) {
     response.reasoningText = reasoningText;
@@ -405,6 +417,10 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
   const onBaseUrlV1beta = makeOnceWarn(deps.log);
   const onBaseUrlOpenAiForm = makeOnceWarn(deps.log);
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
+  // text part 签名剥离的实例级一次性告警（轮 42 #21）：thinking 模型把签名同时
+  // 挂在 text part 上是常态形态（每回合触发）——逐次日志长循环下刷屏且宿主无法
+  // 通过修正配置消除（canonical 无槽位是结构限制）
+  const onTextPartSignatureDropped = makeOnceWarn(deps.log);
   // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
   const onTimeoutInvalid = makeOnceWarn(deps.log);
   // assistant 历史 image 块丢弃的一次性告警（轮 38 #11，与 anthropic/openai 同步）
@@ -418,6 +434,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
       req.messages,
       onAssistantImageDropped,
       "gemini",
+      config.name,
       "协议约束：model 角色不接受 inlineData",
     );
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
@@ -506,6 +523,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
       deps.log,
       () => `gemini-call-${synthSalt}-${synthSeq++}`,
       config.name,
+      onTextPartSignatureDropped,
     );
   };
 

@@ -140,11 +140,18 @@ const MESSAGES = [
 
 // —— 缺省值集中声明（与文件头 SMOKE_* 变量清单对照；轮 17 #1/#7：字面量散落
 // 4 处会让端点/型号变更漏改，文案与实际回退值失配）——
+// 同源字面量另见 test/llm/openai.test.ts（openai 卡片）/ test/llm/anthropic.test.ts
+// （anthropic 卡片）——端点/型号变更时两处需同步（核心 src 无缺省端点，无第三源，
+// 轮 42 #2 登记；tools/ 不在 vitest include，交叉引用只能靠注释维系）
 const DEFAULT_OPENAI_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
 const DEFAULT_ANTHROPIC_BASE_URL = "https://open.bigmodel.cn/api/anthropic";
 const DEFAULT_OPENAI_MODEL = "glm-4.7";
 const DEFAULT_ANTHROPIC_MODEL = "glm-5.1";
 const DEFAULT_SMOKE_TIMEOUT_MS = 60_000;
+
+// 截断展示单源（轮 42 #3）：请求体与响应体两处共用——800 字面量散落会漏改致
+// 两侧证据口径不一致
+const truncate = (s, n = 800) => s.slice(0, n) + (s.length > n ? " …" : "");
 
 // —— 脱敏与错误格式化（主循环与兜底 catch 共用同一份实现，防两处口径漂移）——
 
@@ -257,8 +264,13 @@ async function main() {
   for (const card of cards) {
     // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LLMDeps 注入口。
     // header 白名单脱敏（轮 24 #1）：网关独立 token 与 GLM_API_KEY 无关，
-    // 黑名单 + 值匹配拦不住 extraHeaders 注入的任意名字认证头
+    // 黑名单 + 值匹配拦不住 extraHeaders 注入的任意名字认证头。
+    // 调用计数（轮 42 #1）：resolveDeps 对 fetch 键是静默回落全局 fetch——键名
+    // 漂移时注入不报错也不被调用，请求/响应证据无声消失还可能 exitCode 0 假
+    // 通过；getAction 全路径结束后断言计数 >0
+    let fetchCalls = 0;
     const loggingFetch = async (url, init) => {
+      fetchCalls += 1;
       const headers = { ...(init?.headers ?? {}) };
       for (const k of Object.keys(headers)) {
         headers[k] = SAFE_HEADERS.has(k.toLowerCase()) ? headers[k] : "<REDACTED>";
@@ -266,7 +278,7 @@ async function main() {
       const body = redact(init?.body ?? "");
       console.log(`\n>> POST ${redact(url)}`);
       console.log(`   headers: ${JSON.stringify(headers)}`);
-      console.log(`   body: ${body.slice(0, 800)}${body.length > 800 ? " …" : ""}`);
+      console.log(`   body: ${truncate(body)}`);
       // 响应侧证据（轮 35 #1）：直接可见 tool_calls 形态，与 ok 分支的
       // result.toolCall 结构化判定（轮 37 #1）互为印证；clone 必须在 body 被
       // 核心层消费前完成，读取失败不影响主流程
@@ -274,7 +286,7 @@ async function main() {
       try {
         const text = await resp.clone().text();
         const r = redact(text);
-        console.log(`<< ${resp.status} ${r.slice(0, 800)}${r.length > 800 ? " …" : ""}`);
+        console.log(`<< ${resp.status} ${truncate(r)}`);
       } catch {
         // clone/读取失败（流式或空体形态）不影响主流程
       }
@@ -315,8 +327,12 @@ async function main() {
         const action = result.toolInput?.action;
         if (typeof action !== "object" || action === null || typeof action.name !== "string") {
           failed = true;
+          // 按 toolCall 有无区分归因（轮 42 #15）：真工具调用下参数不符 schema 的
+          // 故障方向在模型侧——笼统标「兜底」与请求日志可见的 tool_calls 证据矛盾
           console.error(
-            `   ${card.name} ok 但 toolInput 缺 action.name（疑似 text-JSON 兜底，非工具调用）`,
+            `   ${card.name} ok 但 toolInput 缺 action.name（${
+              result.toolCall === undefined ? "text-JSON 兜底路径" : "真工具调用但参数不符 schema"
+            }）`,
           );
         }
         console.log("toolInput:");
@@ -340,6 +356,14 @@ async function main() {
       // 网关回显的错误体——同样过 redact
       console.error(
         `\n== ${card.name} FAILED (${Date.now() - t0}ms): ${formatErrorChain(e, redact)}`,
+      );
+    }
+    // deps.fetch 注入生效断言（轮 42 #1）：ok/empty/异常全路径结束后检查——
+    // resolveDeps 对 fetch 键是静默回落，键名漂移时唯一请求/响应证据无声消失
+    if (fetchCalls === 0) {
+      failed = true;
+      console.error(
+        `   ${card.name} 的 loggingFetch 全程未被调用——deps.fetch 注入未生效（LLMDeps 键名漂移？），本次缺请求/响应证据`,
       );
     }
   }

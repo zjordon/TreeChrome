@@ -6,8 +6,7 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from "../../src/index.js";
-import { LLMProtocolViolationError } from "../../src/index.js";
-import { assertValidMessages } from "../../src/llm/types.js";
+import { assertValidMessages, LLMProtocolViolationError } from "../../src/index.js";
 import { AGENT_TOOL } from "./fixtures.js";
 
 const user = (text: string): UserMessage => ({ role: "user", blocks: [{ kind: "text", text }] });
@@ -230,6 +229,32 @@ describe("assertValidMessages · 违例序列", () => {
         }),
       ],
       "signature 为空串",
+    );
+  });
+
+  it("toolCall args 非普通对象（null/数组）→ 拒绝（请求侧 input/args 原样序列化出站即 400，轮 42 #4——响应侧轮 12 #13 已兜底，两方向对称；cloneWorkMessages 对非 record 原样透传，此层唯一权威）", () => {
+    expectViolation(
+      [
+        user("q"),
+        assistant({
+          // JS 宿主绕过 TS 类型的宽化输入；as 过 TS2352 与既有限制用例同款
+          toolCalls: [
+            { id: "t1", name: AGENT_TOOL.name, args: null as unknown as Record<string, unknown> },
+          ],
+        }),
+      ],
+      "args 非普通对象",
+    );
+    expectViolation(
+      [
+        user("q"),
+        assistant({
+          toolCalls: [
+            { id: "t1", name: AGENT_TOOL.name, args: [1, 2] as unknown as Record<string, unknown> },
+          ],
+        }),
+      ],
+      "args 非普通对象",
     );
   });
 

@@ -368,6 +368,23 @@ describe("stripImageBlocks", () => {
 });
 
 describe("cloneWorkMessages", () => {
+  it('toolCall args 非普通对象（JS 宿主宽化输入）→ 原样透传不静默归一（轮 42 #24：浅拷贝展开会把 null→{}、数组→{"0":…} 无证据改写出站形状，拦截权威在 canonical 层）', () => {
+    const original: ChatMessage[] = [
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [
+          { id: "t1", name: "n", args: null as unknown as Record<string, unknown> },
+          { id: "t2", name: "n", args: [1, 2] as unknown as Record<string, unknown> },
+        ],
+      },
+    ];
+    const work = cloneWorkMessages(original);
+    const calls = (work[0] as { toolCalls: Array<{ args: unknown }> }).toolCalls;
+    expect(calls[0].args).toBeNull(); // 原样保留，不是 {}
+    expect(Array.isArray(calls[1].args)).toBe(true);
+  });
+
   it("变换落在副本上，调用方消息不被改动（03 偏离 1）", () => {
     const original: ChatMessage[] = [userMsg(`see ${U0}`)];
     const work = cloneWorkMessages(original);

@@ -364,13 +364,13 @@ describe("请求构造（canonical → wire）", () => {
     expect(
       logs.filter((m) =>
         m.includes(
-          "anthropic assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块",
+          "anthropic(glm-anthropic) assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块",
         ),
       ),
     ).toHaveLength(1);
   });
 
-  it("未知 stop_reason（refusal 等）→ other 且留证据；缺失（undefined）不告警（轮 39 #9，与「缺失不告警」守卫同口径）", async () => {
+  it("官方安全拒答/暂停值（refusal/pause_turn）→ other 不告警（轮 42 #10：与 gemini SAFETY/openai content_filter 的 deliberate 口径对齐）；未知网关值留证据；缺失不告警", async () => {
     const resp = (stopReason: string | undefined) => ({
       status: 200,
       body: {
@@ -380,7 +380,12 @@ describe("请求构造（canonical → wire）", () => {
       },
     });
     const withUnknown = setupLogs();
-    withUnknown.mock.queueMany(resp("refusal"), resp(undefined));
+    withUnknown.mock.queueMany(
+      resp("refusal"),
+      resp("pause_turn"),
+      resp("gateway_special"),
+      resp(undefined),
+    );
     const req: ChatRequest = {
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
@@ -389,9 +394,14 @@ describe("请求构造（canonical → wire）", () => {
     const r1 = await withUnknown.provider.chat(req);
     expect(r1.stopReason).toBe("other");
     await withUnknown.provider.chat(req);
+    const r3 = await withUnknown.provider.chat(req);
+    expect(r3.stopReason).toBe("other");
+    await withUnknown.provider.chat(req);
+    // 官方 deliberate 值不告警（真实 refusal 每实例告警会把官方拒答误判为私货）；
+    // 未知网关值留证据；缺失是 benign 形态不告警
     expect(
       withUnknown.logs.some((m) =>
-        m.includes('anthropic 未知 stop_reason 映射为 other："refusal"'),
+        m.includes('anthropic 未知 stop_reason 映射为 other："gateway_special"'),
       ),
     ).toBe(true);
     expect(withUnknown.logs.filter((m) => m.includes("未知 stop_reason"))).toHaveLength(1);
@@ -598,6 +608,29 @@ describe("请求构造（canonical → wire）", () => {
 });
 
 describe("响应解析（wire → canonical）", () => {
+  it("usage 存在但非对象（网关畸形）→ 留证据归 null（轮 42 #19，与顶层 content 域口径对齐）；缺失不告警", async () => {
+    const { mock, provider, logs } = setupLogs();
+    const resp = (usage: unknown) => ({
+      status: 200,
+      body: { content: [{ type: "text", text: "t" }], stop_reason: "end_turn", usage },
+    });
+    mock.queueMany(resp("ok"), resp(undefined), resp({ input_tokens: 1, output_tokens: 2 }));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    const r1 = await provider.chat(req);
+    expect(r1.usage).toBeNull(); // 畸形归 null（token 统计失真但有证据）
+    await provider.chat(req); // 缺失 benign
+    const r3 = await provider.chat(req);
+    expect(r3.usage?.outputTokens).toBe(2); // 合法形态照常
+    expect(logs.some((m) => m.includes('anthropic 丢弃形态异常的 usage（非对象）："ok"'))).toBe(
+      true,
+    );
+    expect(logs.filter((m) => m.includes("丢弃形态异常的 usage"))).toHaveLength(1);
+  });
+
   const baseReq = (): ChatRequest => ({
     systemPrompt: null,
     messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],

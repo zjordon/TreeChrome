@@ -6,6 +6,7 @@
 import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProtocol } from "../provider.js";
+import { isRecord } from "../transforms.js";
 import type {
   AssistantMessage,
   ChatMessage,
@@ -38,14 +39,17 @@ export function warnDroppedAssistantNonTextBlocks(
   messages: ChatMessage[],
   onWarn: (message: string) => void,
   protocol: string,
+  providerName: string,
   reason: string,
 ): void {
   const count = messages
     .filter((m): m is AssistantMessage => m.role === "assistant")
     .reduce((n, m) => n + m.blocks.filter((b) => b.kind !== "text").length, 0);
   if (count > 0) {
+    // 归因带卡片名（轮 42 #12）：多卡片同协议场景下一次性告警可定位——与
+    // temperature 钳制/maxTokens 回退等 makeOnceWarn 系告警的粒度对齐
     onWarn(
-      `${protocol} assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 ${count} 块（${reason}）`,
+      `${protocol}(${providerName}) assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 ${count} 块（${reason}）`,
     );
   }
 }
@@ -66,6 +70,7 @@ export function collectToolResults(
   from: number,
   calls: readonly ToolCall[],
   log?: (message: string) => void,
+  protocol = "llm",
 ): { pairs: Array<{ call: ToolCall; result: ToolResultMessage }>; next: number } {
   const byId = new Map<string, ToolResultMessage>();
   let j = from;
@@ -79,7 +84,7 @@ export function collectToolResults(
     // 先写结果静默丢失同样是「校验漂移」线索
     if (byId.has(cur.toolCallId)) {
       log?.(
-        `[llm] toolCallId（${cur.toolCallId}）存在重复结果，后写覆盖先写（canonical 校验漂移的防御分支）`,
+        `[llm] ${protocol} toolCallId（${cur.toolCallId}）存在重复结果，后写覆盖先写（canonical 校验漂移的防御分支）`,
       );
     }
     byId.set(cur.toolCallId, cur);
@@ -96,13 +101,13 @@ export function collectToolResults(
     for (const id of byId.keys()) {
       if (!calls.some((c) => c.id === id)) {
         log(
-          `[llm] toolResult（${id}）未匹配前置 assistant 的 toolCalls，丢弃（canonical 校验漂移的防御分支）`,
+          `[llm] ${protocol} toolResult（${id}）未匹配前置 assistant 的 toolCalls，丢弃（canonical 校验漂移的防御分支）`,
         );
       }
     }
     if (pairs.length < calls.length) {
       log(
-        `[llm] assistant 的 ${calls.length} 个 toolCall 仅配对 ${pairs.length} 条结果（wire 将缺失对应 tool_result，端点 400 形态）`,
+        `[llm] ${protocol} assistant 的 ${calls.length} 个 toolCall 仅配对 ${pairs.length} 条结果（wire 将缺失对应 tool_result，端点 400 形态）`,
       );
     }
   }
@@ -174,6 +179,15 @@ export function assertToolContract(req: ChatRequest, config: ProviderConfig): vo
   // infra 不重试还误触 fallback 切换）——P4 registry 合并场景下重名是现实病态
   if (new Set(tools.map((t) => t.name)).size !== tools.length) {
     throw new LLMProtocolViolationError(`工具 name 存在重复（端点 400 形态）`, {
+      provider: config.name,
+    });
+  }
+  // parameters 非对象（轮 42 #13，undefined/数组等运行时病态——P4 registry 产出）：
+  // anthropic 缺 input_schema 是硬 400、gemini sanitize 对 undefined 直穿 TypeError
+  //（比 400 更糟的编程错误形态）——与名空串/重名同族的最低级病态前置拦截，
+  // 不属「字符集/长度按协议各异由端点兜底」豁免类
+  if (tools.some((t) => !isRecord(t.parameters))) {
+    throw new LLMProtocolViolationError(`工具 parameters 非对象（端点 400 形态）`, {
       provider: config.name,
     });
   }

@@ -4,7 +4,12 @@
 
 import { createAnthropicProvider } from "./adapters/anthropic-messages.js";
 import { createGeminiProvider } from "./adapters/gemini.js";
-import { isAbortError, MAX_TIMEOUT_MS } from "./adapters/http.js";
+import {
+  invalidTimeoutMessage,
+  isAbortError,
+  isInvalidTimeoutMs,
+  MAX_TIMEOUT_MS,
+} from "./adapters/http.js";
 import { createOpenAICompletionsProvider } from "./adapters/openai-completions.js";
 import type { ProviderConfig } from "./config.js";
 import type { LLMDeps } from "./deps.js";
@@ -60,10 +65,11 @@ const WINDOW_BUDGET_RATIO = 0.75;
  */
 const CHAT_HTTP_TIMEOUT_DEFAULT_MS = 600_000;
 
-/** timeoutMs 合法性判定（轮 38 #3/#17）：正有限值且不超 setTimeout 平台上限
- *  （MAX_TIMEOUT_MS 与 http.ts 轮 39 #7 守卫单源共享，防两层口径漂移） */
+/** timeoutMs 合法性判定（轮 38 #3/#17）：正有限值且不超 setTimeout 平台上限——
+ *  谓词与文案均与 http.ts 轮 37 #7/轮 39 #7 守卫单源共享（isInvalidTimeoutMs
+ *  取逆 + invalidTimeoutMessage 模板，防两层口径漂移，轮 42 #25） */
 function isValidDeadlineMs(value: number): boolean {
-  return Number.isFinite(value) && value > 0 && value <= MAX_TIMEOUT_MS;
+  return !isInvalidTimeoutMs(value);
 }
 
 /** JSON.stringify 的崩溃安全包装（轮 38 #1/#2，轮 37 #6 同款雷）：BigInt/循环
@@ -510,9 +516,7 @@ export class LLMClient {
         deadlineFromTimeoutMs = true;
       } else if (!this.warnedInvalidDeadline) {
         this.warnedInvalidDeadline = true;
-        this.deps.log(
-          `[llm] WARNING: timeoutMs ${opts.timeoutMs} 非法（NaN/0/负值/超 ${MAX_TIMEOUT_MS}ms 上限），视为未设置（${this.config.name}）`,
-        );
+        this.deps.log(`[llm] WARNING: ${invalidTimeoutMessage(opts.timeoutMs, this.config.name)}`);
       }
     }
     if (this.windowDeadline !== undefined) {
@@ -798,7 +802,14 @@ export class LLMClient {
     //（args 用还原后的值，与 toolInput 同源——下一轮请求侧会重新占位）
     return call === undefined
       ? { kind: "ok", toolInput: restored, usage }
-      : { kind: "ok", toolInput: restored, toolCall: { ...call, args: restored }, usage };
+      : {
+          kind: "ok",
+          toolInput: restored,
+          // 浅拷贝拆引用（轮 42 #6）：宿主原地规范化 toolInput（执行层补默认值等
+          // 常见模式）不再静默污染回放历史 args（同引用下下一轮出站即变形）
+          toolCall: { ...call, args: { ...restored } },
+          usage,
+        };
   }
 
   /** 组装 ChatRequest；fallback 切到无视觉模型后滤图（幂等，「从此不带图」） */

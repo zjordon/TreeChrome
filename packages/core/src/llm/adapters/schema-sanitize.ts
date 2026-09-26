@@ -79,20 +79,12 @@ const CONSTRAINT_KEYS_BY_TYPE: Record<string, ReadonlySet<string>> = {
   object: new Set(["properties", "required", "propertyOrdering"]),
 };
 const NO_CONSTRAINT_KEYS: ReadonlySet<string> = new Set();
-const DOMAIN_SCOPED_KEYS = [
-  "properties",
-  "required",
-  "propertyOrdering",
-  "items",
-  "enum",
-  "pattern",
-  "minLength",
-  "maxLength",
-  "minItems",
-  "maxItems",
-  "minimum",
-  "maximum",
-] as const;
+// 遍历清单由域表派生单源（轮 42 #23）：12 键恰好等于 CONSTRAINT_KEYS_BY_TYPE 各
+// type 值集的并集——两份手工平行清单在新增域键时漏改一侧会让收尾剥离不再覆盖
+// 新键（残留 400 形态键）或空转，正是本模块反复强调的「域表清单漏同步」形态
+const DOMAIN_SCOPED_KEYS: ReadonlySet<string> = new Set(
+  Object.values(CONSTRAINT_KEYS_BY_TYPE).flatMap((keys) => [...keys]),
+);
 
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((t) => typeof t === "string");
