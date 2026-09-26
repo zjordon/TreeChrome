@@ -681,3 +681,17 @@ smoke 产物摘要：
 - **#8 驳回**：「平台无关铁律无机械锚定、建议加测试扫描」前提不实——biome.json overrides 的 noRestrictedImports/noRestrictedGlobals（AST 级）+ gate.mjs boundaries（正则，pre-commit 与 PostToolUse 即时）+ ZCode hooks 三层已机械强制，vitest 再扫描是第四份冗余机制。
 
 测试 412 例全绿（覆盖率 98.53%）。
+
+### 评审轮 43（review-p2-llm-client-43.json，2026-09-26，14/14 全采纳；轨迹 17→8→28→14）
+
+采纳 14 条。要点：
+
+- **client.ts 拆分（#8，按评审边界方案①）**：敏感观测（十类病态检测 + systemPrompt/tool 定义命中告警 + 工具载荷泄露扫描含 redactToolPayloads 检测-替换同域，4 个 WeakSet/WeakMap 去重字段，约 300 行）→ 新模块 sensitive-observability.ts（SensitiveObservability 类，仅依赖注入 log）；safeJsonStringify 随迁 transforms.ts 单源。client.ts 1019→754 行（软门槛解除）。②backoff/fallback 提取与 ③abort 工具迁移记录缓拆理由（②与实例可变状态耦合需宽接口、③导出路径是测试锚定面，P4 step 落地时一并裁决）。
+- **普通对象谓词收紧单源（#6+#7）**：isPlainRecord（proto 为 Object.prototype/null）导出——canonical args 拦截与 cloneWorkMessages 透传共用；宽谓词（isRecord）下 Date/Map 经浅拷贝静默展开成 {}（整棵 args 清空）是轮 42 闭环在另一形态下的复活。
+- **okResult 嵌套隔离（#10）**：deepClonePlain（复用 rewriteStrings 重建游走，天然继承 __proto__/环守卫）——无变换路径下 restored 即适配器原 args 树，浅拷贝只拆顶层，宿主深层规范化 toolInput 仍会污染回放 args。
+- **setCallWindow 并发守卫（#9）**：getAction 在飞期间 TypeError（在飞梯子的退避 gate 每轮重读窗口状态、watcher 按旧 deadline 计时——原地改写两套计时失同步）；与轮 38 #5 testConnection「只读委托」论证对称补齐写入口。
+- **观测与保真**：stringifyForLog 对 NaN/Infinity 走 String（#2，JSON.stringify 归一 null 会把数值域病态误读成「宿主传了 null」）；openai 部分配对缺证补齐（#4，剩余 pendingToolCallIds 被静默清空时留证——user 分支与序列结束双查）；工具 name 非 string 拦截（#13）；①数组索引键上界修正 2^32-2（#14，"4294967295" 不是 canonical 数组索引，原判定假阳性）。
+- **单源收敛**：createSharedAdapterWarners 公共观测束工厂（#5，temperature/maxTokens/timeoutMs/image 四项三适配器必备告警一次产出——历史新增观测点均需三处同步「实例声明+调用注入」）；fixtures.logCountAfterChat 阴性对照样板收敛（#3，五处转换）。
+- **测试质量**：pause_turn/SAFETY/RECITATION 返回值独立锚定（#1/#12）；病态十场景大 it 拆分（#11，it.each + 方向/阴性特殊对保留独立用例——单 it 聚合时 expect 失败中止后续无法定位形态）。
+
+测试 424 例全绿（覆盖率 98.26%——新模块防御分支待后续轮次锚定）。

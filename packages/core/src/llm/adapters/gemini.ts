@@ -22,6 +22,7 @@ import { assertValidMessages } from "../types.js";
 import {
   assertToolContract,
   collectToolResults,
+  createSharedAdapterWarners,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -377,6 +378,10 @@ function parseResponse(
 }
 
 export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMDeps>): LLMProvider {
+  // 公共观测束单源（轮 43 #5）：四项三适配器必备告警一次产出，防新增观测点三处
+  // 同步漏挂；协议专属告警（baseUrl 守卫族、textPartSignature 等）留本地
+  const { onTemperatureClamp, onMaxTokensInvalid, onTimeoutInvalid, onAssistantImageDropped } =
+    createSharedAdapterWarners(deps.log);
   const capabilities = resolveCapabilities(config);
   // 合成 id 的实例级随机盐 + 自增序号（轮 15 #14）：fallback 切换
   //（client.ts trySwitchToFallback）会在会话中途重建 provider 实例，纯自增
@@ -406,10 +411,6 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
     warnedSchemaIssues.add(detail);
     deps.log(`[llm] gemini schema 清洗：${detail}（约束丢失，模型可能生成违反原 schema 的参数）`);
   };
-  // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
-  const onTemperatureClamp = makeOnceWarn(deps.log);
-  // maxTokens 非法回退的实例级一次性告警（轮 18 #11）
-  const onMaxTokensInvalid = makeOnceWarn(deps.log);
   // baseUrl 误配守卫族（轮 24 #4 起，轮 34 #6/#10 补全三形态）：/v1beta 结尾是
   // 官方 base 整段复制（拼出 /v1beta/v1beta → 404）；/v1 结尾是 OpenAI 形态跨
   // 协议复用（轮 23 #1 动机）；:generateContent 结尾是官方完整端点整段复制
@@ -421,10 +422,6 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
   // 挂在 text part 上是常态形态（每回合触发）——逐次日志长循环下刷屏且宿主无法
   // 通过修正配置消除（canonical 无槽位是结构限制）
   const onTextPartSignatureDropped = makeOnceWarn(deps.log);
-  // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
-  const onTimeoutInvalid = makeOnceWarn(deps.log);
-  // assistant 历史 image 块丢弃的一次性告警（轮 38 #11，与 anthropic/openai 同步）
-  const onAssistantImageDropped = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截

@@ -146,6 +146,11 @@ describe("stringifyForLog", () => {
     expect(stringifyForLog(long)).toHaveLength(ERROR_DETAIL_MAX);
   });
 
+  it("NaN/Infinity 走 String 序列化保真（轮 43 #2：JSON.stringify 归一为 null 会把数值域病态误读成「宿主传了 null」）", () => {
+    expect(stringifyForLog(Number.NaN)).toBe("NaN");
+    expect(stringifyForLog(Number.POSITIVE_INFINITY)).toBe("Infinity");
+  });
+
   it("BigInt/循环引用不抛——String 兜底（轮 37 #6：schema 清洗的删除上报以宿主程序化构造的 parameters 原值为入参，非 JSON-only 来源）", () => {
     expect(stringifyForLog(10n)).toBe("10");
     const circular: Record<string, unknown> = { a: 1 };

@@ -21,6 +21,7 @@ import type {
 import { assertValidMessages } from "../types.js";
 import {
   assertToolContract,
+  createSharedAdapterWarners,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -125,8 +126,18 @@ function toWireMessages(
   //（collectToolResults 逐 id 配对过滤）同口径跳过留证据，不透传烧 400；
   // 消费后 delete 使同 id 第二条结果自然落入跳过分支（后写覆盖语义不存在，直接跳过）
   let pendingToolCallIds: Set<string> | undefined;
+  // 部分配对缺证（轮 43 #4，与 collectToolResults「仅配对 N 条结果」对称）：剩余
+  // 未消费 id 被静默清空 → wire 产出 tool_calls 多于 tool 消息的 400 形态无线索
+  const warnPending = (): void => {
+    if (pendingToolCallIds !== undefined && pendingToolCallIds.size > 0) {
+      log(
+        `[llm] openai 前置 assistant 有 ${pendingToolCallIds.size} 个 toolCall 未获 tool 消息跟随（wire 将缺 tool 消息，端点 400 形态）`,
+      );
+    }
+  };
   for (const [idx, msg] of messages.entries()) {
     if (msg.role === "user") {
+      warnPending();
       out.push({ role: "user", content: userContent(msg.blocks, log) });
       pendingToolCallIds = undefined;
       continue;
@@ -188,6 +199,7 @@ function toWireMessages(
       content: msg.isError ? `${TOOL_RESULT_ERROR_PREFIX}${msg.text}` : msg.text,
     });
   }
+  warnPending(); // 序列结束的残留同理（轮 43 #4）
   return out;
 }
 
@@ -393,19 +405,15 @@ export function createOpenAICompletionsProvider(
   config: ProviderConfig,
   deps: Required<LLMDeps>,
 ): LLMProvider {
+  // 公共观测束单源（轮 43 #5）：四项三适配器必备告警一次产出，防新增观测点三处
+  // 同步漏挂；协议专属告警（baseUrl 守卫族等）留本地
+  const { onTemperatureClamp, onMaxTokensInvalid, onTimeoutInvalid, onAssistantImageDropped } =
+    createSharedAdapterWarners(deps.log);
   const capabilities = resolveCapabilities(config);
-  // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
-  const onTemperatureClamp = makeOnceWarn(deps.log);
-  // maxTokens 非法回退的实例级一次性告警（轮 18 #12）
-  const onMaxTokensInvalid = makeOnceWarn(deps.log);
   // baseUrl 整段端点 URL 误配的一次性告警（轮 26 #2，与 anthropic /v1、gemini
   // /v1beta 同族）：官方 curl 示例以 /chat/completions 结尾，整段复制进卡片会
   // 拼出 …/chat/completions/chat/completions → 404
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
-  // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
-  const onTimeoutInvalid = makeOnceWarn(deps.log);
-  // assistant 历史 image 块丢弃的一次性告警（轮 38 #11，与 anthropic/gemini 同步）
-  const onAssistantImageDropped = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截

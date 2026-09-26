@@ -12,7 +12,7 @@ import {
   LLMRateLimitError,
   LLMServerError,
 } from "../../src/llm/errors.js";
-import { AGENT_TOOL, setupProvider, setupProviderWithLogs } from "./fixtures.js";
+import { AGENT_TOOL, logCountAfterChat, setupProvider, setupProviderWithLogs } from "./fixtures.js";
 
 const CARD: ProviderConfig = {
   name: "glm-anthropic",
@@ -310,10 +310,9 @@ describe("请求构造（canonical → wire）", () => {
     expect(logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(1);
     // 阴性对照（轮 27 #3，与 gemini 轮 25 #1、openai 轮 23 #4 同族口径）：无误配
     // 的缺省卡片不告警——makeOnceWarn 去重下 toHaveLength(1) 测不出「误改为无条件」
-    const plain = setupLogs();
-    plain.mock.queueMany(toolOk({}));
-    await plain.provider.chat(req);
-    expect(plain.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(0);
+    await expect(
+      logCountAfterChat(setupLogs(), toolOk({}), req, "疑似 OpenAI 形态误配"),
+    ).resolves.toBe(0);
   });
 
   it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）；工具 name 空串（轮 36 #8）/ 重名（轮 37 #14）同款", async () => {
@@ -393,10 +392,12 @@ describe("请求构造（canonical → wire）", () => {
     };
     const r1 = await withUnknown.provider.chat(req);
     expect(r1.stopReason).toBe("other");
-    await withUnknown.provider.chat(req);
+    const r2 = await withUnknown.provider.chat(req);
+    expect(r2.stopReason).toBe("other"); // pause_turn 独立锚定（轮 43 #1）：误映射到其它 canonical 档时红
     const r3 = await withUnknown.provider.chat(req);
     expect(r3.stopReason).toBe("other");
-    await withUnknown.provider.chat(req);
+    const r4 = await withUnknown.provider.chat(req);
+    expect(r4.stopReason).toBe("other"); // 缺失 stop_reason 的缺省归档同步锚定
     // 官方 deliberate 值不告警（真实 refusal 每实例告警会把官方拒答误判为私货）；
     // 未知网关值留证据；缺失是 benign 形态不告警
     expect(
@@ -423,10 +424,9 @@ describe("请求构造（canonical → wire）", () => {
     expect(misconfigured.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(1);
     // 阴性对照（轮 35 #2，与同文件 /v1 用例轮 27 #3 口径一致）：makeOnceWarn 去重下
     // toHaveLength(1) 测不出「误改为无条件」——无误配的缺省卡片不告警
-    const plain = setupLogs();
-    plain.mock.queueMany(toolOk({}));
-    await plain.provider.chat(req);
-    expect(plain.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(0);
+    await expect(
+      logCountAfterChat(setupLogs(), toolOk({}), req, "疑似整段端点 URL 误配"),
+    ).resolves.toBe(0);
   });
 
   it("assistant 历史 image 块丢弃的 wire 形态（一次性告警由轮 38 #11 用例锁定；assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13；标题去「静默」轮 39 #20）", async () => {

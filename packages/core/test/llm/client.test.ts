@@ -632,47 +632,44 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(emptyKey.logs.some((m) => m.includes("WARNING"))).toBe(false);
   });
 
-  it("sensitiveMap URL tag 撞型 / 子串交叉冲突（轮 26 #1/#4；嵌入形态与占位符嵌套为轮 31 #9/#14）", async () => {
-    // 占位符形如 [uN]：okResult 同序还原（先 URL 后敏感）会把模型输出中的该
-    // 占位符先消费成长 URL，敏感还原失配——真实值永不还原且被 URL 顶替
-    const urlTag = setupWithLogs();
-    urlTag.mock.queueMany(toolOk({ done: 1 }));
-    await urlTag.client.getAction("sys", msgs(), TOOL, {
-      sensitiveMap: { "sk-x": "[u0]" },
-    });
-    expect(urlTag.logs.some((m) => m.includes("WARNING") && m.includes("撞型"))).toBe(true);
-
+  // 病态形态矩阵（轮 43 #11 拆分：单 it 聚合 10 个独立子场景时 expect 失败即
+  // 中止后续断言，回归只红整个 it 无法定位形态）——同构「map → 关键词」场景走
+  // it.each，标题携带具体病态；时序/断言结构特殊的（方向反排、realUrl 阴性
+  // 对照依赖首调已告警）保留独立 it
+  it.each([
+    // 占位符形如 [uN]：okResult 同序还原（先 URL 后敏感）会把模型输出中的该占位
+    // 符先消费成长 URL，敏感还原失配——真实值永不还原且被 URL 顶替（轮 26 #1）
+    ["占位符 [uN] 撞型（轮 26 #1）", { "sk-x": "[u0]" }, "撞型"],
     // 嵌入形态（轮 31 #9）：还原侧 replaceAll 匹配任意位置——"xx[u0]yy" 同样被
     // [u0]→长 URL 还原消费，整串锚定的旧检测静默漏报
-    const embedded = setupWithLogs();
-    embedded.mock.queueMany(toolOk({ done: 1 }));
-    await embedded.client.getAction("sys", msgs(), TOOL, {
-      sensitiveMap: { "sk-x": "xx[u0]yy" },
-    });
-    expect(embedded.logs.some((m) => m.includes("WARNING") && m.includes("撞型"))).toBe(true);
-
-    // 子串形态交叉冲突：占位符 **key** 含另一条目 real "key"——顺序替换形成
-    // 替换链（先占位出的值被再次替换），精确相等检测拦不住（轮 26 #4 放宽）
-    const substring = setupWithLogs();
-    substring.mock.queueMany(toolOk({ done: 1 }));
-    await substring.client.getAction("sys", msgs(), TOOL, {
-      sensitiveMap: { "secret-key": "**key**", key: "<PIN>" },
-    });
-    expect(substring.logs.some((m) => m.includes("WARNING") && m.includes("交叉冲突"))).toBe(true);
-
+    ["嵌入形态 xx[u0]yy（轮 31 #9）", { "sk-x": "xx[u0]yy" }, "撞型"],
+    // 子串形态交叉冲突：占位符 **key** 含另一条目 real "key"——顺序替换形成替换
+    // 链（先占位出的值被再次替换），精确相等检测拦不住（轮 26 #4 放宽）
+    ["子串交叉冲突（轮 26 #4）", { "secret-key": "**key**", key: "<PIN>" }, "交叉冲突"],
     // 占位符互相包含（轮 31 #14）："AB" 与 "ABc"——还原侧顺序替换先短者胜，
     // 嵌套占位符被撕裂后外层失配，真实值永不还原
-    const nesting = setupWithLogs();
-    nesting.mock.queueMany(toolOk({ done: 1 }));
-    await nesting.client.getAction("sys", msgs(), TOOL, {
-      sensitiveMap: { realA: "AB", realB: "ABc" },
+    ["占位符互相包含（轮 31 #14）", { realA: "AB", realB: "ABc" }, "占位符互相包含"],
+    // ⑦ 自条目占位符为真实值真子串（轮 33 #4）：还原侧把输出中天然出现的子串
+    // 全部还原成 real（过度替换，toolInput 数据损坏）
+    ["⑦ 占位符为真实值子串（轮 33 #4）", { "path/to/secret": "secret" }, "自身真实值子串"],
+    // ⑧ 占位符包含自身真实值（轮 35 #14，与 ⑦ 互补的泄露方向）：占位后明文仍
+    // 完整出站——脱敏对该条目失效
+    ["⑧ 占位符包含真实值（轮 35 #14）", { "sk-abc123": "[key:sk-abc123]" }, "占位符包含自身真实值"],
+    // ⑩ 真实值含 [uN] 形态（轮 40 #9，④ 的镜像方向）：URL 缩写 tag 被敏感替换
+    // 消费，还原侧 toolInput 得到裸 tag 而非真实 URL——静默数据损坏
+    ["⑩ 真实值含 [uN]（轮 40 #9）", { "[u0]": "<TAG>" }, "真实值含 [uN] 形态"],
+  ] as const)("sensitiveMap 病态：%s → WARNING 可观测", async (_label, sensitiveMap, keyword) => {
+    const t = setupWithLogs();
+    t.mock.queueMany(toolOk({ done: 1 }));
+    await t.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: sensitiveMap as Record<string, string>,
     });
-    expect(nesting.logs.some((m) => m.includes("WARNING") && m.includes("占位符互相包含"))).toBe(
-      true,
-    );
+    expect(t.logs.some((m) => m.includes("WARNING") && m.includes(keyword))).toBe(true);
+  });
 
-    // ⑥ real 互相包含且短者在插入序之前（轮 33 #3）：请求侧 "sk-abc" 先撕裂
-    // "sk-abcdef" → "[K1]def"，长条目失配后敏感值明文残留出站（泄露方向）
+  it("⑥ 真实值互相包含且短者在插入序之前 → 泄露方向告警（轮 33 #3）；方向反排（短者在后）无害不告警", async () => {
+    // 请求侧 "sk-abc" 先撕裂 "sk-abcdef" → "[K1]def"，长条目失配后敏感值明文
+    // 残留出站（泄露方向）
     const realNesting = setupWithLogs();
     realNesting.mock.queueMany(toolOk({ done: 1 }));
     await realNesting.client.getAction("sys", msgs(), TOOL, {
@@ -688,32 +685,11 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       sensitiveMap: { "sk-abcdef": "[K2]", "sk-abc": "[K1]" },
     });
     expect(reversed.logs.some((m) => m.includes("真实值互相包含"))).toBe(false);
+  });
 
-    // ⑦ 自条目占位符为真实值真子串（轮 33 #4）：还原侧把输出中天然出现的子串
-    // 全部还原成 real（过度替换，toolInput 数据损坏）
-    const selfContained = setupWithLogs();
-    selfContained.mock.queueMany(toolOk({ done: 1 }));
-    await selfContained.client.getAction("sys", msgs(), TOOL, {
-      sensitiveMap: { "path/to/secret": "secret" },
-    });
-    expect(
-      selfContained.logs.some((m) => m.includes("WARNING") && m.includes("自身真实值子串")),
-    ).toBe(true);
-
-    // ⑧ 占位符包含自身真实值（轮 35 #14，与 ⑦ 互补的泄露方向）：占位后明文
-    // 仍完整出站——脱敏对该条目失效
-    const phContains = setupWithLogs();
-    phContains.mock.queueMany(toolOk({ done: 1 }));
-    await phContains.client.getAction("sys", msgs(), TOOL, {
-      sensitiveMap: { "sk-abc123": "[key:sk-abc123]" },
-    });
-    expect(
-      phContains.logs.some((m) => m.includes("WARNING") && m.includes("占位符包含自身真实值")),
-    ).toBe(true);
-
-    // ⑨ 真实值本身是长 URL（轮 38 #7，与 ④ 同属 URL 缩写交互病态）：请求侧
-    // URL 缩写先行会吞掉敏感替换——占位语义静默偏离；短 URL（< URL_MIN_LENGTH）
-    // 不触发（阴性对照）
+  it("⑨ 真实值本身是长 URL → 告警（轮 38 #7，与 ④ 同属 URL 缩写交互病态）；短 URL 阴性对照", async () => {
+    // 请求侧 URL 缩写先行会吞掉敏感替换——占位语义静默偏离；短 URL
+    // （< URL_MIN_LENGTH）不触发（阴性对照，与告警成对保留在同用例）
     const realUrl = setupWithLogs();
     realUrl.mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 1 }));
     await realUrl.client.getAction("sys", msgs(), TOOL, {
@@ -726,17 +702,6 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       sensitiveMap: { "https://example.com/short": "[short-url]" },
     });
     expect(realUrl.logs.filter((m) => m.includes("真实值本身是长 URL"))).toHaveLength(1);
-
-    // ⑩ 真实值含 [uN] 形态（轮 40 #9，④ 的镜像方向）：URL 缩写 tag 被敏感替换
-    // 消费，还原侧 toolInput 得到裸 tag 而非真实 URL——静默数据损坏
-    const realTag = setupWithLogs();
-    realTag.mock.queueMany(toolOk({ done: 1 }));
-    await realTag.client.getAction("sys", msgs(), TOOL, {
-      sensitiveMap: { "[u0]": "<TAG>" },
-    });
-    expect(
-      realTag.logs.some((m) => m.includes("WARNING") && m.includes("真实值含 [uN] 形态")),
-    ).toBe(true);
   });
 
   it("病态去重按 (map, 类别)：换 map 后同类别病态各自告警（轮 31 #10，与 systemPrompt 泄露同口径）", async () => {
@@ -1090,6 +1055,19 @@ describe("deadline 与取消", () => {
     expect(logs.filter((m) => m.includes("timeoutMs 0 非法"))).toHaveLength(1);
   });
 
+  it("getAction 在飞期间并发 setCallWindow → TypeError（轮 43 #9：在飞梯子的退避 gate 每轮重读窗口状态、watcher 按旧 deadline 计时——原地改写会两套计时失同步）", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany({ hangUntilAbort: true });
+    const p = client.getAction("sys", msgs(), TOOL, { timeoutMs: 30 });
+    await clock.advance(0); // 请求在飞（挂起桩 + deadline watcher 注册）
+    expect(() => client.setCallWindow(40_000)).toThrow(TypeError);
+    // 合法序列不受影响：收尾后可正常登记
+    await clock.advance(30); // deadline 到点强杀挂起请求
+    await expect(p).rejects.toBeInstanceOf(LLMTimeoutError);
+    client.setCallWindow(40_000);
+    client.setCallWindow(null);
+  });
+
   it("setCallWindow 非法值（NaN/0/超上限）→ TypeError fail fast（轮 38 #3：持久窗口状态登记点暴露调用方 bug，窗口不登记）", async () => {
     const { client } = setup();
     expect(() => client.setCallWindow(Number.NaN)).toThrow(TypeError);
@@ -1325,6 +1303,16 @@ describe("deadline 与取消", () => {
     // 请求侧 wire：回放的 functionCall part 原样携带 thoughtSignature（缺失即 400）
     const wire = JSON.stringify(mock.lastBody().contents);
     expect(wire).toContain("sig-abc");
+  });
+
+  it("ok 的 toolInput 与 toolCall.args 嵌套级隔离（轮 43 #10）：无变换路径下 restored 即适配器原 args 树，宿主深层规范化 toolInput 不污染回放 args", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ nested: { deep: "value" } }));
+    const r = assertOk(await client.getAction("sys", msgs(), TOOL));
+    // 宿主执行层常见的嵌套级原地规范化
+    (r.toolInput.nested as { deep: string }).deep = "mutated";
+    const callArgs = r.toolCall?.args as { nested: { deep: string } };
+    expect(callArgs.nested.deep).toBe("value"); // 回放历史不受污染
   });
 
   it("直接构造路径的非法 protocol → TypeError（本地配置错误不占端点 4xx 语义，轮 36 #11；构造期急切创建 provider 即抛）", () => {

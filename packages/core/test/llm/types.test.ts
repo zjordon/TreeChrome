@@ -256,6 +256,23 @@ describe("assertValidMessages · 违例序列", () => {
       ],
       "args 非普通对象",
     );
+    // Date/Map 等「typeof object 但非普通对象」（轮 43 #6）：宽谓词下经浅拷贝静默
+    // 展开成 {}（整棵 args 清空）——与 null/数组同档拦截
+    expectViolation(
+      [
+        user("q"),
+        assistant({
+          toolCalls: [
+            {
+              id: "t1",
+              name: AGENT_TOOL.name,
+              args: new Date() as unknown as Record<string, unknown>,
+            },
+          ],
+        }),
+      ],
+      "args 非普通对象",
+    );
   });
 
   it("toolResult 文本为空 → 拒绝（anthropic 字符串 content 直发空串是 400 形态，轮 17 #8）", () => {

@@ -385,6 +385,20 @@ describe("cloneWorkMessages", () => {
     expect(Array.isArray(calls[1].args)).toBe(true);
   });
 
+  it("toolCall args 为 Date 等非普通对象 → 原样透传不展开成 {}（轮 43 #6/#7：与 canonical isPlainRecord 拦截同谓词单源）", () => {
+    const d = new Date(0);
+    const original: ChatMessage[] = [
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [{ id: "t1", name: "n", args: d as unknown as Record<string, unknown> }],
+      },
+    ];
+    const work = cloneWorkMessages(original);
+    const args = (work[0] as { toolCalls: Array<{ args: unknown }> }).toolCalls[0].args;
+    expect(args).toBe(d); // 引用原样保留，浅拷贝展开会把 Date 静默清成 {}
+  });
+
   it("变换落在副本上，调用方消息不被改动（03 偏离 1）", () => {
     const original: ChatMessage[] = [userMsg(`see ${U0}`)];
     const work = cloneWorkMessages(original);

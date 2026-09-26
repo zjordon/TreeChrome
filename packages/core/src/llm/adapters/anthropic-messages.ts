@@ -19,6 +19,7 @@ import { assertValidMessages } from "../types.js";
 import {
   assertToolContract,
   collectToolResults,
+  createSharedAdapterWarners,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -300,22 +301,17 @@ export function createAnthropicProvider(
   config: ProviderConfig,
   deps: Required<LLMDeps>,
 ): LLMProvider {
+  // 公共观测束单源（轮 43 #5）：四项三适配器必备告警一次产出，防新增观测点三处
+  // 同步漏挂；协议专属告警（baseUrl 守卫族等）留本地
+  const { onTemperatureClamp, onMaxTokensInvalid, onTimeoutInvalid, onAssistantImageDropped } =
+    createSharedAdapterWarners(deps.log);
   const capabilities = resolveCapabilities(config);
-  // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
-  const onTemperatureClamp = makeOnceWarn(deps.log);
-  // maxTokens 非法回退的实例级一次性告警（轮 18 #10）
-  const onMaxTokensInvalid = makeOnceWarn(deps.log);
   // baseUrl 疑似 OpenAI 形态（/v1 结尾）的一次性告警（轮 23 #1）
   const onBaseUrlV1 = makeOnceWarn(deps.log);
   // baseUrl 整段端点 URL（/v1/messages 结尾）的一次性告警（轮 34 #9）：官方 curl
   // 示例即全端点，整段复制进卡片拼出 /v1/messages/v1/messages → 404——与
   // openai /chat/completions（轮 26 #2）、gemini :generateContent（轮 34 #10）同族
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
-  // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
-  const onTimeoutInvalid = makeOnceWarn(deps.log);
-  // assistant 历史 image 块丢弃的一次性告警（轮 38 #11）：协议约束（assistant 只收
-  // text/tool_use）导致的多模态历史剥离原先全静默——与滤图/致盲告警同观测姿态
-  const onAssistantImageDropped = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截

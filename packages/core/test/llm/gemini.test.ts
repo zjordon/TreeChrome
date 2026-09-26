@@ -11,7 +11,7 @@ import {
   LLMProtocolViolationError,
   LLMRateLimitError,
 } from "../../src/llm/errors.js";
-import { setupProvider, setupProviderWithLogs } from "./fixtures.js";
+import { logCountAfterChat, setupProvider, setupProviderWithLogs } from "./fixtures.js";
 
 const CARD: ProviderConfig = {
   name: "gemini-card",
@@ -262,7 +262,7 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       "约束键「pattern」非字符串，删除该键：123",
       "约束键「minlength」非整数或为负值，删除该键：true",
       '约束键「minimum」非有限数值，删除该键："5"',
-      "约束键「minitems」非整数或为负值，删除该键：null",
+      "约束键「minitems」非整数或为负值，删除该键：NaN",
       "约束键「maxlength」非整数或为负值，删除该键：2.5",
       "节点缺 type，补注入缺省 string",
     ]);
@@ -1088,10 +1088,9 @@ describe("请求构造（canonical → wire）", () => {
     expect(misconfigured.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(1);
     // 无误配的缺省卡片不受影响：不告警（须真正走一请求采集日志——不 chat 时
     // logs 恒空、断言恒绿，防不住「告警条件被误删/改为无条件」回归，轮 25 #1）
-    const plain = setupLogs();
-    plain.mock.queueMany(fnCallOk({}));
-    await plain.provider.chat(req);
-    expect(plain.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(0);
+    await expect(
+      logCountAfterChat(setupLogs(), fnCallOk({}), req, "疑似官方端点整段误配"),
+    ).resolves.toBe(0);
   });
 
   it("baseUrl 以 /v1 结尾（OpenAI 形态跨协议复用）或 :generateContent 结尾（整段端点复制）→ 各自一次性告警（轮 34 #6/#10）", async () => {
@@ -1119,10 +1118,13 @@ describe("请求构造（canonical → wire）", () => {
     // 阴性对照（轮 35 #3，与 /v1beta 用例轮 25 #1 口径一致）：两条守卫各自
     // 无误配时不告警
     const plain = setupLogs();
-    plain.mock.queueMany(fnCallOk({}));
-    await plain.provider.chat(req);
-    expect(plain.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(0);
-    expect(plain.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(0);
+    // 双关键词阴性对照（轮 43 #3 收敛为 helper 后仍是两次独立断言）
+    await expect(logCountAfterChat(plain, fnCallOk({}), req, "疑似 OpenAI 形态误配")).resolves.toBe(
+      0,
+    );
+    await expect(
+      logCountAfterChat(plain, fnCallOk({}), req, "疑似整段端点 URL 误配"),
+    ).resolves.toBe(0);
   });
 
   it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）", async () => {
@@ -1189,8 +1191,10 @@ describe("响应解析（wire → canonical）", () => {
     mock.queueMany(resp("WEIRD_FINISH"), resp("SAFETY"), resp("RECITATION"));
     const r1 = await provider.chat(baseReq());
     expect(r1.stopReason).toBe("other");
-    await provider.chat(baseReq());
-    await provider.chat(baseReq());
+    const r2 = await provider.chat(baseReq());
+    expect(r2.stopReason).toBe("other"); // SAFETY → other（deliberate 档）
+    const r3 = await provider.chat(baseReq());
+    expect(r3.stopReason).toBe("other"); // RECITATION → other（轮 43 #12：it.each 矩阵未覆盖该成员）
     expect(
       logs.some((m) => m.includes('gemini 未知 finishReason 映射为 other："WEIRD_FINISH"')),
     ).toBe(true);

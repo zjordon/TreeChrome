@@ -170,6 +170,14 @@ export function assertToolContract(req: ChatRequest, config: ProviderConfig): vo
   // 工具名空串与轮 18 #13 的 toolCall name 空串对称（anthropic ^[a-zA-Z0-9_-]{1,128}$
   // 下限即非空；openai/gemini 同为必填非空）
   const tools = req.tools ?? [];
+  // name 非 string（轮 43 #13，undefined/数字——JS 宿主宽化输入或 P4 registry
+  // 病态）：undefined 经 JSON.stringify 静默丢键、数字直传均为端点硬 400——与
+  // parameters isRecord 拦截（轮 42 #13）同族的最小类型缺口，对称补齐
+  if (tools.some((t) => typeof t.name !== "string")) {
+    throw new LLMProtocolViolationError(`工具 name 非 string（端点 400 形态）`, {
+      provider: config.name,
+    });
+  }
   if (tools.some((t) => t.name === "")) {
     throw new LLMProtocolViolationError(`工具 name 为空串（端点 400 形态）`, {
       provider: config.name,
@@ -247,6 +255,26 @@ export function makeOnceWarn(log: (message: string) => void): (message: string) 
   };
 }
 
+/** 三适配器公共观测束（轮 43 #5 单源）：temperature 钳制/maxTokens 回退/timeoutMs
+ *  非法/assistant 历史 image 丢弃四个必备一次性告警一次产出——历史轮次新增跨适配器
+ *  观测点均需三处同步「实例声明 + 调用注入」，漏挂任一适配器编译期无错（可选回调
+ *  静默缺失）。协议专属告警（baseUrl 守卫族、gemini textPartSignature 等）仍留本地 */
+export interface SharedAdapterWarners {
+  onTemperatureClamp: (message: string) => void;
+  onMaxTokensInvalid: (message: string) => void;
+  onTimeoutInvalid: (message: string) => void;
+  onAssistantImageDropped: (message: string) => void;
+}
+
+export function createSharedAdapterWarners(log: (message: string) => void): SharedAdapterWarners {
+  return {
+    onTemperatureClamp: makeOnceWarn(log),
+    onMaxTokensInvalid: makeOnceWarn(log),
+    onTimeoutInvalid: makeOnceWarn(log),
+    onAssistantImageDropped: makeOnceWarn(log),
+  };
+}
+
 /** image 媒体类型别名表（轮 34 #4 扩）：image/jpg 是 jpeg 常见别名、image/x-png
  * 是 PNG 历史遗留别名——anthropic/gemini 官方均为封闭枚举、裸透传即 400 */
 const IMAGE_MIME_ALIAS: Record<string, string> = {
@@ -267,6 +295,11 @@ export function normalizeImageMime(mimeType: string): string {
  * 不能直挂 .slice——String 包装 + 与 http.ts 错误体同源截断
  */
 export function stringifyForLog(value: unknown): string {
+  // 非有限数值（轮 43 #2）：JSON.stringify 把 NaN/Infinity 归一为 "null"——数值域
+  // 病态输入的证据会被误读为「宿主传了 null」，改走 String 保真（NaN/Infinity）
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return String(value).slice(0, ERROR_DETAIL_MAX);
+  }
   try {
     return String(JSON.stringify(value)).slice(0, ERROR_DETAIL_MAX);
   } catch {

@@ -6,7 +6,7 @@ import type { ChatMessage, ChatRequest, ProviderConfig } from "../../src/index.j
 import { createOpenAICompletionsProvider } from "../../src/llm/adapters/openai-completions.js";
 import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
 import { LLMAuthError, LLMProtocolViolationError } from "../../src/llm/errors.js";
-import { AGENT_TOOL, setupProvider, setupProviderWithLogs } from "./fixtures.js";
+import { AGENT_TOOL, logCountAfterChat, setupProvider, setupProviderWithLogs } from "./fixtures.js";
 import type { MockResponseSpec } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -549,10 +549,9 @@ describe("请求构造（canonical → wire）", () => {
     expect(misconfigured.mock.calls[0].url).toContain("/chat/completions/chat/completions");
     expect(misconfigured.logs.filter((m) => m.includes("整段端点 URL 误配"))).toHaveLength(1);
     // 无误配的缺省卡片不受影响：不告警（真请求采集，非静音声明）
-    const plain = setupLogs();
-    plain.mock.queueMany(toolOk("{}"));
-    await plain.provider.chat(baseReq());
-    expect(plain.logs.filter((m) => m.includes("整段端点 URL 误配"))).toHaveLength(0);
+    await expect(
+      logCountAfterChat(setupLogs(), toolOk("{}"), baseReq(), "整段端点 URL 误配"),
+    ).resolves.toBe(0);
   });
 
   it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）", async () => {

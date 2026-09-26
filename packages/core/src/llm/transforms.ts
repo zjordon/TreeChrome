@@ -9,6 +9,35 @@ export const URL_MIN_LENGTH = 100;
 
 /** 纯对象判别（轮 16 #2 单源；轮 20 #9 上提为中立导出——transforms 属 canonical
  * 低层，adapters/common 反向引用恢复「adapters 依赖 core」的单向分层） */
+/** 普通对象判定（轮 43 #6/#7 单源）：proto 为 Object.prototype/null——与
+ *  rewriteStrings 的重建口径一致；Date/Map/Set/类实例非普通对象（浅拷贝展开会
+ *  静默清空/丢原型）。canonical 拦截（assertValidMessages）与 cloneWorkMessages
+ *  的透传分支共用本谓词，防「拦截-透传-展开」三口径分叉 */
+export function isPlainRecord(v: unknown): v is Record<string, unknown> {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+}
+
+/** 深拷贝纯 JSON 树（轮 43 #10）：复用 rewriteStrings 的重建游走（空替换表）——
+ *  天然继承 __proto__ defineProperty 与环守卫语义 */
+export function deepClonePlain<T>(value: T): T {
+  return rewriteStrings(value, []) as T;
+}
+
+/** JSON.stringify 的崩溃安全包装（轮 38 #1/#2 起源于 client.ts，轮 43 #8 拆分随
+ *  sensitive-observability 迁至本模块单源）：BigInt/循环引用抛 TypeError——返回
+ *  undefined 由调用方跳过依赖串化的检测/降级 */
+export function safeJsonStringify(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -383,7 +412,7 @@ export function cloneWorkMessages(messages: ChatMessage[]): ChatMessage[] {
         // null→{}、数组→{"0":…} 静默归一，无证据地改写出站形状
         toolCalls: msg.toolCalls?.map((c) => ({
           ...c,
-          args: isRecord(c.args) ? { ...c.args } : c.args,
+          args: isPlainRecord(c.args) ? { ...c.args } : c.args,
         })),
       };
     }

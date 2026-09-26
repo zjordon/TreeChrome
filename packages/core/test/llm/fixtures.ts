@@ -4,6 +4,7 @@
 import type {
   AssistantMessage,
   ChatMessage,
+  ChatRequest,
   LLMDeps,
   LLMProvider,
   ProviderConfig,
@@ -11,7 +12,7 @@ import type {
   UserMessage,
 } from "../../src/index.js";
 import { URL_MIN_LENGTH } from "../../src/llm/transforms.js";
-import { MockFetch } from "./mock-fetch.js";
+import { MockFetch, type MockResponseSpec } from "./mock-fetch.js";
 
 export const AGENT_TOOL: ToolDefinition = {
   name: "agent_response",
@@ -65,6 +66,19 @@ export function setupProvider(
   over: Partial<ProviderConfig> = {},
 ): { mock: MockFetch; provider: LLMProvider } {
   return assemble(factory, card, over);
+}
+
+/** 阴性对照共用（轮 43 #3，三适配器约 6 处同构样板收敛）：真发一请求后
+ *  返回关键词命中数——调用方 toBe(0) 断言（夹具零断言纪律） */
+export async function logCountAfterChat(
+  assembled: { mock: MockFetch; logs: string[]; provider: LLMProvider },
+  spec: MockResponseSpec,
+  req: ChatRequest,
+  keyword: string,
+): Promise<number> {
+  assembled.mock.queueMany(spec);
+  await assembled.provider.chat(req);
+  return assembled.logs.filter((m) => m.includes(keyword)).length;
 }
 
 /** 带日志采集的装配变体（丢弃类/清洗类告警断言用例共用，轮 13 #2） */
