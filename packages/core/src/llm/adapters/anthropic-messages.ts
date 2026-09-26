@@ -21,6 +21,7 @@ import {
   collectToolResults,
   createSharedAdapterWarners,
   defaultTestConnection,
+  hasNonEmptyTools,
   isRecord,
   makeOnceWarn,
   normalizeImageMime,
@@ -369,7 +370,7 @@ export function createAnthropicProvider(
     // ChatRequest 契约：tools 为 null/空数组时忽略 toolChoice 且不发 tools——
     // 孤立 tool_choice 与空 tools 列表都会被官方端点 400
     const toolChoice =
-      req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
+      req.toolChoice?.kind === "forced" && hasNonEmptyTools(req)
         ? { type: "tool", name: req.toolChoice.name }
         : undefined;
     const body: Record<string, unknown> = {
@@ -377,9 +378,9 @@ export function createAnthropicProvider(
       max_tokens: resolveMaxTokens(req, config, onMaxTokensInvalid),
       ...(req.systemPrompt !== null && req.systemPrompt !== "" ? { system: req.systemPrompt } : {}),
       messages: toWireMessages(req.messages, deps.log),
-      ...(req.tools !== null && req.tools.length > 0
+      ...(hasNonEmptyTools(req)
         ? {
-            tools: req.tools.map((t) => ({
+            tools: req.tools?.map((t) => ({
               name: t.name,
               description: t.description,
               input_schema: t.parameters,

@@ -15,7 +15,9 @@ export type MockResponseSpec =
  * applySpec / makeHangingBodyFetch / FakeClock.sleep 三处共同复刻该运行时形态
  * （轮 31 #1 单源化），任一处演进（TimeoutError 特判等）不再手工同步 */
 function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("Aborted", "AbortError");
+  // 与 client.ts abortReasonOr 同口径（轮 44 #20；轮 47 #2）：仅对 undefined 兜底
+  // ——?? 会吞掉显式 abort(null) 的 null（#186 要透传的规范可达形态）
+  return signal.reason !== undefined ? signal.reason : new DOMException("Aborted", "AbortError");
 }
 
 function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise<Response> {

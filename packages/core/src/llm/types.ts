@@ -128,6 +128,12 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
   // 空串与字符串性同拦（轮 46 #15）：JS 宿主宽化输入下 text/base64/mimeType 非
   // string（数字/对象）会绕过 === "" 判定——getAction 路径在 text.replace/includes
   // 裸 TypeError、直连路径原样出站烧 400；字符串性与空串同为三协议一致约束
+  // 块形态守卫（轮 47 #11）：null/非对象元素与未知 kind（{kind:"pdf"} 等）此前
+  // 或在 b.kind 裸解引用崩溃（TypeError 而非本层声明的违例）、或穿透校验延迟到
+  // 适配器穷尽断言抛裸 Error——在此统一拦截，适配器穷尽断言回归纯编译期防线
+  const isBlockShape = (b: ContentBlock): b is TextBlock | ImageBlock =>
+    typeof b === "object" && b !== null && (b.kind === "text" || b.kind === "image");
+  const hasBadBlock = (blocks: ContentBlock[]): boolean => blocks.some((b) => !isBlockShape(b));
   const hasEmptyBlock = (blocks: ContentBlock[]): boolean =>
     blocks.some(
       (b) =>
@@ -158,6 +164,9 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       if (msg.blocks.length === 0) {
         throw violation("user.blocks 为空");
       }
+      if (hasBadBlock(msg.blocks)) {
+        throw violation("user 消息含非块形态元素（null/非对象/未知 kind）");
+      }
       if (hasEmptyBlock(msg.blocks)) {
         throw violation("user 消息含空块（空 text / 空 image 数据，Anthropic 端点 400 形态）");
       }
@@ -174,6 +183,9 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       }
       if (msg.blocks.length === 0 && calls.length === 0) {
         throw violation("assistant 的 blocks 与 toolCalls 同时为空");
+      }
+      if (hasBadBlock(msg.blocks)) {
+        throw violation("assistant 消息含非块形态元素（null/非对象/未知 kind）");
       }
       if (hasEmptyBlock(msg.blocks)) {
         throw violation("assistant 消息含空块（空 text / 空 image 数据，端点 400 形态）");

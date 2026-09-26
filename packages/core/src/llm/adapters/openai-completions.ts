@@ -23,6 +23,7 @@ import {
   assertToolContract,
   createSharedAdapterWarners,
   defaultTestConnection,
+  hasNonEmptyTools,
   isRecord,
   makeOnceWarn,
   normalizeImageMime,
@@ -461,9 +462,9 @@ export function createOpenAICompletionsProvider(
       model: config.model,
       messages: wireMessages,
       [maxTokensField]: resolveMaxTokens(req, config, onMaxTokensInvalid),
-      ...(req.tools !== null && req.tools.length > 0
+      ...(hasNonEmptyTools(req)
         ? {
-            tools: req.tools.map((t) => ({
+            tools: (req.tools ?? []).map((t) => ({
               type: "function",
               function: { name: t.name, description: t.description, parameters: t.parameters },
             })),
@@ -472,7 +473,7 @@ export function createOpenAICompletionsProvider(
       // ChatRequest 契约：tools 为 null/空数组时忽略 toolChoice 且不发 tools——
       // 孤立 tool_choice 会被官方端点 400；空 tools 列表在部分兼容端点（vLLM/Ollama
       // 等）同样拒收
-      ...(req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
+      ...(req.toolChoice?.kind === "forced" && hasNonEmptyTools(req)
         ? { tool_choice: { type: "function", function: { name: req.toolChoice.name } } }
         : {}),
       // temperature 回退链（common.temperatureEntry）；两级缺省不发。o 系与

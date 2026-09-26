@@ -4,6 +4,7 @@
 // WeakSet/WeakMap 去重状态——仅依赖注入 log，与 LLMClient 状态机正交。
 
 import {
+  isRecord,
   nonEmptySensitiveReals,
   redactOrPreserve,
   replaceSensitiveDeep,
@@ -146,11 +147,6 @@ export class SensitiveObservability {
       "[llm] WARNING: sensitiveMap 存在纯空白的真实值键（如纯空格）——replaceAll 将逐字符命中全文造成灾难性文本损坏，请检查配置",
     );
     once(
-      "whitespaceReal",
-      hasWhitespaceReal,
-      "[llm] WARNING: sensitiveMap 存在纯空白的真实值键（如纯空格）——replaceAll 将逐字符命中全文造成灾难性文本损坏，请检查配置",
-    );
-    once(
       "intKey",
       hasIntKey,
       "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（0–4294967294 的非负整数串，上界 2^32-2）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
@@ -237,18 +233,34 @@ export class SensitiveObservability {
     if (sensitive === undefined) {
       return;
     }
-    // 该 map 的全部候选 real 已告警过时免重复串化（轮 44 #9 短路语义的等价保留
+    // 该 map 的全部候选 real 已告警过时免重复游走（轮 44 #9 短路语义的等价保留
     // ——本方法经 buildChatRequest 每轮退避重建调用）
     const seen = this.schemaLeaks.get(sensitive);
     const candidates = nonEmptySensitiveReals(sensitive);
     if (seen !== undefined && candidates.every((real) => seen.has(real))) {
       return;
     }
-    const toolText = safeJsonStringify(tool);
-    if (toolText === undefined) {
-      return;
-    }
-    const fresh = candidates.filter((real) => toolText.includes(real) && !seen?.has(real));
+    // 原始字符串值域检测（轮 47 #12，与 replaceSensitiveDeep 替换域对齐——轮 16
+    // #6 同族雷）：对 JSON.stringify 文本做 includes 时，real 含引号/反斜杠/换行
+    // 会被转义恒失配（漏报且无告警）；BigInt/循环引用则令串化 undefined 检测
+    // 整体失能。游走收集全部字符串值（环守卫）后匹配
+    const strings: string[] = [];
+    const collect = (v: unknown, visited: WeakSet<object>): void => {
+      if (typeof v === "string") {
+        strings.push(v);
+      } else if (Array.isArray(v) || isRecord(v)) {
+        if (!visited.has(v)) {
+          visited.add(v);
+          for (const child of Array.isArray(v) ? v : Object.values(v)) {
+            collect(child, visited);
+          }
+        }
+      }
+    };
+    collect(tool, new WeakSet());
+    const fresh = candidates.filter(
+      (real) => !seen?.has(real) && strings.some((s) => s.includes(real)),
+    );
     if (fresh.length > 0) {
       const merged = seen ?? new Set<string>();
       for (const real of fresh) {

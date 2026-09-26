@@ -17,11 +17,18 @@ import type {
 } from "../types.js";
 import { ERROR_DETAIL_MAX } from "./http.js";
 
-export { isRecord } from "../transforms.js";
+export { isPlainRecord, isRecord } from "../transforms.js";
 
 /** toolResult.isError 无原生 wire 字段时的前缀约定（openai content / gemini
  * response 两协议共用，02 §3.2 映射表；轮 21 #3 单源防口径漂移） */
 export const TOOL_RESULT_ERROR_PREFIX = "[error] ";
+
+/** tools 非空判定单源（轮 47 #16）：8 处 `req.tools !== null && req.tools.length > 0`
+ *  对 undefined 宽化输入裸 TypeError（崩点在 body 组装、消息不指向 tools 字段）
+ *  ——optional chaining 归一，与 requestedNames 的 `(req.tools ?? [])` 口径一致 */
+export function hasNonEmptyTools(req: ChatRequest): boolean {
+  return (req.tools?.length ?? 0) > 0;
+}
 
 export function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -158,9 +165,8 @@ export function assertToolContract(req: ChatRequest, config: ProviderConfig): vo
   const forced = req.toolChoice?.kind === "forced" ? req.toolChoice : undefined;
   if (
     forced !== undefined &&
-    req.tools !== null &&
-    req.tools.length > 0 &&
-    !req.tools.some((t) => t.name === forced.name)
+    hasNonEmptyTools(req) &&
+    !req.tools?.some((t) => t.name === forced.name)
   ) {
     throw new LLMProtocolViolationError(
       `forced toolChoice（${forced.name}）不在请求 tools 中（端点 400 形态）`,

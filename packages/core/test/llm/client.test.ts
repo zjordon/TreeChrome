@@ -1463,8 +1463,9 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     expect(r.kind).toBe("ok");
     expect(mock.lastBody().system).toContain("IMPORTANT: You must respond with only a JSON");
     await client.getAction("sys", msgs(), tool); // 一次性告警去重
-    expect(logs.filter((m) => m.includes("无法 JSON 串化"))).toHaveLength(1);
-    expect(logs[0]).toContain(TOOL.name); // 工具名归因、不含 parameters 内容
+    const degradeWarns = logs.filter((m) => m.includes("无法 JSON 串化"));
+    expect(degradeWarns).toHaveLength(1);
+    expect(degradeWarns[0]).toContain(TOOL.name); // 工具名归因、不含 parameters 内容（轮 47 #8：不依赖 logs[0] 位置）
   });
 
   it("tool 定义含 sensitiveMap 命中值 → 按 map 去重的一次性 WARNING（轮 39 #5 起源，轮 41 #1 上提覆盖主路径：tools 路径的 parameters/description 同样明文进请求体）", async () => {
@@ -1480,6 +1481,19 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     await toolsPath.client.getAction("sys", msgs(), tool, { sensitiveMap: map }); // 同 map 去重
     expect(toolsPath.logs.filter((m) => m.includes("含 sensitiveMap 命中值"))).toHaveLength(1);
     expect(JSON.stringify(toolsPath.mock.lastBody().tools)).toContain("secret-key-here");
+
+    // 含引号 real（轮 47 #12）：对 JSON.stringify 文本做 includes 时转义恒失配
+    // ——检测域须与替换域（原始字符串值）对齐
+    const quoted = setupWithLogs();
+    quoted.mock.queueMany(toolOk({ done: 1 }));
+    const quotedTool: ToolDefinition = {
+      ...TOOL,
+      description: 'uses pa"ss word here',
+    };
+    await quoted.client.getAction("sys", msgs(), quotedTool, {
+      sensitiveMap: { 'pa"ss': "<Q>" },
+    });
+    expect(quoted.logs.some((m) => m.includes("含 sensitiveMap 命中值"))).toBe(true);
 
     // 承重墙路径（no-tools）：同一检测覆盖 schema 内嵌 systemPrompt 的形态
     const { mock, logs, client } = setupWithLogs({

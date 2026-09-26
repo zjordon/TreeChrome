@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   AssistantMessage,
   ChatMessage,
+  ContentBlock,
   ToolResultMessage,
   UserMessage,
 } from "../../src/index.js";
@@ -312,6 +313,14 @@ describe("assertValidMessages · 违例序列", () => {
         },
       ],
       "文本为空或非字符串",
+    );
+  });
+
+  it("块形态守卫（轮 47 #11）：null/非对象元素与未知 kind → 拒绝（此前裸 TypeError 或穿透到适配器穷尽断言）", () => {
+    expectViolation([{ role: "user", blocks: [null] as unknown as ContentBlock[] }], "非块形态");
+    expectViolation(
+      [user("q"), { role: "assistant", blocks: [{ kind: "pdf" } as unknown as ContentBlock] }],
+      "非块形态",
     );
   });
 

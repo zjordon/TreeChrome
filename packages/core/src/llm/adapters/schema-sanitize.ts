@@ -14,7 +14,7 @@
 // 键名与 type 值做归一化（小写键判定、联合类型拆 nullable）——多词约束键按官方
 // camelCase 发射；只清洗 schema 键，properties 下的属性名原样保留。
 
-import { isRecord, stringifyForLog } from "./common.js";
+import { isPlainRecord, isRecord, stringifyForLog } from "./common.js";
 
 const ALLOWED_KEYS = new Set([
   "type",
@@ -208,7 +208,10 @@ export function sanitizeGeminiSchema(
       continue;
     }
     if (normalized === "properties") {
-      if (!isRecord(value)) {
+      // isPlainRecord（轮 47 #10）：宽松 isRecord 放行 Date/Map 等类实例但
+      // Object.entries 为空——properties 会静默清空为 {} 且零告警；与顶层
+      // parameters 拦截单源对齐（items/子 schema 两处守卫同款替换）
+      if (!isPlainRecord(value)) {
         // 与 required/items 同款清洗闭环：非对象 properties 原样透传会被端点 400
         onSchemaIssue?.("properties 非对象，删除该键");
         continue;
@@ -221,7 +224,7 @@ export function sanitizeGeminiSchema(
         // 子 schema 非对象（draft-06+ 布尔 schema properties:{foo:true} 等）原样
         // 透传会被端点 400——归一空 schema 并补缺省 type（Gemini 不支持布尔
         // schema；节点须显式 type，轮 19 #1），闭环
-        if (!isRecord(sub)) {
+        if (!isPlainRecord(sub)) {
           onSchemaIssue?.(`属性「${name}」子 schema 非对象，归一为空 schema`);
           props[name] = { type: "string" };
           continue;
@@ -242,7 +245,7 @@ export function sanitizeGeminiSchema(
             ? "items 空元组，归一为空 schema（空数组约束丢失）"
             : "items 元组形态窄化为首元素",
         );
-      } else if (!isRecord(item)) {
+      } else if (!isPlainRecord(item)) {
         onSchemaIssue?.("items 非对象形态归一为空 schema");
       }
       emit(

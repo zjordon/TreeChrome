@@ -24,6 +24,7 @@ import {
   collectToolResults,
   createSharedAdapterWarners,
   defaultTestConnection,
+  hasNonEmptyTools,
   isRecord,
   makeOnceWarn,
   normalizeImageMime,
@@ -478,7 +479,18 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
         `baseUrl 以 :generateContent 结尾，gemini 协议将拼接 ${base}/v1beta/models/…——疑似整段端点 URL 误配`,
       );
     }
-    const url = `${base}/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
+    // model 段守卫（轮 47 #17，与 baseUrl 守卫族同动机）："models/xxx" 整段从官方
+    // URL 复制进卡片会拼出 /models/models%2F…:generateContent → 404 无线索——
+    // 剥离前缀留证据；合法含斜杠形态（tunedModels/xxx）按段编码防 %2F 404
+    let model = config.model;
+    if (model.startsWith("models/")) {
+      onBaseUrlEndpoint(
+        `model 以 models/ 前缀填入（${model}），已剥离——疑似从官方 URL 整段复制误配`,
+      );
+      model = model.slice("models/".length);
+    }
+    const encodedModel = model.split("/").map(encodeURIComponent).join("/");
+    const url = `${base}/v1beta/models/${encodedModel}:generateContent`;
     const headers: Record<string, string> = {
       "content-type": "application/json",
       "x-goog-api-key": config.apiKey,
@@ -491,11 +503,11 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
       contents: toWireContents(req.messages, deps.log),
       // ChatRequest 契约：tools 为 null/空数组时不发 tools 且忽略 toolChoice——
       // 空 functionDeclarations 与孤立 toolConfig 都是端点 400 形态
-      ...(req.tools !== null && req.tools.length > 0
+      ...(hasNonEmptyTools(req)
         ? {
             tools: [
               {
-                functionDeclarations: req.tools.map((t) => {
+                functionDeclarations: (req.tools ?? []).map((t) => {
                   const sanitized = sanitizeGeminiSchema(t.parameters, onSchemaIssue);
                   // 顶层 parameters 语义恒为命名参数集（object）：无参工具上游常给
                   // {}（清洗兜底成 type:string）——严格端点 400、宽容端点也把工具
@@ -521,7 +533,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
             ],
           }
         : {}),
-      ...(req.toolChoice?.kind === "forced" && req.tools !== null && req.tools.length > 0
+      ...(req.toolChoice?.kind === "forced" && hasNonEmptyTools(req)
         ? {
             toolConfig: {
               functionCallingConfig: { mode: "ANY", allowedFunctionNames: [req.toolChoice.name] },

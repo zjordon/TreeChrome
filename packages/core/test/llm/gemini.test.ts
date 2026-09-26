@@ -303,6 +303,17 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     });
   });
 
+  it("properties 值为 Date 等类实例 → 「非对象」删除留证据（轮 47 #10：宽松 isRecord 下 Object.entries 为空，此前静默清空为 {} 零告警）", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema(
+        { type: "object", properties: new Date() as unknown as Record<string, unknown> },
+        (d) => issues.push(d),
+      ),
+    ).toEqual({ type: "object" });
+    expect(issues).toEqual(["properties 非对象，删除该键"]);
+  });
+
   it("propertyOrdering 白名单收录 + camelCase 发射（轮 38 #10）：string[] 保留；非 string[] 删除上报；string 节点域外剥离", () => {
     const issues: string[] = [];
     expect(
@@ -1193,6 +1204,20 @@ describe("响应解析（wire → canonical）", () => {
     messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
     tools: [TOOL],
   });
+
+  it("model 段守卫：models/ 前缀剥离留证据（轮 47 #17）；合法斜杠形态分段编码不产生 %2F", async () => {
+    const misconfigured = setupLogs({ model: "models/gemini-2.5-pro" });
+    misconfigured.mock.queueMany(fnCallOk({}));
+    await misconfigured.provider.chat(baseReq());
+    expect(misconfigured.mock.calls[0].url).toContain("/models/gemini-2.5-pro:generateContent");
+    expect(misconfigured.mock.calls[0].url).not.toContain("%2F");
+    expect(misconfigured.logs.some((m) => m.includes("model 以 models/ 前缀填入"))).toBe(true);
+    const tuned = setup({ model: "tunedModels/my-tuner" });
+    tuned.mock.queueMany(fnCallOk({}));
+    await tuned.provider.chat(baseReq());
+    expect(tuned.mock.calls[0].url).toContain("/models/tunedModels/my-tuner:generateContent");
+  });
+
   it("usageMetadata 存在但非对象（网关畸形）→ 留证据归 null（轮 42 #20，与 candidates 域口径对齐）；缺失不告警", async () => {
     const { mock, provider, logs } = setupLogs();
     const resp = (usageMetadata: unknown) => ({

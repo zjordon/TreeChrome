@@ -731,3 +731,16 @@ smoke 产物摘要：
 - **杂项**：KNOWN_FINISH_REASONS 补 IMAGE_SAFETY/UNEXPECTED_TOOL_CALL（#14）；thinking/textPart signature 告警带卡片名（#11/#12）；openai idx 死变量（#10）；temperature 回退链第三段三侧拆分独立 it（#9/#17）；onTemperatureInvalid 三侧接线锚定（#5/#6/#7——漏传第 4 参时告警静默路由进钳制实例）；注释迁移/标题对齐（#8/#19）；usage: null 测试噪音清扫（#18——null 属「存在但形态异常」档，意图「无 usage」改缺键）。
 
 测试 451 例全绿（覆盖率 98.01%——canonical 新守卫分支部分待锚定）。
+
+### 评审轮 47（review-p2-llm-client-47.json，2026-09-26，**末轮·严重度门控处置**——用户质疑 47 轮不收敛后，本轮起只实施 P1/P2，P3 登记 backlog；轨迹 …→9→19→17）
+
+**本轮判定**：P1/P2 实施 8 条（#1/#2/#8/#10/#11/#12/#16/#17），驳回 2 条 stale（#5/#6——引用的旧断言 `toBe(circular)` 在轮 46 已改 `toBe(o)`，评审缓存过期），7 条 P3 登记 backlog 不实施（#3/#4/#7/#9/#13/#14/#15）。
+
+- **实施（P2 为主）**：mock abortReason 与 src 同口径仅对 undefined 兜底（#2——abort(null) 的 mock 变形会掩盖 src 行为）；schema-sanitize 嵌套守卫 isRecord→isPlainRecord 三处（#10——Date/Map 作 properties 值此前静默清空 {} 零告警）；块形态守卫（#11——blocks:[null] 裸 TypeError、{kind:"pdf"} 穿透到适配器穷尽断言）；tool 定义泄露检测改原始字符串值域游走（#12——对 JSON.stringify 文本 includes 时含引号 real 转义恒失配，轮 16 #6 同族）；hasNonEmptyTools 单源收口 8 处（#16——tools:undefined 宽化输入裸 TypeError）；gemini model 段守卫（#17——"models/" 前缀剥离留证据、合法斜杠分段编码防 %2F 404）；⑪ once 重复调用去重（#1）；logs[0] 位置假设改 filter 命中（#8）。
+- **backlog（P3，后续按需）**：mock 预中止分支直接锚定（#3）、parseRetryAfterMs 宽松形态锚定（#4）、病态矩阵编号映射（#7）、fallback supportsVision:true 逃生门对照用例（#9）、三条 signature/温度告警的卡片归因锚定（#13/#14/#15）。
+
+测试 454 例全绿（覆盖率 98.10%）。
+
+### 循环终局（2026-09-26，用户叫停后收尾）
+
+**P2 全系列 47 轮共 676 条意见（采纳 648 / 驳回 19 / stale 2 / P3 待办 7）**，测试 146→454，覆盖率 96.76%→98.10%；分支 feat/p2-llm-client 领先 main 61 commits。**未达零意见收敛**——事后检讨（用户质疑触发）：① 修复本身持续生产新评审面（一个告警繁殖 5 轮元工作）；② 「零意见」出口对 LLM 评审员在大 diff 上不可达，真实停止条件只有额度；③ 97% 采纳率给循环加油。**经验教训固化为 review-loop 退出规则**（连续两轮无 P1/P2 即收敛 + 严重度门控），已写入 `.zcode/commands/review-loop.md`；后续 P3/P4 阶段评审按新规则跑。待用户决定：合并 / 真机 smoke（GLM_API_KEY）/ P3 cdp-ws / P4 step。
