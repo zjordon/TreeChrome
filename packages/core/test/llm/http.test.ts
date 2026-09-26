@@ -101,7 +101,7 @@ describe("postJson 状态→错误类与错误体提取", () => {
     expect((err as LLMTimeoutError).retryAfterMs).toBe(7000);
   });
 
-  it("503 带 Retry-After 头 → LLMServerError.retryAfterMs（5xx 同款挂载，轮 38 #8：503 常携带该头，infra 退避会消费该字段）；无头 → undefined", async () => {
+  it("503 带 Retry-After 头 → LLMServerError.retryAfterMs 挂载（轮 38 #8；轮 40 #11 口径修正：5xx 不在 isInfraError 谓词内、client 退避不消费——信息挂载供宿主侧重试决策）；无头 → undefined", async () => {
     const mock = new MockFetch();
     mock.queueMany(
       {

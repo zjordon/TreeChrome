@@ -98,6 +98,9 @@ export class LLMProtocolViolationError extends LLMError {
  * Python SDK 侧 APITimeoutError ⊂ APIConnectionError 同为 infra；梯子
  * deadline 的到点强杀不会以本类型到达（callWithBackoff 的 signal 预检先
  * 还原为裸 abort 上抛，getAction 层才转 LLMTimeoutError）。
+ * 注意（轮 40 #11 口径收口）：http.ts 会为 5xx（LLMServerError）挂载
+ * retryAfterMs（轮 38 #8），但 5xx 不在本谓词内——该字段无退避消费方，
+ * 仅为宿主侧重试决策的信息挂载；勿据「retryAfterMs 存在」扩员。
  */
 export function isInfraError(
   e: unknown,

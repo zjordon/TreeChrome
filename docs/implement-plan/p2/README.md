@@ -638,3 +638,17 @@ smoke 产物摘要：
 - **测试质量**：timeoutMs 全族形态 it.each 补齐 NaN/负值（#1，标题与实际断言对齐）；assertFake/assertOk 收敛 4+1 处逐字重复守卫（#2）；errors.test 转走 index.js 锚定导出契约（#3）；「四类病态跨调用」标题改两类（#15）；两处过时「静默丢弃」标题改写（#20/#21）。
 
 测试 398 例全绿（覆盖率 98.63%）。
+
+### 评审轮 40（review-p2-llm-client-40.json，2026-09-26，17/17 全采纳——第二轮额度末轮）
+
+采纳 17 条。要点：
+
+- **接线锚定补齐（#1/#2/#3/#12/#13）**：anthropic 的 timeoutMs、gemini/openai 的 maxTokens 非法回退、gemini/openai 的 temperature 钳制告警——可选参数（onInvalidTimeout/onMaxTokensInvalid/onClamp）漏传时纯逻辑照常、纯用例仍绿，每适配器的独立注入点各补一份锚定；anthropic 侧「三适配器接线锚定」的过时注释改「单侧锚定」。
+- **5xx retryAfterMs 口径修正（#11）**：轮 38 http.ts 注释宣称「LLMServerError 是 infra 成员、退避会消费该字段」与冻结契约矛盾——5xx 不在 isInfraError 谓词内（client 不退避），该字段实为宿主侧决策的信息挂载；errors.ts 谓词 docstring 收口 + http.ts 注释/503 测试标题同步修正。
+- **sensitiveMap 病态 ⑩（#9，④ 的镜像方向）**：real 含 [uN] 形态时 URL 缩写 tag 被敏感替换消费，还原侧 toolInput 得到裸 tag 而非真实 URL——对称补检；⑨ 告警的「调低阈值」整改项改为可操作表述（阈值是常量不可配置，#10）。
+- **泄露告警跨调用去重（#17）**：工具载荷 WARNING 按 (map 身份, 工具名) 去重（与病态检测同构）——历史回灌只累积不消失，逐步重复告警会刷屏；「已占位」分支同款去重。
+- **schema nullable 派生收尾化（#5）**：type 数组 null 成员的 nullable 派生延迟到循环后、显式键优先——消除键序依赖（此前 {type:[…,null],nullable:false} 与反序产出相反结果），撞键归因改「type 的 null 成员」。
+- **观测补口**：openai 带 toolCalls 的 assistant 后无 toolResult 跟随的防御日志（#4，与 collectToolResults「仅配对 N 条」对称）；gemini text part 携带的 thoughtSignature 剥离留证据（#14，canonical 无槽位但保留推理连续性退化线索）。
+- **单源化与测试质量**：nonEmptySensitiveReals 导出（#16，client 四处命中检测与替换侧共用滤空口径）；gemini wire 响应工厂收敛（#7）、signature 用例死防御分支重构（#15）、视觉/滤图用例拆独立 describe（#8）、FakeClock 收敛用例的前提锚定注释（#6）。
+
+测试 406 例全绿（覆盖率 98.50%）。第二轮额度（轮 31-40）收束：10 轮 140 条采纳 136 驳回 4。

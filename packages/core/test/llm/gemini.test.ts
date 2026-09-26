@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createGeminiProvider, SCHEMA_ISSUE_DEDUP_MAX } from "../../src/llm/adapters/gemini.js";
 import { SCHEMA_MAX_DEPTH, sanitizeGeminiSchema } from "../../src/llm/adapters/schema-sanitize.js";
+import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
 import {
   LLMBlockedError,
   LLMProtocolViolationError,
@@ -211,6 +212,20 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
 
   it("边界 type: ['null'] → 兜底合法 type 枚举（不产出无 type 的 schema）", () => {
     expect(sanitizeGeminiSchema({ type: ["null"] })).toEqual({ type: "string", nullable: true });
+  });
+
+  it("nullable 派生与显式键：显式优先且与键序无关（轮 40 #5：此前 {type:[…,null],nullable:false} 与反序产出相反结果）", () => {
+    // 两种键序语义相同 → 输出必须一致（显式 nullable 优先）
+    const a = sanitizeGeminiSchema({ type: ["string", "null"], nullable: false });
+    const b = sanitizeGeminiSchema({ nullable: false, type: ["string", "null"] });
+    expect(a).toEqual({ type: "string", nullable: false });
+    expect(b).toEqual({ type: "string", nullable: false });
+    // 无显式键 → null 成员派生 true；sourceKey 按「type 的 null 成员」归因
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema({ type: ["string", "null"], description: "d" }, (d) => issues.push(d)),
+    ).toEqual({ type: "string", description: "d", nullable: true });
+    expect(issues).toEqual([]);
   });
 
   it("type 字符串值枚举校验：PascalCase 小写归一，非法枚举值兜底 string 并上报（轮 15 #17 + 轮 18 #1）", () => {
@@ -818,6 +833,23 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody().generationConfig).toEqual({ maxOutputTokens: 77, temperature: 0.5 });
   });
 
+  it("maxTokens 非法回退 DEFAULT_MAX_TOKENS 并留一次性告警（轮 40 #2 补齐接线锚定：接线是独立实现，漏传/内联替代后 NaN 序列化 null 直达端点 400 且无红测）", async () => {
+    const { mock, logs, provider } = setupLogs({ maxTokens: Number.NaN });
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    await provider.chat(req);
+    await provider.chat(req);
+    const genConfig = () => mock.lastBody().generationConfig as Record<string, unknown>;
+    expect(genConfig().maxOutputTokens).toBe(DEFAULT_MAX_TOKENS); // NaN 序列化 null 是端点硬 400
+    const warnings = logs.filter((m) => m.includes("maxTokens"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("gemini-card");
+  });
+
   it("temperature 回退链：请求级缺省用卡片级；两级缺省不发", async () => {
     const { mock, provider } = setup({ temperature: 0.3 });
     mock.queueMany(fnCallOk({}), fnCallOk({}));
@@ -854,6 +886,21 @@ describe("请求构造（canonical → wire）", () => {
       tools: null,
     });
     expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
+  });
+
+  it("temperature 钳制告警接线锚定（轮 40 #12：onTemperatureClamp 是可选参数，漏传时钳制照常本用例仍绿、告警静默丢失）", async () => {
+    const { mock, logs, provider } = setupLogs({ temperature: 3 });
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    await provider.chat(req);
+    await provider.chat(req);
+    const warnings = logs.filter((m) => m.includes("钳制"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("gemini-card"); // 卡片归因
   });
 
   it("timeoutMs 非法 → 视为未设置 + 实例级一次性告警（轮 37 #7 三适配器接线锚定，轮 38 #13 对齐 openai 侧：接线是独立实现，漏传无红测可拦）", async () => {
@@ -1359,6 +1406,31 @@ describe("响应解析（wire → canonical）", () => {
     expect(logs.some((m) => m.includes("丢弃形态异常的 thoughtSignature（非 string）：42"))).toBe(
       true,
     );
+  });
+
+  it("text part 携带的 thoughtSignature → 剥离留证据（轮 40 #14：canonical 仅 ToolCall 有签名槽位，thinking 模型会把签名同时挂在 text part 上）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [{ text: "reasoning...", thoughtSignature: "sig-text" }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: null,
+      },
+    });
+    const r = await provider.chat(baseReq());
+    expect(r.text).toBe("reasoning..."); // 文本照常处理
+    expect(r.toolCalls).toHaveLength(0); // 无 functionCall，签名无处安放
+    expect(
+      logs.some((m) => m.includes('丢弃非 functionCall part 携带的 thoughtSignature："sig-text"')),
+    ).toBe(true);
   });
 
   it("thoughtSignature：解析捕获进 ToolCall.signature，回传时随 functionCall part 原样写回（2.5/3 thinking 模型硬要求，不回传即 400）", async () => {

@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createOpenAICompletionsProvider } from "../../src/llm/adapters/openai-completions.js";
+import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
 import { LLMAuthError, LLMProtocolViolationError } from "../../src/llm/errors.js";
 import { AGENT_TOOL, setupProvider, setupProviderWithLogs } from "./fixtures.js";
 import type { MockResponseSpec } from "./mock-fetch.js";
@@ -275,7 +276,29 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody().temperature).toBe(2);
   });
   // 钳制告警/maxTokens 回退的纯逻辑矩阵见 common.test.ts（轮 19 #2 收敛）；
-  // 接线锚定保留在 anthropic.test.ts（三适配器注入形态一致）
+  // 接线锚定是各适配器独立注入点（可选参数漏传时纯逻辑仍绿、告警静默丢失），
+  // 各侧分别锚定（轮 40 #13 改注）
+
+  it("temperature 钳制告警接线锚定（轮 40 #13：非抑制分支的 onTemperatureClamp 漏传无红测可拦——抑制分支已有「抑制可观测」锚定）", async () => {
+    const { mock, logs, provider } = setupLogs({ temperature: 2.5 });
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat(baseReq());
+    await provider.chat(baseReq());
+    const warnings = logs.filter((m) => m.includes("钳制"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("glm-openai"); // 卡片归因
+  });
+
+  it("maxTokens 非法回退 DEFAULT_MAX_TOKENS 并留一次性告警（轮 40 #3 补齐接线锚定：maxTokensField 双轨映射下回归面更宽，漏接后 NaN 序列化 null 直达端点 400 且无红测）", async () => {
+    const { mock, logs, provider } = setupLogs({ maxTokens: Number.NaN });
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat(baseReq());
+    await provider.chat(baseReq());
+    expect(mock.bodyAt(0).max_tokens).toBe(DEFAULT_MAX_TOKENS); // NaN 序列化 null 是端点硬 400
+    expect(mock.bodyAt(1).max_tokens).toBe(DEFAULT_MAX_TOKENS);
+    const warnings = logs.filter((m) => m.includes("maxTokens"));
+    expect(warnings).toHaveLength(1);
+  });
 
   it("o 系与 gpt-5 系抑制 temperature（只接受默认温度 1，轮 14 #10 + 轮 20 #11 web 核实）；gpt-4o 照常发送", async () => {
     const oSeries = setup({ model: "o3-mini", temperature: 0.2 });

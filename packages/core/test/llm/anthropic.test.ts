@@ -233,7 +233,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("temperature");
   });
 
-  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4；三适配器接线锚定——纯逻辑矩阵见 common.test.ts，轮 19 #2）", async () => {
+  it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4；anthropic 单侧接线锚定——gemini/openai 侧同款用例见各自文件，纯逻辑矩阵见 common.test.ts，轮 19 #2 起源、轮 40 #2 改注）", async () => {
     const { mock, logs, provider } = setupLogs({ temperature: 1.5 });
     const req: ChatRequest = {
       systemPrompt: null,
@@ -251,7 +251,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(warnings[0]).toContain("glm-anthropic"); // 卡片归因
   });
 
-  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #10；三适配器接线锚定，纯逻辑见 common.test.ts）", async () => {
+  it("maxTokens 非有限数值回退 DEFAULT_MAX_TOKENS 并留一次性 WARNING（轮 18 #10；anthropic 单侧接线锚定——gemini/openai 侧同款用例见各自文件，纯逻辑见 common.test.ts，轮 40 #2 改注）", async () => {
     const { mock, logs, provider } = setupLogs({ maxTokens: Number.NaN });
     mock.queueMany(toolOk({}), toolOk({}));
     const req: ChatRequest = {
@@ -266,6 +266,21 @@ describe("请求构造（canonical → wire）", () => {
     const warnings = logs.filter((m) => m.includes("maxTokens"));
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("glm-anthropic");
+  });
+
+  it("timeoutMs 非法 → 视为未设置 + 实例级一次性告警（轮 37 #7 接线锚定，轮 40 #1 补齐：接线是独立实现，漏传无红测可拦——对齐 gemini/openai 侧）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    const badReq = (): ChatRequest => ({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+      timeoutMs: 0,
+    });
+    mock.queueMany(toolOk({}), toolOk({}));
+    await provider.chat(badReq());
+    await provider.chat(badReq());
+    expect(logs.filter((m) => m.includes("timeoutMs 0 非法"))).toHaveLength(1);
+    expect(mock.calls).toHaveLength(2); // 非法值不制造每请求超时
   });
 
   it("空串 systemPrompt 与 null 同等不发（空 system 文本是端点 400 形态，轮 20 #13）", async () => {

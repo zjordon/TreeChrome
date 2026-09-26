@@ -90,9 +90,15 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
 function filteredSensitiveEntries(
   sensitiveMap: Record<string, string>,
 ): ReadonlyArray<readonly [string, string]> {
-  return Object.entries(sensitiveMap)
-    .filter(([real]) => real !== "")
-    .map(([real, placeholder]) => [real, placeholder] as const);
+  return nonEmptySensitiveReals(sensitiveMap).map((real) => [real, sensitiveMap[real]] as const);
+}
+
+/** 滤空 real 键的键序列（插入序，轮 40 #16 导出单源）：替换侧
+ * （filteredSensitiveEntries）与 client.ts 的各命中检测（泄露/病态/承重墙 schema）
+ * 共用——检测侧与替换侧的过滤条件任一演进时不会静默分叉（检测漏掉某类键而
+ * 替换侧仍消费它，或反之） */
+export function nonEmptySensitiveReals(sensitiveMap: Record<string, string>): string[] {
+  return Object.keys(sensitiveMap).filter((real) => real !== "");
 }
 
 export function replaceSensitiveText(

@@ -123,7 +123,7 @@ function toWireMessages(
   // 消息（无前置 assistant.tool_calls）是官方端点硬 400 形态——assertValidMessages
   // 已拦，兜底与 anthropic/gemini（轮 37 #8/#9）同口径跳过留证据，不透传烧 400
   let afterToolCallAssistant = false;
-  for (const msg of messages) {
+  for (const [idx, msg] of messages.entries()) {
     if (msg.role === "user") {
       out.push({ role: "user", content: userContent(msg.blocks, log) });
       afterToolCallAssistant = false;
@@ -154,7 +154,18 @@ function toWireMessages(
         }));
       }
       out.push(wire);
-      afterToolCallAssistant = msg.toolCalls !== undefined && msg.toolCalls.length > 0;
+      afterToolCallAssistant = hasCalls;
+      if (hasCalls) {
+        // calls 缺结果方向的防御观测（轮 40 #4，与 collectToolResults「仅配对 N 条
+        // 结果」日志对称）：wire 产出无 tool 消息跟随的 tool_calls 同为官方端点
+        // 硬 400 形态，assertValidMessages 漂移时留证据
+        const next = messages[idx + 1];
+        if (next === undefined || next.role !== "toolResult") {
+          log(
+            `[llm] openai assistant 的 ${msg.toolCalls?.length} 个 toolCall 后无 toolResult 跟随（wire 将缺 tool 消息，端点 400 形态）`,
+          );
+        }
+      }
       continue;
     }
     if (!afterToolCallAssistant) {

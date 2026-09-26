@@ -281,6 +281,15 @@ function parseResponse(
       // part 的正常形态不告警，仅「存在但形态异常」（如网关产出 text:123）丢弃留证
       log(`[llm] gemini 丢弃形态异常的 text part（text 非 string）：${stringifyForLog(part.text)}`);
     }
+    // 非 functionCall part 携带的 thoughtSignature（轮 40 #14）：Gemini thinking
+    // 模型会把签名同时挂在 text part 上——canonical 仅 ToolCall 有签名槽位
+    //（AssistantMessage 无处安放），剥离留证据（与 functionCall 分支轮 39 #8
+    // 的畸形签名观测同口径，至少保留推理连续性退化的线索）
+    if (part.thoughtSignature !== undefined && !isRecord(part.functionCall)) {
+      log(
+        `[llm] gemini 丢弃非 functionCall part 携带的 thoughtSignature：${stringifyForLog(part.thoughtSignature)}`,
+      );
+    }
     // 官方 proto Part 内容域为 oneof（text 与 functionCall 互斥）——并存形态由
     // 转换型网关产出时两者都处理（轮 28 #4：continue 会静默丢弃并存 functionCall）
     if (isRecord(part.functionCall)) {

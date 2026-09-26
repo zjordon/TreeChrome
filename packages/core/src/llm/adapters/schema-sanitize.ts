@@ -135,6 +135,9 @@ export function sanitizeGeminiSchema(
     }
     out[emitKey] = value;
   };
+  // type 联合数组的 null 成员 → nullable 派生标志（轮 40 #5）：延迟到循环后
+  // 收尾处理，显式 nullable 键优先——消除派生写入与显式键的键序依赖
+  let derivedNullable = false;
   for (const [key, value] of Object.entries(schema)) {
     const normalized = key.toLowerCase();
     if (!ALLOWED_KEYS.has(normalized)) {
@@ -182,7 +185,11 @@ export function sanitizeGeminiSchema(
         emit(key, "type", chosen);
       }
       if (list.includes("null")) {
-        emit(key, "nullable", true);
+        // nullable 派生延迟到收尾（轮 40 #5）：此处立即写入会与显式 nullable 键
+        // 产生键序依赖（{type:[…,"null"],nullable:false} 与反序产出相反结果），
+        // 且撞键上报把来源归因到 type 键本身（归一后仍是 type，真实来源是其
+        // null 成员）——只置位，收尾处显式键优先地补写
+        derivedNullable = true;
       }
       continue;
     }
@@ -342,6 +349,12 @@ export function sanitizeGeminiSchema(
       // 变体原样透传仍会被端点拒收，清洗必须闭环）；撞键上报经 emit 统一出口
       emit(key, EMIT_KEY[normalized] ?? normalized, value);
     }
+  }
+  // type null 成员的 nullable 派生收尾（轮 40 #5）：显式 nullable 键已在此前的
+  // 循环中写入，无显式键时才补 true——sourceKey 用真实来源描述（type 键归一后
+  // 仍是 type，撞键场景按「type 的 null 成员」归因才不误导）
+  if (derivedNullable && out.nullable === undefined) {
+    emit("type 的 null 成员", "nullable", true);
   }
   // 缺 type 补注入（轮 19 #1 + 轮 20 #1 结构线索）：端点要求每个 schema 节点显式
   // type（轮 18 #1 web 核实）——统一注 string 会产出 {type:"string", properties:…}

@@ -128,9 +128,9 @@ function statusToError(
     });
   }
   if (status >= 500) {
-    // 5xx 同款解析挂载（轮 38 #8）：503 常携带 Retry-After（OpenAI/Google 均有），
-    // LLMServerError 是 infra 成员、client 的 e.retryAfterMs ?? 指数退避会消费该
-    // 字段——与 408（轮 36 #9）同动机：服务端明示 30s 却按 2s 过早重试易加剧限流
+    // 5xx 同款解析挂载（轮 38 #8；轮 40 #11 口径修正）：503 常携带 Retry-After
+    //（OpenAI/Google 均有）。注意 5xx 不在 isInfraError 谓词内（client 不退避）——
+    // retryAfterMs 仅为宿主侧重试决策的信息挂载，无退避消费方（errors.ts 注释同口径）
     const retryAfterMs = parseRetryAfterMs(retryAfter);
     return new LLMServerError(message, {
       provider,

@@ -14,6 +14,7 @@ import {
   applySensitiveInMessages,
   cloneWorkMessages,
   hasImageBlocks,
+  nonEmptySensitiveReals,
   redactOrPreserve,
   replaceSensitiveDeep,
   replaceSensitiveText,
@@ -257,6 +258,11 @@ export class LLMClient {
    *  sensitiveMap 是 per-call 选项，实例级单一/总类别标志会让首个 map 的命中
    *  掩蔽后续 map 的病态或其它类别 */
   private readonly warnedSensitiveMapPathologies = new WeakMap<object, Set<string>>();
+  /** 工具载荷泄露 WARNING 的按 (map 身份, 工具名) 去重（轮 40 #17，与
+   *  warnedSensitiveMapPathologies 同构）：agent loop 复用实例逐步回灌历史时
+   *  同一泄露源（历史 toolResult/args 只累积不消失）每步重复——单次调用内的
+   *  名字去重（轮 16 #9）不覆盖跨步刷屏；新 map/新工具名各自获得一次告警机会 */
+  private readonly warnedToolPayloadLeaks = new WeakMap<object, Set<string>>();
   /** setCallWindow 登记的步级共享 deadline（deps.now 域，毫秒） */
   private windowDeadline: number | undefined;
   private windowBudgetCapMs: number | undefined;
@@ -360,7 +366,7 @@ export class LLMClient {
         this.deps.log(message);
       }
     };
-    const reals = Object.keys(sensitive).filter((real) => real !== "");
+    const reals = nonEmptySensitiveReals(sensitive);
     const ARRAY_INDEX_KEY_RE = /^(?:0|[1-9]\d*)$/;
     const isArrayIndexKey = (real: string): boolean =>
       ARRAY_INDEX_KEY_RE.test(real) && Number(real) <= 4294967295;
@@ -384,6 +390,10 @@ export class LLMClient {
     // 位置——"xx[u0]yy" 形态的占位符同样会被 [u0]→长 URL 还原消费，不能只锚定
     // 整串形态（"[value0]" 等仍不会误命中）
     const hasUrlTagCollision = placeholders.some((ph) => /\[u\d+\]/.test(ph));
+    // ⑩ 真实值含 [uN] 形态（轮 40 #9，④ 的镜像方向）：URL 缩写先产出的 tag 会被
+    // 敏感替换消费（real 恰为 tag 时整条失配、urlMap 挂空），还原侧 toolInput
+    // 得到裸 tag 而非真实 URL——与 ④ 同属静默数据损坏；宁可误报口径与 ③ 一致
+    const hasRealUrlTagForm = reals.some((real) => /\[u\d+\]/.test(real));
     // ⑤ 占位符互相包含（轮 31 #14）：还原侧顺序 replaceAll 先短者胜，嵌套占位符
     //（"AB" 与 "ABc"）被内层先还原撕裂后外层失配，真实值永不还原——与 ③ 同属
     // 替换链静默损坏；括号定界形态（[SECRET-1]/[SECRET-10]）天然免疫误报
@@ -443,6 +453,11 @@ export class LLMClient {
       "[llm] WARNING: sensitiveMap 占位符含 [uN] 形态，与 URL 缩写 tag 撞型——还原侧先 URL 后敏感，占位符会被长 URL 顶替、真实值丢失，请改用其他占位符形态",
     );
     once(
+      "realUrlTagForm",
+      hasRealUrlTagForm,
+      "[llm] WARNING: sensitiveMap 的真实值含 [uN] 形态，与 URL 缩写 tag 撞型——请求侧 tag 会被敏感替换消费，还原侧该 URL 永不还原，请改用与 [uN] 无关的真实值形态或调整占位策略",
+    );
+    once(
       "placeholderNesting",
       hasPlaceholderNesting,
       "[llm] WARNING: sensitiveMap 存在占位符互相包含（嵌套占位符）——还原侧顺序替换先短者胜，外层占位符被撕裂后失配，真实值永不还原",
@@ -465,7 +480,7 @@ export class LLMClient {
     once(
       "realUrlForm",
       hasRealUrlForm,
-      "[llm] WARNING: sensitiveMap 的真实值本身是长 URL（≥URL_MIN_LENGTH）——请求侧 URL 缩写先行会把它替换为 [uN] 标签，敏感占位失配：出站是 [uN] 而非配置的占位符，还原侧该条目不会生效；如需占位请缩短该 URL 或调低 URL 缩写阈值",
+      "[llm] WARNING: sensitiveMap 的真实值本身是长 URL（≥URL_MIN_LENGTH）——请求侧 URL 缩写先行会把它替换为 [uN] 标签，敏感占位失配：出站是 [uN] 而非配置的占位符，还原侧该条目不会生效；如需占位请缩短或拆分该 URL（URL 缩写阈值当前为常量、不可配置）",
     );
   }
 
@@ -554,7 +569,7 @@ export class LLMClient {
       if (
         sensitive !== undefined &&
         !this.loggedSystemPromptLeaks.has(sensitive) &&
-        Object.keys(sensitive).some((real) => real !== "" && systemPrompt.includes(real))
+        nonEmptySensitiveReals(sensitive).some((real) => systemPrompt.includes(real))
       ) {
         this.loggedSystemPromptLeaks.add(sensitive);
         this.deps.log(
@@ -573,7 +588,7 @@ export class LLMClient {
       // 替换（对未命中载荷恒等，检测/替换不分离）。args 的泄露链路：okResult 把
       // 占位符还原为真实值 → 调用方回灌 assistant 历史 → 下一轮 args 明文出站
       if (sensitive !== undefined) {
-        const reals = Object.keys(sensitive).filter((real) => real !== "");
+        const reals = nonEmptySensitiveReals(sensitive);
         const leaking: string[] = [];
         for (const m of work) {
           if (m.role === "toolResult") {
@@ -611,14 +626,24 @@ export class LLMClient {
           }
         }
         if (leaking.length > 0) {
-          // 同名工具多轮命中的去重（轮 16 #9）：WARNING 列表出现重复项只伤可读性
-          const names = [...new Set(leaking)].join(", ");
-          if (opts.redactToolPayloads === true) {
-            this.deps.log(`[llm] 工具载荷(${names}) 敏感值已占位（redactToolPayloads）`);
-          } else {
-            this.deps.log(
-              `[llm] WARNING: 工具载荷(${names}) 包含敏感值，将以明文出站（toolResult/args 不在占位范围，redactToolPayloads:true 可阻断；P4 接 SecretProvider 时收口）`,
-            );
+          // 同名工具多轮命中的调用内去重（轮 16 #9）+ 跨调用按 (map, 工具名)
+          // 去重（轮 40 #17）：同一泄露源逐步回灌只告警一次，新 map/新工具名
+          // 各自获得一次告警机会；「已占位」分支同款去重（逐步重复的信息量更低）
+          const seen = this.warnedToolPayloadLeaks.get(sensitive) ?? new Set<string>();
+          const fresh = [...new Set(leaking)].filter((n) => !seen.has(n));
+          if (fresh.length > 0) {
+            for (const n of fresh) {
+              seen.add(n);
+            }
+            this.warnedToolPayloadLeaks.set(sensitive, seen);
+            const names = fresh.join(", ");
+            if (opts.redactToolPayloads === true) {
+              this.deps.log(`[llm] 工具载荷(${names}) 敏感值已占位（redactToolPayloads）`);
+            } else {
+              this.deps.log(
+                `[llm] WARNING: 工具载荷(${names}) 包含敏感值，将以明文出站（toolResult/args 不在占位范围，redactToolPayloads:true 可阻断；P4 接 SecretProvider 时收口）`,
+              );
+            }
           }
         }
       }
@@ -829,7 +854,7 @@ export class LLMClient {
       if (
         sensitive !== undefined &&
         !this.loggedSchemaLeaks.has(sensitive) &&
-        Object.keys(sensitive).some((real) => real !== "" && constraint.includes(real))
+        nonEmptySensitiveReals(sensitive).some((real) => constraint.includes(real))
       ) {
         this.loggedSchemaLeaks.add(sensitive);
         this.deps.log(

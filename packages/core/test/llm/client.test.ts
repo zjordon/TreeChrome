@@ -512,6 +512,27 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     );
   });
 
+  it("工具载荷泄露 WARNING 按 (map, 工具名) 跨调用去重（轮 40 #17：历史回灌只累积不消失，逐步重复告警会刷屏淹没其它一次性证据）；新工具名各自告警", async () => {
+    const { mock, logs, client } = setupWithLogs();
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }), toolOk({ done: 3 }));
+    const history = (): ChatMessage[] => [
+      { role: "user", blocks: [{ kind: "text", text: "q" }] },
+      {
+        role: "assistant",
+        blocks: [],
+        toolCalls: [{ id: "t1", name: TOOL.name, args: {} }],
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "a sk-secret" },
+    ];
+    const map = { "sk-secret": "<KEY>" };
+    await client.getAction("sys", history(), TOOL, { sensitiveMap: map });
+    await client.getAction("sys", history(), TOOL, { sensitiveMap: map }); // 同 map 同工具名
+    expect(logs.filter((m) => m.includes("包含敏感值")).length).toBe(1);
+    // 新 map 各自获得一次告警机会（与 systemPrompt/病态检测同口径）
+    await client.getAction("sys", history(), TOOL, { sensitiveMap: { "sk-secret": "<K2>" } });
+    expect(logs.filter((m) => m.includes("包含敏感值")).length).toBe(2);
+  });
+
   it("systemPrompt 敏感命中 → 按 map 去重 WARNING 可观测（不在占位范围、明文出站由宿主自担，轮 18 #3；轮 29 #6 改按身份）", async () => {
     const { mock, logs, client } = setupWithLogs();
     mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
@@ -690,6 +711,17 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       sensitiveMap: { "https://example.com/short": "[short-url]" },
     });
     expect(realUrl.logs.filter((m) => m.includes("真实值本身是长 URL"))).toHaveLength(1);
+
+    // ⑩ 真实值含 [uN] 形态（轮 40 #9，④ 的镜像方向）：URL 缩写 tag 被敏感替换
+    // 消费，还原侧 toolInput 得到裸 tag 而非真实 URL——静默数据损坏
+    const realTag = setupWithLogs();
+    realTag.mock.queueMany(toolOk({ done: 1 }));
+    await realTag.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "[u0]": "<TAG>" },
+    });
+    expect(
+      realTag.logs.some((m) => m.includes("WARNING") && m.includes("真实值含 [uN] 形态")),
+    ).toBe(true);
   });
 
   it("病态去重按 (map, 类别)：换 map 后同类别病态各自告警（轮 31 #10，与 systemPrompt 泄露同口径）", async () => {
@@ -948,7 +980,9 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     expect(JSON.stringify(mock.bodyAt(1).messages)).not.toContain('"image"'); // fallback 滤图
     expect(asUser(messages[0]).blocks.length).toBe(2); // 原消息未被就地改动（03 偏离 1）
   });
+});
 
+describe("视觉能力与滤图（声明/白名单/告警去重；轮 40 #8 自 fallback 组拆出——与单向切换主题正交）", () => {
   it("主卡显式声明 supportsVision=false → 恒滤图（声明即生效）；未声明主卡不滤（偏离 9 取舍）", async () => {
     const declared = setup({ capabilities: { supportsVision: false } });
     const withImage = withImageMessages();
@@ -1226,8 +1260,12 @@ describe("deadline 与取消", () => {
 
   it("gemini thoughtSignature 经 toolCall 跨 getAction 回合回传（轮 36 #6——ok 分支此前丢弃 id/signature，宿主无法回放历史）", async () => {
     const { mock, client } = setupCore(GEMINI_CARD, "zero", false);
-    // 首回合：functionCall part 携带 thoughtSignature（thinking 模型形态）
-    mock.queueMany({
+    // gemini wire 响应工厂（轮 40 #7 收敛）：两段逐字重复的 candidates 体仅
+    // args.step 与有无签名之差——usageMetadata/finishReason 等形态演进单点改
+    const geminiToolOk = (
+      args: Record<string, unknown>,
+      thoughtSignature?: string,
+    ): MockResponseSpec => ({
       status: 200,
       body: {
         candidates: [
@@ -1235,10 +1273,9 @@ describe("deadline 与取消", () => {
             content: {
               role: "model",
               parts: [
-                {
-                  functionCall: { name: TOOL.name, args: { step: 1 } },
-                  thoughtSignature: "sig-abc",
-                },
+                thoughtSignature === undefined
+                  ? { functionCall: { name: TOOL.name, args } }
+                  : { functionCall: { name: TOOL.name, args }, thoughtSignature },
               ],
             },
             finishReason: "STOP",
@@ -1247,33 +1284,25 @@ describe("deadline 与取消", () => {
         usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
       },
     });
+    // 首回合：functionCall part 携带 thoughtSignature（thinking 模型形态）
+    mock.queueMany(geminiToolOk({ step: 1 }, "sig-abc"));
     const r1 = assertOk(await client.getAction("sys", msgs(), TOOL));
     expect(r1.toolCall?.signature).toBe("sig-abc"); // signature 经 ok 分支回传
+    // 显式收窄（轮 40 #15）：死防御分支（伪造空 toolCalls/兜底 id）会把真实
+    // 失败根因（上行 signature 断言失效）掩蔽成下游 canonical 校验错误
+    const call1 = r1.toolCall;
+    if (call1 === undefined) {
+      throw new Error("首回合未携带 toolCall——上行 signature 断言已失效，先查上游");
+    }
 
     // 次回合：宿主用回传的 toolCall 回放 assistant 历史并附 toolResult
-    mock.queueMany({
-      status: 200,
-      body: {
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [{ functionCall: { name: TOOL.name, args: { step: 2 } } }],
-            },
-            finishReason: "STOP",
-          },
-        ],
-        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
-      },
-    });
+    mock.queueMany(geminiToolOk({ step: 2 }));
     const r2 = await client.getAction(
       "sys",
       [
         ...msgs(),
-        r1.toolCall === undefined
-          ? { role: "assistant", blocks: [], toolCalls: [] }
-          : { role: "assistant", blocks: [], toolCalls: [r1.toolCall] },
-        { role: "toolResult", toolCallId: r1.toolCall?.id ?? "t", toolName: TOOL.name, text: "ok" },
+        { role: "assistant", blocks: [], toolCalls: [call1] },
+        { role: "toolResult", toolCallId: call1.id, toolName: TOOL.name, text: "ok" },
       ],
       TOOL,
     );
@@ -1437,6 +1466,10 @@ describe("FakeClock 收敛守卫（轮 38 #18：末轮 resolve 续体注册的�
         await clock.sleep(0);
       }
     };
+    // 前提锚定（轮 40 #6）：FakeClock.advance 非收敛只 throw、不 settle 挂起
+    // sleep——churn 悬空 promise 永远 pending，无 Unhandled Rejection；若夹具
+    // 日后改为抛错时清理/拒绝挂起定时器（防泄漏改进），churn 的 await 会抛且
+    // 无人捕获，本用例需同步调整（catch churn 再断言）
     void churn();
     await expect(clock.advance(0)).rejects.toThrow("FakeClock.advance");
   });
