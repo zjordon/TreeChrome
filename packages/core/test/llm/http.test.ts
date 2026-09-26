@@ -93,6 +93,34 @@ describe("postJson 状态→错误类与错误体提取", () => {
     expect((err as LLMRateLimitError).retryAfterMs).toBe(7000);
   });
 
+  it("408 带 Retry-After → retryAfterMs 挂载（与 429 同款解析，轮 36 #9）", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({ status: 408, headers: { "retry-after": "7" }, body: {} });
+    const err = await post(mock).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMTimeoutError);
+    expect((err as LLMTimeoutError).retryAfterMs).toBe(7000);
+  });
+
+  it("错误体读取失败（连接中断，非超时/取消）→ detail 并入失败原因（轮 36 #4，可区分「空错误体」与「读体失败」）", async () => {
+    const fetchFn = (async () =>
+      ({
+        ok: false,
+        status: 502,
+        headers: new Headers(),
+        text: () => Promise.reject(new Error("connection reset")),
+      }) as unknown as Response) as unknown as typeof fetch;
+    const err = await postJson(
+      fetchFn,
+      "https://unit.example/api",
+      { "content-type": "application/json" },
+      { ping: 1 },
+      { provider: "unit" },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LLMServerError);
+    expect((err as Error).message).toContain("错误体读取失败");
+    expect((err as Error).message).toContain("connection reset");
+  });
+
   it.each([
     ["error 为纯字符串", { error: "gateway exploded" }, "gateway exploded"],
     ["顶层 message", { message: "upstream unavailable" }, "upstream unavailable"],

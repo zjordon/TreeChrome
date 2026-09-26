@@ -7,14 +7,8 @@ import { createGeminiProvider } from "./adapters/gemini.js";
 import { isAbortError } from "./adapters/http.js";
 import { createOpenAICompletionsProvider } from "./adapters/openai-completions.js";
 import type { ProviderConfig } from "./config.js";
-import type { LlmDeps } from "./deps.js";
-import {
-  isInfraError,
-  LLMError,
-  LLMInvalidRequestError,
-  LLMProtocolViolationError,
-  LLMTimeoutError,
-} from "./errors.js";
+import type { LLMDeps } from "./deps.js";
+import { isInfraError, LLMError, LLMProtocolViolationError, LLMTimeoutError } from "./errors.js";
 import type { LLMProvider } from "./provider.js";
 import {
   applySensitiveInMessages,
@@ -34,6 +28,7 @@ import type {
   ChatRequest,
   ChatResponse,
   TokenUsage,
+  ToolCall,
   ToolChoice,
   ToolDefinition,
 } from "./types.js";
@@ -100,7 +95,17 @@ export interface GetActionOptions {
 }
 
 export type GetActionResult =
-  | { kind: "ok"; toolInput: Record<string, unknown>; usage: TokenUsage | null }
+  | {
+      kind: "ok";
+      toolInput: Record<string, unknown>;
+      /** 命中的 ToolCall 原样返回（含 id 与 gemini thoughtSignature，轮 36 #6）：
+       * 宿主回放 assistant 历史必需——signature 无法伪造（官方要求后续回合随
+       * functionCall part 原样回传，缺失即 400）。text-JSON 兜底路径不携带
+       *（无 wire id 可保留，伪造固定 id 会撞「拒绝重复 toolCall id」不变量）。
+       * args 为还原后的值（与 toolInput 同源——下一轮请求侧会重新占位） */
+      toolCall?: ToolCall;
+      usage: TokenUsage | null;
+    }
   /** empty 分支携带结构化证据（轮 35 #11）：烧尽原因 + 末轮 usage——P4 step 的
    * 分罪/重试梯度决策不再只能解析 deps.log 文本；Python None → empty 语义不变 */
   | {
@@ -143,7 +148,7 @@ export function resolveChatHttpTimeoutMs(deadlineAt: number | undefined): number
   return deadlineAt === undefined ? CHAT_HTTP_TIMEOUT_DEFAULT_MS : undefined;
 }
 
-function resolveDeps(deps?: LlmDeps): Required<LlmDeps> {
+function resolveDeps(deps?: LLMDeps): Required<LLMDeps> {
   return {
     fetch: deps?.fetch ?? ((input, init) => fetch(input, init)),
     now: deps?.now ?? (() => performance.now()),
@@ -156,7 +161,7 @@ function resolveDeps(deps?: LlmDeps): Required<LlmDeps> {
  * 协议 → 适配器工厂（2.2 anthropic / 2.3 openai / 2.4 gemini）。
  * deps 可部分省略（缺省实现与 createLLMClient 同源），与包根导出的注入口径一致。
  */
-export function createProvider(config: ProviderConfig, deps: LlmDeps = {}): LLMProvider {
+export function createProvider(config: ProviderConfig, deps: LLMDeps = {}): LLMProvider {
   const resolved = resolveDeps(deps);
   switch (config.protocol) {
     case "anthropic-messages":
@@ -166,9 +171,10 @@ export function createProvider(config: ProviderConfig, deps: LlmDeps = {}): LLMP
     case "gemini":
       return createGeminiProvider(config, resolved);
     default:
-      throw new LLMInvalidRequestError(`协议适配器未实现：${config.protocol}`, {
-        provider: config.name,
-      });
+      // TypeError 而非 LLMInvalidRequestError（轮 36 #11，与并发守卫轮 27 #7 同
+      // 纪律）：非法 protocol 是本地配置/编程错误（JS 宿主宽化输入），4xx 家族
+      // 语义属于端点侧（P4 分罪轴），混入会误导 step 层的重试梯度
+      throw new TypeError(`协议适配器未实现：${String(config.protocol)}`);
   }
 }
 
@@ -218,9 +224,9 @@ export class LLMClient {
   private windowBudgetCapMs: number | undefined;
   /** getAction 重入哨兵（非并发约束的运行时防护） */
   private inFlight = false;
-  private readonly deps: Required<LlmDeps>;
+  private readonly deps: Required<LLMDeps>;
 
-  constructor(config: ProviderConfig, deps?: LlmDeps) {
+  constructor(config: ProviderConfig, deps?: LLMDeps) {
     this.config = config;
     this.deps = resolveDeps(deps);
     this.provider = createProvider(config, this.deps);
@@ -556,13 +562,14 @@ export class LLMClient {
           this.deps.log(`[llm] getAction 丢弃多余工具调用：${names}（目标 ${tool.name}）`);
         }
         if (call !== undefined) {
-          return this.okResult(call.args, urlMap, sensitive, response.usage);
+          return this.okResult(call, call.args, urlMap, sensitive, response.usage);
         }
         if (response.text.trim() !== "") {
           const parsed = tryParseJson(response.text);
           // Python `if parsed:` 语义：空对象 {} 视为解析失败（落 R4）
           if (parsed !== undefined && Object.keys(parsed).length > 0) {
-            return this.okResult(parsed, urlMap, sensitive, response.usage);
+            // text-JSON 兜底：无 wire 调用可回传（toolCall 缺省，宿主按需自构历史）
+            return this.okResult(undefined, parsed, urlMap, sensitive, response.usage);
           }
           if (textRetries >= TEXT_RETRY_MAX) {
             this.deps.log(
@@ -604,7 +611,14 @@ export class LLMClient {
     } catch (e) {
       // 外部取消优先分类：外部 abort 先发生、deadline 恰在异常 unwind 期间到点时
       // windowExpired 已翻 true，会把取消变形为 LLMTimeoutError（#186 不变形契约）。
-      // 二者竞态同时触发时按外部取消处理（穿透原样上抛）
+      // 二者竞态同时触发时按外部取消处理（穿透原样上抛）。
+      // 反向窗口（轮 36 #12）：deadline 先到点时 ladder controller 以无参 abort()
+      // 中止（reason 固化为规范缺省 AbortError），外部 signal 随后才 abort 的话
+      // abort(external.reason) 已不再生效——e 是 ladder 缺省形态而非宿主 reason，
+      // 在此还原（宿主以自定义 reason 区分停止来源的能力不因竞态顺序丢失）
+      if (external?.aborted && isAbortError(e)) {
+        throw external.reason ?? e;
+      }
       if (isAbortError(e) && windowExpired && !external?.aborted) {
         // 归因实际生效的约束来源（轮 20 #8）：该分支同时覆盖仅传 opts.timeoutMs
         //（从未 setCallWindow）的场景——固定写「窗口预算到期」会把单次调用超时
@@ -638,6 +652,7 @@ export class LLMClient {
   }
 
   private okResult(
+    call: ToolCall | undefined,
     toolInput: Record<string, unknown>,
     urlMap: Map<string, string>,
     sensitive: Record<string, string> | undefined,
@@ -647,7 +662,11 @@ export class LLMClient {
     // 刻意不取严格互逆：若占位符恰为某已映射长 URL 的子串，同序会把 URL 内的占位符
     // 片段二次替换（URL 污染），但该碰撞极罕见且 Python 同款行为是 P5 parity 基准
     const restored = restoreSensitiveInOutput(restoreUrlsInOutput(toolInput, urlMap), sensitive);
-    return { kind: "ok", toolInput: restored, usage };
+    // toolCall 携带（轮 36 #6）：真实调用路径回传 id/signature 供宿主回放历史
+    //（args 用还原后的值，与 toolInput 同源——下一轮请求侧会重新占位）
+    return call === undefined
+      ? { kind: "ok", toolInput: restored, usage }
+      : { kind: "ok", toolInput: restored, toolCall: { ...call, args: restored }, usage };
   }
 
   /** 组装 ChatRequest；fallback 切到无视觉模型后滤图（幂等，「从此不带图」） */
@@ -804,8 +823,11 @@ export class LLMClient {
       newProvider = createProvider(this.fallbackConfig, this.deps);
     } catch (switchErr) {
       // 保留根因：fallback 卡片构造失败（如反序列化来的非法 protocol）不能掩盖触发
-      // 切换的原始错误——终点异常类型是 step 分罪依据，cause 挂原始 err
-      throw new LLMInvalidRequestError(
+      // 切换的原始错误——终点异常类型是 step 分罪依据，cause 挂原始 err。
+      // LLMError 基类而非 LLMInvalidRequestError（轮 36 #7）：本地配置错误不占
+      // 「端点 4xx 家族」语义（P4 分罪轴）——与并发守卫 TypeError 纪律同原则，
+      // 但此路径值得 LLMError 家族身份（携带 provider 归因且非编程笔误类）
+      throw new LLMError(
         `fallback 卡片初始化失败（${this.fallbackConfig.name}）：${switchErr instanceof Error ? switchErr.message : String(switchErr)}`,
         { provider: this.fallbackConfig.name, cause: err },
       );
@@ -828,6 +850,6 @@ export class LLMClient {
 }
 
 /** 架构 §3.2 公共 API 的第一个函数 */
-export function createLLMClient(config: ProviderConfig, deps?: LlmDeps): LLMClient {
+export function createLLMClient(config: ProviderConfig, deps?: LLMDeps): LLMClient {
   return new LLMClient(config, deps);
 }

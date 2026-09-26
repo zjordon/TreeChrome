@@ -4,7 +4,7 @@
 // JSON 字符串且可能被 length 截断（guard-parse 失败丢弃，不带病 args 进 canonical）。
 
 import { type ProviderConfig, resolveCapabilities } from "../config.js";
-import type { LlmDeps } from "../deps.js";
+import type { LLMDeps } from "../deps.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
@@ -20,7 +20,7 @@ import type {
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
-  assertForcedToolChoiceInTools,
+  assertToolContract,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -309,7 +309,7 @@ function parseResponse(
 
 export function createOpenAICompletionsProvider(
   config: ProviderConfig,
-  deps: Required<LlmDeps>,
+  deps: Required<LLMDeps>,
 ): LLMProvider {
   const capabilities = resolveCapabilities(config);
   // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
@@ -322,7 +322,7 @@ export function createOpenAICompletionsProvider(
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
-    assertForcedToolChoiceInTools(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
+    assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
     const base = stripTrailingSlash(config.baseUrl);
     if (base.endsWith("/chat/completions")) {
       onBaseUrlEndpoint(

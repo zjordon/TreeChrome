@@ -234,7 +234,7 @@ async function main() {
   // 最坏 2×timeoutMs（各卡独立预算），手工 smoke 可接受
   const redact = makeRedact(apiKey);
   for (const card of cards) {
-    // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LlmDeps 注入口。
+    // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LLMDeps 注入口。
     // header 白名单脱敏（轮 24 #1）：网关独立 token 与 GLM_API_KEY 无关，
     // 黑名单 + 值匹配拦不住 extraHeaders 注入的任意名字认证头
     const loggingFetch = async (url, init) => {

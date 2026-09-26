@@ -47,7 +47,10 @@ import {
 import { AGENT_TOOL, asAssistant, asUser, LONG_URL } from "./fixtures.js";
 
 const U0 = LONG_URL; // 110 字符 ≥ 100（fixtures.LONG_URL）
-const U1 = `https://example.org/${"b".repeat(90)}`;
+// 长度派生自核心阈值（+10 余量，轮 36 #5，与 fixtures.LONG_URL 同款纪律）：
+// URL_MIN_LENGTH 上调时夹具自动跟随，不以「下一轮缩写静默失覆盖」的方式失败
+const U1_HEAD = "https://example.org/";
+const U1 = U1_HEAD + "b".repeat(URL_MIN_LENGTH - U1_HEAD.length + 10);
 const SHORT = "https://example.com/short";
 
 const firstText = (m: ChatMessage): string => {

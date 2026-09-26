@@ -301,7 +301,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(plain.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(0);
   });
 
-  it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）", async () => {
+  it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）；工具 name 空串同款（轮 36 #8）", async () => {
     const { mock, provider } = setup();
     await expect(
       provider.chat({
@@ -311,6 +311,13 @@ describe("请求构造（canonical → wire）", () => {
         toolChoice: { kind: "forced", name: "nonexistent" },
       }),
     ).rejects.toThrow(LLMProtocolViolationError);
+    await expect(
+      provider.chat({
+        systemPrompt: null,
+        messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+        tools: [{ name: "", description: "d", parameters: {} }],
+      }),
+    ).rejects.toThrow("工具 name 为空串");
     expect(mock.calls.length).toBe(0);
   });
 
@@ -377,6 +384,30 @@ describe("请求构造（canonical → wire）", () => {
     const content = messages[0].content as Array<Record<string, unknown>>;
     const image = content.find((b) => b.type === "image") as Record<string, unknown>;
     expect((image.source as Record<string, unknown>).media_type).toBe("image/jpeg");
+  });
+
+  it("枚举外 mime（svg 等合法 MIME）→ 降级占位留证据、图片不出站（轮 36 #2）", async () => {
+    const unsupported = setupLogs();
+    unsupported.mock.queueMany(toolOk({}));
+    await unsupported.provider.chat({
+      systemPrompt: null,
+      messages: [
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", mimeType: "image/svg+xml", base64: "AAAA" },
+          ],
+        },
+      ],
+      tools: null,
+    });
+    const wire = JSON.stringify(unsupported.mock.lastBody().messages);
+    expect(wire).not.toContain('"image"');
+    expect(wire).toContain("[image omitted]");
+    expect(unsupported.logs.some((m) => m.includes("不在官方枚举") && m.includes("svg"))).toBe(
+      true,
+    );
   });
 
   it("image-only 且无 toolCalls 的 assistant → 过滤后空 content 以 [image omitted] 占位（空 content 是硬 400，轮 14 #8）", async () => {

@@ -15,7 +15,14 @@ export interface GetActionOptions {
 }
 
 export type GetActionResult =
-  | { kind: "ok"; toolInput: Record<string, unknown>; usage: TokenUsage | null }
+  | {
+      kind: "ok";
+      toolInput: Record<string, unknown>;
+      /** 命中的 ToolCall（id/name/args/gemini signature，轮 36 #6）——宿主回放
+       * assistant 历史必需；text-JSON 兜底不携带（无 wire id，伪造会撞重复 id 不变量） */
+      toolCall?: ToolCall;
+      usage: TokenUsage | null;
+    }
   | {
       kind: "empty";
       reason: "text-exhausted" | "no-parseable-response";

@@ -894,6 +894,30 @@ describe("请求构造（canonical → wire）", () => {
     expect((parts[1].inlineData as Record<string, unknown>).mimeType).toBe("image/jpeg");
   });
 
+  it("枚举外 mime（gif 在 gemini 官方集合外）→ 降级占位留证据、图片不出站（轮 36 #2）", async () => {
+    const unsupported = setupLogs();
+    unsupported.mock.queueMany(fnCallOk({}));
+    await unsupported.provider.chat({
+      systemPrompt: null,
+      messages: [
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", mimeType: "image/gif", base64: "AAAA" },
+          ],
+        },
+      ],
+      tools: null,
+    });
+    const wire = JSON.stringify(unsupported.mock.lastBody().contents);
+    expect(wire).not.toContain("inlineData");
+    expect(wire).toContain("[image omitted]");
+    expect(unsupported.logs.some((m) => m.includes("不在官方枚举") && m.includes("gif"))).toBe(
+      true,
+    );
+  });
+
   it("extraHeaders 最后合并（可覆盖 x-goog-api-key）——三处独立实现的接线锚定（轮 30 #8，对齐 anthropic 侧）", async () => {
     const { mock, provider } = setup({
       extraHeaders: { "x-goog-api-key": "override", "x-custom": "1" },

@@ -189,7 +189,7 @@ const drainBackoffLadder = async (clock: FakeClock): Promise<void> => {
 };
 
 describe("解析优先级与公共面", () => {
-  it("createLLMClient 导出可用；强制工具调用直通 toolInput + usage", async () => {
+  it("createLLMClient 导出可用；强制工具调用直通 toolInput + toolCall（id/signature 回传） + usage", async () => {
     expect(typeof createLLMClient).toBe("function");
     const { mock, client } = setup();
     mock.queueMany(toolOk({ evaluation_previous_goal: "e", action: { name: "done" } }));
@@ -197,6 +197,13 @@ describe("解析优先级与公共面", () => {
     expect(r).toEqual({
       kind: "ok",
       toolInput: { evaluation_previous_goal: "e", action: { name: "done" } },
+      // toolCall 携带（轮 36 #6）：真实调用路径回传 id/name 供宿主回放历史
+      //（args 与 toolInput 同源；gemini signature 经此跨回合回传，见姊妹用例）
+      toolCall: {
+        id: "t",
+        name: TOOL.name,
+        args: { evaluation_previous_goal: "e", action: { name: "done" } },
+      },
       usage: { inputTokens: 5, outputTokens: 7 },
     });
     const body = mock.lastBody();
@@ -877,6 +884,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     expect(r).toEqual({
       kind: "ok",
       toolInput: { via: "openai" },
+      toolCall: { id: "c1", name: TOOL.name, args: { via: "openai" } },
       usage: { inputTokens: 1, outputTokens: 2 },
     });
     expect(mock.calls[0].url).toContain("primary.example/v1/messages");
@@ -999,7 +1007,7 @@ describe("deadline 与取消", () => {
     ).rejects.toBeInstanceOf(LLMTimeoutError);
   });
 
-  it("fallback 卡片构造失败（非法 protocol）→ LLMInvalidRequestError 且 cause 保留触发切换的原始错误", async () => {
+  it("fallback 卡片构造失败（非法 protocol）→ LLMError 基类（本地配置错误不占端点 4xx 语义，轮 36 #7）且 cause 保留触发切换的原始错误", async () => {
     const { mock, clock, client } = setup({
       fallback: { ...FALLBACK, protocol: "bogus" as ProviderConfig["protocol"] },
     });
@@ -1007,9 +1015,10 @@ describe("deadline 与取消", () => {
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0); // 429 → 尝试切换 → fallback 卡片构造抛
     const err = await p.catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(LLMInvalidRequestError);
-    expect((err as LLMInvalidRequestError).message).toContain("fallback 卡片初始化失败");
-    expect((err as LLMInvalidRequestError).cause).toBeInstanceOf(LLMRateLimitError);
+    expect(err).toBeInstanceOf(LLMError);
+    expect(err).not.toBeInstanceOf(LLMInvalidRequestError); // 4xx 家族语义留给端点侧
+    expect((err as LLMError).message).toContain("fallback 卡片初始化失败");
+    expect((err as LLMError).cause).toBeInstanceOf(LLMRateLimitError);
     expect(mock.calls.length).toBe(1);
   });
 
@@ -1107,6 +1116,27 @@ describe("deadline 与取消", () => {
     expect(err).not.toBeInstanceOf(LLMError);
   });
 
+  it("反向竞态：deadline 先到点、外部取消在 unwind 期间到达 → 还原宿主自定义 reason（轮 36 #12）", async () => {
+    // ladder watcher 先 abort（reason 固化为规范缺省 AbortError）→ 外部 signal
+    // 才 abort：abort(external.reason) 已不生效，e 是 ladder 缺省形态——修复前
+    // 穿透的是缺省 AbortError，宿主以自定义 reason 区分停止来源的能力丢失
+    const delayedAbortFetch = makeHangingBodyFetch();
+    const { fake, client } = setupCore({}, "fake", false, delayedAbortFetch);
+    if (fake === null) {
+      throw new Error("unreachable");
+    }
+    client.setCallWindow(1); // deadline = t+1
+    const customReason = new Error("user-stop");
+    const ctrl = new AbortController();
+    const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
+    await fake.advance(0); // fetch 在飞、watcher 注册
+    await fake.advance(1); // deadline 到点：watcher 先 abort ladder（缺省 reason）
+    ctrl.abort(customReason); // 外部取消随后到达（unwind 期间）
+    const err = await p.catch((e: unknown) => e);
+    expect(err).toBe(customReason); // 宿主 reason 还原，非 ladder 缺省 AbortError
+    expect(err).not.toBeInstanceOf(LLMError);
+  });
+
   it("外部 signal 在退避 sleep 期间 abort → AbortError 原样穿透（不吞、不变形、不重试）", async () => {
     const { mock, clock, client } = setup();
     mock.queueMany(r429());
@@ -1135,6 +1165,78 @@ describe("deadline 与取消", () => {
   it("resolveChatHttpTimeoutMs：无 deadline → 600s 兜底；有 deadline → undefined（ladder signal 负责）", () => {
     expect(resolveChatHttpTimeoutMs(undefined)).toBe(600_000);
     expect(resolveChatHttpTimeoutMs(12345)).toBeUndefined();
+  });
+
+  it("gemini thoughtSignature 经 toolCall 跨 getAction 回合回传（轮 36 #6——ok 分支此前丢弃 id/signature，宿主无法回放历史）", async () => {
+    const { mock, client } = setupCore(GEMINI_CARD, "zero", false);
+    // 首回合：functionCall part 携带 thoughtSignature（thinking 模型形态）
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [
+                {
+                  functionCall: { name: TOOL.name, args: { step: 1 } },
+                  thoughtSignature: "sig-abc",
+                },
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
+      },
+    });
+    const r1 = await client.getAction("sys", msgs(), TOOL);
+    expect(r1.kind).toBe("ok");
+    if (r1.kind !== "ok") {
+      throw new Error("unreachable");
+    }
+    expect(r1.toolCall?.signature).toBe("sig-abc"); // signature 经 ok 分支回传
+
+    // 次回合：宿主用回传的 toolCall 回放 assistant 历史并附 toolResult
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [{ functionCall: { name: TOOL.name, args: { step: 2 } } }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
+      },
+    });
+    const r2 = await client.getAction(
+      "sys",
+      [
+        ...msgs(),
+        r1.toolCall === undefined
+          ? { role: "assistant", blocks: [], toolCalls: [] }
+          : { role: "assistant", blocks: [], toolCalls: [r1.toolCall] },
+        { role: "toolResult", toolCallId: r1.toolCall?.id ?? "t", toolName: TOOL.name, text: "ok" },
+      ],
+      TOOL,
+    );
+    expect(r2.kind).toBe("ok");
+    // 请求侧 wire：回放的 functionCall part 原样携带 thoughtSignature（缺失即 400）
+    const wire = JSON.stringify(mock.lastBody().contents);
+    expect(wire).toContain("sig-abc");
+  });
+
+  it("直接构造路径的非法 protocol → TypeError（本地配置错误不占端点 4xx 语义，轮 36 #11；构造期急切创建 provider 即抛）", () => {
+    expect(() =>
+      createLLMClient({ ...CARD, protocol: "bogus" as unknown as ProviderConfig["protocol"] }),
+    ).toThrow(TypeError);
+    expect(() =>
+      createLLMClient({ ...CARD, protocol: "bogus" as unknown as ProviderConfig["protocol"] }),
+    ).toThrow("协议适配器未实现");
   });
 
   it("并发 getAction → 重入哨兵显式失败（轮 12 #6；哨兵异常 TypeError 非 LLMError 家族，轮 27 #7——本地编程错误不进端点分罪轴）；完成后哨兵复位可串行复用", async () => {

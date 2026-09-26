@@ -578,3 +578,15 @@ smoke 产物摘要：
 - **测试侧（#2/#3/#4/#5/#6/#12）**：新守卫补阴性对照；误配用例回归 setupLogs(over) 封装；openai toolResult 乱序直发行为锚定（与 anthropic/gemini 重排口径刻意不同）；TEST_CONNECTION 常量导出锚定。
 
 测试 352 例全绿（覆盖率 98.80%）。
+
+### 评审轮 36（review-p2-llm-client-36.json，2026-09-26，11/12 采纳（#10 驳回：TS2352 断言与实测 typecheck EXIT=0 不符））
+
+采纳 11 条。要点：
+
+- **ok 分支携带 toolCall（#6，gemini thinking 模型真契约缺口）**：ok 此前只返回 toolInput，丢弃命中调用的 id/signature——宿主经 getAction 拿不到 thoughtSignature（provider 为 private，无法伪造），回放 assistant 历史缺失 signature 即 400。toolCall 可选携带（真实调用路径；text-JSON 兜底不携带——伪造固定 id 会撞「拒绝重复 toolCall id」不变量），args 为还原后值；补 getAction→历史回放→二次请求的 signature 往返用例；03 文档同步。
+- **mime 枚举收口（#2，第三次评审的终裁形态）**：别名归一后仍越界（svg/bmp/gif-in-gemini 等）从「裸透传 400」改为**降级占位 + 留证据**（与滤图 IMAGE_OMITTED_PLACEHOLDER 口径一致，请求可继续）——anthropic/gemini 各自维护封闭枚举（集合不同不共享），openai（data-URL 无封闭枚举）维持归一。
+- **错误分型收口（#7/#11）**：fallback 卡片构造失败改 LLMError 基类、直接构造的非法 protocol 改 TypeError——本地配置/编程错误不再占用「端点 4xx」语义（P4 分罪轴），与轮 27 #7 并发守卫纪律对齐。
+- **反向竞态 reason 还原（#12，#186 契约缝隙）**：deadline 先到点时 ladder reason 固化为缺省 AbortError，外部取消随后到达时 abort(external.reason) 不再生效——在外部取消优先路径上还原宿主 reason，补反向竞态用例。
+- **其余**：LlmProtocol/LlmDeps 统一为 LLM 前缀（#1，未发布窗口）；408 解析 Retry-After 与 429 对称（#9）；错误体读取失败并入 detail（#4）；工具 name 空串前置拦截（#8，与轮 18 #13 对称）；defaultTestConnection JSDoc 归位（#3）；U1 按阈值派生（#5）。
+
+测试 359 例全绿（覆盖率 98.79%）。

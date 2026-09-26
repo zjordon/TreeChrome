@@ -4,8 +4,8 @@
 import type {
   AssistantMessage,
   ChatMessage,
+  LLMDeps,
   LLMProvider,
-  LlmDeps,
   ProviderConfig,
   ToolDefinition,
   UserMessage,
@@ -26,7 +26,7 @@ export const LONG_URL = LONG_URL_HEAD + "a".repeat(URL_MIN_LENGTH - LONG_URL_HEA
 
 /** 适配器单测的缺省 deps：mock fetch + 零耗时 sleep + 静音日志（缺省 console.warn 会刷屏）。
  * 仅 assemble 内部消费（适配器单测经 setupProvider 间接使用），非导出面（轮 34 #8） */
-function stubDeps(mock: MockFetch): Required<LlmDeps> {
+function stubDeps(mock: MockFetch): Required<LLMDeps> {
   return { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: () => {} };
 }
 
@@ -49,7 +49,7 @@ export function asAssistant(m: ChatMessage, at = 0): AssistantMessage {
 /** 三适配器测试共用的装配样板（卡片由调用方传入——协议差异不共享的既定取舍不变；
  * log 注入点差异由 setupProvider / setupProviderWithLogs 分化，轮 31 #2 收敛装配主体） */
 function assemble(
-  factory: (config: ProviderConfig, deps: Required<LlmDeps>) => LLMProvider,
+  factory: (config: ProviderConfig, deps: Required<LLMDeps>) => LLMProvider,
   card: ProviderConfig,
   over: Partial<ProviderConfig>,
   log?: (message: string) => void,
@@ -60,7 +60,7 @@ function assemble(
 }
 
 export function setupProvider(
-  factory: (config: ProviderConfig, deps: Required<LlmDeps>) => LLMProvider,
+  factory: (config: ProviderConfig, deps: Required<LLMDeps>) => LLMProvider,
   card: ProviderConfig,
   over: Partial<ProviderConfig> = {},
 ): { mock: MockFetch; provider: LLMProvider } {
@@ -69,7 +69,7 @@ export function setupProvider(
 
 /** 带日志采集的装配变体（丢弃类/清洗类告警断言用例共用，轮 13 #2） */
 export function setupProviderWithLogs(
-  factory: (config: ProviderConfig, deps: Required<LlmDeps>) => LLMProvider,
+  factory: (config: ProviderConfig, deps: Required<LLMDeps>) => LLMProvider,
   card: ProviderConfig,
   over: Partial<ProviderConfig> = {},
 ): { mock: MockFetch; logs: string[]; provider: LLMProvider } {

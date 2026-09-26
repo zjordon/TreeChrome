@@ -2,7 +2,7 @@
 
 import type { ChatRequest, ChatResponse } from "./types.js";
 
-export type LlmProtocol = "openai-completions" | "anthropic-messages" | "gemini";
+export type LLMProtocol = "openai-completions" | "anthropic-messages" | "gemini";
 
 /** 能力声明（架构 §3.4：provider 卡片声明，TreeWalker 视觉白名单的泛化） */
 export interface ProviderCapabilities {
@@ -13,7 +13,7 @@ export interface ProviderCapabilities {
 }
 
 export interface LLMProvider {
-  readonly protocol: LlmProtocol;
+  readonly protocol: LLMProtocol;
   readonly model: string;
   readonly capabilities: ProviderCapabilities;
   chat(req: ChatRequest): Promise<ChatResponse>;

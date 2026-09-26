@@ -6,7 +6,7 @@ export type { GetActionOptions, GetActionResult } from "./llm/client.js";
 export { createLLMClient, createProvider, LLMClient } from "./llm/client.js";
 
 export { DEFAULT_MAX_TOKENS, modelSupportsVision, resolveCapabilities } from "./llm/config.js";
-export type { LlmDeps } from "./llm/deps.js";
+export type { LLMDeps } from "./llm/deps.js";
 export {
   isInfraError,
   LLMAuthError,
@@ -20,8 +20,8 @@ export {
   LLMTimeoutError,
 } from "./llm/errors.js";
 export type {
+  LLMProtocol,
   LLMProvider,
-  LlmProtocol,
   ProviderCapabilities,
   ProviderConfig,
 } from "./llm/index.js";

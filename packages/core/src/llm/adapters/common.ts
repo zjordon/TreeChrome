@@ -4,7 +4,7 @@
 
 import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
 import { LLMProtocolViolationError } from "../errors.js";
-import type { LlmProtocol } from "../provider.js";
+import type { LLMProtocol } from "../provider.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
 import { ERROR_DETAIL_MAX } from "./http.js";
 
@@ -18,6 +18,12 @@ export function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+/** 连通性探测的输出上限（轮 35 #12 导出锚定）：16 是全协议安全最小值（o 系
+ * max_completion_tokens 下限，传更小值会被端点 400） */
+export const TEST_CONNECTION_MAX_TOKENS = 16;
+/** 连通性探测兜底超时（轮 35 #12 导出锚定）：端点半开/黑洞时探测不能永久 pending */
+export const TEST_CONNECTION_TIMEOUT_MS = 10_000;
+
 /**
  * 连通性检查的公共实现（webbrain 形状）：chat("Hi", maxTokens=16) 的成败包装。
  * maxTokens 取 16（非 webbrain 原形的 5）：OpenAI 推理型模型（o 系/gpt-5，
@@ -25,12 +31,6 @@ export function stripTrailingSlash(url: string): string {
  * 配置正确的卡片在探测中假性不可用。16 是全协议安全的最小值。
  * 携带 10s 兜底超时——端点半开/黑洞（baseUrl 配错、代理挂起）时探测不能永久 pending。
  */
-/** 连通性探测的输出上限（轮 35 #12 导出锚定）：16 是全协议安全最小值（o 系
- * max_completion_tokens 下限，传更小值会被端点 400） */
-export const TEST_CONNECTION_MAX_TOKENS = 16;
-/** 连通性探测兜底超时（轮 35 #12 导出锚定）：端点半开/黑洞时探测不能永久 pending */
-export const TEST_CONNECTION_TIMEOUT_MS = 10_000;
-
 export async function defaultTestConnection(
   chat: (req: ChatRequest) => Promise<ChatResponse>,
   model: string,
@@ -50,12 +50,14 @@ export async function defaultTestConnection(
 }
 
 /**
- * forced toolChoice 与 tools 列表的关联校验（轮 35 #13，三适配器共用）：
- * name 不在本次 tools 中时三协议端点均硬 400（非 infra 不重试还误触 fallback
- * 切换）——调用方数据病态在适配器层拦截而非烧 400 后错误归因（与 toolCall
- * id/name 空串的 canonical 拦截同口径；assertValidMessages 只裁决消息序列）
+ * 工具契约前置校验（轮 35 #13 起，轮 36 #8 扩并补工具名校验，三适配器共用）：
+ * ① forced toolChoice 名不在本次 tools 中、② 工具 name 空串——均为端点硬 400
+ * 形态（非 infra 不重试还误触 fallback 切换），调用方数据病态在适配器层拦截
+ * 而非烧 400 后错误归因（与 toolCall id/name 空串的 canonical 拦截同口径；
+ * assertValidMessages 只裁决消息序列）。名字字符集/长度按协议各异的约束不在
+ * 共享层收口（最严统一拦截会误伤协议间差异），由各端点 400 兜底
  */
-export function assertForcedToolChoiceInTools(req: ChatRequest, config: ProviderConfig): void {
+export function assertToolContract(req: ChatRequest, config: ProviderConfig): void {
   const forced = req.toolChoice?.kind === "forced" ? req.toolChoice : undefined;
   if (
     forced !== undefined &&
@@ -68,6 +70,13 @@ export function assertForcedToolChoiceInTools(req: ChatRequest, config: Provider
       { provider: config.name },
     );
   }
+  // 工具名空串与轮 18 #13 的 toolCall name 空串对称（anthropic ^[a-zA-Z0-9_-]{1,128}$
+  // 下限即非空；openai/gemini 同为必填非空）
+  if ((req.tools ?? []).some((t) => t.name === "")) {
+    throw new LLMProtocolViolationError(`工具 name 为空串（端点 400 形态）`, {
+      provider: config.name,
+    });
+  }
 }
 
 /**
@@ -77,7 +86,7 @@ export function assertForcedToolChoiceInTools(req: ChatRequest, config: Provider
  * 0-2——卡片误配（如智谱 anthropic 兼容卡配 1.5）会整链每请求硬 400（非 infra
  * 不重试），与「主动拆解 400 地雷」的口径一致（maxTokens=16 同款思路）。
  */
-const PROTOCOL_MAX_TEMPERATURE: Record<LlmProtocol, number> = {
+const PROTOCOL_MAX_TEMPERATURE: Record<LLMProtocol, number> = {
   "anthropic-messages": 1,
   "openai-completions": 2,
   gemini: 2,

@@ -2,7 +2,7 @@
 // 请求：canonical → wire 映射 + 连续 toolResult/同角色折叠（400 地雷）；响应：content 块解析。
 
 import { type ProviderConfig, resolveCapabilities } from "../config.js";
-import type { LlmDeps } from "../deps.js";
+import type { LLMDeps } from "../deps.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
@@ -18,7 +18,7 @@ import type {
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
-  assertForcedToolChoiceInTools,
+  assertToolContract,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -30,8 +30,16 @@ import {
 } from "./common.js";
 import { postJson } from "./http.js";
 
+/** anthropic 官方 media_type 封闭枚举（轮 36 #2）：svg/bmp/tiff 等合法 MIME
+ * 越界即硬 400——别名归一后仍越界的降级占位留证据（与滤图 IMAGE_OMITTED_
+ * PLACEHOLDER 口径一致：请求可继续，图片未出站可观测） */
+const ANTHROPIC_IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
 /** canonical 内容块 → anthropic content 块 */
-function blocksToContent(blocks: ContentBlock[]): Array<Record<string, unknown>> {
+function blocksToContent(
+  blocks: ContentBlock[],
+  log: (message: string) => void,
+): Array<Record<string, unknown>> {
   const content: Array<Record<string, unknown>> = [];
   for (const b of blocks) {
     if (b.kind === "text") {
@@ -39,10 +47,19 @@ function blocksToContent(blocks: ContentBlock[]): Array<Record<string, unknown>>
     } else if (b.kind === "image") {
       // anthropic 官方 media_type 是封闭枚举（jpeg/png/gif/webp）：image/jpg 等
       // 常见别名裸透传即 400（不可重试且烧 fallback 切换）——别名归一收口
-      //（轮 27 #1；轮 28 #3 提取 normalizeImageMime 三适配器单源）
+      //（轮 27 #1；轮 28 #3 提取 normalizeImageMime 三适配器单源）；归一后仍
+      // 越界的降级占位（轮 36 #2）
+      const mediaType = normalizeImageMime(b.mimeType);
+      if (!ANTHROPIC_IMAGE_MIME.has(mediaType)) {
+        log(
+          `[llm] anthropic image mime「${mediaType}」不在官方枚举（jpeg/png/gif/webp），降级占位——图片未出站`,
+        );
+        content.push({ type: "text", text: IMAGE_OMITTED_PLACEHOLDER });
+        continue;
+      }
       content.push({
         type: "image",
-        source: { type: "base64", media_type: normalizeImageMime(b.mimeType), data: b.base64 },
+        source: { type: "base64", media_type: mediaType, data: b.base64 },
       });
     } else {
       // 穷尽断言（轮 21 #6）：ContentBlock 联合扩展新成员（types.ts 注释明示
@@ -62,7 +79,10 @@ function blocksToContent(blocks: ContentBlock[]): Array<Record<string, unknown>>
  *   地雷；也覆盖 [toolResult 折叠出的 user 消息] 与紧随的 user 观察消息相邻）；
  * - 纯工具调用回合的 assistant 发空 content 数组 + tool_use 块。
  */
-function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>> {
+function toWireMessages(
+  messages: ChatMessage[],
+  log: (message: string) => void,
+): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
   const pushMerged = (role: "user" | "assistant", content: Array<Record<string, unknown>>) => {
     const prev = out[out.length - 1];
@@ -76,7 +96,7 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
   while (i < messages.length) {
     const msg = messages[i];
     if (msg.role === "user") {
-      pushMerged("user", blocksToContent(msg.blocks));
+      pushMerged("user", blocksToContent(msg.blocks, log));
       i += 1;
       continue;
     }
@@ -85,7 +105,10 @@ function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>>
       // 透传会被官方端点 400（"Input tag 'image' found where 'text' or 'tool_use'
       // was expected"）——与 openai 适配器「assistant 历史 image 块静默丢弃」口径
       // 对齐（轮 13 #13）
-      const content = blocksToContent(msg.blocks.filter((b) => b.kind === "text"));
+      const content = blocksToContent(
+        msg.blocks.filter((b) => b.kind === "text"),
+        log,
+      );
       for (const call of msg.toolCalls ?? []) {
         content.push({ type: "tool_use", id: call.id, name: call.name, input: call.args });
       }
@@ -258,7 +281,7 @@ function parseResponse(
 
 export function createAnthropicProvider(
   config: ProviderConfig,
-  deps: Required<LlmDeps>,
+  deps: Required<LLMDeps>,
 ): LLMProvider {
   const capabilities = resolveCapabilities(config);
   // 钳制告警实例级去重（轮 16 #4）：误配每请求都在发生，告警一次即可
@@ -273,7 +296,7 @@ export function createAnthropicProvider(
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
-    assertForcedToolChoiceInTools(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
+    assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
     const base = stripTrailingSlash(config.baseUrl);
     // OpenAI 卡 baseUrl 惯例带 /v1，跨协议复用卡片会拼出 /v1/v1/messages → 404
     //（错误文案不指向根因）——一次性告警留证据，与 maxTokens/temperature 误配口径一致
@@ -307,7 +330,7 @@ export function createAnthropicProvider(
       model: config.model,
       max_tokens: resolveMaxTokens(req, config, onMaxTokensInvalid),
       ...(req.systemPrompt !== null && req.systemPrompt !== "" ? { system: req.systemPrompt } : {}),
-      messages: toWireMessages(req.messages),
+      messages: toWireMessages(req.messages, deps.log),
       ...(req.tools !== null && req.tools.length > 0
         ? {
             tools: req.tools.map((t) => ({

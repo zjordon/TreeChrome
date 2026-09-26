@@ -108,9 +108,15 @@ function statusToError(
   // timeout（可重试）——归入 4xx 兜底会误判不可重试（无 fallback/已切换时直接
   // 上抛、不获退避）；LLMTimeoutError 是 infra 成员自然获得退避。注意（轮 25 #2）：
   // fallback 单向切换由 client.ts 对全部 LLMError（协议违例除外）触发，408 与 4xx
-  // 在切换轴上无差异——本分型只影响可重试性
+  // 在切换轴上无差异——本分型只影响可重试性。Retry-After 与 429 同款解析挂载
+  //（轮 36 #9）：408 响应常携带该头，退避时长与服务端指示脱钩会无谓等待
   if (status === 408) {
-    return new LLMTimeoutError(message, { provider, status });
+    const retryAfterMs = parseRetryAfterMs(retryAfter);
+    return new LLMTimeoutError(message, {
+      provider,
+      status,
+      ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+    });
   }
   if (status >= 500) {
     return new LLMServerError(message, { provider, status });
@@ -203,6 +209,10 @@ export async function postJson(
       if (init.signal?.aborted || isAbortError(e)) {
         throw e;
       }
+      // 读体失败（连接中断等非超时/非取消）留证据（轮 36 #4）：状态码错误优先、
+      // 空体兜底的既有行为保留，但 detail 并入失败原因——排障可区分「端点返回
+      // 空错误体」与「读体失败」
+      raw = `（错误体读取失败：${e instanceof Error ? e.message : String(e)}）`;
     }
     throw statusToError(resp.status, raw, resp.headers.get("retry-after"), init.provider);
   }

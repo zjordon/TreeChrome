@@ -5,7 +5,7 @@
 // 的原因）；forced = toolConfig.functionCallingConfig mode=ANY。
 
 import { type ProviderConfig, resolveCapabilities } from "../config.js";
-import type { LlmDeps } from "../deps.js";
+import type { LLMDeps } from "../deps.js";
 import { LLMBlockedError, LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
@@ -21,7 +21,7 @@ import type {
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
-  assertForcedToolChoiceInTools,
+  assertToolContract,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -39,20 +39,47 @@ import { sanitizeGeminiSchema, stripKeysOutsideTypeDomain } from "./schema-sanit
  *  导出仅为测试锚定派生（轮 29 #5 常量单源） */
 export const SCHEMA_ISSUE_DEDUP_MAX = 128;
 
-function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
-  return blocks.map((b) => {
+/** gemini 官方 mimeType 封闭枚举（轮 36 #2）：png/jpeg/webp/heic/heif（不含 gif，
+ * 与 anthropic 集合不同故不共享）——别名归一后仍越界（svg/bmp/gif 等）即硬 400，
+ * 降级占位留证据（与滤图 IMAGE_OMITTED_PLACEHOLDER 口径一致） */
+const GEMINI_IMAGE_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
+
+function blocksToParts(
+  blocks: ContentBlock[],
+  log: (message: string) => void,
+): Array<Record<string, unknown>> {
+  const parts: Array<Record<string, unknown>> = [];
+  for (const b of blocks) {
     if (b.kind === "text") {
-      return { text: b.text };
+      parts.push({ text: b.text });
+      continue;
     }
     if (b.kind === "image") {
       // mimeType 别名归一（轮 28 #3）：gemini 官方受校验的封闭枚举，image/jpg
-      // 裸透传有 400 风险——normalizeImageMime 三适配器单源
-      return { inlineData: { mimeType: normalizeImageMime(b.mimeType), data: b.base64 } };
+      // 裸透传有 400 风险——normalizeImageMime 三适配器单源；归一后仍越界的
+      // 降级占位（轮 36 #2）
+      const mimeType = normalizeImageMime(b.mimeType);
+      if (!GEMINI_IMAGE_MIME.has(mimeType)) {
+        log(
+          `[llm] gemini image mime「${mimeType}」不在官方枚举（png/jpeg/webp/heic/heif），降级占位——图片未出站`,
+        );
+        parts.push({ text: IMAGE_OMITTED_PLACEHOLDER });
+        continue;
+      }
+      parts.push({ inlineData: { mimeType, data: b.base64 } });
+      continue;
     }
     // 穷尽断言（轮 21 #6）：联合扩展新成员时编译期报错（同 anthropic blocksToContent）
     const _exhaustive: never = b;
-    return _exhaustive;
-  });
+    return [_exhaustive];
+  }
+  return parts;
 }
 
 /**
@@ -63,7 +90,10 @@ function blocksToParts(blocks: ContentBlock[]): Array<Record<string, unknown>> {
  * - 连续同角色 turn 折叠（Gemini 要求 user/model 交替，400 地雷——canonical 不校验
  *   交替；也覆盖 [toolResult 折叠出的 user turn] 与紧随的 user 观察消息相邻）。
  */
-function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>> {
+function toWireContents(
+  messages: ChatMessage[],
+  log: (message: string) => void,
+): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
   const pushMerged = (role: "user" | "model", parts: Array<Record<string, unknown>>) => {
     const prev = out[out.length - 1];
@@ -77,7 +107,7 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
   while (i < messages.length) {
     const msg = messages[i];
     if (msg.role === "user") {
-      pushMerged("user", blocksToParts(msg.blocks));
+      pushMerged("user", blocksToParts(msg.blocks, log));
       i += 1;
       continue;
     }
@@ -88,7 +118,10 @@ function toWireContents(messages: ChatMessage[]): Array<Record<string, unknown>>
       // 组装形态），双携带待真机核验（README 风险 3，评审轮 10 #9）。
       // model 角色不接受多模态输入（inlineData 仅 user 角色合法，透传为官方端点
       // 400 形态）——与 openai「assistant 历史 image 块静默丢弃」口径对齐（轮 13 #14）
-      const parts = blocksToParts(msg.blocks.filter((b) => b.kind === "text"));
+      const parts = blocksToParts(
+        msg.blocks.filter((b) => b.kind === "text"),
+        log,
+      );
       for (const call of msg.toolCalls ?? []) {
         parts.push({
           functionCall: { name: call.name, args: call.args },
@@ -307,7 +340,7 @@ function parseResponse(
   return response;
 }
 
-export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmDeps>): LLMProvider {
+export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMDeps>): LLMProvider {
   const capabilities = resolveCapabilities(config);
   // 合成 id 的实例级随机盐 + 自增序号（轮 15 #14）：fallback 切换
   //（client.ts trySwitchToFallback）会在会话中途重建 provider 实例，纯自增
@@ -350,7 +383,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
-    assertForcedToolChoiceInTools(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
+    assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
     // model 段编码：含空格/#/? 等字符时避免 URL 截断把配置问题变形为 Invalid URL/404
     const base = stripTrailingSlash(config.baseUrl);
@@ -378,7 +411,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
       ...(req.systemPrompt !== null && req.systemPrompt !== ""
         ? { systemInstruction: { parts: [{ text: req.systemPrompt }] } }
         : {}),
-      contents: toWireContents(req.messages),
+      contents: toWireContents(req.messages, deps.log),
       // ChatRequest 契约：tools 为 null/空数组时不发 tools 且忽略 toolChoice——
       // 空 functionDeclarations 与孤立 toolConfig 都是端点 400 形态
       ...(req.tools !== null && req.tools.length > 0
