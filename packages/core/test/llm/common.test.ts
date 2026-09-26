@@ -240,6 +240,23 @@ describe("collectToolResults（轮 37 #10 单源：anthropic/gemini 折叠骨架
     expect(ok.pairs).toHaveLength(2);
     expect(clean).toEqual([]);
   });
+
+  it("同 id 重复结果后写覆盖先写 → 上报（轮 39 #10：被覆盖的先写结果不留静默丢失）", () => {
+    const logged: string[] = [];
+    const { pairs, next } = collectToolResults(
+      [tr("a", "first"), tr("a", "second")],
+      0,
+      [call("a")],
+      (m) => {
+        logged.push(m);
+      },
+    );
+    expect(pairs.map((p) => p.result.text)).toEqual(["second"]); // 后写者胜（既有行为）
+    expect(next).toBe(2);
+    expect(logged).toEqual([
+      "[llm] toolCallId（a）存在重复结果，后写覆盖先写（canonical 校验漂移的防御分支）",
+    ]);
+  });
 });
 
 describe("assertToolContract 工具名唯一性（轮 37 #14）", () => {

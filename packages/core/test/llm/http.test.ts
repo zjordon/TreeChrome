@@ -265,8 +265,8 @@ describe("postJson 成功与网络层", () => {
     expect((err as LLMTimeoutError).cause).toMatchObject({ name: "TimeoutError" });
   });
 
-  it.each([0, -5, Number.NaN])(
-    "timeoutMs %s 非法 → 视为未设置：请求正常完成 + onInvalidTimeout 留证据（轮 37 #7：AbortSignal.timeout 立即到点是每请求 LLMTimeoutError + 误触 fallback 切换）",
+  it.each([0, -5, Number.NaN, 3_000_000_000])(
+    "timeoutMs %s 非法 → 视为未设置：请求正常完成 + onInvalidTimeout 留证据（轮 37 #7 起源，轮 39 #7 补超上限形态：setTimeout 平台钳 1ms 同款立即到点雷）",
     async (bad) => {
       const mock = new MockFetch();
       mock.queueMany({ status: 200, body: { ok: 1 } });
@@ -283,7 +283,9 @@ describe("postJson 成功与网络层", () => {
         },
       );
       expect(out).toEqual({ ok: 1 });
-      expect(warnings).toEqual([`timeoutMs ${bad} 非正有限数值（NaN/0/负值），视为未设置（unit）`]);
+      expect(warnings).toEqual([
+        `timeoutMs ${bad} 非法（NaN/0/负值/超 2147483647ms 上限），视为未设置（unit）`,
+      ]);
     },
   );
 

@@ -401,7 +401,7 @@ describe("请求构造（canonical → wire）", () => {
     mock.queueMany(toolOk("{}"), toolOk("{}"));
     await provider.chat(badReq());
     await provider.chat(badReq());
-    expect(logs.filter((m) => m.includes("timeoutMs 0 非正有限数值"))).toHaveLength(1);
+    expect(logs.filter((m) => m.includes("timeoutMs 0 非法"))).toHaveLength(1);
     // 两次请求都正常完成（非法值不制造每请求超时）
     expect(mock.calls).toHaveLength(2);
   });
@@ -422,8 +422,58 @@ describe("请求构造（canonical → wire）", () => {
     await provider.chat(req);
     await provider.chat(req);
     expect(
-      logs.filter((m) => m.includes("openai assistant 历史 image 块无 wire 形态，丢弃 1 块")),
+      logs.filter((m) =>
+        m.includes("openai assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块"),
+      ),
     ).toHaveLength(1);
+  });
+
+  it("choice 缺失 message 键（兼容端点省略）→ 不告警（缺失是 benign 形态，轮 39 #19）；「存在但非对象」仍留证据", async () => {
+    const missing = setupLogs();
+    missing.mock.queueMany({
+      status: 200,
+      body: { choices: [{ finish_reason: "stop" }], usage: null },
+    });
+    const r1 = await missing.provider.chat(baseReq());
+    expect(r1.stopReason).toBe("stop");
+    expect(missing.logs.filter((m) => m.includes("丢弃形态异常的 message"))).toHaveLength(0);
+    // 存在但非对象（轮 32 #9 既有口径）仍留证据
+    const malformed = setupLogs();
+    malformed.mock.queueMany({
+      status: 200,
+      body: { choices: [{ message: "not-an-object", finish_reason: "stop" }], usage: null },
+    });
+    await malformed.provider.chat(baseReq());
+    expect(malformed.logs.some((m) => m.includes("丢弃形态异常的 message（非对象）"))).toBe(true);
+  });
+
+  it("未知 finish_reason（网关私货）→ other 且留证据；content_filter 是 deliberate 设计不告警（轮 39 #9）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    mock.queueMany(
+      {
+        status: 200,
+        body: {
+          choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "weird_stop" }],
+          usage: null,
+        },
+      },
+      {
+        status: 200,
+        body: {
+          choices: [
+            { message: { role: "assistant", content: "t" }, finish_reason: "content_filter" },
+          ],
+          usage: null,
+        },
+      },
+    );
+    const r1 = await provider.chat(baseReq());
+    expect(r1.stopReason).toBe("other");
+    await provider.chat(baseReq());
+    expect(
+      logs.some((m) => m.includes('openai 未知 finish_reason 映射为 other："weird_stop"')),
+    ).toBe(true);
+    expect(logs.filter((m) => m.includes("未知 finish_reason"))).toHaveLength(1);
   });
 
   it("extraHeaders 最后合并（可覆盖 authorization）——三处独立实现的接线锚定（轮 30 #8，对齐 anthropic 侧）", async () => {

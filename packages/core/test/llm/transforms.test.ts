@@ -37,6 +37,7 @@ import {
   applySensitiveInMessages,
   cloneWorkMessages,
   hasImageBlocks,
+  replaceSensitiveDeep,
   restoreSensitiveInOutput,
   restoreUrlsInOutput,
   shortenUrlsInMessages,
@@ -405,5 +406,35 @@ describe("cloneWorkMessages", () => {
     const originalAssistant = asAssistant(original[0]);
     expect(originalAssistant.toolCalls).toHaveLength(1);
     expect(originalAssistant.toolCalls?.[0].args).toEqual({ a: 1 });
+  });
+});
+
+describe("replaceSensitiveDeep 环引用守卫（轮 39 #4：路径式 seen——退出即删）", () => {
+  it("循环引用 args 不再 RangeError 硬崩：环子树原样返回（保真降级），非环路径照常替换", () => {
+    const circular: Record<string, unknown> = { note: "has sk-abc inside" };
+    circular.self = circular;
+    const out = replaceSensitiveDeep(circular, { "sk-abc": "<K1>" });
+    const o = out as Record<string, unknown>;
+    expect(o.note).toBe("has <K1> inside"); // 顶层字符串仍替换
+    expect(o.self).toBe(circular); // 环边：递归栈上的对象原样返回
+  });
+
+  it("DAG 共享子树两处引用都完整替换（seen 退出即删——访问集式实现会漏替换第二处，泄露方向）", () => {
+    const shared: Record<string, unknown> = { key: "sk-abc" };
+    const input = { a: shared, b: shared };
+    const out = replaceSensitiveDeep(input, { "sk-abc": "<K1>" }) as {
+      a: { key: string };
+      b: { key: string };
+    };
+    expect(out.a.key).toBe("<K1>");
+    expect(out.b.key).toBe("<K1>"); // 后到访的共享子树不得因 seen 命中而漏替换
+  });
+
+  it("数组环同款降级", () => {
+    const arr: unknown[] = ["sk-abc"];
+    arr.push(arr);
+    const out = replaceSensitiveDeep(arr, { "sk-abc": "<K1>" }) as unknown[];
+    expect(out[0]).toBe("<K1>");
+    expect(out[1]).toBe(arr);
   });
 });

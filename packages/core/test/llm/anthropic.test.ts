@@ -347,8 +347,39 @@ describe("请求构造（canonical → wire）", () => {
     await provider.chat(req);
     await provider.chat(req);
     expect(
-      logs.filter((m) => m.includes("anthropic assistant 历史 image 块无 wire 形态，丢弃 1 块")),
+      logs.filter((m) =>
+        m.includes(
+          "anthropic assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块",
+        ),
+      ),
     ).toHaveLength(1);
+  });
+
+  it("未知 stop_reason（refusal 等）→ other 且留证据；缺失（undefined）不告警（轮 39 #9，与「缺失不告警」守卫同口径）", async () => {
+    const resp = (stopReason: string | undefined) => ({
+      status: 200,
+      body: {
+        content: [{ type: "text", text: "no" }],
+        ...(stopReason === undefined ? {} : { stop_reason: stopReason }),
+        usage: null,
+      },
+    });
+    const withUnknown = setupLogs();
+    withUnknown.mock.queueMany(resp("refusal"), resp(undefined));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    const r1 = await withUnknown.provider.chat(req);
+    expect(r1.stopReason).toBe("other");
+    await withUnknown.provider.chat(req);
+    expect(
+      withUnknown.logs.some((m) =>
+        m.includes('anthropic 未知 stop_reason 映射为 other："refusal"'),
+      ),
+    ).toBe(true);
+    expect(withUnknown.logs.filter((m) => m.includes("未知 stop_reason"))).toHaveLength(1);
   });
 
   it("baseUrl 以 /v1/messages 结尾（官方 curl 全端点整段复制）→ 如实拼接 + 一次性告警（轮 34 #9，与 openai /chat/completions 同族）", async () => {
@@ -373,7 +404,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(plain.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(0);
   });
 
-  it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
+  it("assistant 历史 image 块丢弃的 wire 形态（一次性告警由轮 38 #11 用例锁定；assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13；标题去「静默」轮 39 #20）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));
     await provider.chat({

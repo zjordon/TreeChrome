@@ -624,3 +624,17 @@ smoke 产物摘要：
 - **#12 修正轮 37 #4 的错误修正**：生效约束是预算 deadline 31000 而非窗口 41000（deadline=min(预算,窗口)）——标题按实际生效侧改写。
 
 测试 383 例全绿（覆盖率 98.59%）。
+
+### 评审轮 39（review-p2-llm-client-39.json，2026-09-26，21/21 全采纳）
+
+采纳 21 条。要点：
+
+- **timeoutMs 上界单源（#7）**：http.ts 守卫补 `> MAX_TIMEOUT_MS` 上界并导出常量，client.ts 的 isValidDeadlineMs 复用（此前两层谓词漂移——直连 provider.chat 传 5e9 仍会被 setTimeout 钳 1ms 立即到点）；告警文案统一为「非法（NaN/0/负值/超 2147483647ms 上限）」。
+- **rewriteStrings 环守卫（#4，轮 38 声明的 transforms 议题收口）**：路径式 seen（进入 add、退出 delete）而非评审原案的访问集——访问集会让 DAG 共享子树的第二次到访漏替换（replace 方向是敏感值明文残留，比崩溃更糟）；仅真正的环走「原样子树返回」保真降级，补环/DAG/数组环三测试。
+- **观测补口**：gemini 畸形 thoughtSignature 丢弃留证据（#8：静默剥签名 → 下回合历史回传缺 signature 即 400 且无线索）；三适配器未知 stop/finish reason 留证据、deliberate 值（SAFETY/RECITATION/content_filter）与缺失不告警（#9，anthropic 锚定 + 三处同步）；noToolsConstraint schema 含 sensitiveMap 命中值的一次性告警（#5，与 systemPrompt 告警同口径，按 map 去重）；collectToolResults 同 id 重复结果后写覆盖留证据（#10）。
+- **单源化**：abortReasonOr 收敛三处规范不可达兜底（#6）；warnDroppedAssistantNonTextBlocks 收敛三适配器预扫描（#11/#12/#13）且统计放宽为非 text 块（#16/#17/#18：ContentBlock 新增 kind 时 filter/map 折叠绕过穷尽断言的观测缺口——新 kind 自动落入一次性告警）。
+- **openai message 域守卫排除 undefined（#19）**：缺失是兼容端点 benign 形态不告警（与本文件 content/reasoning/tool_calls 守卫同口径）。
+- **smoke 纵深防御（#14）**：console.warn 兜底包装过 redact——deps.log 键名漂移（tools/ 不在 vitest include，CI 无护栏）时 resolveDeps 静默回落缺省 console.warn，含 baseUrl 原文的核心 WARNING 将绕过脱敏直落 tee 留档。
+- **测试质量**：timeoutMs 全族形态 it.each 补齐 NaN/负值（#1，标题与实际断言对齐）；assertFake/assertOk 收敛 4+1 处逐字重复守卫（#2）；errors.test 转走 index.js 锚定导出契约（#3）；「四类病态跨调用」标题改两类（#15）；两处过时「静默丢弃」标题改写（#20/#21）。
+
+测试 398 例全绿（覆盖率 98.63%）。

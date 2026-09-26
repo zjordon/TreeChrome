@@ -7,6 +7,7 @@ import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProtocol } from "../provider.js";
 import type {
+  AssistantMessage,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -23,6 +24,30 @@ export const TOOL_RESULT_ERROR_PREFIX = "[error] ";
 
 export function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
+}
+
+/**
+ * assistant 历史非 text 块丢弃的一次性告警预扫描（轮 38 #11 起源，轮 39 #11 三份
+ * 逐字复制收敛单源 + #16 统计放宽为非 text）：三协议的 assistant 角色都只收 text
+ * （+toolCalls），image 及未来新增 kind（PDF 等）无 wire 形态被剥离——统计放宽到
+ * `kind !== "text"` 使新 kind 自动落入一次性告警（今日语义等价：联合只有
+ * text/image），弥补 filter/map 折叠绕过穷尽断言（轮 21 #6）的观测缺口。
+ * 去重由调用方注入的 makeOnceWarn 实例负责（长历史逐步回放不刷屏）
+ */
+export function warnDroppedAssistantNonTextBlocks(
+  messages: ChatMessage[],
+  onWarn: (message: string) => void,
+  protocol: string,
+  reason: string,
+): void {
+  const count = messages
+    .filter((m): m is AssistantMessage => m.role === "assistant")
+    .reduce((n, m) => n + m.blocks.filter((b) => b.kind !== "text").length, 0);
+  if (count > 0) {
+    onWarn(
+      `${protocol} assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 ${count} 块（${reason}）`,
+    );
+  }
 }
 
 /**
@@ -48,6 +73,14 @@ export function collectToolResults(
     const cur = messages[j];
     if (cur.role !== "toolResult") {
       break;
+    }
+    // 同 id 重复结果后写覆盖先写（轮 39 #10）：canonical 校验（重复结果）正常时
+    // 不达此路径，防御分支与未配对/缺结果（轮 38 #16）同口径留证据——被覆盖的
+    // 先写结果静默丢失同样是「校验漂移」线索
+    if (byId.has(cur.toolCallId)) {
+      log?.(
+        `[llm] toolCallId（${cur.toolCallId}）存在重复结果，后写覆盖先写（canonical 校验漂移的防御分支）`,
+      );
     }
     byId.set(cur.toolCallId, cur);
     j += 1;

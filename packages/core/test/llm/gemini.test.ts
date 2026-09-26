@@ -867,7 +867,7 @@ describe("请求构造（canonical → wire）", () => {
     mock.queueMany(fnCallOk({}), fnCallOk({}));
     await provider.chat(badReq());
     await provider.chat(badReq());
-    expect(logs.filter((m) => m.includes("timeoutMs 0 非正有限数值"))).toHaveLength(1);
+    expect(logs.filter((m) => m.includes("timeoutMs 0 非法"))).toHaveLength(1);
     // 两次请求都正常完成（非法值不制造每请求超时）
     expect(mock.calls).toHaveLength(2);
   });
@@ -883,7 +883,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("systemInstruction");
   });
 
-  it("model turn 的 inlineData 静默丢弃（多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14）", async () => {
+  it("model turn 的 inlineData 丢弃的 wire 形态（一次性告警由轮 38 #11 预扫描锁定；多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14；标题去「静默」轮 39 #21）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(fnCallOk({}));
     await provider.chat({
@@ -1087,6 +1087,30 @@ describe("响应解析（wire → canonical）", () => {
     systemPrompt: null,
     messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
     tools: [TOOL],
+  });
+
+  it("未知 finishReason（网关私货）→ other 且留证据；SAFETY/RECITATION 是 deliberate 设计不告警（轮 39 #9）", async () => {
+    const resp = (finishReason: string) => ({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: { role: "model", parts: [{ text: "t" }] },
+            finishReason,
+          },
+        ],
+        usageMetadata: null,
+      },
+    });
+    const { mock, provider, logs } = setupLogs();
+    mock.queueMany(resp("WEIRD_FINISH"), resp("SAFETY"));
+    const r1 = await provider.chat(baseReq());
+    expect(r1.stopReason).toBe("other");
+    await provider.chat(baseReq());
+    expect(
+      logs.some((m) => m.includes('gemini 未知 finishReason 映射为 other："WEIRD_FINISH"')),
+    ).toBe(true);
+    expect(logs.filter((m) => m.includes("未知 finishReason"))).toHaveLength(1);
   });
 
   it("thought part 分流进 reasoningText；functionCall 合成 id；非请求名过滤；parts 推导 stopReason 优先", async () => {
@@ -1306,6 +1330,35 @@ describe("响应解析（wire → canonical）", () => {
       true,
     );
     expect(logs.some((m) => m.includes("丢弃 args 非对象的 functionCall"))).toBe(true);
+  });
+
+  it("thoughtSignature 形态异常（非 string）→ 丢弃留证据（轮 39 #8：静默剥签名后下回合历史回传缺 signature 即 400，本地无线索）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    mock.queueMany({
+      status: 200,
+      body: {
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [
+                {
+                  functionCall: { name: "agent_response", args: { a: 1 } },
+                  thoughtSignature: 42,
+                },
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: null,
+      },
+    });
+    const r = await provider.chat(baseReq());
+    expect(r.toolCalls[0]?.signature).toBeUndefined(); // 畸形签名不进 canonical
+    expect(logs.some((m) => m.includes("丢弃形态异常的 thoughtSignature（非 string）：42"))).toBe(
+      true,
+    );
   });
 
   it("thoughtSignature：解析捕获进 ToolCall.signature，回传时随 functionCall part 原样写回（2.5/3 thinking 模型硬要求，不回传即 400）", async () => {

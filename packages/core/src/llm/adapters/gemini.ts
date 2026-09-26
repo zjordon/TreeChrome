@@ -10,7 +10,6 @@ import { LLMBlockedError, LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
-  AssistantMessage,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -32,6 +31,7 @@ import {
   stripTrailingSlash,
   TOOL_RESULT_ERROR_PREFIX,
   temperatureEntry,
+  warnDroppedAssistantNonTextBlocks,
 } from "./common.js";
 import { postJson } from "./http.js";
 import { sanitizeGeminiSchema, stripKeysOutsideTypeDomain } from "./schema-sanitize.js";
@@ -170,7 +170,11 @@ function toWireContents(
   return out;
 }
 
-function mapFinishReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
+function mapFinishReason(
+  raw: unknown,
+  hasKeptToolCall: boolean,
+  log: (message: string) => void,
+): StopReason {
   if (hasKeptToolCall) {
     return "tool_call"; // finishReason 仍为 STOP——从保留的调用推导优先（02 §4.3）
   }
@@ -180,7 +184,12 @@ function mapFinishReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
   if (raw === "MAX_TOKENS") {
     return "length";
   }
-  // SAFETY/RECITATION 等候选级拦截：有 candidates 时不全局抛，按 other 让梯子处理
+  if (raw !== undefined && raw !== "SAFETY" && raw !== "RECITATION") {
+    // SAFETY/RECITATION 等候选级拦截：有 candidates 时不全局抛，按 other 让梯子
+    // 处理（deliberate 设计决策，02 §3.3）——其余未知值（网关私货/拼写变体）留
+    // 证据（轮 39 #9，与 anthropic 未知 stop_reason 同口径）；缺失不告警
+    log(`[llm] gemini 未知 finishReason 映射为 other：${stringifyForLog(raw)}`);
+  }
   return "other";
 }
 
@@ -297,7 +306,14 @@ function parseResponse(
       // 无调用 id——合成，保证 canonical 不变量；同回合多 functionCall 即并行调用。
       // 序号是 provider 实例级自增：跨回合/跨响应唯一（宿主可能以 toolCallId 作跨回合
       // 键，与 anthropic/openai 真实端点的全局唯一 id 行为对齐）。
-      // thoughtSignature 捕获进 ToolCall.signature（2.5/3 thinking 模型回传硬要求）
+      // thoughtSignature 捕获进 ToolCall.signature（2.5/3 thinking 模型回传硬要求）。
+      // 形态异常（非 string）留证据（轮 39 #8）：静默剥签名 → 下回合历史回传缺
+      // thoughtSignature → 端点 400 INVALID_ARGUMENT 且本地无线索
+      if (part.thoughtSignature !== undefined && typeof part.thoughtSignature !== "string") {
+        log(
+          `[llm] gemini 丢弃形态异常的 thoughtSignature（非 string）：${stringifyForLog(part.thoughtSignature)}`,
+        );
+      }
       const signature =
         typeof part.thoughtSignature === "string" ? part.thoughtSignature : undefined;
       toolCalls.push({
@@ -325,6 +341,7 @@ function parseResponse(
     stopReason: mapFinishReason(
       isRecord(first) ? first.finishReason : undefined,
       toolCalls.length > 0,
+      log,
     ),
     usage: mapUsage(json.usageMetadata),
   };
@@ -382,16 +399,14 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
-    // assistant 历史 image 块的过滤丢弃预扫描（轮 38 #11）：留一次性证据——
-    // model 角色不接受 inlineData（透传即 400），多模态历史被协议剥离不再全静默
-    const assistantImages = req.messages
-      .filter((m): m is AssistantMessage => m.role === "assistant")
-      .reduce((n, m) => n + m.blocks.filter((b) => b.kind === "image").length, 0);
-    if (assistantImages > 0) {
-      onAssistantImageDropped(
-        `gemini assistant 历史 image 块无 wire 形态，丢弃 ${assistantImages} 块（协议约束：model 角色不接受 inlineData）`,
-      );
-    }
+    // assistant 历史非 text 块丢弃的一次性告警（轮 38 #11，轮 39 #11/#12 收敛
+    // common 单源 + #17 统计放宽非 text）：model 角色不接受 inlineData（透传即 400）
+    warnDroppedAssistantNonTextBlocks(
+      req.messages,
+      onAssistantImageDropped,
+      "gemini",
+      "协议约束：model 角色不接受 inlineData",
+    );
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
     // model 段编码：含空格/#/? 等字符时避免 URL 截断把配置问题变形为 Invalid URL/404
     const base = stripTrailingSlash(config.baseUrl);

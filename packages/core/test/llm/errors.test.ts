@@ -1,4 +1,6 @@
 // 错误分类与 isInfraError 谓词矩阵单测（docs/implement-plan/p2/01 §5）。
+// 公共面符号走 index.js 锚定导出契约（轮 39 #3，与 client.test.ts 口径一致）——
+// index.ts 侧漏导出时本文件编译红，而非深层导入下的静默绿
 import { describe, expect, it } from "vitest";
 import {
   isInfraError,
@@ -11,7 +13,7 @@ import {
   LLMRateLimitError,
   LLMServerError,
   LLMTimeoutError,
-} from "../../src/llm/errors.js";
+} from "../../src/index.js";
 
 const mk = (): Array<[string, LLMError]> => [
   ["connection", new LLMConnectionError("c", { provider: "p" })],

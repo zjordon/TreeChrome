@@ -245,6 +245,15 @@ async function main() {
   // 两端点独立但刻意串行：请求/响应日志逐卡成段输出，并行会交错打乱；
   // 最坏 2×timeoutMs（各卡独立预算），手工 smoke 可接受
   const redact = makeRedact(apiKey);
+  // 纵深防御（轮 39 #14）：deps.log 键名若与核心 LLMDeps 漂移（tools/ 不在
+  // vitest include、esbuild 只剥离类型不检查，CI 无护栏），resolveDeps 会静默
+  // 回落缺省 console.warn——含 baseUrl 原文（?token=/user:pass@）与响应体片段
+  // 的核心 WARNING 将绕过 log 钩子直落 2>&1 | tee 留档。包装后兜底路径同样过
+  // redact（fetch/getAction 等键名漂移会在运行时立即抛错，无需额外防护）
+  const rawWarn = console.warn.bind(console);
+  console.warn = (...args) => {
+    rawWarn(...args.map((a) => (typeof a === "string" ? redact(a) : a)));
+  };
   for (const card of cards) {
     // 注入打点 fetch：请求体摘要（key 脱敏）——顺便验证 LLMDeps 注入口。
     // header 白名单脱敏（轮 24 #1）：网关独立 token 与 GLM_API_KEY 无关，

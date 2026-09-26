@@ -4,7 +4,7 @@
 
 import { createAnthropicProvider } from "./adapters/anthropic-messages.js";
 import { createGeminiProvider } from "./adapters/gemini.js";
-import { isAbortError } from "./adapters/http.js";
+import { isAbortError, MAX_TIMEOUT_MS } from "./adapters/http.js";
 import { createOpenAICompletionsProvider } from "./adapters/openai-completions.js";
 import type { ProviderConfig } from "./config.js";
 import type { LLMDeps } from "./deps.js";
@@ -58,17 +58,11 @@ const WINDOW_BUDGET_RATIO = 0.75;
  * 梯子总时长仍无上界（对齐 get_action，上界由 step 层提供）
  */
 const CHAT_HTTP_TIMEOUT_DEFAULT_MS = 600_000;
-/**
- * ladder deadline 的合法上限（毫秒）：setTimeout 的平台上限是 2^31-1（Node
- * timers 对超限 delay 钳为 1ms 立即触发，浏览器 HTML 规范同款）——「24.8 天大
- * 预算」会被偷换成「立即超时」（watcher 即刻 abort 首请求），与 0/负/NaN 同为
- * 轮 38 #3/#17 收口的非法值族
- */
-const MAX_DEADLINE_MS = 2_147_483_647;
 
-/** timeoutMs 合法性判定（轮 38 #3/#17）：正有限值且不超 setTimeout 平台上限 */
+/** timeoutMs 合法性判定（轮 38 #3/#17）：正有限值且不超 setTimeout 平台上限
+ *  （MAX_TIMEOUT_MS 与 http.ts 轮 39 #7 守卫单源共享，防两层口径漂移） */
 function isValidDeadlineMs(value: number): boolean {
-  return Number.isFinite(value) && value > 0 && value <= MAX_DEADLINE_MS;
+  return Number.isFinite(value) && value > 0 && value <= MAX_TIMEOUT_MS;
 }
 
 /** JSON.stringify 的崩溃安全包装（轮 38 #1/#2，轮 37 #6 同款雷）：BigInt/循环
@@ -80,6 +74,13 @@ function safeJsonStringify(value: unknown): string | undefined {
     return undefined;
   }
 }
+
+/** abort reason 兜底单源（轮 39 #6）：WHATWG 规范下 abort 后 signal.reason 恒非
+ *  undefined（缺省为 AbortError DOMException；deps.ts engines node>=22 满足）——
+ *  右侧兜底仅防非规范宿主/polyfill，非契约路径。defaultSleep 与 callWithBackoff
+ *  预检两处共用（竞态还原 external.reason ?? e 是第三处变体，兜底对象不同不并入） */
+const abortReasonOr = (signal: AbortSignal | undefined): unknown =>
+  signal?.reason ?? new DOMException("Aborted", "AbortError");
 
 export interface GetActionOptions {
   /**
@@ -146,11 +147,9 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
       if (timer !== undefined) {
         clearTimeout(timer);
       }
-      // 透传 abort reason（宿主可能以自定义 reason 区分停止来源，#186 不变形）。
-      // 右侧兜底按 WHATWG 规范不可达（abort() 后 signal.reason 恒非 undefined，
-      // 缺省为 AbortError DOMException；deps.ts engines node>=22 满足）——仅防
-      // 非规范宿主/polyfill，非契约路径（轮 38 #6 注明）
-      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      // 透传 abort reason（宿主可能以自定义 reason 区分停止来源，#186 不变形）；
+      // 兜底语义见 abortReasonOr（轮 39 #6 单源）
+      reject(abortReasonOr(signal));
     };
     timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
@@ -249,6 +248,10 @@ export class LLMClient {
    *  不同 map 的命中——按 map 身份去重，同一 map 跨步复用只告警一次（防刷屏），
    *  新 map 各自获得一次告警机会 */
   private readonly loggedSystemPromptLeaks = new WeakSet<object>();
+  /** 承重墙 schema（noToolsConstraint 内嵌 tool.parameters 原文）敏感命中的按 map
+   *  去重（轮 39 #5，与 loggedSystemPromptLeaks 同口径）：schemaText 含 real 时
+   *  随 systemPrompt 明文出站——「明文出站面至少留证据」的对称补口 */
+  private readonly loggedSchemaLeaks = new WeakSet<object>();
   /** sensitiveMap 五类病态 WARNING 的按 (map, 类别) 去重（轮 20 #10/#14 起源；
    *  轮 29 #4 拆分类别、轮 31 #10 补 map 维度，与 loggedSystemPromptLeaks 同口径）：
    *  sensitiveMap 是 per-call 选项，实例级单一/总类别标志会让首个 map 的命中
@@ -289,7 +292,7 @@ export class LLMClient {
     // 状态留给后续每一步，登记点直接暴露调用方 bug
     if (!isValidDeadlineMs(timeoutMs)) {
       throw new TypeError(
-        `setCallWindow 收到非法 timeoutMs（${timeoutMs}；须为正有限值且 ≤ ${MAX_DEADLINE_MS}ms），窗口未登记`,
+        `setCallWindow 收到非法 timeoutMs（${timeoutMs}；须为正有限值且 ≤ ${MAX_TIMEOUT_MS}ms），窗口未登记`,
       );
     }
     this.windowDeadline = this.deps.now() + timeoutMs;
@@ -489,7 +492,7 @@ export class LLMClient {
       } else if (!this.warnedInvalidDeadline) {
         this.warnedInvalidDeadline = true;
         this.deps.log(
-          `[llm] WARNING: timeoutMs ${opts.timeoutMs} 非法（NaN/0/负值/超 ${MAX_DEADLINE_MS}ms 平台上限），视为未设置（${this.config.name}）`,
+          `[llm] WARNING: timeoutMs ${opts.timeoutMs} 非法（NaN/0/负值/超 ${MAX_TIMEOUT_MS}ms 上限），视为未设置（${this.config.name}）`,
         );
       }
     }
@@ -625,7 +628,14 @@ export class LLMClient {
       for (;;) {
         // 2+3. 组装请求（承重墙在此分支）并经退避层发送
         const response = await this.callWithBackoff(() =>
-          this.buildChatRequest(systemPrompt, work, tool, controller.signal, httpTimeoutMs),
+          this.buildChatRequest(
+            systemPrompt,
+            work,
+            tool,
+            sensitive,
+            controller.signal,
+            httpTimeoutMs,
+          ),
         );
 
         // 4. 解析优先级：目标工具调用 → 文本 JSON 兜底 → R4 → R1
@@ -696,8 +706,8 @@ export class LLMClient {
       // abort(external.reason) 已不再生效——e 是 ladder 缺省形态而非宿主 reason，
       // 在此还原（宿主以自定义 reason 区分停止来源的能力不因竞态顺序丢失）
       if (external?.aborted && isAbortError(e)) {
-        // external.reason 右侧兜底按 WHATWG 规范不可达（abort 后 reason 恒非
-        // undefined）——仅防非规范宿主（轮 38 #6 注明，同 defaultSleep/预检两处）
+        // external.reason 右侧兜底同 abortReasonOr 语义（轮 39 #6：规范不可达仅
+        // 防非规范宿主）；兜底对象是 e（竞态现场错误）而非规范缺省形态，独立保留
         throw external.reason ?? e;
       }
       if (isAbortError(e) && windowExpired && !external?.aborted) {
@@ -762,6 +772,7 @@ export class LLMClient {
     systemPrompt: string,
     work: ChatMessage[],
     tool: ToolDefinition,
+    sensitive: Record<string, string> | undefined,
     signal: AbortSignal,
     httpTimeoutMs: number | undefined,
   ): ChatRequest {
@@ -811,7 +822,21 @@ export class LLMClient {
         sys += forcedToolConstraint(tool.name);
       }
     } else {
-      sys += noToolsConstraint(tool);
+      const constraint = noToolsConstraint(tool);
+      // schema 原文内嵌 systemPrompt 出站，其中的 real 值明文可见（轮 39 #5）——
+      // 与 systemPrompt 命中告警同观测口径（按 map 去重一次；schema 与
+      // systemPrompt 同为宿主可信自持内容，占位不由核心层代行）
+      if (
+        sensitive !== undefined &&
+        !this.loggedSchemaLeaks.has(sensitive) &&
+        Object.keys(sensitive).some((real) => real !== "" && constraint.includes(real))
+      ) {
+        this.loggedSchemaLeaks.add(sensitive);
+        this.deps.log(
+          "[llm] WARNING: tool.parameters 含 sensitiveMap 命中值，将随承重墙 systemPrompt 明文出站（schema 不在占位范围，由宿主自担）",
+        );
+      }
+      sys += constraint;
     }
     return {
       systemPrompt: sys,
@@ -853,9 +878,8 @@ export class LLMClient {
         // 注定失败的请求）都还原为取消原样上抛（#186 取消穿透契约）；ladder deadline
         // 场景由 getAction 的 catch 统一转 LLMTimeoutError，类型不变
         if (req.signal?.aborted) {
-          // reason 右侧兜底按 WHATWG 规范不可达（abort 后恒非 undefined）——
-          // 仅防非规范宿主（轮 38 #6 注明，同 defaultSleep/竞态还原两处）
-          throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
+          // 兜底语义见 abortReasonOr（轮 39 #6 单源，同 defaultSleep）
+          throw abortReasonOr(req.signal);
         }
         if (!(e instanceof LLMError)) {
           throw e; // 外部取消（AbortError）/ 编程错误原样穿透

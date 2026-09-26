@@ -7,7 +7,6 @@ import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
-  AssistantMessage,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -28,6 +27,7 @@ import {
   stringifyForLog,
   stripTrailingSlash,
   temperatureEntry,
+  warnDroppedAssistantNonTextBlocks,
 } from "./common.js";
 import { postJson } from "./http.js";
 
@@ -145,7 +145,11 @@ function toWireMessages(
   return out;
 }
 
-function mapStopReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
+function mapStopReason(
+  raw: unknown,
+  hasKeptToolCall: boolean,
+  log: (message: string) => void,
+): StopReason {
   if (hasKeptToolCall) {
     return "tool_call"; // 从保留的调用推导（与 gemini/openai 口径一致）
   }
@@ -157,6 +161,12 @@ function mapStopReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
   }
   if (raw === "max_tokens") {
     return "length";
+  }
+  if (raw !== undefined) {
+    // 未知值（官方 refusal/pause_turn 或网关私货/拼写变体）留证据（轮 39 #9）——
+    // 安全拒答等形态退化为 other 空响应时排障有线索；缺失（undefined）是兼容
+    // 端点 benign 形态不告警（与 content/message 域守卫「缺失不告警」同口径）
+    log(`[llm] anthropic 未知 stop_reason 映射为 other：${stringifyForLog(raw)}`);
   }
   return "other";
 }
@@ -261,7 +271,7 @@ function parseResponse(
   const response: ChatResponse = {
     text,
     toolCalls,
-    stopReason: mapStopReason(json.stop_reason, toolCalls.length > 0),
+    stopReason: mapStopReason(json.stop_reason, toolCalls.length > 0, log),
     usage: mapUsage(json.usage),
   };
   if (reasoningText.length > 0) {
@@ -293,16 +303,14 @@ export function createAnthropicProvider(
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
-    // assistant 历史 image 块的过滤丢弃预扫描（轮 38 #11）：留一次性证据而非逐条
-    // 日志（长历史逐步回放不刷屏——与滤图 WARNING 的实例级去重同款取舍）
-    const assistantImages = req.messages
-      .filter((m): m is AssistantMessage => m.role === "assistant")
-      .reduce((n, m) => n + m.blocks.filter((b) => b.kind === "image").length, 0);
-    if (assistantImages > 0) {
-      onAssistantImageDropped(
-        `anthropic assistant 历史 image 块无 wire 形态，丢弃 ${assistantImages} 块（协议约束：assistant 角色只收 text/tool_use）`,
-      );
-    }
+    // assistant 历史非 text 块丢弃的一次性告警（轮 38 #11，轮 39 #11 收敛 common
+    // 单源 + #16 统计放宽非 text）：多模态历史被协议剥离不再全静默
+    warnDroppedAssistantNonTextBlocks(
+      req.messages,
+      onAssistantImageDropped,
+      "anthropic",
+      "协议约束：assistant 角色只收 text/tool_use",
+    );
     const base = stripTrailingSlash(config.baseUrl);
     // OpenAI 卡 baseUrl 惯例带 /v1，跨协议复用卡片会拼出 /v1/v1/messages → 404
     //（错误文案不指向根因）——一次性告警留证据，与 maxTokens/temperature 误配口径一致

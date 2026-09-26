@@ -123,10 +123,7 @@ function setupCore(
 
 function setup(over: Partial<ProviderConfig> = {}) {
   const { mock, fake, client } = setupCore(over, "fake", false);
-  if (fake === null) {
-    throw new Error("unreachable");
-  }
-  return { mock, clock: fake, client };
+  return { mock, clock: assertFake(fake), client };
 }
 
 /** setup 的日志捕获变体（冻结时钟 + logs 数组）——WARNING 类观测断言共用 */
@@ -145,10 +142,7 @@ function setupRealClock(over: Partial<ProviderConfig> = {}) {
 /** FakeClock + 日志采集组合（预算归因类用例）——三工厂外的第 4 形态收敛 */
 function setupClockWithLogs(over: Partial<ProviderConfig> = {}) {
   const { mock, fake, logs, client } = setupCore(over, "fake", true);
-  if (fake === null) {
-    throw new Error("unreachable");
-  }
-  return { mock, clock: fake, logs, client };
+  return { mock, clock: assertFake(fake), logs, client };
 }
 
 /** user → assistant(单 toolCall) → toolResult 三段式历史（轮 19 #4：6 处逐字
@@ -184,6 +178,15 @@ function assertOk(r: GetActionResult): Extract<GetActionResult, { kind: "ok" }> 
     throw new Error("unreachable");
   }
   return r;
+}
+
+/** setupCore 的 fake 收窄守卫收敛（轮 39 #2）：4 处「if (fake === null) throw」
+ *  逐字重复——与 asUser/asAssistant 收敛同动机（改一漏一） */
+function assertFake(fake: FakeClock | null): FakeClock {
+  if (fake === null) {
+    throw new Error("unreachable");
+  }
+  return fake;
 }
 
 /** 退避梯子推进（锚定常量 2,4,8,16,30）：完整走完 5 次退避的用例共享此时钟序列 */
@@ -701,7 +704,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(logs.filter((m) => m.includes("占位符冲突")).length).toBe(2); // 各自一次
   });
 
-  it("四类病态跨调用独立去重：首调整数键不再掩蔽次调占位符冲突（轮 29 #4）", async () => {
+  it("两类病态跨调用独立去重：首调整数键不再掩蔽次调占位符冲突（轮 29 #4；标题与实际覆盖对齐，轮 39 #15）", async () => {
     const { mock, client, logs } = setupWithLogs();
     mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 1 }));
     await client.getAction("sys", msgs(), TOOL, {
@@ -1016,24 +1019,26 @@ describe("deadline 与取消", () => {
     ).rejects.toBeInstanceOf(LLMTimeoutError);
   });
 
-  it("opts.timeoutMs 非法（0/负/NaN/超 2^31-1ms）→ 视为未设置：请求正常完成 + 一次性告警（轮 38 #3/#17，与 http 层轮 37 #7 同族）", async () => {
+  it.each([0, -5, Number.NaN, 3_000_000_000])(
+    "opts.timeoutMs %s 非法 → 视为未设置：请求正常完成 + 告警留证据（轮 38 #3/#17 全族形态锚定，轮 39 #1 补齐 NaN/负值）",
+    async (bad) => {
+      const { mock, logs, client } = setupWithLogs();
+      mock.queueMany(toolOk({ done: 1 }));
+      // 0/负值修复前 deadline 立即到点（梯子首请求即被 watcher abort 恒抛
+      // LLMTimeoutError，elapsed≈0ms 误导为「预算真耗尽」）；NaN 使 deadline
+      // 比较恒 false（600s 兜底失效）；超 2^31-1ms 被 setTimeout 钳为 1ms
+      const r = await client.getAction("sys", msgs(), TOOL, { timeoutMs: bad });
+      expect(r.kind).toBe("ok");
+      expect(logs.some((m) => m.includes(`timeoutMs ${bad} 非法`))).toBe(true);
+    },
+  );
+
+  it("opts.timeoutMs 非法告警按实例去重：第二次同值调用不再告警", async () => {
     const { mock, logs, client } = setupWithLogs();
     mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
-    // 0 修复前会让 deadline 立即到点：梯子首请求即被 watcher abort 恒抛
-    // LLMTimeoutError（elapsed≈0ms 误导为「预算真耗尽」）
-    const r1 = await client.getAction("sys", msgs(), TOOL, { timeoutMs: 0 });
-    expect(r1.kind).toBe("ok");
-    const r2 = await client.getAction("sys", msgs(), TOOL, { timeoutMs: 0 });
-    expect(r2.kind).toBe("ok");
-    // 告警去重按实例（误配每步都在发生，一次即可——与 makeOnceWarn 同款取舍）
+    await client.getAction("sys", msgs(), TOOL, { timeoutMs: 0 });
+    await client.getAction("sys", msgs(), TOOL, { timeoutMs: 0 });
     expect(logs.filter((m) => m.includes("timeoutMs 0 非法"))).toHaveLength(1);
-    // 超 setTimeout 平台上限的正值（修复前被钳为 1ms 立即触发，同款恒超时）——
-    // 独立实例验证（同实例的第二次非法值被去重吞掉）
-    const huge = setupWithLogs();
-    huge.mock.queueMany(toolOk({ done: 1 }));
-    const r3 = await huge.client.getAction("sys", msgs(), TOOL, { timeoutMs: 3_000_000_000 });
-    expect(r3.kind).toBe("ok");
-    expect(huge.logs.some((m) => m.includes("timeoutMs 3000000000 非法"))).toBe(true);
   });
 
   it("setCallWindow 非法值（NaN/0/超上限）→ TypeError fail fast（轮 38 #3：持久窗口状态登记点暴露调用方 bug，窗口不登记）", async () => {
@@ -1155,10 +1160,9 @@ describe("deadline 与取消", () => {
     // unwind 期间到点」的临界——修复前取消被变形为 LLMTimeoutError，污染 step
     // 层按异常类型分罪的依据
     const delayedAbortFetch = makeHangingBodyFetch();
-    const { fake, client } = setupCore({}, "fake", false, delayedAbortFetch);
-    if (fake === null) {
-      throw new Error("unreachable");
-    }
+    const core = setupCore({}, "fake", false, delayedAbortFetch);
+    const fake = assertFake(core.fake);
+    const client = core.client;
     client.setCallWindow(1); // deadline = t+1（watcher 经注入 sleep 注册）
     const ctrl = new AbortController();
     const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
@@ -1175,10 +1179,9 @@ describe("deadline 与取消", () => {
     // 才 abort：abort(external.reason) 已不生效，e 是 ladder 缺省形态——修复前
     // 穿透的是缺省 AbortError，宿主以自定义 reason 区分停止来源的能力丢失
     const delayedAbortFetch = makeHangingBodyFetch();
-    const { fake, client } = setupCore({}, "fake", false, delayedAbortFetch);
-    if (fake === null) {
-      throw new Error("unreachable");
-    }
+    const core = setupCore({}, "fake", false, delayedAbortFetch);
+    const fake = assertFake(core.fake);
+    const client = core.client;
     client.setCallWindow(1); // deadline = t+1
     const customReason = new Error("user-stop");
     const ctrl = new AbortController();
@@ -1244,11 +1247,7 @@ describe("deadline 与取消", () => {
         usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2 },
       },
     });
-    const r1 = await client.getAction("sys", msgs(), TOOL);
-    expect(r1.kind).toBe("ok");
-    if (r1.kind !== "ok") {
-      throw new Error("unreachable");
-    }
+    const r1 = assertOk(await client.getAction("sys", msgs(), TOOL));
     expect(r1.toolCall?.signature).toBe("sig-abc"); // signature 经 ok 分支回传
 
     // 次回合：宿主用回传的 toolCall 回放 assistant 历史并附 toolResult
@@ -1407,6 +1406,25 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     const r = await client.getAction("sys", msgs(), tool);
     expect(r.kind).toBe("ok");
     expect(mock.lastBody().system).toContain("IMPORTANT: You must respond with only a JSON");
+  });
+
+  it("承重墙 schema 含 sensitiveMap 命中值 → 按 map 去重的一次性 WARNING（轮 39 #5：明文出站面留证据，与 systemPrompt 告警同口径）", async () => {
+    const { mock, logs, client } = setupWithLogs({
+      capabilities: { supportsTools: false, supportsForcedTool: false },
+    });
+    mock.queueMany(text('{"a": 1}'), text('{"a": 2}'));
+    const tool: ToolDefinition = {
+      ...TOOL,
+      parameters: { type: "object", description: "secret-key-here" },
+    };
+    const map = { "secret-key-here": "<K1>" };
+    await client.getAction("sys", msgs(), tool, { sensitiveMap: map });
+    await client.getAction("sys", msgs(), tool, { sensitiveMap: map }); // 同 map 去重
+    expect(logs.filter((m) => m.includes("tool.parameters 含 sensitiveMap 命中值"))).toHaveLength(
+      1,
+    );
+    // schema 原文仍出站（由宿主自担——告警只留证据不阻断）
+    expect(mock.lastBody().system).toContain("secret-key-here");
   });
 });
 

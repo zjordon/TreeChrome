@@ -168,10 +168,17 @@ export function applySensitiveInMessages(
  * （placeholder→real / tag→URL）两方向共用，方向语义由调用方传入的 entries
  * 决定、收敛在各自包装函数内——游走本体不得掺入任一方向的特有逻辑
  *（如占位符格式校验），否则静默污染另一方向。
+ * 环引用守卫（轮 39 #4，路径式 seen）：宿主回灌的 args 可含循环引用（轮 38 #1
+ * 确认的崩溃面，stringify 维度已收口，此处是游走维度）——递归重建会
+ * RangeError 硬崩调用方。seen 是**路径**集而非访问集：退出时 delete——仅真正
+ * 的环（对象仍在递归栈上）触发「原样返回子树」的保真降级；DAG 共享子树（同
+ * 一对象被两处引用）每次都完整重写，不因二次到访而漏替换（漏替换在 replace
+ * 方向是敏感值明文残留，比崩溃更糟）
  */
 function rewriteStrings(
   obj: unknown,
   replacements: ReadonlyArray<readonly [string, string]>,
+  seen: WeakSet<object> = new WeakSet(),
 ): unknown {
   if (typeof obj === "string") {
     let out = obj;
@@ -183,9 +190,18 @@ function rewriteStrings(
     return out;
   }
   if (Array.isArray(obj)) {
-    return obj.map((item) => rewriteStrings(item, replacements));
+    if (seen.has(obj)) {
+      return obj; // 循环子树原样返回（保真降级，不崩溃）
+    }
+    seen.add(obj);
+    const out = obj.map((item) => rewriteStrings(item, replacements, seen));
+    seen.delete(obj);
+    return out;
   }
   if (isRecord(obj)) {
+    if (seen.has(obj)) {
+      return obj; // 同上：路径式守卫，仅真正的环走降级
+    }
     // 仅递归普通对象：Map/Set/Date 等非普通对象的 entries 为空，按原逻辑重建会
     // 静默清空成 {}（现调用点只喂纯 JSON 产物，此处防御未来复用踩坑）。
     // 注意（轮 18 #5）：null 原型对象（Object.create(null)）按普通对象重建，产出
@@ -196,6 +212,7 @@ function rewriteStrings(
     if (proto !== Object.prototype && proto !== null) {
       return obj;
     }
+    seen.add(obj);
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
       // "__proto__" 键走 defineProperty（轮 30 #9，同 schema-sanitize 轮 22 #5）：
@@ -203,15 +220,16 @@ function rewriteStrings(
       // 直接赋值命中普通字面量的原型 setter——子树静默丢失 + out 原型被输入改写
       if (k === "__proto__") {
         Object.defineProperty(out, k, {
-          value: rewriteStrings(v, replacements),
+          value: rewriteStrings(v, replacements, seen),
           writable: true,
           enumerable: true,
           configurable: true,
         });
       } else {
-        out[k] = rewriteStrings(v, replacements);
+        out[k] = rewriteStrings(v, replacements, seen);
       }
     }
+    seen.delete(obj);
     return out;
   }
   return obj;

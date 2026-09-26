@@ -15,15 +15,21 @@ import {
 /** Retry-After 单次上限（Python _RETRY_AFTER_CAP=60s；02 §1 只解析秒数标量并在此封顶） */
 export const RETRY_AFTER_CAP_MS = 60_000;
 
+/** timeoutMs/延时类值的合法上限（轮 39 #7 单源导出，client.ts 同族复用）：
+ *  setTimeout/AbortSignal.timeout 的平台上限是 2^31-1ms——超限 delay 被 Node/HTML
+ *  规范钳为 1ms 立即触发（TimeoutOverflowWarning），「超大超时预算」被偷换成
+ *  「立即超时」，与 NaN/0/负值同族（每请求超时 + 误触 fallback 切换） */
+export const MAX_TIMEOUT_MS = 2_147_483_647;
+
 export interface PostJsonInit {
   /** 错误归因用（provider 卡片 name） */
   provider: string;
   /** 外部取消/窗口 deadline（client 组合后传入）；中止原样上抛由 client 分类 */
   signal?: AbortSignal;
-  /** 单次 HTTP 超时；到点 AbortSignal.timeout 中止 → LLMTimeoutError；NaN/0/负值
-   *  视为未设置并经 onInvalidTimeout 留证据（轮 37 #7） */
+  /** 单次 HTTP 超时；到点 AbortSignal.timeout 中止 → LLMTimeoutError；NaN/0/负值/
+   *  超上限（MAX_TIMEOUT_MS）视为未设置并经 onInvalidTimeout 留证据（轮 37 #7，轮 39 #7 扩） */
   timeoutMs?: number;
-  /** timeoutMs 非法（NaN/0/负值）的一次性告警；去重由调用方注入（makeOnceWarn） */
+  /** timeoutMs 非法（NaN/0/负值/超上限）的一次性告警；去重由调用方注入（makeOnceWarn） */
   onInvalidTimeout?: (message: string) => void;
 }
 
@@ -152,15 +158,18 @@ export async function postJson(
   body: unknown,
   init: PostJsonInit,
 ): Promise<unknown> {
-  // timeoutMs 非法值守卫（轮 37 #7）：NaN/0/负值（宿主 parseFloat 误配产物，
-  // 与 temperature NaN/maxTokens 非法同族雷）会让 AbortSignal.timeout 立即到点
-  // ——直连 provider.chat 的调用方每请求 LLMTimeoutError（infra 可重试 + 误触
-  // fallback 单向切换、空转 5 轮退避）；非法值视为未设置
+  // timeoutMs 非法值守卫（轮 37 #7 起，轮 39 #7 补上界）：NaN/0/负值（宿主
+  // parseFloat 误配产物）或超 setTimeout 平台上限（钳 1ms 立即到点）——直连
+  // provider.chat 的调用方每请求 LLMTimeoutError（infra 可重试 + 误触 fallback
+  // 单向切换、空转 5 轮退避）；非法值视为未设置（上界与 client.ts isValidDeadlineMs
+  // 单源共享 MAX_TIMEOUT_MS）
   const timeoutMs = init.timeoutMs;
-  const invalidTimeout = timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0);
+  const invalidTimeout =
+    timeoutMs !== undefined &&
+    (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS);
   if (invalidTimeout) {
     init.onInvalidTimeout?.(
-      `timeoutMs ${timeoutMs} 非正有限数值（NaN/0/负值），视为未设置（${init.provider}）`,
+      `timeoutMs ${timeoutMs} 非法（NaN/0/负值/超 ${MAX_TIMEOUT_MS}ms 上限），视为未设置（${init.provider}）`,
     );
   }
   const timeoutSignal =

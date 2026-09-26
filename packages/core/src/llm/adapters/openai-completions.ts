@@ -9,7 +9,6 @@ import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
-  AssistantMessage,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -31,6 +30,7 @@ import {
   stripTrailingSlash,
   TOOL_RESULT_ERROR_PREFIX,
   temperatureEntry,
+  warnDroppedAssistantNonTextBlocks,
 } from "./common.js";
 import { postJson } from "./http.js";
 
@@ -173,7 +173,11 @@ function toWireMessages(
   return out;
 }
 
-function mapFinishReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
+function mapFinishReason(
+  raw: unknown,
+  hasKeptToolCall: boolean,
+  log: (message: string) => void,
+): StopReason {
   if (hasKeptToolCall) {
     return "tool_call"; // 从保留的调用推导（与 anthropic/gemini 口径一致）
   }
@@ -187,7 +191,11 @@ function mapFinishReason(raw: unknown, hasKeptToolCall: boolean): StopReason {
     return "length";
   }
   // content_filter：choices 通常仍有文本，按 other 正常返回让梯子处理——
-  // LLMBlockedError 只用于 gemini promptFeedback 全局拦截形态（02 §3.3）
+  // LLMBlockedError 只用于 gemini promptFeedback 全局拦截形态（02 §3.3）；
+  // 其余未知值（网关私货/拼写变体）留证据（轮 39 #9，与 anthropic 同口径）
+  if (raw !== undefined && raw !== "content_filter") {
+    log(`[llm] openai 未知 finish_reason 映射为 other：${stringifyForLog(raw)}`);
+  }
   return "other";
 }
 
@@ -256,7 +264,14 @@ function parseResponse(
     log(`[llm] openai 丢弃形态异常的 choice（非对象）：${stringifyForLog(first)}`);
   }
   const message = isRecord(first) && isRecord(first.message) ? first.message : {};
-  if (first !== undefined && isRecord(first) && !isRecord(first.message)) {
+  // message 缺失（undefined）是兼容端点 benign 形态不告警（轮 39 #19，与
+  // content/reasoning/tool_calls 守卫「缺失不告警」同口径）——只对「存在但非对象」留证据
+  if (
+    first !== undefined &&
+    isRecord(first) &&
+    first.message !== undefined &&
+    !isRecord(first.message)
+  ) {
     // 同族（轮 32 #9）：message 域「存在但非对象」静默归空同样无证据
     log(`[llm] openai 丢弃形态异常的 message（非对象）：${stringifyForLog(first.message)}`);
   }
@@ -334,6 +349,7 @@ function parseResponse(
     stopReason: mapFinishReason(
       isRecord(first) ? first.finish_reason : undefined,
       toolCalls.length > 0,
+      log,
     ),
     usage: mapUsage(json.usage),
   };
@@ -363,16 +379,14 @@ export function createOpenAICompletionsProvider(
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
-    // assistant 历史 image 块的折叠丢弃预扫描（轮 38 #11）：content 仅 string|null、
-    // image 块无 wire 形态被折叠为空——留一次性证据，多模态历史剥离不再全静默
-    const assistantImages = req.messages
-      .filter((m): m is AssistantMessage => m.role === "assistant")
-      .reduce((n, m) => n + m.blocks.filter((b) => b.kind === "image").length, 0);
-    if (assistantImages > 0) {
-      onAssistantImageDropped(
-        `openai assistant 历史 image 块无 wire 形态，丢弃 ${assistantImages} 块（协议约束：assistant content 仅 string|null）`,
-      );
-    }
+    // assistant 历史非 text 块折叠丢弃的一次性告警（轮 38 #11，轮 39 #11/#13 收敛
+    // common 单源 + #18 统计放宽非 text）：content 仅 string|null、image 无 wire 形态
+    warnDroppedAssistantNonTextBlocks(
+      req.messages,
+      onAssistantImageDropped,
+      "openai",
+      "协议约束：assistant content 仅 string|null",
+    );
     const base = stripTrailingSlash(config.baseUrl);
     if (base.endsWith("/chat/completions")) {
       onBaseUrlEndpoint(
