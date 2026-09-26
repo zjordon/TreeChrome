@@ -301,6 +301,22 @@ describe("请求构造（canonical → wire）", () => {
     expect(plain.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(0);
   });
 
+  it("baseUrl 以 /v1/messages 结尾（官方 curl 全端点整段复制）→ 如实拼接 + 一次性告警（轮 34 #9，与 openai /chat/completions 同族）", async () => {
+    const misconfigured = setupLogs({
+      baseUrl: "https://api.anthropic.com/v1/messages",
+    });
+    misconfigured.mock.queueMany(toolOk({}), toolOk({}));
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    await misconfigured.provider.chat(req);
+    await misconfigured.provider.chat(req);
+    expect(misconfigured.mock.calls[0].url).toContain("/v1/messages/v1/messages");
+    expect(misconfigured.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(1);
+  });
+
   it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({}));

@@ -17,7 +17,7 @@ import {
 } from "../../src/index.js";
 // 内部决策函数的测试锚定走深层导入（不进公共导出面，同 config/types 测试惯例）
 import { resolveChatHttpTimeoutMs } from "../../src/llm/client.js";
-import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
+import { AGENT_TOOL, asAssistant, asUser, LONG_URL } from "./fixtures.js";
 import { FakeClock, MockFetch, type MockResponseSpec, makeHangingBodyFetch } from "./mock-fetch.js";
 
 const CARD: ProviderConfig = {
@@ -389,11 +389,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     const wire = JSON.stringify(redact.mock.lastBody().messages);
     expect(wire).not.toContain("sk-secret");
     expect(wire).toContain("<KEY>");
-    const callerCall = history[1];
-    if (callerCall.role !== "assistant") {
-      throw new Error("unreachable");
-    }
-    expect(callerCall.toolCalls?.[0]?.args.creds).toBe("sk-secret"); // 原消息未动（副本替换）
+    expect(asAssistant(history[1], 1).toolCalls?.[0]?.args.creds).toBe("sk-secret"); // 原消息未动（副本替换）
   });
 
   it("R4 回显文本复用敏感值占位（Python 递归重跑 filter 的 parity 对齐，轮 12 #5）", async () => {
@@ -447,11 +443,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       (b) => b.type === "tool_use",
     ) as Record<string, unknown>;
     expect(toolUse.input).toEqual({ password: "<KEY>" }); // 深层替换后的占位出站
-    const callerCall = history[1];
-    if (callerCall.role !== "assistant") {
-      throw new Error("unreachable");
-    }
-    expect(callerCall.toolCalls?.[0]?.args.password).toBe(tricky);
+    expect(asAssistant(history[1], 1).toolCalls?.[0]?.args.password).toBe(tricky);
 
     // 旧检测的反向谎报面：real 命中 args 键名或 number 值（串化文本包含），但
     // 深层替换只改写字符串值——先替换后比较后不再误报「包含敏感值」
@@ -908,11 +900,7 @@ describe("fallback 单向切换（完整卡片，可跨协议）", () => {
     expect(r.kind).toBe("ok");
     expect(JSON.stringify(mock.bodyAt(0).messages)).toContain('"image"'); // 主模型（视觉）带图
     expect(JSON.stringify(mock.bodyAt(1).messages)).not.toContain('"image"'); // fallback 滤图
-    const callerMsg = messages[0];
-    if (callerMsg.role !== "user") {
-      throw new Error("unreachable");
-    }
-    expect(callerMsg.blocks.length).toBe(2); // 原消息未被就地改动（03 偏离 1）
+    expect(asUser(messages[0]).blocks.length).toBe(2); // 原消息未被就地改动（03 偏离 1）
   });
 
   it("主卡显式声明 supportsVision=false → 恒滤图（声明即生效）；未声明主卡不滤（偏离 9 取舍）", async () => {

@@ -411,6 +411,14 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
+  it("items 空元组单独分档：无首元素可窄化，文案与实际行为一致（轮 34 #5）", () => {
+    const issues: string[] = [];
+    // items:[] 语义是「数组须为空」（JSON Schema 合法形态），约束丢失须准确上报
+    const out = sanitizeGeminiSchema({ type: "array", items: [] }, (d) => issues.push(d));
+    expect(out).toEqual({ type: "array", items: { type: "string" } });
+    expect(issues).toEqual(["items 空元组，归一为空 schema（空数组约束丢失）"]);
+  });
+
   it("缺 type 按结构线索推断：properties→object、items→array、无线索→string（轮 20 #1）", () => {
     const issues: string[] = [];
     expect(
@@ -924,6 +932,30 @@ describe("请求构造（canonical → wire）", () => {
     plain.mock.queueMany(fnCallOk({}));
     await plain.provider.chat(req);
     expect(plain.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(0);
+  });
+
+  it("baseUrl 以 /v1 结尾（OpenAI 形态跨协议复用）或 :generateContent 结尾（整段端点复制）→ 各自一次性告警（轮 34 #6/#10）", async () => {
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    const openaiForm = setupLogs({ baseUrl: "https://api.example.com/v1" });
+    openaiForm.mock.queueMany(fnCallOk({}), fnCallOk({}));
+    await openaiForm.provider.chat(req);
+    await openaiForm.provider.chat(req);
+    expect(openaiForm.mock.calls[0].url).toContain("/v1/v1beta/models/");
+    expect(openaiForm.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(1);
+
+    const endpointForm = setupLogs({
+      baseUrl:
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+    });
+    endpointForm.mock.queueMany(fnCallOk({}), fnCallOk({}));
+    await endpointForm.provider.chat(req);
+    await endpointForm.provider.chat(req);
+    expect(endpointForm.mock.calls[0].url).toContain(":generateContent/v1beta/models/");
+    expect(endpointForm.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(1);
   });
 });
 

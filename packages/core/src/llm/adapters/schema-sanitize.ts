@@ -213,7 +213,13 @@ export function sanitizeGeminiSchema(
       // 透传被端点 400
       const item = Array.isArray(value) ? value[0] : value;
       if (Array.isArray(value)) {
-        onSchemaIssue?.("items 元组形态窄化为首元素");
+        // 空元组分档（轮 34 #5）：items:[] 语义是「数组须为空」，无首元素可窄化
+        // ——与普通元组窄化共用文案会让证据与实际行为不符
+        onSchemaIssue?.(
+          value.length === 0
+            ? "items 空元组，归一为空 schema（空数组约束丢失）"
+            : "items 元组形态窄化为首元素",
+        );
       } else if (!isRecord(item)) {
         onSchemaIssue?.("items 非对象形态归一为空 schema");
       }

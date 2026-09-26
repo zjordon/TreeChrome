@@ -553,3 +553,14 @@ smoke 产物摘要：
 - **注释与文案纠偏（#5）**：「四类检测」计数式注释随清单增长失同步（现七类）改去计数；intKey 告警文案「≤10 位」与实际阈值 2^32-1 有偏差（"9999999999" 是普通插入序键）改精确表述。
 
 测试 344 例全绿（覆盖率 98.78%，断言扩在既有用例内）。
+
+### 评审轮 34（review-p2-llm-client-34.json，2026-09-25，10/10 采纳）
+
+采纳 10 条。要点：
+
+- **baseUrl 误配守卫族补全三形态（#6/#9/#10）**：gemini 补 /v1 结尾（OpenAI 形态跨协议复用）与 ：generateContent 结尾（官方完整端点整段复制）、anthropic 补 /v1/messages 结尾（官方 curl 全端点）——三协议误配守卫矩阵至此完整（openai /v1 + /chat/completions、anthropic /v1 + /v1/messages、gemini /v1beta + /v1 + :generateContent），各自独立去重实例。
+- **normalizeImageMime 别名表化 + 小写归一（#4）**：image/x-png 历史别名与大小写变体（IMAGE/JPG 等宿主数据常见）原先裸透传即 400——MIME 大小写不敏感（RFC 2046），统一小写后查别名表。
+- **items 空元组分档（#5）**：items:[] 语义是「数组须为空」，无首元素可窄化——与普通元组窄化共文案会让证据与实际行为不符。
+- **测试与死代码清理（#1/#2/#3/#7/#8）**：FakeClock.sleep 不可达 else 分支重构（signal 存在才注册回调，与 abortReason 单源真正同款）；asUser/asAssistant 收窄辅助收敛 client/transforms 两文件 7 处 unreachable 守卫样板（失败信息携带实际 role）；stubDeps 死导出收窄模块内。
+
+测试 348 例全绿（覆盖率 98.79%）。

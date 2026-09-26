@@ -7,6 +7,7 @@ import type { ProviderConfig } from "../../src/index.js";
 import {
   isRecord,
   makeOnceWarn,
+  normalizeImageMime,
   resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
@@ -132,6 +133,16 @@ describe("stringifyForLog", () => {
   it(`超长输入截断到 ERROR_DETAIL_MAX（${ERROR_DETAIL_MAX}，常量单源轮 29 #9）`, () => {
     const long = "x".repeat(ERROR_DETAIL_MAX + 100);
     expect(stringifyForLog(long)).toHaveLength(ERROR_DETAIL_MAX);
+  });
+});
+
+describe("normalizeImageMime", () => {
+  it("别名映射 + 小写归一（轮 28 #3 起源，轮 34 #4 扩表）：jpg/x-png/大小写变体收口，规范值原样", () => {
+    expect(normalizeImageMime("image/jpg")).toBe("image/jpeg");
+    expect(normalizeImageMime("image/x-png")).toBe("image/png");
+    expect(normalizeImageMime("IMAGE/JPG")).toBe("image/jpeg");
+    expect(normalizeImageMime("Image/PNG")).toBe("image/png"); // 小写化但不别名
+    expect(normalizeImageMime("image/webp")).toBe("image/webp"); // 已规范值不动
   });
 });
 

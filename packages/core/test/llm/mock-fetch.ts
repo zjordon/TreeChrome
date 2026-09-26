@@ -178,25 +178,25 @@ export class FakeClock {
         due: this.t + ms,
         resolve,
       };
-      const onAbort = () => {
-        const i = this.timers.indexOf(timer);
-        if (i >= 0) {
-          this.timers.splice(i, 1);
-        }
-        timer.off?.();
-        // 透传 abort reason（与 client.defaultSleep 同款：宿主自定义 reason 不变形）
-        if (signal !== undefined) {
+      if (signal !== undefined) {
+        // signal 存在才注册中止回调（轮 34 #1/#7：onAbort 内不再有不可达的
+        // undefined 分支）；透传 abort reason（与 client.defaultSleep 同款：
+        // 宿主自定义 reason 不变形），缺省回退由 abortReason 内部兜底
+        const onAbort = () => {
+          const i = this.timers.indexOf(timer);
+          if (i >= 0) {
+            this.timers.splice(i, 1);
+          }
+          timer.off?.();
           reject(abortReason(signal));
-        } else {
-          reject(new DOMException("Aborted", "AbortError"));
+        };
+        timer.off = () => signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) {
+          onAbort();
+          return;
         }
-      };
-      timer.off = () => signal?.removeEventListener("abort", onAbort);
-      if (signal?.aborted) {
-        onAbort();
-        return;
+        signal.addEventListener("abort", onAbort, { once: true });
       }
-      signal?.addEventListener("abort", onAbort, { once: true });
       this.timers.push(timer);
     });
 

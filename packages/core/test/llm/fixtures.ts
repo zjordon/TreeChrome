@@ -1,7 +1,15 @@
 // 跨测试文件共享的轻量夹具（评审 2.14：AGENT_TOOL 与 stubDeps 四处逐字重复）。
 // 各协议卡片仍留在各自文件——协议/模型/baseUrl 是被测差异本身，共享反而抹平语义。
 
-import type { LLMProvider, LlmDeps, ProviderConfig, ToolDefinition } from "../../src/index.js";
+import type {
+  AssistantMessage,
+  ChatMessage,
+  LLMProvider,
+  LlmDeps,
+  ProviderConfig,
+  ToolDefinition,
+  UserMessage,
+} from "../../src/index.js";
 import { URL_MIN_LENGTH } from "../../src/llm/transforms.js";
 import { MockFetch } from "./mock-fetch.js";
 
@@ -16,9 +24,26 @@ export const AGENT_TOOL: ToolDefinition = {
 const LONG_URL_HEAD = "https://example.com/";
 export const LONG_URL = LONG_URL_HEAD + "a".repeat(URL_MIN_LENGTH - LONG_URL_HEAD.length + 10);
 
-/** 适配器单测的缺省 deps：mock fetch + 零耗时 sleep + 静音日志（缺省 console.warn 会刷屏） */
-export function stubDeps(mock: MockFetch): Required<LlmDeps> {
+/** 适配器单测的缺省 deps：mock fetch + 零耗时 sleep + 静音日志（缺省 console.warn 会刷屏）。
+ * 仅 assemble 内部消费（适配器单测经 setupProvider 间接使用），非导出面（轮 34 #8） */
+function stubDeps(mock: MockFetch): Required<LlmDeps> {
   return { fetch: mock.fetch, now: () => 0, sleep: async () => {}, log: () => {} };
+}
+
+/** 角色收窄辅助（轮 34 #2/#3，与 assertOk 同风格）：替代 client/transforms 两文件
+ * 约 7 处逐字重复的 `role !== ...` unreachable 守卫，失败信息携带实际 role */
+export function asUser(m: ChatMessage, at = 0): UserMessage {
+  if (m.role !== "user") {
+    throw new Error(`asUser: messages[${at}] 应为 user，实际 ${m.role}`);
+  }
+  return m;
+}
+
+export function asAssistant(m: ChatMessage, at = 0): AssistantMessage {
+  if (m.role !== "assistant") {
+    throw new Error(`asAssistant: messages[${at}] 应为 assistant，实际 ${m.role}`);
+  }
+  return m;
 }
 
 /** 三适配器测试共用的装配样板（卡片由调用方传入——协议差异不共享的既定取舍不变；

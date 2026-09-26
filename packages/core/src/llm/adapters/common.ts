@@ -96,10 +96,18 @@ export function makeOnceWarn(log: (message: string) => void): (message: string) 
   };
 }
 
-/** image 媒体类型别名归一（轮 28 #3/#5 单源化）：image/jpg 是 jpeg 的常见别名，
- * anthropic/gemini 官方均为封闭枚举、裸透传即 400——三适配器共用防 mime 口径漂移 */
+/** image 媒体类型别名表（轮 34 #4 扩）：image/jpg 是 jpeg 常见别名、image/x-png
+ * 是 PNG 历史遗留别名——anthropic/gemini 官方均为封闭枚举、裸透传即 400 */
+const IMAGE_MIME_ALIAS: Record<string, string> = {
+  "image/jpg": "image/jpeg",
+  "image/x-png": "image/png",
+};
+
+/** image 媒体类型别名归一（轮 28 #3/#5 单源化，三适配器共用防 mime 口径漂移）：
+ * MIME 类型大小写不敏感（RFC 2046），端点枚举均小写——统一小写归一后再查别名表 */
 export function normalizeImageMime(mimeType: string): string {
-  return mimeType === "image/jpg" ? "image/jpeg" : mimeType;
+  const lowered = mimeType.toLowerCase();
+  return IMAGE_MIME_ALIAS[lowered] ?? lowered;
 }
 
 /**

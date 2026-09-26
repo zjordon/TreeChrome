@@ -340,9 +340,13 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   const onTemperatureClamp = makeOnceWarn(deps.log);
   // maxTokens 非法回退的实例级一次性告警（轮 18 #11）
   const onMaxTokensInvalid = makeOnceWarn(deps.log);
-  // baseUrl 整段误配官方端点的一次性告警（轮 24 #4，与 anthropic /v1 同族）：
-  // 官方文档 URL 本身以 /v1beta 结尾，整段复制进卡片会拼出 /v1beta/v1beta → 404
+  // baseUrl 误配守卫族（轮 24 #4 起，轮 34 #6/#10 补全三形态）：/v1beta 结尾是
+  // 官方 base 整段复制（拼出 /v1beta/v1beta → 404）；/v1 结尾是 OpenAI 形态跨
+  // 协议复用（轮 23 #1 动机）；:generateContent 结尾是官方完整端点整段复制
+  // ——三条守卫各自独立去重实例
   const onBaseUrlV1beta = makeOnceWarn(deps.log);
+  const onBaseUrlOpenAiForm = makeOnceWarn(deps.log);
+  const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
@@ -351,6 +355,15 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
     if (base.endsWith("/v1beta")) {
       onBaseUrlV1beta(
         `baseUrl 以 /v1beta 结尾，gemini 协议将拼接 ${base}/v1beta/models/…——疑似官方端点整段误配`,
+      );
+    } else if (base.endsWith("/v1")) {
+      onBaseUrlOpenAiForm(
+        `baseUrl 以 /v1 结尾，gemini 协议将拼接 ${base}/v1beta/models/…——疑似 OpenAI 形态误配`,
+      );
+    }
+    if (base.endsWith(":generateContent")) {
+      onBaseUrlEndpoint(
+        `baseUrl 以 :generateContent 结尾，gemini 协议将拼接 ${base}/v1beta/models/…——疑似整段端点 URL 误配`,
       );
     }
     const url = `${base}/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;

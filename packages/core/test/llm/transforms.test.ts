@@ -44,7 +44,7 @@ import {
   tryParseJson,
   URL_MIN_LENGTH,
 } from "../../src/llm/transforms.js";
-import { AGENT_TOOL, LONG_URL } from "./fixtures.js";
+import { AGENT_TOOL, asAssistant, asUser, LONG_URL } from "./fixtures.js";
 
 const U0 = LONG_URL; // 110 字符 ≥ 100（fixtures.LONG_URL）
 const U1 = `https://example.org/${"b".repeat(90)}`;
@@ -376,16 +376,10 @@ describe("cloneWorkMessages", () => {
   it("副本不共享 blocks 数组与文本块（改副本不泄漏回原消息）", () => {
     const original: ChatMessage[] = [userMsg("a")];
     const work = cloneWorkMessages(original);
-    const workUser = work[0];
-    if (workUser.role !== "user") {
-      throw new Error("unreachable");
-    }
+    const workUser = asUser(work[0]);
     workUser.blocks.push({ kind: "text", text: "b" } satisfies TextBlock);
     (workUser.blocks[0] as TextBlock).text = "mutated";
-    const originalUser = original[0];
-    if (originalUser.role !== "user") {
-      throw new Error("unreachable");
-    }
+    const originalUser = asUser(original[0]);
     expect(originalUser.blocks.length).toBe(1);
     expect(originalUser.blocks[0]).toEqual({ kind: "text", text: "a" });
   });
@@ -399,20 +393,13 @@ describe("cloneWorkMessages", () => {
       },
     ];
     const work = cloneWorkMessages(original);
-    const workAssistant = work[0];
-    if (workAssistant.role !== "assistant") {
-      throw new Error("unreachable");
-    }
-    const workCalls = workAssistant.toolCalls;
+    const workCalls = asAssistant(work[0]).toolCalls;
     if (workCalls === undefined) {
       throw new Error("unreachable");
     }
     workCalls.push({ id: "t2", name: AGENT_TOOL.name, args: {} });
     workCalls[0].args.a = 2;
-    const originalAssistant = original[0];
-    if (originalAssistant.role !== "assistant") {
-      throw new Error("unreachable");
-    }
+    const originalAssistant = asAssistant(original[0]);
     expect(originalAssistant.toolCalls).toHaveLength(1);
     expect(originalAssistant.toolCalls?.[0].args).toEqual({ a: 1 });
   });

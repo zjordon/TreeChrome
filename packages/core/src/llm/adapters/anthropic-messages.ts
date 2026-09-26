@@ -266,6 +266,10 @@ export function createAnthropicProvider(
   const onMaxTokensInvalid = makeOnceWarn(deps.log);
   // baseUrl 疑似 OpenAI 形态（/v1 结尾）的一次性告警（轮 23 #1）
   const onBaseUrlV1 = makeOnceWarn(deps.log);
+  // baseUrl 整段端点 URL（/v1/messages 结尾）的一次性告警（轮 34 #9）：官方 curl
+  // 示例即全端点，整段复制进卡片拼出 /v1/messages/v1/messages → 404——与
+  // openai /chat/completions（轮 26 #2）、gemini :generateContent（轮 34 #10）同族
+  const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     const base = stripTrailingSlash(config.baseUrl);
@@ -274,6 +278,11 @@ export function createAnthropicProvider(
     if (base.endsWith("/v1")) {
       onBaseUrlV1(
         `baseUrl 以 /v1 结尾，anthropic 协议将拼接 ${base}/v1/messages——疑似 OpenAI 形态误配`,
+      );
+    }
+    if (base.endsWith("/v1/messages")) {
+      onBaseUrlEndpoint(
+        `baseUrl 以 /v1/messages 结尾，anthropic 协议将拼接 ${base}/v1/messages——疑似整段端点 URL 误配`,
       );
     }
     const url = `${base}/v1/messages`;
