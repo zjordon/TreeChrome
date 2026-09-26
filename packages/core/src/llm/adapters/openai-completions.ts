@@ -135,7 +135,7 @@ function toWireMessages(
       );
     }
   };
-  for (const [idx, msg] of messages.entries()) {
+  for (const msg of messages) {
     if (msg.role === "user") {
       warnPending();
       out.push({ role: "user", content: userContent(msg.blocks, log) });

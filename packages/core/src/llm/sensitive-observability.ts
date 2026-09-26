@@ -18,10 +18,10 @@ export class SensitiveObservability {
    *  (systemPrompt, sensitiveMap) 是 per-call 输入，单一布尔会让首个命中掩蔽后续
    *  不同 map 的命中——按 map 身份去重，同一 map 跨步复用只告警一次（防刷屏），
    *  新 map 各自获得一次告警机会 */
-  private readonly systemPromptLeaks = new WeakSet<object>();
+  private readonly systemPromptLeaks = new WeakMap<object, Set<string>>();
   /** tool 定义（parameters/description）敏感命中的按 map 去重（轮 39 #5，与
    *  systemPromptLeaks 同口径）：明文出站面至少留证据的对称补口 */
-  private readonly schemaLeaks = new WeakSet<object>();
+  private readonly schemaLeaks = new WeakMap<object, Set<string>>();
   /** sensitiveMap 病态 WARNING 的按 (map, 类别) 去重（轮 20 #10/#14 起源；
    *  轮 29 #4 拆分类别、轮 31 #10 补 map 维度，与 systemPromptLeaks 同口径）：
    *  sensitiveMap 是 per-call 选项，实例级单一/总类别标志会让首个 map 的命中
@@ -57,6 +57,10 @@ export class SensitiveObservability {
       }
     };
     const reals = nonEmptySensitiveReals(sensitive);
+    // ⑪ 空白 real（轮 46 #4）：" "（纯空格等）会使 replaceAll 逐空格命中全文——
+    //    灾难性文本损坏；空串已滤（轮 25 #6），纯空白是同家族失误且检测廉价
+    //    （极短 real 不另设长度阈值——⑦ 已覆盖 ph 短维度的对称风险）
+    const hasWhitespaceReal = reals.some((real) => real.trim() === "");
     // ① canonical 数组索引键（非负整数 < 2^32-1 的数字串，上界 4294967294）：
     //    JS 引擎把它们重排到枚举首位升序（Python dict 恒插入序），含包含关系键时
     //    替换顺序静默偏离插入序——负数与超界数字串（11 位手机号/16-19 位卡号）
@@ -137,6 +141,16 @@ export class SensitiveObservability {
       (real) => real.length >= URL_MIN_LENGTH && /^https?:\/\//.test(real),
     );
     once(
+      "whitespaceReal",
+      hasWhitespaceReal,
+      "[llm] WARNING: sensitiveMap 存在纯空白的真实值键（如纯空格）——replaceAll 将逐字符命中全文造成灾难性文本损坏，请检查配置",
+    );
+    once(
+      "whitespaceReal",
+      hasWhitespaceReal,
+      "[llm] WARNING: sensitiveMap 存在纯空白的真实值键（如纯空格）——replaceAll 将逐字符命中全文造成灾难性文本损坏，请检查配置",
+    );
+    once(
       "intKey",
       hasIntKey,
       "[llm] WARNING: sensitiveMap 含 canonical 数组索引键（0–4294967294 的非负整数串，上界 2^32-2）——JS 引擎会将其重排到枚举首位（与插入序不一致），存在包含关系键时替换顺序不可依赖；负数与超界数字串（手机号/卡号）无此风险",
@@ -189,15 +203,22 @@ export class SensitiveObservability {
   }
 
   /** systemPrompt 命中告警：不在占位范围（三适配器原样透传，轮 18 #3 核实）——
-   *  命中留 WARNING（按 map 身份去重，轮 29 #6）；消息文本不含告警内容，
-   *  观测通道自身不泄露明文 */
+   *  命中留 WARNING；去重按 (map, real)（轮 46 #3，与 mapPathologies/toolPayloadLeaks
+   *  对称）：同命中重复回灌压制，宿主原地扩展同一 map 的新增命中仍可观测；消息
+   *  文本不含告警内容，观测通道自身不泄露明文 */
   warnSystemPromptHit(systemPrompt: string, sensitive: Record<string, string> | undefined): void {
-    if (
-      sensitive !== undefined &&
-      !this.systemPromptLeaks.has(sensitive) &&
-      nonEmptySensitiveReals(sensitive).some((real) => systemPrompt.includes(real))
-    ) {
-      this.systemPromptLeaks.add(sensitive);
+    if (sensitive === undefined) {
+      return;
+    }
+    const seen = this.systemPromptLeaks.get(sensitive) ?? new Set<string>();
+    const fresh = nonEmptySensitiveReals(sensitive).filter(
+      (real) => systemPrompt.includes(real) && !seen.has(real),
+    );
+    if (fresh.length > 0) {
+      for (const real of fresh) {
+        seen.add(real);
+      }
+      this.systemPromptLeaks.set(sensitive, seen);
       this.log(
         "[llm] WARNING: systemPrompt 含 sensitiveMap 命中值，将明文出站（systemPrompt 不在占位范围，由宿主自担）",
       );
@@ -207,23 +228,33 @@ export class SensitiveObservability {
   /** tool 定义（name/parameters/description）的明文出站面命中检测（轮 39 #5 起，
    *  轮 41 #1 上提覆盖主路径）：tools 路径把同一份 parameters/description 原文
    *  放进请求体、no-tools 承重墙内嵌 systemPrompt——同一「明文出站面至少留
-   *  证据」口径（按 map 去重一次；schema 与 systemPrompt 同为宿主可信自持
-   *  内容，占位不由核心层代行）；串化崩溃安全（BigInt/循环引用） */
+   *  证据」口径；命中维度 (map, real)（轮 46 #3，与 systemPromptLeaks 对称）；
+   *  串化崩溃安全（BigInt/循环引用） */
   warnToolDefinitionLeak(
     tool: ToolDefinition,
     sensitive: Record<string, string> | undefined,
   ): void {
-    // 先短路（轮 44 #9）：无 map / 该 map 已告警时免串化——本方法经
-    // buildChatRequest 每轮退避重建调用，无条件串化整份 schema 是重复开销
-    if (sensitive === undefined || this.schemaLeaks.has(sensitive)) {
+    if (sensitive === undefined) {
+      return;
+    }
+    // 该 map 的全部候选 real 已告警过时免重复串化（轮 44 #9 短路语义的等价保留
+    // ——本方法经 buildChatRequest 每轮退避重建调用）
+    const seen = this.schemaLeaks.get(sensitive);
+    const candidates = nonEmptySensitiveReals(sensitive);
+    if (seen !== undefined && candidates.every((real) => seen.has(real))) {
       return;
     }
     const toolText = safeJsonStringify(tool);
-    if (
-      toolText !== undefined &&
-      nonEmptySensitiveReals(sensitive).some((real) => toolText.includes(real))
-    ) {
-      this.schemaLeaks.add(sensitive);
+    if (toolText === undefined) {
+      return;
+    }
+    const fresh = candidates.filter((real) => toolText.includes(real) && !seen?.has(real));
+    if (fresh.length > 0) {
+      const merged = seen ?? new Set<string>();
+      for (const real of fresh) {
+        merged.add(real);
+      }
+      this.schemaLeaks.set(sensitive, merged);
       this.log(
         "[llm] WARNING: tool 定义（parameters/description）含 sensitiveMap 命中值，将随请求明文出站（schema 不在占位范围，由宿主自担）",
       );

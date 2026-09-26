@@ -184,7 +184,10 @@ export function sanitizeGeminiSchema(
       } else {
         emit(key, "type", chosen);
       }
-      if (list.includes("null")) {
+      // 实际 null 成员同派生（轮 46 #13）：includes("null") 是严格字符串比较，
+      // {"type":["string",null]} 的 null 语义会被静默丢弃无证据——与上方成员豁免
+      // （t !== null 视为合法语义）自洽
+      if (list.some((t) => t === null || t === "null")) {
         // nullable 派生延迟到收尾（轮 40 #5）：此处立即写入会与显式 nullable 键
         // 产生键序依赖（{type:[…,"null"],nullable:false} 与反序产出相反结果），
         // 且撞键上报把来源归因到 type 键本身（归一后仍是 type，真实来源是其

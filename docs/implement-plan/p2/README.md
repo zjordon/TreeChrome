@@ -719,3 +719,15 @@ smoke 产物摘要：
 - **单源收敛**：openai「后无 toolResult 跟随」冗余检测删除（#5——其触发场景是 warnPending 的真子集，同事实每请求双发两条近似日志）；SMOKE_TIMEOUT_MS 补上界 2^31-1（#3，与核心 isInvalidTimeoutMs 同口径）；isRecord 死导入清理（#8）。
 
 测试 443 例全绿（覆盖率 98.47%）。
+
+### 评审轮 46（review-p2-llm-client-46.json，2026-09-26，19/19 全采纳；轨迹 17→8→28→14→21→9→19）
+
+采纳 19 条。要点：
+
+- **rewriteStrings 环回边改重建副本（#1，轮 39 #4 的实质升级）**：seen 从路径集改为「原对象→重建副本」WeakMap 缓存——环回边指向已重建副本：替换完整（redacted 副本的环回边不再残留未替换明文——redactToolPayloads 对环形态真正阻断）、DAG 共享子树顺带记忆化、deepClonePlain 的环输入产出真正自引用深拷贝（拆引用契约在环形态成立）。
+- **canonical 字符串性/数组性大收口（#15）**：TextBlock.text / toolResult.text / toolCall.id/name/signature / toolCallId/toolName 的非 string 形态与 blocks/toolCalls 非数组全部前置拦截——此前 getAction 路径裸 TypeError（text.replace/includes）、直连路径原样出站烧 400；字符串性与空串同为三协议一致约束。toolCallId 守卫置于配对之前（数字 id 与字符串 id 永不配对会落成误导性「孤儿」）。
+- **观测维度收敛**：systemPromptLeaks/schemaLeaks 从纯 map 维度改 (map, real)（#3——同命中重复回灌压制、同 map 新增命中仍可观测，与 mapPathologies/toolPayloadLeaks 对称；schemaLeaks 的轮 44 #9 短路语义等价保留为「全部候选已告警」判断）；⑪ 纯空白 real 病态（#4——单空格 replaceAll 逐字符命中全文的灾难性损坏）；noTools 串化降级一次性告警（#2——约束文本实质全失此前零证据）。
+- **宽化输入**：sensitiveMap 显式 null 归一为未提供（#16——transforms truthiness 与观测 === undefined 的口径分叉，null 穿透在 Object.keys(null)/WeakMap 键裸 TypeError）；schema 实际 null 成员同派生 nullable（#13——includes("null") 严格字符串比较静默丢弃 JSON 形态的 null）。
+- **杂项**：KNOWN_FINISH_REASONS 补 IMAGE_SAFETY/UNEXPECTED_TOOL_CALL（#14）；thinking/textPart signature 告警带卡片名（#11/#12）；openai idx 死变量（#10）；temperature 回退链第三段三侧拆分独立 it（#9/#17）；onTemperatureInvalid 三侧接线锚定（#5/#6/#7——漏传第 4 参时告警静默路由进钳制实例）；注释迁移/标题对齐（#8/#19）；usage: null 测试噪音清扫（#18——null 属「存在但形态异常」档，意图「无 usage」改缺键）。
+
+测试 451 例全绿（覆盖率 98.01%——canonical 新守卫分支部分待锚定）。

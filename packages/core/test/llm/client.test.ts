@@ -75,7 +75,7 @@ const toolOk = (input: Record<string, unknown>): MockResponseSpec => ({
 });
 const text = (t: string): MockResponseSpec => ({
   status: 200,
-  body: { content: [{ type: "text", text: t }], stop_reason: "end_turn", usage: null },
+  body: { content: [{ type: "text", text: t }], stop_reason: "end_turn", usage: undefined },
 });
 const empty = (): MockResponseSpec => ({
   status: 200,
@@ -227,7 +227,7 @@ describe("解析优先级与公共面", () => {
     expect(r).toEqual({
       kind: "ok",
       toolInput: { action: { name: "done" }, next_goal: "g" },
-      usage: null,
+      usage: null, // 结果契约：无 usage → null（轮 46 #18 清扫只改 mock 响应体）
     });
   });
 
@@ -548,10 +548,10 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(logs.filter((m) => m.includes("包含敏感值")).length).toBe(3);
   });
 
-  it("systemPrompt 敏感命中 → 按 map 去重 WARNING 可观测（不在占位范围、明文出站由宿主自担，轮 18 #3；轮 29 #6 改按身份）", async () => {
+  it("systemPrompt 敏感命中 → 按 (map, real) 去重 WARNING 可观测（不在占位范围、明文出站由宿主自担，轮 18 #3；轮 46 #3 从纯 map 维度收敛：新增命中仍可观测）", async () => {
     const { mock, logs, client } = setupWithLogs();
-    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
-    const sensitiveMap = { "sk-secret": "<KEY>" };
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }), toolOk({ done: 3 }));
+    const sensitiveMap: Record<string, string> = { "sk-secret": "<KEY>" };
     await client.getAction("use sk-secret wisely", msgs(), TOOL, { sensitiveMap });
     const hits = logs.filter((m) => m.includes("systemPrompt"));
     expect(hits).toHaveLength(1);
@@ -559,10 +559,12 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     // systemPrompt 原样出站（占位只覆盖 messages 的 TextBlock）
     expect(JSON.stringify(mock.lastBody())).not.toContain("<KEY>");
     expect(JSON.stringify(mock.lastBody())).toContain("sk-secret");
-    // 按 map 身份去重（轮 29 #6）：同一 map 对象跨调用只告警一次（新 map 各自一次
-    // 的锚定见姊妹用例）
+    // 同命中重复回灌压制 + 同 map 新增 real 命中（宿主原地扩展）仍可观测——
+    // 纯 map 维度会永久压制后者
     await client.getAction("use sk-secret wisely", msgs(), TOOL, { sensitiveMap });
-    expect(logs.filter((m) => m.includes("systemPrompt"))).toHaveLength(1);
+    sensitiveMap["sk-new"] = "<N>";
+    await client.getAction("use sk-new wisely", msgs(), TOOL, { sensitiveMap });
+    expect(logs.filter((m) => m.includes("systemPrompt 含 sensitiveMap 命中值"))).toHaveLength(2);
     // 观测通道自身不泄露明文
     expect(logs.some((m) => m.includes("sk-secret"))).toBe(false);
   });
@@ -658,6 +660,8 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     // ⑩ 真实值含 [uN] 形态（轮 40 #9，④ 的镜像方向）：URL 缩写 tag 被敏感替换
     // 消费，还原侧 toolInput 得到裸 tag 而非真实 URL——静默数据损坏
     ["⑩ 真实值含 [uN]（轮 40 #9）", { "[u0]": "<TAG>" }, "真实值含 [uN] 形态"],
+    // ⑪ 纯空白 real（轮 46 #4）：replaceAll 逐空格命中全文——灾难性文本损坏
+    ["⑪ 纯空白真实值（轮 46 #4）", { " ": "<SP>" }, "纯空白的真实值键"],
   ] as const)("sensitiveMap 病态：%s → WARNING 可观测", async (_label, sensitiveMap, keyword) => {
     const t = setupWithLogs();
     t.mock.queueMany(toolOk({ done: 1 }));
@@ -1257,6 +1261,15 @@ describe("deadline 与取消", () => {
     expect(err).toBe("user-stop"); // 原样上抛，不被抹平为默认 AbortError
   });
 
+  it("sensitiveMap 显式 null（JSON 反序列化宽化形态）→ 归一为未提供不崩观测层（轮 46 #16：transforms 侧 truthiness 与观测侧 === undefined 的口径分叉收口）", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ done: 1 }));
+    const r = await client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: null as unknown as Record<string, string>,
+    });
+    expect(r.kind).toBe("ok");
+  });
+
   it("resolveChatHttpTimeoutMs：无 deadline → 600s 兜底；有 deadline → undefined（ladder signal 负责）", () => {
     expect(resolveChatHttpTimeoutMs(undefined)).toBe(600_000);
     expect(resolveChatHttpTimeoutMs(12345)).toBeUndefined();
@@ -1435,11 +1448,11 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     expect(body.system).toContain("Do not reply with plain text.");
   });
 
-  it("supportsTools:false + parameters 含 BigInt → 降级 String() 不崩承重墙路径（轮 38 #2：宿主程序化构造的原值非 JSON-only 来源）", async () => {
-    const { mock, client } = setup({
+  it("supportsTools:false + parameters 含 BigInt → 降级 String() 不崩 + 一次性告警（轮 38 #2 崩溃面；轮 46 #2 观测补口：约束文本实质全失须留证据）", async () => {
+    const { mock, logs, client } = setupWithLogs({
       capabilities: { supportsTools: false, supportsForcedTool: false },
     });
-    mock.queueMany(text('{"a": 1}'));
+    mock.queueMany(text('{"a": 1}'), text('{"a": 2}'));
     const tool: ToolDefinition = {
       ...TOOL,
       parameters: { type: "object", big: 10n },
@@ -1449,6 +1462,9 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     const r = await client.getAction("sys", msgs(), tool);
     expect(r.kind).toBe("ok");
     expect(mock.lastBody().system).toContain("IMPORTANT: You must respond with only a JSON");
+    await client.getAction("sys", msgs(), tool); // 一次性告警去重
+    expect(logs.filter((m) => m.includes("无法 JSON 串化"))).toHaveLength(1);
+    expect(logs[0]).toContain(TOOL.name); // 工具名归因、不含 parameters 内容
   });
 
   it("tool 定义含 sensitiveMap 命中值 → 按 map 去重的一次性 WARNING（轮 39 #5 起源，轮 41 #1 上提覆盖主路径：tools 路径的 parameters/description 同样明文进请求体）", async () => {

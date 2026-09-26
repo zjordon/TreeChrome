@@ -196,6 +196,8 @@ const KNOWN_FINISH_REASONS = new Set([
   "PROHIBITED_CONTENT",
   "SPII",
   "MALFORMED_FUNCTION_CALL",
+  "IMAGE_SAFETY",
+  "UNEXPECTED_TOOL_CALL",
 ]);
 
 function mapFinishReason(
@@ -322,7 +324,7 @@ function parseResponse(
     // 的畸形签名观测同口径，至少保留推理连续性退化的线索）
     if (part.thoughtSignature !== undefined && !isRecord(part.functionCall)) {
       onTextPartSignatureDropped(
-        `gemini 丢弃非 functionCall part 携带的 thoughtSignature（thinking 模型常态形态，canonical 无槽位）：${stringifyForLog(part.thoughtSignature)}`,
+        `gemini(${providerName}) 丢弃非 functionCall part 携带的 thoughtSignature（thinking 模型常态形态，canonical 无槽位）：${stringifyForLog(part.thoughtSignature)}`,
       );
     }
     // 官方 proto Part 内容域为 oneof（text 与 functionCall 互斥）——并存形态由

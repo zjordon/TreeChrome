@@ -232,12 +232,11 @@ describe("请求构造（canonical → wire）", () => {
     await oss.provider.chat(baseReq());
     expect(oss.mock.lastBody()).toHaveProperty("max_completion_tokens");
     expect(oss.mock.lastBody()).not.toHaveProperty("max_tokens");
-
-    // 前缀清单其余成员逐个锁定（轮 12 #10）：正则被误改（误删成员/误拼写）在此处红，
-    // 回归面不再直接落在端点 400；it.each 化（轮 44 #13）：失败信息自带模型名
-    //（for 循环只报行号，需手工复原迭代值）
   });
 
+  // 前缀清单其余成员逐个锁定（轮 12 #10）：正则被误改（误删成员/误拼写）在此处红，
+  // 回归面不再直接落在端点 400；it.each 化（轮 44 #13）：失败信息自带模型名
+  //（for 循环只报行号，需手工复原迭代值）；注释随内容迁移（轮 46 #8）
   it.each(["gpt-4.1-mini", "o1", "o3-mini", "o4-mini"])(
     "新契约前缀 %s → 发送 max_completion_tokens（轮 12 #10 清单锁定）",
     async (model) => {
@@ -260,14 +259,16 @@ describe("请求构造（canonical → wire）", () => {
     expect(body.max_tokens).toBe(99);
   });
 
-  it("temperature 回退链：请求级缺省用卡片级；两级缺省不发（新契约模型由宿主自担）", async () => {
+  it("temperature 卡片级回退与请求级优先（轮 46 #17 拆分；新契约模型缺省由宿主自担）", async () => {
     const { mock, provider } = setup({ temperature: 0.6 });
     mock.queueMany(toolOk("{}"), toolOk("{}"));
     await provider.chat(baseReq());
     expect(mock.lastBody().temperature).toBe(0.6);
     await provider.chat({ ...baseReq(), temperature: 0.1 });
     expect(mock.lastBody().temperature).toBe(0.1);
+  });
 
+  it("temperature 两级缺省不发（轮 46 #17 独立：新装配语义本就独立）", async () => {
     const noCard = setup();
     noCard.mock.queueMany(toolOk("{}"));
     await noCard.provider.chat(baseReq());
@@ -283,6 +284,18 @@ describe("请求构造（canonical → wire）", () => {
   // 钳制告警/maxTokens 回退的纯逻辑矩阵见 common.test.ts（轮 19 #2 收敛）；
   // 接线锚定是各适配器独立注入点（可选参数漏传时纯逻辑仍绿、告警静默丢失），
   // 各侧分别锚定（轮 40 #13 改注）
+
+  it("temperature NaN → 不发 + onTemperatureInvalid 接线锚定（轮 46 #7：轮 45 #6 分实例后缺锚定，onInvalid 缺省回落 onClamp 会互相压制）", async () => {
+    const { mock, logs, provider } = setupLogs({ temperature: Number.NaN });
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat(baseReq());
+    await provider.chat(baseReq());
+    expect(mock.bodyAt(0)).not.toHaveProperty("temperature"); // NaN 序列化 null 是端点硬 400
+    expect(mock.bodyAt(1)).not.toHaveProperty("temperature");
+    const warnings = logs.filter((m) => m.includes("非有限数值"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("glm-openai"); // 卡片归因
+  });
 
   it("temperature 钳制告警接线锚定（轮 40 #13：非抑制分支的 onTemperatureClamp 漏传无红测可拦——抑制分支已有「抑制可观测」锚定）", async () => {
     const { mock, logs, provider } = setupLogs({ temperature: 2.5 });
@@ -306,7 +319,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(warnings[0]).toContain("glm-openai"); // 卡片归因（轮 42 #16，对齐 anthropic/gemini 侧同族用例）
   });
 
-  it("o 系与 gpt-5 系抑制 temperature（只接受默认温度 1，轮 14 #10 + 轮 20 #11 web 核实）；gpt-4o 照常发送", async () => {
+  it("o 系抑制 temperature（只接受默认温度 1，轮 14 #10 + 轮 20 #11 web 核实；gpt-5 全系见下 it.each）；gpt-4o 照常发送（轮 46 #19 标题对齐）", async () => {
     const oSeries = setup({ model: "o3-mini", temperature: 0.2 });
     oSeries.mock.queueMany(toolOk("{}"));
     await oSeries.provider.chat(baseReq());
@@ -493,7 +506,7 @@ describe("请求构造（canonical → wire）", () => {
     const missing = setupLogs();
     missing.mock.queueMany({
       status: 200,
-      body: { choices: [{ finish_reason: "stop" }], usage: null },
+      body: { choices: [{ finish_reason: "stop" }], usage: undefined },
     });
     const r1 = await missing.provider.chat(baseReq());
     expect(r1.stopReason).toBe("stop");
@@ -502,7 +515,7 @@ describe("请求构造（canonical → wire）", () => {
     const malformed = setupLogs();
     malformed.mock.queueMany({
       status: 200,
-      body: { choices: [{ message: "not-an-object", finish_reason: "stop" }], usage: null },
+      body: { choices: [{ message: "not-an-object", finish_reason: "stop" }], usage: undefined },
     });
     await malformed.provider.chat(baseReq());
     expect(malformed.logs.some((m) => m.includes("丢弃形态异常的 message（非对象）"))).toBe(true);
@@ -515,7 +528,7 @@ describe("请求构造（canonical → wire）", () => {
         status: 200,
         body: {
           choices: [{ message: { role: "assistant", content: "t" }, finish_reason: "weird_stop" }],
-          usage: null,
+          usage: undefined,
         },
       },
       {
@@ -524,7 +537,7 @@ describe("请求构造（canonical → wire）", () => {
           choices: [
             { message: { role: "assistant", content: "t" }, finish_reason: "content_filter" },
           ],
-          usage: null,
+          usage: undefined,
         },
       },
     );
@@ -651,7 +664,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "length",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const ok = await provider.chat(baseReq());
@@ -693,7 +706,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -719,7 +732,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -747,7 +760,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -773,7 +786,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "stop",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await partsForm.provider.chat(baseReq());
@@ -791,7 +804,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     await nullForm.provider.chat(baseReq());
@@ -802,7 +815,7 @@ describe("响应解析（wire → canonical）", () => {
     const choicesForm = setupLogs();
     choicesForm.mock.queueMany({
       status: 200,
-      body: { choices: "gateway junk", usage: null },
+      body: { choices: "gateway junk", usage: undefined },
     });
     const r1 = await choicesForm.provider.chat(baseReq());
     expect(r1.text).toBe("");
@@ -811,7 +824,7 @@ describe("响应解析（wire → canonical）", () => {
     const messageForm = setupLogs();
     messageForm.mock.queueMany({
       status: 200,
-      body: { choices: [{ message: "junk", finish_reason: "stop" }], usage: null },
+      body: { choices: [{ message: "junk", finish_reason: "stop" }], usage: undefined },
     });
     const r2 = await messageForm.provider.chat(baseReq());
     expect(r2.text).toBe("");
@@ -821,7 +834,7 @@ describe("响应解析（wire → canonical）", () => {
     const choiceForm = setupLogs();
     choiceForm.mock.queueMany({
       status: 200,
-      body: { choices: ["junk"], usage: null },
+      body: { choices: ["junk"], usage: undefined },
     });
     await choiceForm.provider.chat(baseReq());
     expect(choiceForm.logs.some((m) => m.includes("丢弃形态异常的 choice（非对象）"))).toBe(true);
@@ -837,7 +850,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "stop",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const r4 = await toolCallsForm.provider.chat(baseReq());
@@ -858,7 +871,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "stop",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -887,7 +900,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -919,7 +932,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -960,7 +973,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -985,7 +998,7 @@ describe("响应解析（wire → canonical）", () => {
             finish_reason: "tool_calls",
           },
         ],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -1033,7 +1046,7 @@ describe("响应解析（wire → canonical）", () => {
       status: 200,
       body: {
         choices: [{ message: { role: "assistant", content: "t" }, finish_reason: raw }],
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());

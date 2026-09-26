@@ -251,8 +251,9 @@ function parseResponse(
         // 与 gemini textPartSignature（轮 42 #21）口径不一致——一次性告警留证据
         //（轮 44 #15；未来启用 thinking 块回传时该签名是硬要求）
         if (item.signature !== undefined) {
+          // 卡片名归因（轮 46 #11，轮 42 #12 口径）：多卡片同协议可定位
           onThinkingSignatureDropped(
-            "anthropic 丢弃 thinking 块携带的 signature（canonical 无槽位，thinking 回传验证域）",
+            `anthropic(${providerName}) 丢弃 thinking 块携带的 signature（canonical 无槽位，thinking 回传验证域）`,
           );
         }
       } else {

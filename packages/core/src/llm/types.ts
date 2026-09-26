@@ -125,13 +125,20 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
   const violation = (reason: string): LLMProtocolViolationError =>
     new LLMProtocolViolationError(`消息序列不变量被破坏：${reason}`, { provider: providerName });
 
+  // 空串与字符串性同拦（轮 46 #15）：JS 宿主宽化输入下 text/base64/mimeType 非
+  // string（数字/对象）会绕过 === "" 判定——getAction 路径在 text.replace/includes
+  // 裸 TypeError、直连路径原样出站烧 400；字符串性与空串同为三协议一致约束
   const hasEmptyBlock = (blocks: ContentBlock[]): boolean =>
     blocks.some(
       (b) =>
-        (b.kind === "text" && b.text === "") ||
-        // 空 base64/mimeType 的 image 块同为端点 400 形态（轮 25 #4）：畸形截图
-        // 数据出站烧 400 会错误归因到端点并触发退避/fallback，而非调用方数据
-        (b.kind === "image" && (b.base64 === "" || b.mimeType === "")),
+        (b.kind === "text" && (typeof b.text !== "string" || b.text === "")) ||
+        // 空/非 string 的 base64/mimeType image 块同为端点 400 形态（轮 25 #4 起，
+        // 轮 46 #15 补类型形态）
+        (b.kind === "image" &&
+          (typeof b.base64 !== "string" ||
+            b.base64 === "" ||
+            typeof b.mimeType !== "string" ||
+            b.mimeType === "")),
     );
 
   if (messages.length === 0) {
@@ -145,6 +152,9 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
   while (i < messages.length) {
     const msg = messages[i];
     if (msg.role === "user") {
+      if (!Array.isArray(msg.blocks)) {
+        throw violation("user.blocks 非数组（宽化输入，端点 400 形态）");
+      }
       if (msg.blocks.length === 0) {
         throw violation("user.blocks 为空");
       }
@@ -155,7 +165,13 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       continue;
     }
     if (msg.role === "assistant") {
+      if (!Array.isArray(msg.blocks)) {
+        throw violation("assistant.blocks 非数组（宽化输入，端点 400 形态）");
+      }
       const calls = msg.toolCalls ?? [];
+      if (!Array.isArray(calls)) {
+        throw violation("assistant.toolCalls 非数组（宽化输入，端点 400 形态）");
+      }
       if (msg.blocks.length === 0 && calls.length === 0) {
         throw violation("assistant 的 blocks 与 toolCalls 同时为空");
       }
@@ -165,19 +181,24 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
       if (calls.length > 0) {
         // id 空串：请求侧 tool_use id="" 会被官方端点 400（响应侧轮 12 已同款丢弃，
         // canonical 历史来自宿主回灌——在此拦截而非烧一次 400 后才暴露，轮 17 #8）
-        if (calls.some((c) => c.id === "")) {
-          throw violation("assistant 的 toolCall id 为空串（端点 400 形态）");
+        if (calls.some((c) => typeof c.id !== "string" || c.id === "")) {
+          throw violation("assistant 的 toolCall id 非字符串或为空串（端点 400 形态）");
         }
         // name 空串：Anthropic 工具名受 ^[a-zA-Z0-9_-]{1,128}$ 约束（openai/gemini
         // 同为必填非空）——空名 tool_use 回放历史同样烧 400；toolResult.toolName
         // 空串经下方配对一致性校验兜住（空名调用在此已先拦截，轮 18 #13）
-        if (calls.some((c) => c.name === "")) {
-          throw violation("assistant 的 toolCall name 为空串（端点 400 形态）");
+        if (calls.some((c) => typeof c.name !== "string" || c.name === "")) {
+          throw violation("assistant 的 toolCall name 非字符串或为空串（端点 400 形态）");
         }
         // signature 空串（轮 38 #4）：gemini 适配器对空串 thoughtSignature 原样
         // 保留/出站，空串值回传是 400 形态（LLMInvalidRequestError 非
         // ProtocolViolation，会误触 fallback 单向切换）——与 id/name 空串同动机，
         // canonical 层前置拦截
+        if (calls.some((c) => c.signature !== undefined && typeof c.signature !== "string")) {
+          throw violation(
+            "assistant 的 toolCall signature 非字符串（gemini thoughtSignature 端点 400 形态；空串同档见下）",
+          );
+        }
         if (calls.some((c) => c.signature === "")) {
           throw violation(
             "assistant 的 toolCall signature 为空串（gemini thoughtSignature 端点 400 形态）",
@@ -208,6 +229,14 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
           if (cur.role !== "toolResult") {
             break;
           }
+          // toolCallId/toolName 字符串性（轮 46 #15，先于配对）：非字符串在 Map
+          // 配对/一致性比较中行为未定义（数字 id 与字符串 id 永不配对，落成误导
+          // 性「孤儿」误报）
+          if (typeof cur.toolCallId !== "string" || typeof cur.toolName !== "string") {
+            throw violation(
+              `toolResult 的 toolCallId/toolName 非字符串（toolCallId=${String(cur.toolCallId)}）`,
+            );
+          }
           const pairedName = callsById.get(cur.toolCallId);
           if (pairedName === undefined) {
             throw violation(
@@ -222,10 +251,12 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
           if (seen.has(cur.toolCallId)) {
             throw violation(`toolCall ${cur.toolCallId} 有重复结果`);
           }
-          // 空文本：anthropic 以字符串 content 直发 tool_result，空串是端点 400 形态
-          //（"content field is empty"）；canonical 层拦截而非 400 后错误归因（轮 17 #8）
-          if (cur.text === "") {
-            throw violation(`toolResult（toolCallId=${cur.toolCallId}）文本为空`);
+          // 空文本/非字符串：anthropic 以字符串 content 直发 tool_result，空串是
+          // 端点 400 形态（"content field is empty"）；非字符串在 getAction 路径的
+          // includes 处裸 TypeError（轮 46 #15）。canonical 层拦截而非 400 后错误
+          // 归因（轮 17 #8 起）
+          if (typeof cur.text !== "string" || cur.text === "") {
+            throw violation(`toolResult（toolCallId=${cur.toolCallId}）文本为空或非字符串`);
           }
           seen.add(cur.toolCallId);
           j += 1;

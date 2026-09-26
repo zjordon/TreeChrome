@@ -202,17 +202,17 @@ export function applySensitiveInMessages(
  * （placeholder→real / tag→URL）两方向共用，方向语义由调用方传入的 entries
  * 决定、收敛在各自包装函数内——游走本体不得掺入任一方向的特有逻辑
  *（如占位符格式校验），否则静默污染另一方向。
- * 环引用守卫（轮 39 #4，路径式 seen）：宿主回灌的 args 可含循环引用（轮 38 #1
- * 确认的崩溃面，stringify 维度已收口，此处是游走维度）——递归重建会
- * RangeError 硬崩调用方。seen 是**路径**集而非访问集：退出时 delete——仅真正
- * 的环（对象仍在递归栈上）触发「原样返回子树」的保真降级；DAG 共享子树（同
- * 一对象被两处引用）每次都完整重写，不因二次到访而漏替换（漏替换在 replace
- * 方向是敏感值明文残留，比崩溃更糟）
+ * 环引用守卫（轮 39 #4 起源；轮 46 #1 改重建缓存）：宿主回灌的 args 可含循环
+ * 引用（轮 38 #1 确认的崩溃面）——递归重建会 RangeError 硬崩调用方。seen 是
+ * 原对象→重建副本的 WeakMap 缓存：进入时先建容器再 set、环回边返回缓存副本
+ * ——替换完整（环回边不残留未替换明文，redactToolPayloads 对环形态真正阻断）、
+ * DAG 共享子树顺带记忆化（纯函数下缓存与重写结果等价）、deepClonePlain 的
+ * 环输入产出真正自引用的深拷贝（拆引用契约在环形态成立）
  */
 function rewriteStrings(
   obj: unknown,
   replacements: ReadonlyArray<readonly [string, string]>,
-  seen: WeakSet<object> = new WeakSet(),
+  seen: WeakMap<object, unknown> = new WeakMap(),
 ): unknown {
   if (typeof obj === "string") {
     let out = obj;
@@ -224,17 +224,21 @@ function rewriteStrings(
     return out;
   }
   if (Array.isArray(obj)) {
-    if (seen.has(obj)) {
-      return obj; // 循环子树原样返回（保真降级，不崩溃）
+    const cached = seen.get(obj);
+    if (cached !== undefined) {
+      return cached; // 环回边指向已重建副本（轮 46 #1）：替换完整且与重写结果等价
     }
-    seen.add(obj);
-    const out = obj.map((item) => rewriteStrings(item, replacements, seen));
-    seen.delete(obj);
+    const out: unknown[] = [];
+    seen.set(obj, out);
+    for (const item of obj) {
+      out.push(rewriteStrings(item, replacements, seen));
+    }
     return out;
   }
   if (isRecord(obj)) {
-    if (seen.has(obj)) {
-      return obj; // 同上：路径式守卫，仅真正的环走降级
+    const cached = seen.get(obj);
+    if (cached !== undefined) {
+      return cached; // 同上：环回边指向已重建副本
     }
     // 仅递归普通对象：Map/Set/Date 等非普通对象的 entries 为空，按原逻辑重建会
     // 静默清空成 {}（现调用点只喂纯 JSON 产物，此处防御未来复用踩坑）。
@@ -246,8 +250,8 @@ function rewriteStrings(
     if (proto !== Object.prototype && proto !== null) {
       return obj;
     }
-    seen.add(obj);
     const out: Record<string, unknown> = {};
+    seen.set(obj, out); // 先建容器再缓存（轮 46 #1）：环回边拿到的是本副本
     for (const [k, v] of Object.entries(obj)) {
       // "__proto__" 键走 defineProperty（轮 30 #9，同 schema-sanitize 轮 22 #5）：
       // JSON.parse 产物可含自有 __proto__ 键（模型输出的 JSON 完全可控该键名），
@@ -263,7 +267,6 @@ function rewriteStrings(
         out[k] = rewriteStrings(v, replacements, seen);
       }
     }
-    seen.delete(obj);
     return out;
   }
   return obj;

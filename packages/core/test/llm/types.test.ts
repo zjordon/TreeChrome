@@ -206,17 +206,35 @@ describe("assertValidMessages · 违例序列", () => {
     );
   });
 
-  it('toolCall id 为空串 → 拒绝（请求侧 tool_use id="" 是端点 400 形态，轮 17 #8）', () => {
+  it("toolCall id 为空串/非字符串 → 拒绝（请求侧 tool_use id 病态是端点 400 形态，轮 17 #8；轮 46 #15 补类型形态）", () => {
     expectViolation(
       [user("q"), assistant({ toolCalls: [{ id: "", name: AGENT_TOOL.name, args: {} }] })],
-      "id 为空串",
+      "id 非字符串或为空串",
+    );
+    expectViolation(
+      [
+        user("q"),
+        assistant({
+          toolCalls: [{ id: 42 as unknown as string, name: AGENT_TOOL.name, args: {} }],
+        }),
+      ],
+      "id 非字符串或为空串",
     );
   });
 
-  it("toolCall name 为空串 → 拒绝（Anthropic 工具名 ^[a-zA-Z0-9_-]{1,128}$ 约束，轮 18 #13）", () => {
+  it("toolCall name 为空串/非字符串 → 拒绝（Anthropic 工具名 ^[a-zA-Z0-9_-]{1,128}$ 约束，轮 18 #13；轮 46 #15 补类型形态）", () => {
     expectViolation(
       [user("q"), assistant({ toolCalls: [{ id: "t1", name: "", args: {} }] })],
-      "name 为空串",
+      "name 非字符串或为空串",
+    );
+    expectViolation(
+      [
+        user("q"),
+        assistant({
+          toolCalls: [{ id: "t1", name: 42 as unknown as string, args: {} }],
+        }),
+      ],
+      "name 非字符串或为空串",
     );
   });
 
@@ -272,6 +290,28 @@ describe("assertValidMessages · 违例序列", () => {
         }),
       ],
       "args 非普通对象",
+    );
+  });
+
+  it("宽化输入形态（轮 46 #15）：text/toolResult 文本非字符串、blocks 非数组 → 拒绝", () => {
+    const badTextMsg = {
+      role: "assistant",
+      blocks: [{ kind: "text", text: 42 }],
+    } as unknown as ChatMessage;
+    expectViolation([user("q"), badTextMsg], "空块");
+    expectViolation([{ role: "user", blocks: "not-array" } as unknown as ChatMessage], "非数组");
+    expectViolation(
+      [
+        user("q"),
+        assistant({ toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {} }] }),
+        {
+          role: "toolResult",
+          toolCallId: "t1",
+          toolName: AGENT_TOOL.name,
+          text: 42 as unknown as string,
+        },
+      ],
+      "文本为空或非字符串",
     );
   });
 

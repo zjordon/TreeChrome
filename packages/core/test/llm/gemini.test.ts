@@ -397,9 +397,11 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       type: "string",
       nullable: true,
     });
-    // 无 'null' 成员的纯病态数组：连 nullable 都不产出
+    // 实际 null 成员（轮 46 #13 后）同样派生 nullable——旧「连 nullable 都不产出」
+    // 基于 includes("null") 严格字符串比较，是行为缺口本身
     expect(sanitizeGeminiSchema({ type: [null, 42] }, (d) => issues.push(d))).toEqual({
       type: "string",
+      nullable: true,
     });
     expect(issues).toEqual([
       // 成员级留证（轮 44 #16）：非 string 病态成员被 filter 丢弃同样必上报
@@ -408,6 +410,14 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       "type 成员「42」非字符串，跳过",
       "type 全 null/病态元素，兜底为 string",
     ]);
+    // 实际 null 成员同派生 nullable（轮 46 #13）：{"type":["string",null]} 此前
+    // 被 includes("null") 严格字符串比较静默丢弃
+    expect(
+      sanitizeGeminiSchema({ type: ["string", null] } as unknown as Record<string, unknown>),
+    ).toEqual({
+      type: "string",
+      nullable: true,
+    });
   });
 
   it("联合 type 成员复用标量枚举口径：PascalCase 归一、非法成员跳过取首个合法成员（轮 17 #13 + 轮 18 #1 兜底统一）", () => {
@@ -866,7 +876,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(warnings[0]).toContain("gemini-card");
   });
 
-  it("temperature 回退链：请求级缺省用卡片级；两级缺省不发", async () => {
+  it("temperature 卡片级回退与请求级优先（轮 46 #9 拆分）", async () => {
     const { mock, provider } = setup({ temperature: 0.3 });
     mock.queueMany(fnCallOk({}), fnCallOk({}));
     await provider.chat({
@@ -883,6 +893,9 @@ describe("请求构造（canonical → wire）", () => {
       temperature: 0.8,
     });
     expect(genConfig().temperature).toBe(0.8);
+  });
+
+  it("temperature 两级缺省不发（轮 46 #9 独立：新装配语义本就独立）", async () => {
     const noCard = setup();
     noCard.mock.queueMany(fnCallOk({}));
     await noCard.provider.chat({
@@ -902,6 +915,24 @@ describe("请求构造（canonical → wire）", () => {
       tools: null,
     });
     expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
+  });
+
+  it("temperature NaN → 不发 + onTemperatureInvalid 接线锚定（轮 46 #6：轮 45 #6 分实例后缺锚定，onInvalid 缺省回落 onClamp 会互相压制）", async () => {
+    const { mock, logs, provider } = setupLogs({ temperature: Number.NaN });
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    await provider.chat(req);
+    await provider.chat(req);
+    expect(
+      (mock.bodyAt(0).generationConfig as Record<string, unknown>).temperature,
+    ).toBeUndefined();
+    const warnings = logs.filter((m) => m.includes("非有限数值"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("gemini-card");
   });
 
   it("temperature 钳制告警接线锚定（轮 40 #12：onTemperatureClamp 是可选参数，漏传时钳制照常本用例仍绿、告警静默丢失）", async () => {
@@ -1197,7 +1228,7 @@ describe("响应解析（wire → canonical）", () => {
             finishReason,
           },
         ],
-        usageMetadata: null,
+        usageMetadata: undefined,
       },
     });
     const { mock, provider, logs } = setupLogs();
@@ -1415,7 +1446,7 @@ describe("响应解析（wire → canonical）", () => {
             finishReason: "STOP",
           },
         ],
-        usageMetadata: null,
+        usageMetadata: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -1460,7 +1491,7 @@ describe("响应解析（wire → canonical）", () => {
             finishReason: "STOP",
           },
         ],
-        usageMetadata: null,
+        usageMetadata: undefined,
       },
     });
     const r = await provider.chat(baseReq());
@@ -1484,7 +1515,7 @@ describe("响应解析（wire → canonical）", () => {
             finishReason: "STOP",
           },
         ],
-        usageMetadata: null,
+        usageMetadata: undefined,
       },
     });
     const r = await provider.chat(baseReq());
@@ -1519,7 +1550,7 @@ describe("响应解析（wire → canonical）", () => {
               finishReason: "STOP",
             },
           ],
-          usageMetadata: null,
+          usageMetadata: undefined,
         },
       },
       fnCallOk({}),
@@ -1593,7 +1624,7 @@ describe("响应解析（wire → canonical）", () => {
             finishReason: "STOP",
           },
         ],
-        usageMetadata: null,
+        usageMetadata: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -1618,7 +1649,7 @@ describe("响应解析（wire → canonical）", () => {
             finishReason: "STOP",
           },
         ],
-        usageMetadata: null,
+        usageMetadata: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -1654,7 +1685,7 @@ describe("响应解析（wire → canonical）", () => {
       status: 200,
       body: {
         candidates: [{ content: { role: "model", parts: [{ text: "t" }] }, finishReason: raw }],
-        usageMetadata: null,
+        usageMetadata: undefined,
       },
     });
     const res = await provider.chat(baseReq());

@@ -178,7 +178,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(noTools).not.toHaveProperty("tool_choice");
   });
 
-  it("temperature 回退链：请求级缺省用卡片级，两级都缺省不发", async () => {
+  it("temperature 卡片级回退与请求级优先（轮 46 #9 拆分：第三段独立成 it）", async () => {
     const { mock, provider } = setup({ temperature: 0.4 });
     mock.queueMany(toolOk({}), toolOk({}));
     await provider.chat({
@@ -194,6 +194,9 @@ describe("请求构造（canonical → wire）", () => {
       temperature: 0.9,
     });
     expect(mock.lastBody().temperature).toBe(0.9); // 请求级优先
+  });
+
+  it("temperature 两级缺省不发（轮 46 #9 独立：新装配语义本就独立）", async () => {
     const noCard = setup();
     noCard.mock.queueMany(toolOk({}));
     await noCard.provider.chat({
@@ -201,7 +204,7 @@ describe("请求构造（canonical → wire）", () => {
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
       tools: null,
     });
-    expect(noCard.mock.lastBody()).not.toHaveProperty("temperature"); // 两级缺省不发
+    expect(noCard.mock.lastBody()).not.toHaveProperty("temperature");
   });
 
   it("temperature 按协议上限钳制（anthropic 0-1）：误配 1.5 不再每请求硬 400（轮 12 #7）", async () => {
@@ -222,15 +225,21 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody().temperature).toBe(0); // 下界同钳
   });
 
-  it("temperature NaN → 不发（Math 钳制对 NaN 透传会序列化成 null 被端点 400，轮 13 #5）", async () => {
-    const { mock, provider } = setup({ temperature: Number.NaN });
-    mock.queueMany(toolOk({}));
-    await provider.chat({
+  it("temperature NaN → 不发 + onTemperatureInvalid 接线锚定（轮 46 #5：漏传第 4 参时告警静默路由进钳制实例，轮 45 #6 分实例后缺锚定）", async () => {
+    const { mock, logs, provider } = setupLogs({ temperature: Number.NaN });
+    mock.queueMany(toolOk({}), toolOk({}));
+    const req: ChatRequest = {
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
       tools: null,
-    });
-    expect(mock.lastBody()).not.toHaveProperty("temperature");
+    };
+    await provider.chat(req);
+    await provider.chat(req);
+    expect(mock.bodyAt(0)).not.toHaveProperty("temperature"); // NaN 序列化 null 是端点硬 400
+    expect(mock.bodyAt(1)).not.toHaveProperty("temperature");
+    const warnings = logs.filter((m) => m.includes("非有限数值"));
+    expect(warnings).toHaveLength(1); // 实例级一次性告警
+    expect(warnings[0]).toContain("glm-anthropic"); // 卡片归因
   });
 
   it("temperature 钳制发生留 WARNING 且实例级去重（轮 16 #4；anthropic 单侧接线锚定——gemini/openai 侧同款用例见各自文件，纯逻辑矩阵见 common.test.ts，轮 19 #2 起源、轮 40 #2 改注）", async () => {
@@ -391,7 +400,7 @@ describe("请求构造（canonical → wire）", () => {
           { type: "text", text: "answer" },
         ],
         stop_reason: "end_turn",
-        usage: null,
+        usage: undefined,
       },
     });
     mock.queueMany(resp(), resp());
@@ -412,7 +421,7 @@ describe("请求构造（canonical → wire）", () => {
       body: {
         content: [{ type: "text", text: "no" }],
         ...(stopReason === undefined ? {} : { stop_reason: stopReason }),
-        usage: null,
+        usage: undefined,
       },
     });
     const withUnknown = setupLogs();
@@ -717,7 +726,7 @@ describe("响应解析（wire → canonical）", () => {
           { type: "tool_use", id: "", name: "agent_response", input: { b: 2 } },
         ],
         stop_reason: "tool_use",
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -739,7 +748,7 @@ describe("响应解析（wire → canonical）", () => {
           { type: "tool_use", id: "x3", name: "agent_response" },
         ],
         stop_reason: "tool_use",
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -755,7 +764,7 @@ describe("响应解析（wire → canonical）", () => {
     const { mock, logs, provider } = setupLogs();
     mock.queueMany({
       status: 200,
-      body: { content: "gateway junk", stop_reason: "end_turn", usage: null },
+      body: { content: "gateway junk", stop_reason: "end_turn", usage: undefined },
     });
     const res = await provider.chat(baseReq());
     expect(res.text).toBe("");
@@ -772,7 +781,7 @@ describe("响应解析（wire → canonical）", () => {
           { type: "tool_use", id: "x1", name: "other_tool", input: {} },
         ],
         stop_reason: "tool_use",
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -795,7 +804,7 @@ describe("响应解析（wire → canonical）", () => {
           { type: "redacted_thinking", data: "x" }, // 未知 type（官方类型）
         ],
         stop_reason: "end_turn",
-        usage: null,
+        usage: undefined,
       },
     });
     const res = await provider.chat(baseReq());
@@ -885,7 +894,11 @@ describe("testConnection", () => {
     const ok = setup();
     ok.mock.queueMany({
       status: 200,
-      body: { content: [{ type: "text", text: "hello" }], stop_reason: "end_turn", usage: null },
+      body: {
+        content: [{ type: "text", text: "hello" }],
+        stop_reason: "end_turn",
+        usage: undefined,
+      },
     });
     await expect(ok.provider.testConnection()).resolves.toEqual({ ok: true, model: "glm-5.1" });
 

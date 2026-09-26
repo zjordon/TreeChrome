@@ -213,16 +213,16 @@ const r1Directive = (toolName: string): string =>
 const forcedToolConstraint = (toolName: string): string =>
   `\n\nIMPORTANT: You must respond by calling the tool "${toolName}" with your complete answer as the tool arguments. Do not reply with plain text.`;
 
-/** 承重墙极端形态：连 tools 都不发的端点，schema 进 system，响应用 tryParseJson 兜底 */
-const noToolsConstraint = (tool: ToolDefinition): string => {
-  // parameters 是宿主程序化构造的原值（非 JSON-only 来源）：BigInt/循环引用会使
-  // stringify 抛 TypeError 硬崩承重墙路径（轮 38 #2，轮 37 #6 同款）——串化失败
-  // 降级 String()，约束文本降质优于整个 getAction 崩溃
+/** 承重墙极端形态：连 tools 都不发的端点，schema 进 system，响应用 tryParseJson 兜底。
+ *  onDegraded：串化失败（BigInt/循环引用，轮 38 #2 起源）降级 String() 时回调
+ *  ——约束文本实质全失须留证据（轮 46 #2；观测通道不泄露：只报工具名与降级事实） */
+const noToolsConstraint = (tool: ToolDefinition, onDegraded?: () => void): string => {
   let schemaText: string;
   try {
     schemaText = JSON.stringify(tool.parameters, null, 2);
   } catch {
     schemaText = String(tool.parameters);
+    onDegraded?.();
   }
   return `\n\nIMPORTANT: You must respond with only a JSON object matching this schema:\n${schemaText}\nDo not reply with plain text.`;
 };
@@ -249,6 +249,8 @@ export class LLMClient {
   private inFlight = false;
   /** 敏感值观测（轮 43 #8 拆分）：十类病态/命中告警/泄露扫描与去重状态单源 */
   private readonly sensitiveObs: SensitiveObservability;
+  /** no-tools 承重墙 schema 串化降级的一次性告警标志（轮 46 #2） */
+  private warnedNoToolsSchemaDegrade = false;
   /** opts.timeoutMs 非法值一次性告警的去重（轮 38 #3：误配每步都在发生，一次即可） */
   private warnedInvalidDeadline = false;
   private readonly deps: Required<LLMDeps>;
@@ -400,7 +402,10 @@ export class LLMClient {
       // 1. 请求侧变换：全部落在 work 副本（03 偏离 1：不原地改调用方消息）
       const work = cloneWorkMessages(messages);
       const urlMap = shortenUrlsInMessages(work);
-      const sensitive = opts.sensitiveMap;
+      // null 归一为未提供（轮 46 #16）：transforms 侧全部 truthiness 守卫视 null
+      // 为未提供，观测侧 === undefined 穿透会在 Object.keys(null)/WeakMap 键上
+      // 裸 TypeError（JSON 反序列化的「显式空」宽化形态）——单点归一两口径
+      const sensitive = opts.sensitiveMap ?? undefined;
       applySensitiveInMessages(work, sensitive);
 
       // 敏感值观测（轮 43 #8 拆至 sensitive-observability.ts）：systemPrompt 命中/
@@ -623,7 +628,14 @@ export class LLMClient {
         sys += forcedToolConstraint(tool.name);
       }
     } else {
-      sys += noToolsConstraint(tool);
+      sys += noToolsConstraint(tool, () => {
+        if (!this.warnedNoToolsSchemaDegrade) {
+          this.warnedNoToolsSchemaDegrade = true;
+          this.deps.log(
+            `[llm] WARNING: tool ${tool.name} 的 parameters 无法 JSON 串化（BigInt/循环引用），no-tools 约束降级为占位文本，结构化输出质量可能受损`,
+          );
+        }
+      });
     }
     return {
       systemPrompt: sys,
