@@ -79,6 +79,10 @@ describe("请求构造（canonical → wire）", () => {
             { id: "t2", name: "agent_response", args: { action: "type" } },
           ],
         },
+        // 乱序到达（t2 在前）——openai 按到达顺序直发独立 tool 消息、不重排
+        //（tool 消息按 tool_call_id 关联，直发乱序无害）：与 anthropic/gemini
+        // 的按 toolCalls 顺序重排口径刻意不同，此处锁定既定行为（轮 35 #5）
+        { role: "toolResult", toolCallId: "t2", toolName: "agent_response", text: "done2" },
         {
           role: "toolResult",
           toolCallId: "t1",
@@ -86,7 +90,6 @@ describe("请求构造（canonical → wire）", () => {
           text: "done",
           isError: true,
         },
-        { role: "toolResult", toolCallId: "t2", toolName: "agent_response", text: "done2" },
       ],
       tools: [TOOL],
       toolChoice: { kind: "forced", name: "agent_response" },
@@ -125,8 +128,8 @@ describe("请求构造（canonical → wire）", () => {
             },
           ],
         },
+        { role: "tool", tool_call_id: "t2", content: "done2" }, // 到达序直发（乱序输入原样）
         { role: "tool", tool_call_id: "t1", content: "[error] done" },
-        { role: "tool", tool_call_id: "t2", content: "done2" },
       ],
       max_tokens: 8192,
       tools: [
@@ -381,8 +384,7 @@ describe("请求构造（canonical → wire）", () => {
 
   it("baseUrl 整段端点 URL 误配（以 /chat/completions 结尾）→ 如实拼接 + 一次性告警（轮 26 #2，与 anthropic /v1、gemini /v1beta 同族）", async () => {
     // 官方 curl 示例端点以 /chat/completions 结尾，整段复制进卡片拼出双重路径 → 404
-    const plain = setupLogs();
-    const misconfigured = setupProviderWithLogs(createOpenAICompletionsProvider, CARD, {
+    const misconfigured = setupLogs({
       baseUrl: "https://api.example.com/v1/chat/completions",
     });
     misconfigured.mock.queueMany(toolOk("{}"), toolOk("{}"));
@@ -391,9 +393,23 @@ describe("请求构造（canonical → wire）", () => {
     expect(misconfigured.mock.calls[0].url).toContain("/chat/completions/chat/completions");
     expect(misconfigured.logs.filter((m) => m.includes("整段端点 URL 误配"))).toHaveLength(1);
     // 无误配的缺省卡片不受影响：不告警（真请求采集，非静音声明）
+    const plain = setupLogs();
     plain.mock.queueMany(toolOk("{}"));
     await plain.provider.chat(baseReq());
     expect(plain.logs.filter((m) => m.includes("整段端点 URL 误配"))).toHaveLength(0);
+  });
+
+  it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）", async () => {
+    const { mock, provider } = setup();
+    await expect(
+      provider.chat({
+        systemPrompt: null,
+        messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+        tools: [TOOL],
+        toolChoice: { kind: "forced", name: "nonexistent" },
+      }),
+    ).rejects.toThrow(LLMProtocolViolationError);
+    expect(mock.calls.length).toBe(0);
   });
 
   it("空串 systemPrompt 与 null 同等不发（三协议统一口径，轮 20 #13）", async () => {

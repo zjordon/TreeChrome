@@ -20,6 +20,7 @@ import type {
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
+  assertForcedToolChoiceInTools,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -321,6 +322,7 @@ export function createOpenAICompletionsProvider(
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
+    assertForcedToolChoiceInTools(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
     const base = stripTrailingSlash(config.baseUrl);
     if (base.endsWith("/chat/completions")) {
       onBaseUrlEndpoint(

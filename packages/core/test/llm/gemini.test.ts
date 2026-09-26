@@ -913,8 +913,7 @@ describe("请求构造（canonical → wire）", () => {
 
   it("baseUrl 整段误配官方端点（含 /v1beta）→ 如实拼接 + 一次性告警（轮 24 #4，与 anthropic /v1 同族）", async () => {
     // 官方文档 URL 本身以 /v1beta 结尾，整段复制进卡片会拼出 /v1beta/v1beta → 404
-    const plain = setupLogs();
-    const misconfigured = setupProviderWithLogs(createGeminiProvider, CARD, {
+    const misconfigured = setupLogs({
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     });
     misconfigured.mock.queueMany(fnCallOk({}), fnCallOk({}));
@@ -929,6 +928,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(misconfigured.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(1);
     // 无误配的缺省卡片不受影响：不告警（须真正走一请求采集日志——不 chat 时
     // logs 恒空、断言恒绿，防不住「告警条件被误删/改为无条件」回归，轮 25 #1）
+    const plain = setupLogs();
     plain.mock.queueMany(fnCallOk({}));
     await plain.provider.chat(req);
     expect(plain.logs.filter((m) => m.includes("疑似官方端点整段误配"))).toHaveLength(0);
@@ -956,6 +956,26 @@ describe("请求构造（canonical → wire）", () => {
     await endpointForm.provider.chat(req);
     expect(endpointForm.mock.calls[0].url).toContain(":generateContent/v1beta/models/");
     expect(endpointForm.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(1);
+    // 阴性对照（轮 35 #3，与 /v1beta 用例轮 25 #1 口径一致）：两条守卫各自
+    // 无误配时不告警
+    const plain = setupLogs();
+    plain.mock.queueMany(fnCallOk({}));
+    await plain.provider.chat(req);
+    expect(plain.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(0);
+    expect(plain.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(0);
+  });
+
+  it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）", async () => {
+    const { mock, provider } = setup();
+    await expect(
+      provider.chat({
+        systemPrompt: null,
+        messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+        tools: [TOOL],
+        toolChoice: { kind: "forced", name: "nonexistent" },
+      }),
+    ).rejects.toThrow(LLMProtocolViolationError);
+    expect(mock.calls.length).toBe(0);
   });
 });
 

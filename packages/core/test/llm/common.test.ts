@@ -11,6 +11,8 @@ import {
   resolveMaxTokens,
   stringifyForLog,
   stripTrailingSlash,
+  TEST_CONNECTION_MAX_TOKENS,
+  TEST_CONNECTION_TIMEOUT_MS,
   temperatureEntry,
 } from "../../src/llm/adapters/common.js";
 import { ERROR_DETAIL_MAX } from "../../src/llm/adapters/http.js";
@@ -133,6 +135,13 @@ describe("stringifyForLog", () => {
   it(`超长输入截断到 ERROR_DETAIL_MAX（${ERROR_DETAIL_MAX}，常量单源轮 29 #9）`, () => {
     const long = "x".repeat(ERROR_DETAIL_MAX + 100);
     expect(stringifyForLog(long)).toHaveLength(ERROR_DETAIL_MAX);
+  });
+});
+
+describe("连通性探测常量（轮 35 #12 导出锚定）", () => {
+  it("16 是全协议安全最小值（o 系 max_completion_tokens 下限）；10s 兜底超时", () => {
+    expect(TEST_CONNECTION_MAX_TOKENS).toBe(16);
+    expect(TEST_CONNECTION_TIMEOUT_MS).toBe(10_000);
   });
 });
 

@@ -246,10 +246,27 @@ async function main() {
       console.log(`\n>> POST ${redact(url)}`);
       console.log(`   headers: ${JSON.stringify(headers)}`);
       console.log(`   body: ${body.slice(0, 800)}${body.length > 800 ? " …" : ""}`);
-      return fetch(url, init);
+      // 响应侧证据（轮 35 #1）：直接可见 tool_calls 形态，人工验收可裁决「真工具
+      // 调用 vs text-JSON 兜底」（核心层兜底成功路径静默，GetActionResult 不带
+      // 路径信息）；clone 必须在 body 被核心层消费前完成，读取失败不影响主流程
+      const resp = await fetch(url, init);
+      try {
+        const text = await resp.clone().text();
+        const r = redact(text);
+        console.log(`<< ${resp.status} ${r.slice(0, 800)}${text.length > 800 ? " …" : ""}`);
+      } catch {
+        // clone/读取失败（流式或空体形态）不影响主流程
+      }
+      return resp;
     };
 
-    const client = createLLMClient(card, { fetch: loggingFetch });
+    const client = createLLMClient(card, {
+      fetch: loggingFetch,
+      // 核心 WARNING 同样过 redact（轮 35 #8）：baseUrl 误配告警内嵌 baseUrl 原文
+      //（SMOKE_*_BASE_URL 的 ?token= 形态会明文打进 tee 留档）、丢弃类日志含响应体
+      // 片段（模型可能回显输入）——缺省 console.warn 是绕过脱敏的输出面
+      log: (message) => console.warn(redact(message)),
+    });
     const t0 = Date.now();
     try {
       const result = await client.getAction(

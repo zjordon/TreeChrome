@@ -301,6 +301,19 @@ describe("请求构造（canonical → wire）", () => {
     expect(plain.logs.filter((m) => m.includes("疑似 OpenAI 形态误配"))).toHaveLength(0);
   });
 
+  it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）", async () => {
+    const { mock, provider } = setup();
+    await expect(
+      provider.chat({
+        systemPrompt: null,
+        messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+        tools: [TOOL],
+        toolChoice: { kind: "forced", name: "nonexistent" },
+      }),
+    ).rejects.toThrow(LLMProtocolViolationError);
+    expect(mock.calls.length).toBe(0);
+  });
+
   it("baseUrl 以 /v1/messages 结尾（官方 curl 全端点整段复制）→ 如实拼接 + 一次性告警（轮 34 #9，与 openai /chat/completions 同族）", async () => {
     const misconfigured = setupLogs({
       baseUrl: "https://api.anthropic.com/v1/messages",
@@ -315,6 +328,12 @@ describe("请求构造（canonical → wire）", () => {
     await misconfigured.provider.chat(req);
     expect(misconfigured.mock.calls[0].url).toContain("/v1/messages/v1/messages");
     expect(misconfigured.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(1);
+    // 阴性对照（轮 35 #2，与同文件 /v1 用例轮 27 #3 口径一致）：makeOnceWarn 去重下
+    // toHaveLength(1) 测不出「误改为无条件」——无误配的缺省卡片不告警
+    const plain = setupLogs();
+    plain.mock.queueMany(toolOk({}));
+    await plain.provider.chat(req);
+    expect(plain.logs.filter((m) => m.includes("疑似整段端点 URL 误配"))).toHaveLength(0);
   });
 
   it("assistant 历史 image 块静默丢弃（assistant 角色只收 text/tool_use，官方端点 400 形态，轮 13 #13）", async () => {

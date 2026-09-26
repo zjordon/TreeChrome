@@ -101,7 +101,13 @@ export interface GetActionOptions {
 
 export type GetActionResult =
   | { kind: "ok"; toolInput: Record<string, unknown>; usage: TokenUsage | null }
-  | { kind: "empty" };
+  /** empty 分支携带结构化证据（轮 35 #11）：烧尽原因 + 末轮 usage——P4 step 的
+   * 分罪/重试梯度决策不再只能解析 deps.log 文本；Python None → empty 语义不变 */
+  | {
+      kind: "empty";
+      reason: "text-exhausted" | "no-parseable-response";
+      lastUsage: TokenUsage | null;
+    };
 
 /** 可中止睡眠（AbortSignal-aware）。reject 形态为 AbortError，由上层分类 */
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -337,10 +343,20 @@ export class LLMClient {
     );
     // ⑦ 自条目占位符为真实值的真子串（轮 33 #4）：请求侧正常但还原侧 replaceAll
     // (ph, real) 会把模型输出中天然出现的该子串全部还原（过度替换，toolInput
-    // 数据损坏）；ph 极短时是灾难性替换。ph === real（恒等映射）与空 ph 无害排除
+    // 数据损坏）；ph 极短时是灾难性替换。ph === real（恒等映射）与空 ph 无害排除。
+    // 「自包含无害」的论证只覆盖替换链完整性（单趟 replaceAll 不重扫插入内容），
+    // 不覆盖 ⑧ 的脱敏失效维度
     const hasSelfContainedPh = reals.some((real) => {
       const ph = sensitive[real];
       return ph !== "" && ph !== real && real.includes(ph);
+    });
+    // ⑧ 自条目占位符包含自身真实值（轮 35 #14，与 ⑦ 互补的泄露方向）：请求侧
+    // replaceAll(real, ph) 产出的占位符内嵌明文真实值，随出站内容完整保留——
+    // 脱敏对该条目完全失效（{"sk-abc123": "[key:sk-abc123]"} 形态，比数据损坏
+    // 更重）；ph === real（恒等映射）与空 ph 无害排除
+    const hasPhContainingReal = reals.some((real) => {
+      const ph = sensitive[real];
+      return ph !== "" && ph !== real && ph.includes(real);
     });
     once(
       "intKey",
@@ -376,6 +392,11 @@ export class LLMClient {
       "selfContainedPh",
       hasSelfContainedPh,
       "[llm] WARNING: sensitiveMap 存在占位符为自身真实值子串的条目——还原侧会把输出中天然出现的该子串一并还原为真实值（toolInput 数据损坏），请改用与真实值无包含关系的占位符形态",
+    );
+    once(
+      "phContainingReal",
+      hasPhContainingReal,
+      "[llm] WARNING: sensitiveMap 存在占位符包含自身真实值的条目——占位后明文真实值仍完整出站，脱敏对该条目失效，请改用与真实值无包含关系的占位符形态",
     );
   }
 
@@ -547,7 +568,7 @@ export class LLMClient {
             this.deps.log(
               `[llm] LLM returned text (not tool_use) ${textRetries + 1} times — returning empty for step-level retry ladder`,
             );
-            return { kind: "empty" };
+            return { kind: "empty", reason: "text-exhausted", lastUsage: response.usage };
           }
           textRetries += 1;
           this.deps.log(
@@ -578,7 +599,7 @@ export class LLMClient {
           continue;
         }
         this.deps.log("[llm] LLM still returned no parseable response after retry");
-        return { kind: "empty" };
+        return { kind: "empty", reason: "no-parseable-response", lastUsage: response.usage };
       }
     } catch (e) {
       // 外部取消优先分类：外部 abort 先发生、deadline 恰在异常 unwind 期间到点时
@@ -792,8 +813,15 @@ export class LLMClient {
     this.config = this.fallbackConfig;
     this.provider = newProvider;
     this.usingFallback = true;
+    // 换卡后滤图告警重新获得一次上报机会（轮 35 #10）：告警文案按当前卡片名输出，
+    // 实例级单布尔去重会让 fallback 卡的滤图静默——白名单外真视觉卡被误滤时
+    // 证据恰在该场景中断
+    this.loggedImageFilter = false;
+    // 仅记 name + status（轮 35 #9）：err.message 来自端点响应体（内容审核引用
+    // 请求文本、参数校验引用请求值），可能回显敏感明文——与 systemPrompt 命中
+    // 告警「观测通道自身不泄露明文」口径一致，完整 message 留在异常对象上由宿主裁决
     this.deps.log(
-      `[llm] Switched to fallback LLM: ${this.config.model} (due to ${err.name}: ${err.message})`,
+      `[llm] Switched to fallback LLM: ${this.config.model} (due to ${err.name}, status=${err.status ?? "n/a"})`,
     );
     return true;
   }

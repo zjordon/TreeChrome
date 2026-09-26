@@ -330,27 +330,33 @@ export function sanitizeGeminiSchema(
       out.type = "string";
     }
   }
-  // format 按 type 分域的收尾校验（轮 18 #8）：循环内只校验了全集成员——值在
-  // 全集但 type 域外的组合在此删除
-  if (typeof out.format === "string" && typeof out.type === "string") {
-    const allowed = FORMATS_BY_TYPE[out.type] ?? NO_FORMATS;
+  if (typeof out.type === "string") {
+    stripKeysOutsideTypeDomain(out, out.type, onSchemaIssue);
+  }
+  return out;
+}
+
+/** 按 type 剥离域外键的单源收尾（轮 32 #12 收口，轮 35 #7 导出单源）：format 走
+ * FORMATS_BY_TYPE 分域（轮 18 #8）、约束/结构键走 CONSTRAINT_KEYS_BY_TYPE 分域
+ * ——sanitizeGeminiSchema 收尾与 gemini.ts 顶层归一（强制 object 后的剥离）共用，
+ * 防两处域表清单漏同步（改一漏二：顶层残留 400 形态键或误删仍合法的键） */
+export function stripKeysOutsideTypeDomain(
+  out: Record<string, unknown>,
+  type: string,
+  onSchemaIssue?: (detail: string) => void,
+): void {
+  if (typeof out.format === "string") {
+    const allowed = FORMATS_BY_TYPE[type] ?? NO_FORMATS;
     if (!allowed.has(out.format)) {
-      onSchemaIssue?.(`format「${out.format}」不在 type=${out.type} 的官方支持集，删除该键`);
+      onSchemaIssue?.(`format「${out.format}」不在 type=${type} 的官方支持集，删除该键`);
       delete out.format;
     }
   }
-  // 约束键 type 分域的收尾剥离（轮 32 #12，与 gemini.ts 顶层归一同口径、per-node）：
-  // 收尾处 out.type 恒已注入，嵌套节点宿主自带的 type 与约束键失配（{type:"string",
-  // items}、{type:"object", minimum} 等）按最终 type 统一删除并上报——域外键要么
-  // 是 400 形态要么语义失效，约束丢失可观测
-  if (typeof out.type === "string") {
-    const allowedConstraintKeys = CONSTRAINT_KEYS_BY_TYPE[out.type] ?? NO_CONSTRAINT_KEYS;
-    for (const k of DOMAIN_SCOPED_KEYS) {
-      if (out[k] !== undefined && !allowedConstraintKeys.has(k)) {
-        onSchemaIssue?.(`键「${k}」不在 type=${out.type} 的官方支持域，删除该键`);
-        delete out[k];
-      }
+  const allowedConstraintKeys = CONSTRAINT_KEYS_BY_TYPE[type] ?? NO_CONSTRAINT_KEYS;
+  for (const k of DOMAIN_SCOPED_KEYS) {
+    if (out[k] !== undefined && !allowedConstraintKeys.has(k)) {
+      onSchemaIssue?.(`键「${k}」不在 type=${type} 的官方支持域，删除该键`);
+      delete out[k];
     }
   }
-  return out;
 }

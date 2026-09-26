@@ -18,6 +18,7 @@ import type {
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
+  assertForcedToolChoiceInTools,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -272,6 +273,7 @@ export function createAnthropicProvider(
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
+    assertForcedToolChoiceInTools(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
     const base = stripTrailingSlash(config.baseUrl);
     // OpenAI 卡 baseUrl 惯例带 /v1，跨协议复用卡片会拼出 /v1/v1/messages → 404
     //（错误文案不指向根因）——一次性告警留证据，与 maxTokens/temperature 误配口径一致

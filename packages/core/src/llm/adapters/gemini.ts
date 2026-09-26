@@ -21,6 +21,7 @@ import type {
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
+  assertForcedToolChoiceInTools,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -32,7 +33,7 @@ import {
   temperatureEntry,
 } from "./common.js";
 import { postJson } from "./http.js";
-import { sanitizeGeminiSchema } from "./schema-sanitize.js";
+import { sanitizeGeminiSchema, stripKeysOutsideTypeDomain } from "./schema-sanitize.js";
 
 /** schema 清洗事件去重集条数上限（防动态 schema 无界增长；上限后新事件静默）。
  *  导出仅为测试锚定派生（轮 29 #5 常量单源） */
@@ -349,6 +350,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
+    assertForcedToolChoiceInTools(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
     // model 段编码：含空格/#/? 等字符时避免 URL 截断把配置问题变形为 Invalid URL/404
     const base = stripTrailingSlash(config.baseUrl);
@@ -389,27 +391,15 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LlmD
                   // {}（清洗兜底成 type:string）——严格端点 400、宽容端点也把工具
                   // 声明成「参数是一个字符串」诱导病态 args；嵌套节点兜底 string
                   // 合理（语义未知），顶层在此调用点收口（轮 22 #7）。
-                  // 归一时同步剥离 type 域外键（轮 25 #7 + 轮 26 #5）：items 仅
-                  // ARRAY、enum/format 仅 STRING、pattern/minLength/maxLength 仅
-                  // STRING、minItems/maxItems 仅 ARRAY、minimum/maximum 仅 NUMBER/
-                  // INTEGER——原 type 合法的键残留在 object 节点上要么是 400 形态
-                  //（与 FORMATS_BY_TYPE 分域同口径）要么语义失效，约束丢失已由
-                  // 归一告警可观测
+                  // 归一时同步剥离 type 域外键（轮 25 #7 + 轮 26 #5，轮 35 #7 改
+                  // stripKeysOutsideTypeDomain 单源）：与 sanitize 收尾共用域表，
+                  // 防两处清单漏同步（改一漏二）
                   if (sanitized.type !== "object") {
                     onSchemaIssue(
                       `顶层 parameters type=${String(sanitized.type)} 归一为 object（函数参数恒为命名参数集）`,
                     );
                     sanitized.type = "object";
-                    delete sanitized.items;
-                    delete sanitized.enum;
-                    delete sanitized.format;
-                    delete sanitized.pattern;
-                    delete sanitized.minLength;
-                    delete sanitized.maxLength;
-                    delete sanitized.minItems;
-                    delete sanitized.maxItems;
-                    delete sanitized.minimum;
-                    delete sanitized.maximum;
+                    stripKeysOutsideTypeDomain(sanitized, "object", onSchemaIssue);
                   }
                   return {
                     name: t.name,

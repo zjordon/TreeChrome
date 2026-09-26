@@ -3,6 +3,7 @@
 //（改一漏二的风险主要来自逐字重复的小件与完全同构的探测逻辑）。
 
 import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
+import { LLMProtocolViolationError } from "../errors.js";
 import type { LlmProtocol } from "../provider.js";
 import type { ChatRequest, ChatResponse } from "../types.js";
 import { ERROR_DETAIL_MAX } from "./http.js";
@@ -24,6 +25,12 @@ export function stripTrailingSlash(url: string): string {
  * 配置正确的卡片在探测中假性不可用。16 是全协议安全的最小值。
  * 携带 10s 兜底超时——端点半开/黑洞（baseUrl 配错、代理挂起）时探测不能永久 pending。
  */
+/** 连通性探测的输出上限（轮 35 #12 导出锚定）：16 是全协议安全最小值（o 系
+ * max_completion_tokens 下限，传更小值会被端点 400） */
+export const TEST_CONNECTION_MAX_TOKENS = 16;
+/** 连通性探测兜底超时（轮 35 #12 导出锚定）：端点半开/黑洞时探测不能永久 pending */
+export const TEST_CONNECTION_TIMEOUT_MS = 10_000;
+
 export async function defaultTestConnection(
   chat: (req: ChatRequest) => Promise<ChatResponse>,
   model: string,
@@ -33,12 +40,33 @@ export async function defaultTestConnection(
       systemPrompt: null,
       messages: [{ role: "user", blocks: [{ kind: "text", text: "Hi" }] }],
       tools: null,
-      maxTokens: 16,
-      timeoutMs: 10_000,
+      maxTokens: TEST_CONNECTION_MAX_TOKENS,
+      timeoutMs: TEST_CONNECTION_TIMEOUT_MS,
     });
     return { ok: true, model };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * forced toolChoice 与 tools 列表的关联校验（轮 35 #13，三适配器共用）：
+ * name 不在本次 tools 中时三协议端点均硬 400（非 infra 不重试还误触 fallback
+ * 切换）——调用方数据病态在适配器层拦截而非烧 400 后错误归因（与 toolCall
+ * id/name 空串的 canonical 拦截同口径；assertValidMessages 只裁决消息序列）
+ */
+export function assertForcedToolChoiceInTools(req: ChatRequest, config: ProviderConfig): void {
+  const forced = req.toolChoice?.kind === "forced" ? req.toolChoice : undefined;
+  if (
+    forced !== undefined &&
+    req.tools !== null &&
+    req.tools.length > 0 &&
+    !req.tools.some((t) => t.name === forced.name)
+  ) {
+    throw new LLMProtocolViolationError(
+      `forced toolChoice（${forced.name}）不在请求 tools 中（端点 400 形态）`,
+      { provider: config.name },
+    );
   }
 }
 

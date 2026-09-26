@@ -564,3 +564,17 @@ smoke 产物摘要：
 - **测试与死代码清理（#1/#2/#3/#7/#8）**：FakeClock.sleep 不可达 else 分支重构（signal 存在才注册回调，与 abortReason 单源真正同款）；asUser/asAssistant 收窄辅助收敛 client/transforms 两文件 7 处 unreachable 守卫样板（失败信息携带实际 role）；stubDeps 死导出收窄模块内。
 
 测试 348 例全绿（覆盖率 98.79%）。
+
+### 评审轮 35（review-p2-llm-client-35.json，2026-09-25，14/14 采纳）
+
+采纳 14 条。要点：
+
+- **sensitiveMap 第 8 类病态（#14，泄露方向）**：⑧ 占位符**包含**自身真实值（{"sk-abc123": "[key:sk-abc123]"}）——占位后明文仍完整出站，脱敏对该条目完全失效；此前注释以「单趟 replaceAll 不重扫插入内容」论证自包含无害，该论证只覆盖替换链完整性不覆盖脱敏失效。八类检测矩阵至此对称（real×real / ph×real / ph×ph 全维度）。
+- **empty 契约扩展（#11，01/03 文档同步）**：GetActionResult empty 分支携带 reason（text-exhausted / no-parseable-response）与 lastUsage——P4 step 分罪不再解析日志文本；Python None → empty 语义不变。
+- **forced toolChoice 前置拦截（#13）**：forced 名不在本次 tools 中是三协议端点 400 形态——assertForcedToolChoiceInTools 收敛 common 三适配器共用，与 canonical 消息拦截同口径。
+- **观测脱敏与对称（#9/#10）**：fallback 切换日志只记 name+status（err.message 来自端点响应体，可能回显敏感明文——与「观测通道不泄露明文」口径一致）；换 fallback 卡后滤图告警重获一次上报（文案按卡片名输出，去重不跨卡共享）。
+- **域外键剥离单源（#7）**：stripKeysOutsideTypeDomain 导出，sanitize 收尾与 gemini 顶层归一共用——防两处域表清单「改一漏二」。
+- **smoke（#1/#8）**：响应侧 resp.clone() 摘要（验收可直接裁决「真工具调用 vs text-JSON 兜底」）；注入 log 通道过 redact（baseUrl 误配告警内嵌 baseUrl 原文，SMOKE_*_BASE_URL 的 ?token= 形态会明文进 tee 留档）。
+- **测试侧（#2/#3/#4/#5/#6/#12）**：新守卫补阴性对照；误配用例回归 setupLogs(over) 封装；openai toolResult 乱序直发行为锚定（与 anthropic/gemini 重排口径刻意不同）；TEST_CONNECTION 常量导出锚定。
+
+测试 352 例全绿（覆盖率 98.80%）。

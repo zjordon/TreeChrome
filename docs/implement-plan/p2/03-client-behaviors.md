@@ -16,7 +16,11 @@ export interface GetActionOptions {
 
 export type GetActionResult =
   | { kind: "ok"; toolInput: Record<string, unknown>; usage: TokenUsage | null }
-  | { kind: "empty" };
+  | {
+      kind: "empty";
+      reason: "text-exhausted" | "no-parseable-response";
+      lastUsage: TokenUsage | null;
+    };
 
 export class LLMClient {
   constructor(config: ProviderConfig, deps?: LlmDeps);
@@ -66,7 +70,7 @@ getAction(systemPrompt, messages, tool, opts)
  └─ 6. 梯子耗尽 → return { kind:"empty" }（§4 偏离 3：honest-done 合成移 P4）
 ```
 
-usage 透传：`ChatResponse.usage` 原样返回；Python 在 R1 合成 done 的场景也带 usage——TS `kind:"empty"` 不带（无可解析产物，usage 观测走 client 内部日志，P4 的 ModelResultEvent 在 ok 路径取用）。
+usage 透传：`ChatResponse.usage` 原样返回；Python 在 R1 合成 done 的场景也带 usage——TS `kind:"empty"` 自轮 35 #11 起携带 `reason`（烧尽原因）与 `lastUsage`（末轮 usage）结构化证据，P4 step 的分罪/重试梯度不再解析日志文本；Python None → empty 语义不变。
 
 ## 3. 行为块逐项设计
 

@@ -257,11 +257,11 @@ describe("R4 text-not-tool 梯子（Python _TEXT_RETRY_MAX=2）", () => {
     });
   });
 
-  it("连续 3 次文本 → {kind:'empty'}（第 3 次不再重试）", async () => {
+  it("连续 3 次文本 → {kind:'empty'} 携带 reason/lastUsage（第 3 次不再重试，轮 35 #11）", async () => {
     const { mock, client } = setup();
     mock.queueMany(text("one"), text("two"), text("three"));
     const r = await client.getAction("sys", msgs(), TOOL);
-    expect(r).toEqual({ kind: "empty" });
+    expect(r).toEqual({ kind: "empty", reason: "text-exhausted", lastUsage: null });
     expect(mock.calls.length).toBe(3);
   });
 });
@@ -283,11 +283,11 @@ describe("R1 空响应梯子（thinking-only 同桶）", () => {
     });
   });
 
-  it("仍空 → {kind:'empty'}，且只重试一次", async () => {
+  it("仍空 → {kind:'empty'} 携带 reason，且只重试一次", async () => {
     const { mock, client } = setup();
     mock.queueMany(empty(), empty());
     const r = await client.getAction("sys", msgs(), TOOL);
-    expect(r).toEqual({ kind: "empty" });
+    expect(r).toEqual({ kind: "empty", reason: "no-parseable-response", lastUsage: null });
     expect(mock.calls.length).toBe(2);
   });
 
@@ -329,7 +329,7 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
       { role: "user", blocks: [{ kind: "text", text: `open ${U0}` }] },
     ];
     const r = await client.getAction("sys", messages, TOOL);
-    expect(r).toEqual({ kind: "empty" });
+    expect(r).toEqual({ kind: "empty", reason: "no-parseable-response", lastUsage: null });
   });
 
   it("toolResult 文本命中敏感值 → WARNING 可观测（明文出站不静默；P5 parity 只告警不改 wire）", async () => {
@@ -647,6 +647,17 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     });
     expect(
       selfContained.logs.some((m) => m.includes("WARNING") && m.includes("自身真实值子串")),
+    ).toBe(true);
+
+    // ⑧ 占位符包含自身真实值（轮 35 #14，与 ⑦ 互补的泄露方向）：占位后明文
+    // 仍完整出站——脱敏对该条目失效
+    const phContains = setupWithLogs();
+    phContains.mock.queueMany(toolOk({ done: 1 }));
+    await phContains.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "sk-abc123": "[key:sk-abc123]" },
+    });
+    expect(
+      phContains.logs.some((m) => m.includes("WARNING") && m.includes("占位符包含自身真实值")),
     ).toBe(true);
   });
 
