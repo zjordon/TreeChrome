@@ -2,7 +2,7 @@
 // maxTokens 双轨（新契约前缀/卡片覆盖）、arguments guard-parse（截断样本丢弃）、
 // 纯文本 user 走字符串 content、toolResult 独立消息 + [error] 前缀约定。
 import { describe, expect, it } from "vitest";
-import type { ChatRequest, ProviderConfig } from "../../src/index.js";
+import type { ChatMessage, ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createOpenAICompletionsProvider } from "../../src/llm/adapters/openai-completions.js";
 import { LLMAuthError, LLMProtocolViolationError } from "../../src/llm/errors.js";
 import { AGENT_TOOL, setupProvider, setupProviderWithLogs } from "./fixtures.js";
@@ -404,6 +404,26 @@ describe("请求构造（canonical → wire）", () => {
     expect(logs.filter((m) => m.includes("timeoutMs 0 非正有限数值"))).toHaveLength(1);
     // 两次请求都正常完成（非法值不制造每请求超时）
     expect(mock.calls).toHaveLength(2);
+  });
+
+  it("assistant 历史 image 块折叠丢弃 → 一次性告警（轮 38 #11，三协议同步；重放两次仍只告警一次）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    const messages: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "text", text: "q" }] },
+      {
+        role: "assistant",
+        blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }],
+        toolCalls: [{ id: "t1", name: TOOL.name, args: {} }],
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "r" },
+    ];
+    const req: ChatRequest = { systemPrompt: null, messages, tools: [TOOL] };
+    await provider.chat(req);
+    await provider.chat(req);
+    expect(
+      logs.filter((m) => m.includes("openai assistant 历史 image 块无 wire 形态，丢弃 1 块")),
+    ).toHaveLength(1);
   });
 
   it("extraHeaders 最后合并（可覆盖 authorization）——三处独立实现的接线锚定（轮 30 #8，对齐 anthropic 侧）", async () => {

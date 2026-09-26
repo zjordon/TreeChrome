@@ -32,11 +32,15 @@ export function stripTrailingSlash(url: string): string {
  * 角色名是协议差异——骨架收敛防单点修补改一漏一（兜底跳过补日志轮 37 #8/#9
  * 即需双处同步的实例）。assertValidMessages 已保证完备配对，配对过滤仅为防御；
  * pairs 携带配对的 call（gemini 的 functionResponse 需回挂 call.signature）。
+ * 防御分支同样留证据（轮 38 #16）：段内未匹配任何 call 的结果、calls 缺结果
+ *（wire 缺 tool_result 同为端点 400 形态）经可选 log 上报——真实触发即校验与
+ * 折叠逻辑漂移，与「丢弃必留证据」口径一致。
  */
 export function collectToolResults(
   messages: ChatMessage[],
   from: number,
   calls: readonly ToolCall[],
+  log?: (message: string) => void,
 ): { pairs: Array<{ call: ToolCall; result: ToolResultMessage }>; next: number } {
   const byId = new Map<string, ToolResultMessage>();
   let j = from;
@@ -53,6 +57,20 @@ export function collectToolResults(
     const result = byId.get(call.id);
     if (result !== undefined) {
       pairs.push({ call, result });
+    }
+  }
+  if (log !== undefined) {
+    for (const id of byId.keys()) {
+      if (!calls.some((c) => c.id === id)) {
+        log(
+          `[llm] toolResult（${id}）未匹配前置 assistant 的 toolCalls，丢弃（canonical 校验漂移的防御分支）`,
+        );
+      }
+    }
+    if (pairs.length < calls.length) {
+      log(
+        `[llm] assistant 的 ${calls.length} 个 toolCall 仅配对 ${pairs.length} 条结果（wire 将缺失对应 tool_result，端点 400 形态）`,
+      );
     }
   }
   return { pairs, next: j };

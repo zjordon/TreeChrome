@@ -9,6 +9,7 @@ import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
+  AssistantMessage,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -104,8 +105,11 @@ function userContent(
         image_url: { url: `data:${mimeType};base64,${b.base64}` },
       };
     }
+    // 穷尽断言（轮 21 #6）：联合扩展新成员时编译期报错；运行期形态与 anthropic/
+    // gemini 统一 throw（轮 38 #9）——旧 return _exhaustive 会把原始块当 content
+    // part 静默出站（畸形载荷无日志）
     const _exhaustive: never = b;
-    return _exhaustive;
+    throw new Error(`未支持的 ContentBlock kind: ${stringifyForLog(_exhaustive)}`);
   });
 }
 
@@ -115,9 +119,14 @@ function toWireMessages(
   log: (message: string) => void,
 ): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
+  // 前一消息是否为带 toolCalls 的 assistant（轮 38 #15）：openai 的孤儿 tool
+  // 消息（无前置 assistant.tool_calls）是官方端点硬 400 形态——assertValidMessages
+  // 已拦，兜底与 anthropic/gemini（轮 37 #8/#9）同口径跳过留证据，不透传烧 400
+  let afterToolCallAssistant = false;
   for (const msg of messages) {
     if (msg.role === "user") {
       out.push({ role: "user", content: userContent(msg.blocks, log) });
+      afterToolCallAssistant = false;
       continue;
     }
     if (msg.role === "assistant") {
@@ -145,6 +154,13 @@ function toWireMessages(
         }));
       }
       out.push(wire);
+      afterToolCallAssistant = msg.toolCalls !== undefined && msg.toolCalls.length > 0;
+      continue;
+    }
+    if (!afterToolCallAssistant) {
+      // toolResult 不在带调用的 assistant 之后：assertValidMessages 已拦，兜底
+      // 跳过留证据（轮 38 #15，与 anthropic/gemini 轮 37 #8/#9 同口径）
+      log(`[llm] openai 跳过不在 assistant 之后的 toolResult：${msg.toolCallId}`);
       continue;
     }
     out.push({
@@ -342,9 +358,21 @@ export function createOpenAICompletionsProvider(
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
   const onTimeoutInvalid = makeOnceWarn(deps.log);
+  // assistant 历史 image 块丢弃的一次性告警（轮 38 #11，与 anthropic/gemini 同步）
+  const onAssistantImageDropped = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
+    // assistant 历史 image 块的折叠丢弃预扫描（轮 38 #11）：content 仅 string|null、
+    // image 块无 wire 形态被折叠为空——留一次性证据，多模态历史剥离不再全静默
+    const assistantImages = req.messages
+      .filter((m): m is AssistantMessage => m.role === "assistant")
+      .reduce((n, m) => n + m.blocks.filter((b) => b.kind === "image").length, 0);
+    if (assistantImages > 0) {
+      onAssistantImageDropped(
+        `openai assistant 历史 image 块无 wire 形态，丢弃 ${assistantImages} 块（协议约束：assistant content 仅 string|null）`,
+      );
+    }
     const base = stripTrailingSlash(config.baseUrl);
     if (base.endsWith("/chat/completions")) {
       onBaseUrlEndpoint(

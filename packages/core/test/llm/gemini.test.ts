@@ -276,6 +276,46 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     });
   });
 
+  it("propertyOrdering 白名单收录 + camelCase 发射（轮 38 #10）：string[] 保留；非 string[] 删除上报；string 节点域外剥离", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema(
+        {
+          type: "object",
+          properties: { a: { type: "string" }, b: { type: "string" } },
+          propertyOrdering: ["b", "a"],
+        },
+        (d) => issues.push(d),
+      ),
+    ).toEqual({
+      type: "object",
+      properties: { a: { type: "string" }, b: { type: "string" } },
+      propertyOrdering: ["b", "a"],
+    });
+    expect(issues).toEqual([]);
+    expect(
+      sanitizeGeminiSchema({ type: "object", propertyOrdering: 5 }, (d) => issues.push(d)),
+    ).toEqual({ type: "object" });
+    expect(issues).toEqual(["propertyOrdering 非 string[]，删除该键"]);
+    // 域外（string 节点）经 CONSTRAINT_KEYS_BY_TYPE 收尾剥离并上报
+    expect(
+      sanitizeGeminiSchema({ type: "string", propertyOrdering: ["a"] }, (d) => issues.push(d)),
+    ).toEqual({ type: "string" });
+    expect(issues[1]).toBe("键「propertyOrdering」不在 type=string 的官方支持域，删除该键");
+  });
+
+  it("format 值小写归一（轮 38 #10，与 type 归一同口径）：DATE-TIME → date-time 保留并上报归一；归一后仍未命中删除", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema({ type: "string", format: "DATE-TIME" }, (d) => issues.push(d)),
+    ).toEqual({ type: "string", format: "date-time" });
+    expect(issues).toEqual(["format「DATE-TIME」归一化为小写 date-time"]);
+    expect(sanitizeGeminiSchema({ type: "string", format: "URI" }, (d) => issues.push(d))).toEqual({
+      type: "string",
+    });
+    expect(issues[1]).toBe('format「"URI"」不在官方支持集，删除该键');
+  });
+
   it("pattern 可编译性校验：编译失败的正则删除并上报，可编译的保留（轮 24 #5）", () => {
     const issues: string[] = [];
     expect(sanitizeGeminiSchema({ pattern: "[", description: "d" }, (d) => issues.push(d))).toEqual(
@@ -814,6 +854,22 @@ describe("请求构造（canonical → wire）", () => {
       tools: null,
     });
     expect((mock.lastBody().generationConfig as Record<string, unknown>).temperature).toBe(2);
+  });
+
+  it("timeoutMs 非法 → 视为未设置 + 实例级一次性告警（轮 37 #7 三适配器接线锚定，轮 38 #13 对齐 openai 侧：接线是独立实现，漏传无红测可拦）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    const badReq = (): ChatRequest => ({
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+      timeoutMs: 0,
+    });
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    await provider.chat(badReq());
+    await provider.chat(badReq());
+    expect(logs.filter((m) => m.includes("timeoutMs 0 非正有限数值"))).toHaveLength(1);
+    // 两次请求都正常完成（非法值不制造每请求超时）
+    expect(mock.calls).toHaveLength(2);
   });
 
   it("空串 systemPrompt 与 null 同等不发（空 text part 是 400 形态，轮 20 #13）", async () => {

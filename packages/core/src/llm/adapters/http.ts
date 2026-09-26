@@ -122,7 +122,15 @@ function statusToError(
     });
   }
   if (status >= 500) {
-    return new LLMServerError(message, { provider, status });
+    // 5xx 同款解析挂载（轮 38 #8）：503 常携带 Retry-After（OpenAI/Google 均有），
+    // LLMServerError 是 infra 成员、client 的 e.retryAfterMs ?? 指数退避会消费该
+    // 字段——与 408（轮 36 #9）同动机：服务端明示 30s 却按 2s 过早重试易加剧限流
+    const retryAfterMs = parseRetryAfterMs(retryAfter);
+    return new LLMServerError(message, {
+      provider,
+      status,
+      ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+    });
   }
   return new LLMInvalidRequestError(message, { provider, status });
 }

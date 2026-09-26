@@ -173,6 +173,15 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
         if (calls.some((c) => c.name === "")) {
           throw violation("assistant 的 toolCall name 为空串（端点 400 形态）");
         }
+        // signature 空串（轮 38 #4）：gemini 适配器对空串 thoughtSignature 原样
+        // 保留/出站，空串值回传是 400 形态（LLMInvalidRequestError 非
+        // ProtocolViolation，会误触 fallback 单向切换）——与 id/name 空串同动机，
+        // canonical 层前置拦截
+        if (calls.some((c) => c.signature === "")) {
+          throw violation(
+            "assistant 的 toolCall signature 为空串（gemini thoughtSignature 端点 400 形态）",
+          );
+        }
         // id→name 映射：配对校验同时要求 toolName 与 toolCall.name 一致——
         // gemini 的 functionResponse 按 name 关联，失配发到端点才 400（canonical 层拦截）
         const callsById = new Map(calls.map((c) => [c.id, c.name]));

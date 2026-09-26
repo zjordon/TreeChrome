@@ -25,10 +25,13 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
   if ("hangUntilAbort" in spec) {
     if (signal === null || signal === undefined) {
       // fail-fast（轮 13 #1）：无 signal 的挂起永不 settle，只会拖到 vitest 5s
-      // 超时——与队列耗尽/时钟不收敛的显式报错口径对称
+      // 超时。AbortError 形态可穿透 postJson/callWithBackoff 的分型原样上抛
+      //（轮 38 #19：普通 Error 会被包装成 LLMConnectionError 走 5 轮退避后再
+      // 挂起，显式报错反而被吞——与 MockFetch.fetch 队列耗尽守卫同款口径）
       return Promise.reject(
-        new Error(
+        new DOMException(
           "MockFetch: hangUntilAbort 需请求携带 AbortSignal（timeoutMs/窗口/外部取消），否则永不 settle",
+          "AbortError",
         ),
       );
     }
@@ -43,6 +46,12 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
       }
       signal.addEventListener("abort", onAbort, { once: true });
     });
+  }
+  // 真实 fetch 对 signal 已中止的调用立即以 abort reason 拒绝（不触网，轮 38
+  // #21）——普通 spec 同样复刻（与 hangUntilAbort 分支的已中止预检对称），否则
+  // 「abort 后请求的分类形态」用例与真实运行时脱节
+  if (signal !== null && signal !== undefined && signal.aborted) {
+    return Promise.reject(abortReason(signal));
   }
   const headers = new Headers(spec.headers ?? { "content-type": "application/json" });
   let bodyText: string;
@@ -134,9 +143,13 @@ export function makeHangingBodyFetch(
           // fail-fast（与 MockFetch hangUntilAbort 同款，轮 14 #1）：无 signal 的
           // 挂起永不 settle，只会拖到 vitest 5s 超时
           if (init?.signal === null || init?.signal === undefined) {
+            // AbortError 形态穿透 postJson 分型原样上抛（轮 38 #20）：普通 Error
+            // 在 ok 路径被包装成 LLMConnectionError 退避重试、在错误体路径被状态码
+            // 分型吞掉（429 假象还误触 fallback 单向切换）
             reject(
-              new Error(
+              new DOMException(
                 "makeHangingBodyFetch 需请求携带 AbortSignal（timeoutMs/窗口/外部取消），否则 text() 永不 settle",
+                "AbortError",
               ),
             );
             return;
@@ -223,6 +236,12 @@ export class FakeClock {
         tm.off?.();
         tm.resolve();
       }
+    }
+    // 末轮 resolve 的续体尚未冲刷（循环内顺序是先冲刷后触发）——补一轮冲刷再做
+    // 收敛判定（轮 38 #18）：否则末轮续体注册的到期 sleep 不可见，该检查恒为
+    // false（死代码），非收敛链仍以 vitest 5s 挂起收场
+    for (let i = 0; i < MICROTASK_FLUSH; i += 1) {
+      await Promise.resolve();
     }
     if (this.timers.some((tm) => tm.due <= this.t)) {
       // fail fast：未收敛时到期 sleep 永不 resolve，等 vitest 超时只会把编排问题

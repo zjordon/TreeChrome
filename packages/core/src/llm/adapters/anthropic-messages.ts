@@ -7,6 +7,7 @@ import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
+  AssistantMessage,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -121,7 +122,7 @@ function toWireMessages(
       pushMerged("assistant", content);
       // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排——collectToolResults
       // 与 gemini 单源，轮 37 #10）
-      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? []);
+      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? [], log);
       if (pairs.length > 0) {
         pushMerged(
           "user",
@@ -286,9 +287,22 @@ export function createAnthropicProvider(
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
   const onTimeoutInvalid = makeOnceWarn(deps.log);
+  // assistant 历史 image 块丢弃的一次性告警（轮 38 #11）：协议约束（assistant 只收
+  // text/tool_use）导致的多模态历史剥离原先全静默——与滤图/致盲告警同观测姿态
+  const onAssistantImageDropped = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
+    // assistant 历史 image 块的过滤丢弃预扫描（轮 38 #11）：留一次性证据而非逐条
+    // 日志（长历史逐步回放不刷屏——与滤图 WARNING 的实例级去重同款取舍）
+    const assistantImages = req.messages
+      .filter((m): m is AssistantMessage => m.role === "assistant")
+      .reduce((n, m) => n + m.blocks.filter((b) => b.kind === "image").length, 0);
+    if (assistantImages > 0) {
+      onAssistantImageDropped(
+        `anthropic assistant 历史 image 块无 wire 形态，丢弃 ${assistantImages} 块（协议约束：assistant 角色只收 text/tool_use）`,
+      );
+    }
     const base = stripTrailingSlash(config.baseUrl);
     // OpenAI 卡 baseUrl 惯例带 /v1，跨协议复用卡片会拼出 /v1/v1/messages → 404
     //（错误文案不指向根因）——一次性告警留证据，与 maxTokens/temperature 误配口径一致

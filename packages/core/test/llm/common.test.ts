@@ -215,6 +215,31 @@ describe("collectToolResults（轮 37 #10 单源：anthropic/gemini 折叠骨架
     expect(pairs.map((p) => p.result.toolCallId)).toEqual(["a"]);
     expect(next).toBe(3);
   });
+
+  it("防御分支留证据（轮 38 #16）：未匹配结果与 calls 缺结果分别上报；完备配对零上报", () => {
+    const logged: string[] = [];
+    // 段内 zzz 未匹配任何 call + calls 的 b 缺结果（wire 将缺 tool_result）
+    const messages: ChatMessage[] = [
+      { role: "assistant", blocks: [], toolCalls: [call("a"), call("b")] },
+      tr("zzz"),
+      tr("a"),
+    ];
+    const { pairs } = collectToolResults(messages, 1, [call("a"), call("b")], (m) => {
+      logged.push(m);
+    });
+    expect(pairs.map((p) => p.result.toolCallId)).toEqual(["a"]);
+    expect(logged).toEqual([
+      "[llm] toolResult（zzz）未匹配前置 assistant 的 toolCalls，丢弃（canonical 校验漂移的防御分支）",
+      "[llm] assistant 的 2 个 toolCall 仅配对 1 条结果（wire 将缺失对应 tool_result，端点 400 形态）",
+    ]);
+    // 完备配对零上报（阴性对照）
+    const clean: string[] = [];
+    const ok = collectToolResults([tr("a"), tr("b")], 0, [call("a"), call("b")], (m) => {
+      clean.push(m);
+    });
+    expect(ok.pairs).toHaveLength(2);
+    expect(clean).toEqual([]);
+  });
 });
 
 describe("assertToolContract 工具名唯一性（轮 37 #14）", () => {

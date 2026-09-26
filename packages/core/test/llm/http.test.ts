@@ -101,6 +101,24 @@ describe("postJson 状态→错误类与错误体提取", () => {
     expect((err as LLMTimeoutError).retryAfterMs).toBe(7000);
   });
 
+  it("503 带 Retry-After 头 → LLMServerError.retryAfterMs（5xx 同款挂载，轮 38 #8：503 常携带该头，infra 退避会消费该字段）；无头 → undefined", async () => {
+    const mock = new MockFetch();
+    mock.queueMany(
+      {
+        status: 503,
+        headers: { "retry-after": "7" },
+        body: { error: { message: "unavailable" } },
+      },
+      { status: 502, body: { error: { message: "bad gateway" } } },
+    );
+    const e1 = await post(mock).catch((e: unknown) => e);
+    expect(e1).toBeInstanceOf(LLMServerError);
+    expect((e1 as LLMServerError).retryAfterMs).toBe(7000);
+    const e2 = await post(mock).catch((e: unknown) => e);
+    expect(e2).toBeInstanceOf(LLMServerError);
+    expect((e2 as LLMServerError).retryAfterMs).toBeUndefined();
+  });
+
   it("错误体读取失败（连接中断，非超时/取消）→ detail 并入失败原因（轮 36 #4，可区分「空错误体」与「读体失败」）", async () => {
     const fetchFn = (async () =>
       ({

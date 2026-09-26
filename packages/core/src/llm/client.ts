@@ -22,6 +22,7 @@ import {
   shortenUrlsInMessages,
   stripImageBlocks,
   tryParseJson,
+  URL_MIN_LENGTH,
 } from "./transforms.js";
 import type {
   ChatMessage,
@@ -57,6 +58,28 @@ const WINDOW_BUDGET_RATIO = 0.75;
  * 梯子总时长仍无上界（对齐 get_action，上界由 step 层提供）
  */
 const CHAT_HTTP_TIMEOUT_DEFAULT_MS = 600_000;
+/**
+ * ladder deadline 的合法上限（毫秒）：setTimeout 的平台上限是 2^31-1（Node
+ * timers 对超限 delay 钳为 1ms 立即触发，浏览器 HTML 规范同款）——「24.8 天大
+ * 预算」会被偷换成「立即超时」（watcher 即刻 abort 首请求），与 0/负/NaN 同为
+ * 轮 38 #3/#17 收口的非法值族
+ */
+const MAX_DEADLINE_MS = 2_147_483_647;
+
+/** timeoutMs 合法性判定（轮 38 #3/#17）：正有限值且不超 setTimeout 平台上限 */
+function isValidDeadlineMs(value: number): boolean {
+  return Number.isFinite(value) && value > 0 && value <= MAX_DEADLINE_MS;
+}
+
+/** JSON.stringify 的崩溃安全包装（轮 38 #1/#2，轮 37 #6 同款雷）：BigInt/循环
+ *  引用抛 TypeError——返回 undefined 由调用方跳过依赖串化的检测/降级 */
+function safeJsonStringify(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
 
 export interface GetActionOptions {
   /**
@@ -123,8 +146,10 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
       if (timer !== undefined) {
         clearTimeout(timer);
       }
-      // 透传 abort reason（宿主可能以自定义 reason 区分停止来源，#186 不变形）；
-      // 无 reason 的 abort 用规范缺省形态
+      // 透传 abort reason（宿主可能以自定义 reason 区分停止来源，#186 不变形）。
+      // 右侧兜底按 WHATWG 规范不可达（abort() 后 signal.reason 恒非 undefined，
+      // 缺省为 AbortError DOMException；deps.ts engines node>=22 满足）——仅防
+      // 非规范宿主/polyfill，非契约路径（轮 38 #6 注明）
       reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
     };
     timer = setTimeout(() => {
@@ -191,8 +216,18 @@ const forcedToolConstraint = (toolName: string): string =>
   `\n\nIMPORTANT: You must respond by calling the tool "${toolName}" with your complete answer as the tool arguments. Do not reply with plain text.`;
 
 /** 承重墙极端形态：连 tools 都不发的端点，schema 进 system，响应用 tryParseJson 兜底 */
-const noToolsConstraint = (tool: ToolDefinition): string =>
-  `\n\nIMPORTANT: You must respond with only a JSON object matching this schema:\n${JSON.stringify(tool.parameters, null, 2)}\nDo not reply with plain text.`;
+const noToolsConstraint = (tool: ToolDefinition): string => {
+  // parameters 是宿主程序化构造的原值（非 JSON-only 来源）：BigInt/循环引用会使
+  // stringify 抛 TypeError 硬崩承重墙路径（轮 38 #2，轮 37 #6 同款）——串化失败
+  // 降级 String()，约束文本降质优于整个 getAction 崩溃
+  let schemaText: string;
+  try {
+    schemaText = JSON.stringify(tool.parameters, null, 2);
+  } catch {
+    schemaText = String(tool.parameters);
+  }
+  return `\n\nIMPORTANT: You must respond with only a JSON object matching this schema:\n${schemaText}\nDo not reply with plain text.`;
+};
 
 /**
  * 使用约束：实例按**串行 agent loop** 设计，不支持并发 getAction——fallback 单向
@@ -224,6 +259,8 @@ export class LLMClient {
   private windowBudgetCapMs: number | undefined;
   /** getAction 重入哨兵（非并发约束的运行时防护） */
   private inFlight = false;
+  /** opts.timeoutMs 非法值一次性告警的去重（轮 38 #3：误配每步都在发生，一次即可） */
+  private warnedInvalidDeadline = false;
   private readonly deps: Required<LLMDeps>;
 
   constructor(config: ProviderConfig, deps?: LLMDeps) {
@@ -244,6 +281,16 @@ export class LLMClient {
       this.windowDeadline = undefined;
       this.windowBudgetCapMs = undefined;
       return;
+    }
+    // 非法值 fail fast（轮 38 #3/#17，TypeError 而非告警——与 getAction 的
+    // opts.timeoutMs「视为未设置」分流）：窗口是跨步持久状态，NaN 会让 deadline
+    // 比较恒 false（陈旧窗口告警失效）且经 Math.min 传染 ladder deadline，0/负值
+    // 登记即「首请求恒超时」，超大值被 setTimeout 钳为 1ms——静默忽略会把病态
+    // 状态留给后续每一步，登记点直接暴露调用方 bug
+    if (!isValidDeadlineMs(timeoutMs)) {
+      throw new TypeError(
+        `setCallWindow 收到非法 timeoutMs（${timeoutMs}；须为正有限值且 ≤ ${MAX_DEADLINE_MS}ms），窗口未登记`,
+      );
     }
     this.windowDeadline = this.deps.now() + timeoutMs;
     this.windowBudgetCapMs = Math.max(WINDOW_BUDGET_FLOOR_MS, timeoutMs * WINDOW_BUDGET_RATIO);
@@ -273,9 +320,9 @@ export class LLMClient {
     }
   }
 
-  /** sensitiveMap 病态配置的一次性 WARNING（轮 20 #10/#14——transforms 纯函数
-   * 无告警通道，检测上提到有 deps.log 的入口；轮 21 #8 各检测独立执行，防
-   * 一类病态掩盖另一类；轮 27 #5 从 getActionInner 提取）：
+  /** sensitiveMap 病态配置的一次性 WARNING（轮 20 #10/#14 起源，轮 27 #5 提取；
+   * transforms 纯函数无告警通道，检测上提到有 deps.log 的入口；轮 21 #8 各检测
+   * 独立执行，防一类病态掩盖另一类；①-⑨ 各类机理内联注明来源轮次）：
    * ① canonical 数组索引键（非负整数 ≤ 2^32-1 的数字串）：JS 引擎把它们重排
    *    到枚举首位升序（Python dict 恒插入序），含包含关系键时替换顺序静默
    *    偏离插入序——负数与超界数字串（11 位手机号/16-19 位卡号）是普通字符
@@ -364,6 +411,14 @@ export class LLMClient {
       const ph = sensitive[real];
       return ph !== "" && ph !== real && ph.includes(real);
     });
+    // ⑨ 真实值本身是长 URL（轮 38 #7，与 ④ 同属 URL 缩写交互病态）：请求侧
+    // 变换顺序是先 shortenUrls（URL→[uN]）后敏感替换（real→ph）——real 为
+    // ≥URL_MIN_LENGTH 的 URL 时文本中先被换成 [uN]，敏感替换失配，占位语义
+    // 静默偏离（出站是 [uN] 而非配置的 placeholder，真实值不会明文出站但宿主
+    // 的占位契约失效且还原侧 ph 无处安放）
+    const hasRealUrlForm = reals.some(
+      (real) => real.length >= URL_MIN_LENGTH && /^https?:\/\//.test(real),
+    );
     once(
       "intKey",
       hasIntKey,
@@ -404,6 +459,11 @@ export class LLMClient {
       hasPhContainingReal,
       "[llm] WARNING: sensitiveMap 存在占位符包含自身真实值的条目——占位后明文真实值仍完整出站，脱敏对该条目失效，请改用与真实值无包含关系的占位符形态",
     );
+    once(
+      "realUrlForm",
+      hasRealUrlForm,
+      "[llm] WARNING: sensitiveMap 的真实值本身是长 URL（≥URL_MIN_LENGTH）——请求侧 URL 缩写先行会把它替换为 [uN] 标签，敏感占位失配：出站是 [uN] 而非配置的占位符，还原侧该条目不会生效；如需占位请缩短该 URL 或调低 URL 缩写阈值",
+    );
   }
 
   private async getActionInner(
@@ -417,8 +477,22 @@ export class LLMClient {
     // 0. ladder deadline = min(opts.timeoutMs 派生, 窗口 deadline)；到点 abort 在飞请求与
     // sleep，终点恒 LLMTimeoutError（03 偏离 5：结构性消除 wait_for 异常变形的 #194 死法）
     const now = this.deps.now();
-    let deadlineAt: number | undefined =
-      opts.timeoutMs !== undefined ? now + opts.timeoutMs : undefined;
+    // opts.timeoutMs 非法值守卫（轮 38 #3/#17，与 http 层轮 37 #7 同族雷）：NaN 会让
+    // deadline 比较恒 false（600s 兜底失效）、0/负值立即到点（首请求恒 LLMTimeoutError，
+    // elapsed≈0ms 误导为「预算真耗尽」）、超大值被 setTimeout 钳为 1ms——非法值视为
+    // 未设置并一次性告警（per-request 参数降级不拒单，与 setCallWindow 的 TypeError
+    // 分流：持久状态登记点 fail fast，单次参数降级可观测）
+    let deadlineAt: number | undefined;
+    if (opts.timeoutMs !== undefined) {
+      if (isValidDeadlineMs(opts.timeoutMs)) {
+        deadlineAt = now + opts.timeoutMs;
+      } else if (!this.warnedInvalidDeadline) {
+        this.warnedInvalidDeadline = true;
+        this.deps.log(
+          `[llm] WARNING: timeoutMs ${opts.timeoutMs} 非法（NaN/0/负值/超 ${MAX_DEADLINE_MS}ms 平台上限），视为未设置（${this.config.name}）`,
+        );
+      }
+    }
     if (this.windowDeadline !== undefined) {
       // 陈旧窗口可观测（轮 18 #4）：跨步复用实例漏重登记/漏清除时 deadline 已过
       // 期，梯子首请求即被强杀恒抛 LLMTimeoutError——调用方无法区分「预算真耗尽」
@@ -517,13 +591,18 @@ export class LLMClient {
               // 同域。旧 JSON.stringify(args).includes(real) 与文本替换域不一致：
               // real 含引号/反斜杠/换行时串化转义后失配（既漏报也无告警）；命中
               // 键名或 number 值时反向谎报「已占位」而明文仍出站
-              const before = JSON.stringify(call.args);
+              const before = safeJsonStringify(call.args);
               const redacted = replaceSensitiveDeep(call.args, sensitive);
-              if (JSON.stringify(redacted) !== before) {
+              const after = safeJsonStringify(redacted);
+              // args 是宿主回灌历史（非 JSON-only 来源）：BigInt 会使 stringify 抛
+              // TypeError（轮 38 #1，轮 37 #6 同款雷）——串化失败跳过该条目的
+              // 泄漏检测（告警缺失优于崩溃）；redactToolPayloads 时仍照常替换
+              //（深层替换不依赖串化，未命中时恒等）
+              if (before !== undefined && after !== undefined && after !== before) {
                 leaking.push(`${call.name}.args`);
-                if (opts.redactToolPayloads === true) {
-                  call.args = redacted;
-                }
+              }
+              if (opts.redactToolPayloads === true) {
+                call.args = redacted;
               }
             }
           }
@@ -617,6 +696,8 @@ export class LLMClient {
       // abort(external.reason) 已不再生效——e 是 ladder 缺省形态而非宿主 reason，
       // 在此还原（宿主以自定义 reason 区分停止来源的能力不因竞态顺序丢失）
       if (external?.aborted && isAbortError(e)) {
+        // external.reason 右侧兜底按 WHATWG 规范不可达（abort 后 reason 恒非
+        // undefined）——仅防非规范宿主（轮 38 #6 注明，同 defaultSleep/预检两处）
         throw external.reason ?? e;
       }
       if (isAbortError(e) && windowExpired && !external?.aborted) {
@@ -646,8 +727,15 @@ export class LLMClient {
     }
   }
 
+  /**
+   * 连通性探测（委托当前 provider，含 10s 探测兜底超时与统一的成败包装）。
+   * 并发契约（轮 38 #5 显式澄清）：**只读委托**——this.provider 在此同步读取一次，
+   * 其后探测在不可变的 provider 实例上独立进行，不读写任何 getAction 的梯子
+   * 状态（inFlight/窗口登记/滤图标志），因此 getAction 在飞期间调用是安全的
+   * （换卡前预检是合理用例，不加并发哨兵）；探测结果反映调用时点的当前卡，
+   * fallback 切换后跟随新卡——时点语义与任何探测天然一致，哨兵也无法消除。
+   */
   testConnection(): Promise<{ ok: boolean; error?: string; model?: string }> {
-    // 委托当前 provider（含 10s 探测兜底超时与统一的成败包装）；fallback 切换后跟随新卡
     return this.provider.testConnection();
   }
 
@@ -765,6 +853,8 @@ export class LLMClient {
         // 注定失败的请求）都还原为取消原样上抛（#186 取消穿透契约）；ladder deadline
         // 场景由 getAction 的 catch 统一转 LLMTimeoutError，类型不变
         if (req.signal?.aborted) {
+          // reason 右侧兜底按 WHATWG 规范不可达（abort 后恒非 undefined）——
+          // 仅防非规范宿主（轮 38 #6 注明，同 defaultSleep/竞态还原两处）
           throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
         }
         if (!(e instanceof LLMError)) {

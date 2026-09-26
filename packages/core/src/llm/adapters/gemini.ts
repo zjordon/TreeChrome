@@ -10,6 +10,7 @@ import { LLMBlockedError, LLMProtocolViolationError } from "../errors.js";
 import type { LLMProvider } from "../provider.js";
 import { IMAGE_OMITTED_PLACEHOLDER } from "../transforms.js";
 import type {
+  AssistantMessage,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -75,9 +76,11 @@ function blocksToParts(
       parts.push({ inlineData: { mimeType, data: b.base64 } });
       continue;
     }
-    // 穷尽断言（轮 21 #6）：联合扩展新成员时编译期报错（同 anthropic blocksToContent）
+    // 穷尽断言（轮 21 #6）：联合扩展新成员时编译期报错（同 anthropic blocksToContent）；
+    // 运行期形态统一 throw（轮 38 #9，与 anthropic 对齐）——旧 return [_exhaustive]
+    // 会丢弃已累积 parts 并把原始块当 wire part 静默出站（畸形载荷无日志）
     const _exhaustive: never = b;
-    return [_exhaustive];
+    throw new Error(`未支持的 ContentBlock kind: ${stringifyForLog(_exhaustive)}`);
   }
   return parts;
 }
@@ -137,7 +140,7 @@ function toWireContents(
       pushMerged("model", parts);
       // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排——collectToolResults
       // 与 anthropic 单源，轮 37 #10）
-      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? []);
+      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? [], log);
       if (pairs.length > 0) {
         pushMerged(
           "user",
@@ -374,9 +377,21 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
   // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
   const onTimeoutInvalid = makeOnceWarn(deps.log);
+  // assistant 历史 image 块丢弃的一次性告警（轮 38 #11，与 anthropic/openai 同步）
+  const onAssistantImageDropped = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
+    // assistant 历史 image 块的过滤丢弃预扫描（轮 38 #11）：留一次性证据——
+    // model 角色不接受 inlineData（透传即 400），多模态历史被协议剥离不再全静默
+    const assistantImages = req.messages
+      .filter((m): m is AssistantMessage => m.role === "assistant")
+      .reduce((n, m) => n + m.blocks.filter((b) => b.kind === "image").length, 0);
+    if (assistantImages > 0) {
+      onAssistantImageDropped(
+        `gemini assistant 历史 image 块无 wire 形态，丢弃 ${assistantImages} 块（协议约束：model 角色不接受 inlineData）`,
+      );
+    }
     // key 走头不走 URL query——避免 key 进日志/Referer（query ?key= 同样合法，不用）；
     // model 段编码：含空格/#/? 等字符时避免 URL 截断把配置问题变形为 Invalid URL/404
     const base = stripTrailingSlash(config.baseUrl);

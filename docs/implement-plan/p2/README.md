@@ -606,3 +606,21 @@ smoke 产物摘要：
 - **测试算式修正（#4/#11）**：FakeClock t0=1000，setCallWindow(40s/20s) 的 deadline 是 41000/21000——两处「窗口大小当 deadline」的笔误修正。
 
 测试 371 例全绿（覆盖率 98.73%）。
+
+### 评审轮 38（review-p2-llm-client-38.json，2026-09-26，22/22 全采纳）
+
+采纳 22 条（#5 以文档路径采纳、#17 并入 #3 入口校验）。要点：
+
+- **timeoutMs 非法值全族收口（#3+#17，client 层是 http 轮 37 #7 的上游入口）**：NaN（deadline 比较恒 false、600s 兜底失效）/0/负值（立即到点恒超时）/超 2^31-1ms（setTimeout 被平台钳为 1ms，「24.8 天大预算」偷换成「立即超时」）——getActionInner 视为未设置 + 实例级一次性告警；setCallWindow 用 TypeError fail fast（持久状态登记点暴露调用方 bug，与单次参数降级分流）。
+- **stringify 崩溃面（#1/#2，轮 37 #6 同族）**：泄漏检测的 `JSON.stringify(call.args)`（args 是宿主回灌历史）与承重墙 `noToolsConstraint` 的 `JSON.stringify(parameters)`——BigInt 使两者抛 TypeError 硬崩；safeJsonStringify 跳过检测（告警缺失优于崩溃，redactToolPayloads 仍照常替换）、schema 文本降级 String()。
+- **⑨ real 为长 URL 病态（#7）**：请求侧 URL 缩写先行会吞掉敏感替换（real 以 [uN] 出站，占位语义静默偏离）——与 ④ 同属 URL 缩写交互病态，补一次性 WARNING（含短 URL 阴性对照）。
+- **testConnection 并发契约澄清（#5，文档路径）**：只读委托、同步读取 provider 一次，不加并发哨兵（换卡前预检是合理用例；哨兵也消除不了时点语义）——类文档显式声明。
+- **观测补口**：toolCall signature 空串 canonical 拦截（#4，与 id/name 空串同动机）；assistant 历史 image 块丢弃三适配器一次性告警（#11，多模态历史被协议剥离不再全静默）；openai 孤儿 toolResult 兜底跳过+日志（#15，与轮 37 #8/#9 同口径，不再透传烧 400）；collectToolResults 配对失败防御分支上报（#16）；三处规范不可达的 reason 兜底补注释（#6）。
+- **5xx Retry-After（#8）**：503 常携带该头，LLMServerError（infra）挂载 retryAfterMs 与 429/408 对称。
+- **schema 清洗（#10）**：propertyOrdering 补入白名单（官方属性呈现顺序键 string[]，仅 object 域，EMIT_KEY camelCase 发射）；format 值小写归一（与 type 归一同口径，"DATE-TIME" 归一命中而非删除）。
+- **gemini/openai 穷尽断言运行期形态统一 throw（#9）**：旧 `return [_exhaustive]` 会把原始块当 wire part 静默出站。
+- **mock 保真（#18-#22）**：FakeClock 收敛判定前补微任务冲刷（原检查是死代码，非收敛仍以 5s 挂起收场）；两处无 signal fail-fast 改 AbortError 形态（普通 Error 被 LLMConnectionError 包装走 5 轮退避，显式报错反被吞）；applySpec 普通分支复刻真实 fetch 对已中止 signal 的立即拒绝（#21）；相应修正窗口测试的时序注释（#22：abort 严格先于 r3 出站，非竞态）。
+- **smoke fragment 掩码（#14）**：`#access_token=…` 形态凭据同款掩码（纯锚点不含 = 不受影响）。
+- **#12 修正轮 37 #4 的错误修正**：生效约束是预算 deadline 31000 而非窗口 41000（deadline=min(预算,窗口)）——标题按实际生效侧改写。
+
+测试 383 例全绿（覆盖率 98.59%）。

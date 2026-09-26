@@ -1,7 +1,7 @@
 // anthropic-messages 适配器单测（04 §5 覆盖矩阵 A 列）。
 // wire 断言口径：对象级 deep-equal + 「键不存在」锁缺省字段不发（temperature 地雷）。
 import { describe, expect, it } from "vitest";
-import type { ChatRequest, ProviderConfig } from "../../src/index.js";
+import type { ChatMessage, ChatRequest, ProviderConfig } from "../../src/index.js";
 import { createAnthropicProvider } from "../../src/llm/adapters/anthropic-messages.js";
 import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
 import {
@@ -329,6 +329,26 @@ describe("请求构造（canonical → wire）", () => {
       }),
     ).rejects.toThrow("工具 name 存在重复");
     expect(mock.calls.length).toBe(0);
+  });
+
+  it("assistant 历史 image 块丢弃 → 一次性告警（轮 38 #11，三协议同步；重放两次仍只告警一次）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    mock.queueMany(toolOk({}), toolOk({}));
+    const messages: ChatMessage[] = [
+      { role: "user", blocks: [{ kind: "text", text: "q" }] },
+      {
+        role: "assistant",
+        blocks: [{ kind: "image", mimeType: "image/png", base64: "AAAA" }],
+        toolCalls: [{ id: "t1", name: TOOL.name, args: {} }],
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: TOOL.name, text: "r" },
+    ];
+    const req: ChatRequest = { systemPrompt: null, messages, tools: [TOOL] };
+    await provider.chat(req);
+    await provider.chat(req);
+    expect(
+      logs.filter((m) => m.includes("anthropic assistant 历史 image 块无 wire 形态，丢弃 1 块")),
+    ).toHaveLength(1);
   });
 
   it("baseUrl 以 /v1/messages 结尾（官方 curl 全端点整段复制）→ 如实拼接 + 一次性告警（轮 34 #9，与 openai /chat/completions 同族）", async () => {

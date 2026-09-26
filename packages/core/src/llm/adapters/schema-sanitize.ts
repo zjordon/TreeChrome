@@ -4,7 +4,8 @@
 // 不动，其余两协议透传）。
 // 白名单按官方 v1beta Schema 文档收录：基础 8 键（02 首版冻结）+ 约束键
 // minimum/maximum/pattern/minLength/maxLength/minItems/maxItems（评审轮 10 补入——
-// 官方文档明确支持，删除会让数值/长度约束静默丢失、模型生成越界参数）；
+// 官方文档明确支持，删除会让数值/长度约束静默丢失、模型生成越界参数）+
+// propertyOrdering（轮 38 #10 补入——官方属性呈现顺序键 string[]，仅 object 域）；
 // 真机差异等有 key 实测后修订（README 风险 3）。
 // 核验结论（评审轮 12 #14，2026-09）：minProperties/maxProperties 不在官方经典
 // Schema 字段列表（社区 Gemini schema 转换器均列为不支持项剥离）；Nov-2025 扩展
@@ -32,6 +33,9 @@ const ALLOWED_KEYS = new Set([
   "maxlength",
   "minitems",
   "maxitems",
+  // 属性呈现顺序键（string[]，仅 object 域合法——轮 38 #10 补入：官方 v1beta
+  // Schema 支持，删除会让宿主对属性顺序的约束静默丢失）
+  "propertyordering",
 ]);
 
 /** 归一化（小写）键 → 官方发射拼写：本模块写入键统一小写，多词键须还原 camelCase */
@@ -40,6 +44,7 @@ const EMIT_KEY: Record<string, string> = {
   maxlength: "maxLength",
   minitems: "minItems",
   maxitems: "maxItems",
+  propertyordering: "propertyOrdering",
 };
 
 /**
@@ -71,12 +76,13 @@ const CONSTRAINT_KEYS_BY_TYPE: Record<string, ReadonlySet<string>> = {
   number: new Set(["minimum", "maximum"]),
   integer: new Set(["minimum", "maximum"]),
   array: new Set(["items", "minItems", "maxItems"]),
-  object: new Set(["properties", "required"]),
+  object: new Set(["properties", "required", "propertyOrdering"]),
 };
 const NO_CONSTRAINT_KEYS: ReadonlySet<string> = new Set();
 const DOMAIN_SCOPED_KEYS = [
   "properties",
   "required",
+  "propertyOrdering",
   "items",
   "enum",
   "pattern",
@@ -185,6 +191,12 @@ export function sanitizeGeminiSchema(
       onSchemaIssue?.("required 非 string[]，删除该键");
       continue;
     }
+    // propertyOrdering 官方只收 string[]（轮 38 #10；与 required 同款形态校验——
+    // 成员是否引用 properties 内实有属性官方不强制校验，此处保持纯形态口径）
+    if (normalized === "propertyordering" && !isStringArray(value)) {
+      onSchemaIssue?.("propertyOrdering 非 string[]，删除该键");
+      continue;
+    }
     if (normalized === "properties") {
       if (!isRecord(value)) {
         // 与 required/items 同款清洗闭环：非对象 properties 原样透传会被端点 400
@@ -269,8 +281,23 @@ export function sanitizeGeminiSchema(
         onSchemaIssue?.("nullable 非布尔，删除该键");
         continue;
       }
-      if (normalized === "format" && (typeof value !== "string" || !GEMINI_FORMATS.has(value))) {
-        onSchemaIssue?.(`format「${stringifyForLog(value)}」不在官方支持集，删除该键`);
+      if (normalized === "format") {
+        // format 值小写归一（轮 38 #10，与 type 归一同口径）：官方枚举全小写
+        //（date-time/int64 等），"DATE-TIME" 等 JSON Schema 惯用大写形态归一命中
+        // 而非直接删除；非字符串/未命中（含归一后）删除并上报
+        if (typeof value !== "string") {
+          onSchemaIssue?.(`format「${stringifyForLog(value)}」不在官方支持集，删除该键`);
+          continue;
+        }
+        const loweredFormat = value.toLowerCase();
+        if (!GEMINI_FORMATS.has(loweredFormat)) {
+          onSchemaIssue?.(`format「${stringifyForLog(value)}」不在官方支持集，删除该键`);
+          continue;
+        }
+        if (loweredFormat !== value) {
+          onSchemaIssue?.(`format「${value}」归一化为小写 ${loweredFormat}`);
+        }
+        emit(key, "format", loweredFormat);
         continue;
       }
       // 约束键标量类型校验（轮 15 #13）：官方口径 pattern 为 string、

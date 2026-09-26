@@ -2,7 +2,12 @@
 // 滤图 / 窗口共享 / 取消穿透 / 变换往返 / 承重墙。退避组用 FakeClock 冻结时钟；
 // R4/R1 指令文案逐字符断言（Python client.py:503-506/:529-532 泛化 tool.name）。
 import { describe, expect, it } from "vitest";
-import type { ChatMessage, GetActionResult, ProviderConfig } from "../../src/index.js";
+import type {
+  ChatMessage,
+  GetActionResult,
+  ProviderConfig,
+  ToolDefinition,
+} from "../../src/index.js";
 import {
   createLLMClient,
   createProvider,
@@ -666,6 +671,22 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(
       phContains.logs.some((m) => m.includes("WARNING") && m.includes("占位符包含自身真实值")),
     ).toBe(true);
+
+    // ⑨ 真实值本身是长 URL（轮 38 #7，与 ④ 同属 URL 缩写交互病态）：请求侧
+    // URL 缩写先行会吞掉敏感替换——占位语义静默偏离；短 URL（< URL_MIN_LENGTH）
+    // 不触发（阴性对照）
+    const realUrl = setupWithLogs();
+    realUrl.mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 1 }));
+    await realUrl.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { [U0]: "[secret-url]" },
+    });
+    expect(
+      realUrl.logs.some((m) => m.includes("WARNING") && m.includes("真实值本身是长 URL")),
+    ).toBe(true);
+    await realUrl.client.getAction("sys", msgs(), TOOL, {
+      sensitiveMap: { "https://example.com/short": "[short-url]" },
+    });
+    expect(realUrl.logs.filter((m) => m.includes("真实值本身是长 URL"))).toHaveLength(1);
   });
 
   it("病态去重按 (map, 类别)：换 map 后同类别病态各自告警（轮 31 #10，与 systemPrompt 泄露同口径）", async () => {
@@ -740,7 +761,7 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠
     expect(mock.calls.length).toBe(2);
   });
 
-  it("墙钟预算耗尽 → 立即抛最后错误（setCallWindow(40s)：cap=30s，5 次请求后 31000+30000=61000>41000 即 deadline）", async () => {
+  it("墙钟预算耗尽 → 立即抛最后错误（setCallWindow(40s)：cap=30s，deadline=min(预算 31000, 窗口 41000)=31000，5 次请求后 31000+30000=61000>31000 即预算耗尽，轮 38 #12 修正）", async () => {
     const { mock, clock, client } = setup();
     client.setCallWindow(40_000);
     mock.queueMany(r429(), r429(), r429(), r429(), r429());
@@ -762,7 +783,10 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠
     const p = client.getAction("sys", msgs(), TOOL);
     await clock.advance(0); // 35000: 429 → 2000 → 37000 ≤ 41000 → sleep
     await clock.advance(2000); // 37000: 429 → 4000 → 41000 ≤ 41000 → sleep
-    await clock.advance(4000); // 41000: 窗口 deadline 到点（watcher abort 恰逢 r3 失败）
+    await clock.advance(4000); // 41000: watcher（先注册先 resolve）在冲刷首微任务翻位
+    // windowExpired 并 abort，随后退避续体才派发 r3——abort 严格先于 r3 出站（轮
+    // 38 #22：非「恰逢/竞态」；r3 带已中止 signal 出站，mock 复刻真实 fetch 立即
+    // 以 abort reason 拒绝，r3 的 429 spec 不会被消费成响应）
     // 到点恒 LLMTimeoutError（03 偏离 5）：callWithBackoff 的 signal 预检把"窗口到期
     // 恰逢失败响应"还原为取消，不再以最后错误（RateLimit）变形掩蔽到点事实；
     // "预算 gate 抛最后错误"路径由预算耗尽用例覆盖（预算 < 窗口时 gate 先触发）
@@ -990,6 +1014,36 @@ describe("deadline 与取消", () => {
         timeoutMs: 60,
       }),
     ).rejects.toBeInstanceOf(LLMTimeoutError);
+  });
+
+  it("opts.timeoutMs 非法（0/负/NaN/超 2^31-1ms）→ 视为未设置：请求正常完成 + 一次性告警（轮 38 #3/#17，与 http 层轮 37 #7 同族）", async () => {
+    const { mock, logs, client } = setupWithLogs();
+    mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
+    // 0 修复前会让 deadline 立即到点：梯子首请求即被 watcher abort 恒抛
+    // LLMTimeoutError（elapsed≈0ms 误导为「预算真耗尽」）
+    const r1 = await client.getAction("sys", msgs(), TOOL, { timeoutMs: 0 });
+    expect(r1.kind).toBe("ok");
+    const r2 = await client.getAction("sys", msgs(), TOOL, { timeoutMs: 0 });
+    expect(r2.kind).toBe("ok");
+    // 告警去重按实例（误配每步都在发生，一次即可——与 makeOnceWarn 同款取舍）
+    expect(logs.filter((m) => m.includes("timeoutMs 0 非法"))).toHaveLength(1);
+    // 超 setTimeout 平台上限的正值（修复前被钳为 1ms 立即触发，同款恒超时）——
+    // 独立实例验证（同实例的第二次非法值被去重吞掉）
+    const huge = setupWithLogs();
+    huge.mock.queueMany(toolOk({ done: 1 }));
+    const r3 = await huge.client.getAction("sys", msgs(), TOOL, { timeoutMs: 3_000_000_000 });
+    expect(r3.kind).toBe("ok");
+    expect(huge.logs.some((m) => m.includes("timeoutMs 3000000000 非法"))).toBe(true);
+  });
+
+  it("setCallWindow 非法值（NaN/0/超上限）→ TypeError fail fast（轮 38 #3：持久窗口状态登记点暴露调用方 bug，窗口不登记）", async () => {
+    const { client } = setup();
+    expect(() => client.setCallWindow(Number.NaN)).toThrow(TypeError);
+    expect(() => client.setCallWindow(0)).toThrow(TypeError);
+    expect(() => client.setCallWindow(3_000_000_000)).toThrow(TypeError);
+    // 合法值不受影响
+    client.setCallWindow(40_000);
+    client.setCallWindow(null);
   });
 
   it("错误响应体读取阶段超时 → 仍按超时分型（不被状态码 400 误报为不可重试/触发切换）", async () => {
@@ -1337,5 +1391,35 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     );
     expect(body.system).toContain('"type": "object"');
     expect(body.system).toContain("Do not reply with plain text.");
+  });
+
+  it("supportsTools:false + parameters 含 BigInt → 降级 String() 不崩承重墙路径（轮 38 #2：宿主程序化构造的原值非 JSON-only 来源）", async () => {
+    const { mock, client } = setup({
+      capabilities: { supportsTools: false, supportsForcedTool: false },
+    });
+    mock.queueMany(text('{"a": 1}'));
+    const tool: ToolDefinition = {
+      ...TOOL,
+      parameters: { type: "object", big: 10n },
+    };
+    // 修复前 JSON.stringify(parameters) 抛 TypeError——最弱端点的兜底路径反而在
+    // 宿主侧非法输入上硬崩；现在降级 String() 约束文本（schema 降质优于崩溃）
+    const r = await client.getAction("sys", msgs(), tool);
+    expect(r.kind).toBe("ok");
+    expect(mock.lastBody().system).toContain("IMPORTANT: You must respond with only a JSON");
+  });
+});
+
+describe("FakeClock 收敛守卫（轮 38 #18：末轮 resolve 续体注册的新到期 sleep 必须可见）", () => {
+  it("每轮 resolve 又注册新到期 sleep 的无限链 → advance 显式抛错（非收敛不再掩蔽成 vitest 5s 挂起）", async () => {
+    const clock = new FakeClock();
+    // 每次定时器被 resolve，续体立即注册下一个 due=当前时刻 的 sleep——永不收敛
+    const churn = async (): Promise<void> => {
+      for (;;) {
+        await clock.sleep(0);
+      }
+    };
+    void churn();
+    await expect(clock.advance(0)).rejects.toThrow("FakeClock.advance");
   });
 });

@@ -221,6 +221,18 @@ describe("assertValidMessages · 违例序列", () => {
     );
   });
 
+  it("toolCall signature 为空串 → 拒绝（gemini thoughtSignature 空串回传是端点 400 形态，轮 38 #4；与 id/name 空串同动机）", () => {
+    expectViolation(
+      [
+        user("q"),
+        assistant({
+          toolCalls: [{ id: "t1", name: AGENT_TOOL.name, args: {}, signature: "" }],
+        }),
+      ],
+      "signature 为空串",
+    );
+  });
+
   it("toolResult 文本为空 → 拒绝（anthropic 字符串 content 直发空串是 400 形态，轮 17 #8）", () => {
     expectViolation(
       [
