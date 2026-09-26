@@ -312,8 +312,13 @@ export function createAnthropicProvider(
 ): LLMProvider {
   // 公共观测束单源（轮 43 #5）：四项三适配器必备告警一次产出，防新增观测点三处
   // 同步漏挂；协议专属告警（baseUrl 守卫族等）留本地
-  const { onTemperatureClamp, onMaxTokensInvalid, onTimeoutInvalid, onAssistantImageDropped } =
-    createSharedAdapterWarners(deps.log);
+  const {
+    onTemperatureClamp,
+    onTemperatureInvalid,
+    onMaxTokensInvalid,
+    onTimeoutInvalid,
+    onAssistantImageDropped,
+  } = createSharedAdapterWarners(deps.log);
   const capabilities = resolveCapabilities(config);
   // baseUrl 疑似 OpenAI 形态（/v1 结尾）的一次性告警（轮 23 #1）
   // thinking 块 signature 剥离的实例级一次性告警（轮 44 #15，协议专属——与
@@ -382,7 +387,7 @@ export function createAnthropicProvider(
         : {}),
       ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
       // temperature 回退链：请求级 ?? 卡片级（common.temperatureEntry）；两级缺省不发
-      ...temperatureEntry(req, config, onTemperatureClamp),
+      ...temperatureEntry(req, config, onTemperatureClamp, onTemperatureInvalid),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

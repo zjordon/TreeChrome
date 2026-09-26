@@ -6,7 +6,7 @@
 import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProtocol } from "../provider.js";
-import { isPlainRecord, isRecord } from "../transforms.js";
+import { isPlainRecord } from "../transforms.js";
 import type {
   AssistantMessage,
   ChatMessage,
@@ -183,6 +183,14 @@ export function assertToolContract(req: ChatRequest, config: ProviderConfig): vo
       provider: config.name,
     });
   }
+  // description 非 string（轮 45 #9，name 非 string 的对称缺口）：三协议工具描述
+  // 域均为 proto string 字段，数字/对象直传即端点硬 400；缺失（undefined）经
+  // JSON.stringify 丢键是可选字段的合法形态不拦
+  if (tools.some((t) => t.description !== undefined && typeof t.description !== "string")) {
+    throw new LLMProtocolViolationError(`工具 description 非 string（端点 400 形态）`, {
+      provider: config.name,
+    });
+  }
   // 工具重名（轮 37 #14）：三协议端点均校验 tools 名字唯一（重复即硬 400，非
   // infra 不重试还误触 fallback 切换）——P4 registry 合并场景下重名是现实病态
   if (new Set(tools.map((t) => t.name)).size !== tools.length) {
@@ -218,6 +226,7 @@ export function temperatureEntry(
   req: ChatRequest,
   config: ProviderConfig,
   onClamp?: (message: string) => void,
+  onInvalid: (message: string) => void = onClamp ?? (() => {}),
 ): Record<string, unknown> {
   const temperature = req.temperature ?? config.temperature;
   // 非有限数值（NaN/Infinity）不发：NaN 序列化成 null、Infinity 溢出上送均是
@@ -225,8 +234,8 @@ export function temperatureEntry(
   // parseFloat 类误配，静默吞掉与 onClamp/resolveMaxTokens 的观测口径不一致；
   // 去重由调用方注入的回调负责
   if (temperature === undefined || !Number.isFinite(temperature)) {
-    if (temperature !== undefined && onClamp !== undefined) {
-      onClamp(`temperature ${temperature} 非有限数值（NaN/Infinity），不发送（${config.name}）`);
+    if (temperature !== undefined) {
+      onInvalid(`temperature ${temperature} 非有限数值（NaN/Infinity），不发送（${config.name}）`);
     }
     return {};
   }
@@ -261,6 +270,10 @@ export function makeOnceWarn(log: (message: string) => void): (message: string) 
  *  静默缺失）。协议专属告警（baseUrl 守卫族、gemini textPartSignature 等）仍留本地 */
 export interface SharedAdapterWarners {
   onTemperatureClamp: (message: string) => void;
+  /** 温度非法值（NaN/Infinity 不发）专用实例（轮 45 #6）：与钳制分实例——两类
+   *  病态源（请求级宿主解析错误 vs 卡片配置漂移）修复方与归因域不同，共享实例
+   *  会跨请求先到永久压制后到者的证据 */
+  onTemperatureInvalid: (message: string) => void;
   onMaxTokensInvalid: (message: string) => void;
   onTimeoutInvalid: (message: string) => void;
   onAssistantImageDropped: (message: string) => void;
@@ -269,6 +282,7 @@ export interface SharedAdapterWarners {
 export function createSharedAdapterWarners(log: (message: string) => void): SharedAdapterWarners {
   return {
     onTemperatureClamp: makeOnceWarn(log),
+    onTemperatureInvalid: makeOnceWarn(log),
     onMaxTokensInvalid: makeOnceWarn(log),
     onTimeoutInvalid: makeOnceWarn(log),
     onAssistantImageDropped: makeOnceWarn(log),
@@ -285,6 +299,12 @@ const IMAGE_MIME_ALIAS: Record<string, string> = {
 /** image 媒体类型别名归一（轮 28 #3/#5 单源化，三适配器共用防 mime 口径漂移）：
  * MIME 类型大小写不敏感（RFC 2046），端点枚举均小写——统一小写归一后再查别名表 */
 export function normalizeImageMime(mimeType: string): string {
+  // 宿主宽化输入防御（轮 45 #4，canonical 仅拦空串）：非 string 形态返回空串，
+  // 必不入三适配器枚举集——自然落入「降级占位 + 留证据」分支而非 TypeError 直穿
+  //（编程错误原样穿透会把归因引离适配器层拦截口径）
+  if (typeof mimeType !== "string") {
+    return "";
+  }
   const lowered = mimeType.toLowerCase();
   return IMAGE_MIME_ALIAS[lowered] ?? lowered;
 }

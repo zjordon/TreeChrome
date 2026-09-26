@@ -240,11 +240,15 @@ async function main() {
   // 避免变量空置形态被误报为「非法值」
   const rawTimeoutEnv = process.env.SMOKE_TIMEOUT_MS || undefined;
   const rawTimeoutMs = Number(rawTimeoutEnv);
-  const isValidTimeout = Number.isFinite(rawTimeoutMs) && rawTimeoutMs > 0;
+  // 与核心 http.ts isInvalidTimeoutMs/MAX_TIMEOUT_MS（2^31-1，setTimeout 平台上限）
+  // 同口径（轮 45 #3）：超上界值核心判非法并「视为未设置」（无梯子 deadline、单
+  // 请求回落 600s 兜底）——脚本侧放行即配置静默失效
+  const isValidTimeout =
+    Number.isFinite(rawTimeoutMs) && rawTimeoutMs > 0 && rawTimeoutMs <= 2_147_483_647;
   const timeoutMs = isValidTimeout ? rawTimeoutMs : DEFAULT_SMOKE_TIMEOUT_MS;
   if (rawTimeoutEnv !== undefined && !isValidTimeout) {
     console.warn(
-      `SMOKE_TIMEOUT_MS="${rawTimeoutEnv}" 非法（需正数毫秒），已回退缺省 ${DEFAULT_SMOKE_TIMEOUT_MS}ms`,
+      `SMOKE_TIMEOUT_MS="${rawTimeoutEnv}" 非法（需正数毫秒且 ≤ 2147483647），已回退缺省 ${DEFAULT_SMOKE_TIMEOUT_MS}ms`,
     );
   }
 
@@ -269,6 +273,7 @@ async function main() {
     // 漂移时注入不报错也不被调用，请求/响应证据无声消失还可能 exitCode 0 假
     // 通过；getAction 全路径结束后断言计数 >0
     let fetchCalls = 0;
+    let ladderThrew = false; // getAction 在发出请求前/后抛错（轮 45 #7 归因分流）
     const loggingFetch = async (url, init) => {
       fetchCalls += 1;
       const headers = { ...(init?.headers ?? {}) };
@@ -298,7 +303,10 @@ async function main() {
       // 核心 WARNING 同样过 redact（轮 35 #8）：baseUrl 误配告警内嵌 baseUrl 原文
       //（SMOKE_*_BASE_URL 的 ?token= 形态会明文打进 tee 留档）、丢弃类日志含响应体
       // 片段（模型可能回显输入）——缺省 console.warn 是绕过脱敏的输出面
-      log: (message) => console.warn(redact(message)),
+      // rawWarn 而非 patched console.warn（轮 45 #2）：message 已过 redact，再经
+      // patch 会二次脱敏（幂等无害但链路冗余）；patch 仅服务 deps.log 键名漂移时
+      // 的缺省回落路径
+      log: (message) => rawWarn(redact(message)),
     });
     const t0 = Date.now();
     try {
@@ -340,7 +348,7 @@ async function main() {
         // 输出面（URL/headers/请求体/错误链）的脱敏纪律对齐
         console.log(redact(JSON.stringify(result.toolInput, null, 2)));
         console.log(`usage: ${JSON.stringify(result.usage)}`);
-      } else {
+      } else if (result.kind === "empty") {
         // empty = 解析梯子耗尽仍未产出 agent_response 调用——对 smoke 就是失败，
         // 不能静默 exitCode 0 造成假通过；reason/lastUsage（轮 35 #11）区分「模型
         // 持续回文本拒绝工具调用」与「端点响应不可解析」两类故障方向（轮 37 #2）
@@ -348,9 +356,18 @@ async function main() {
         console.error(
           `   ${card.name} 返回 empty（reason=${result.reason}，lastUsage=${JSON.stringify(result.lastUsage)}）：解析梯子耗尽仍未产出 ${TOOL.name} 工具调用`,
         );
+      } else {
+        // 契约漂移防护（轮 45 #1，与 fetchCalls 断言同主题纵深防御）：未知 kind 落入
+        // empty 分支会被误报为「解析梯子耗尽（reason=undefined）」——诊断工具自身
+        // 的契约失配须与端点故障区分
+        failed = true;
+        console.error(
+          `   ${card.name} 返回未知 kind=${String(result.kind)}——GetActionResult 契约漂移（核对 src/llm/client.ts），非端点故障`,
+        );
       }
     } catch (e) {
       failed = true;
+      ladderThrew = true;
       // 与文件末尾兜底同口径：遍历 cause 链（LLMTimeoutError/LLMConnectionError 的
       // 底层网络错误挂在 cause 上，丢消息即丢最关键排障信息）；消息内嵌完整 URL /
       // 网关回显的错误体——同样过 redact
@@ -358,12 +375,17 @@ async function main() {
         `\n== ${card.name} FAILED (${Date.now() - t0}ms): ${formatErrorChain(e, redact)}`,
       );
     }
-    // deps.fetch 注入生效断言（轮 42 #1）：ok/empty/异常全路径结束后检查——
-    // resolveDeps 对 fetch 键是静默回落，键名漂移时唯一请求/响应证据无声消失
+    // deps.fetch 注入生效断言（轮 42 #1；轮 45 #7 归因分流）：ok/empty 正常返回但
+    // 零调用才是键名漂移的确凿信号；catch 已抛错路径下零调用是前置失败的正常
+    // 结果（消息/协议契约在发请求前抛），指向上方 FAILED 行的本地错误
     if (fetchCalls === 0) {
       failed = true;
       console.error(
-        `   ${card.name} 的 loggingFetch 全程未被调用——deps.fetch 注入未生效（LLMDeps 键名漂移？），本次缺请求/响应证据`,
+        `   ${card.name} 未发出任何请求——${
+          ladderThrew
+            ? "见上方 FAILED 行的本地错误（消息/协议契约前置失败），非 deps 注入问题"
+            : "deps.fetch 注入未生效（LLMDeps 键名漂移？），缺请求/响应证据"
+        }`,
       );
     }
   }

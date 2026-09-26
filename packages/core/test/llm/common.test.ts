@@ -86,16 +86,30 @@ describe("temperatureEntry", () => {
     expect(clamped).toEqual(["temperature 1.5 超出协议范围 [0, 1]，已钳制为 1（card-x）"]);
   });
 
-  it("NaN/Infinity 不发也经 onClamp 留证据（轮 26 #3：与钳制/回退同观测口径）；缺省不回调", () => {
-    const warned: string[] = [];
-    const c = card("openai-completions", { name: "card-x" });
-    temperatureEntry(req({ temperature: Number.NaN }), c, (m) => warned.push(m));
-    temperatureEntry(req({ temperature: Number.POSITIVE_INFINITY }), c, (m) => warned.push(m));
-    temperatureEntry(req(), c, (m) => warned.push(m)); // 未配置不回调
-    expect(warned).toEqual([
-      "temperature NaN 非有限数值（NaN/Infinity），不发送（card-x）",
-      "temperature Infinity 非有限数值（NaN/Infinity），不发送（card-x）",
-    ]);
+  it("NaN/Infinity 走 onInvalid、越界钳制走 onClamp——两类病态源分实例（轮 45 #6：共享实例会跨请求先到永久压制后到者）；缺省不回调", () => {
+    const clamped: string[] = [];
+    const invalid: string[] = [];
+    const c = card("anthropic-messages", { name: "card-x" });
+    temperatureEntry(
+      req({ temperature: Number.NaN }),
+      c,
+      (m) => clamped.push(m),
+      (m) => invalid.push(m),
+    );
+    temperatureEntry(
+      req({ temperature: 1.5 }),
+      c,
+      (m) => clamped.push(m),
+      (m) => invalid.push(m),
+    );
+    temperatureEntry(
+      req(),
+      c,
+      (m) => clamped.push(m),
+      (m) => invalid.push(m),
+    ); // 未配置不回调
+    expect(invalid).toEqual(["temperature NaN 非有限数值（NaN/Infinity），不发送（card-x）"]);
+    expect(clamped).toEqual(["temperature 1.5 超出协议范围 [0, 1]，已钳制为 1（card-x）"]);
   });
 });
 
@@ -167,6 +181,12 @@ describe("连通性探测常量（轮 35 #12 导出锚定）", () => {
 });
 
 describe("normalizeImageMime", () => {
+  it("非 string 宽化输入 → 空串（轮 45 #4：必不入三适配器枚举集，自然落入降级占位留证据而非 TypeError 直穿）", () => {
+    expect(normalizeImageMime(42 as unknown as string)).toBe("");
+    expect(normalizeImageMime(null as unknown as string)).toBe("");
+    expect(normalizeImageMime(undefined as unknown as string)).toBe("");
+  });
+
   it("别名映射 + 小写归一（轮 28 #3 起源，轮 34 #4 扩表）：jpg/x-png/大小写变体收口，规范值原样", () => {
     expect(normalizeImageMime("image/jpg")).toBe("image/jpeg");
     expect(normalizeImageMime("image/x-png")).toBe("image/png");
@@ -277,6 +297,16 @@ describe("assertToolContract 工具契约（名/重名/parameters；轮 37 #14 �
       LLMProtocolViolationError,
     );
     expect(() => assertToolContract(req({ tools: [tool("dup"), tool("other")] }), c)).not.toThrow();
+  });
+
+  it("description 非 string（轮 45 #9，name 非 string 的对称缺口）→ 拦截；缺失（可选字段）放行", () => {
+    const bad = { name: "t", description: 42, parameters: {} } as unknown as ToolDefinition;
+    expect(() => assertToolContract(req({ tools: [bad] }), card("openai-completions"))).toThrow(
+      LLMProtocolViolationError,
+    );
+    // 缺失是可选字段的合法形态
+    const missing = { name: "t", parameters: {} } as ToolDefinition;
+    expect(() => assertToolContract(req({ tools: [missing] }), card("gemini"))).not.toThrow();
   });
 
   it("name 非 string（轮 43 #13，JS 宿主宽化输入——undefined 经 stringify 丢键、数字直传均为端点 400）→ 拦截", () => {

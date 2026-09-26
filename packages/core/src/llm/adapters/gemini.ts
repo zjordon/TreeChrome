@@ -398,8 +398,13 @@ function parseResponse(
 export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMDeps>): LLMProvider {
   // 公共观测束单源（轮 43 #5）：四项三适配器必备告警一次产出，防新增观测点三处
   // 同步漏挂；协议专属告警（baseUrl 守卫族、textPartSignature 等）留本地
-  const { onTemperatureClamp, onMaxTokensInvalid, onTimeoutInvalid, onAssistantImageDropped } =
-    createSharedAdapterWarners(deps.log);
+  const {
+    onTemperatureClamp,
+    onTemperatureInvalid,
+    onMaxTokensInvalid,
+    onTimeoutInvalid,
+    onAssistantImageDropped,
+  } = createSharedAdapterWarners(deps.log);
   const capabilities = resolveCapabilities(config);
   // 合成 id 的实例级随机盐 + 自增序号（轮 15 #14）：fallback 切换
   //（client.ts trySwitchToFallback）会在会话中途重建 provider 实例，纯自增
@@ -524,7 +529,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
       generationConfig: {
         maxOutputTokens: resolveMaxTokens(req, config, onMaxTokensInvalid),
         // temperature 回退链（common.temperatureEntry）；两级缺省不发
-        ...temperatureEntry(req, config, onTemperatureClamp),
+        ...temperatureEntry(req, config, onTemperatureClamp, onTemperatureInvalid),
       },
     };
     const json = await postJson(deps.fetch, url, headers, body, {

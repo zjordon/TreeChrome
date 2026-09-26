@@ -173,17 +173,10 @@ function toWireMessages(
         pendingToolCallIds = undefined;
       }
       out.push(wire);
-      if (hasCalls) {
-        // calls 缺结果方向的防御观测（轮 40 #4，与 collectToolResults「仅配对 N 条
-        // 结果」日志对称）：wire 产出无 tool 消息跟随的 tool_calls 同为官方端点
-        // 硬 400 形态，assertValidMessages 漂移时留证据
-        const next = messages[idx + 1];
-        if (next === undefined || next.role !== "toolResult") {
-          log(
-            `[llm] openai assistant 的 ${msg.toolCalls?.length} 个 toolCall 后无 toolResult 跟随（wire 将缺 tool 消息，端点 400 形态）`,
-          );
-        }
-      }
+      // calls 缺结果方向的观测已由 warnPending 单源承载（user/assistant 分支与
+      // 循环末尾，轮 43 #4/轮 44 #2）：next 非 toolResult 时（完全无配对）warnPending
+      // 必然触发，此处原冗余检测（轮 40 #4）是该集合的真子集——同事实每请求双发
+      // 两条近似日志已删除（轮 45 #5）
       continue;
     }
     if (pendingToolCallIds === undefined || !pendingToolCallIds.has(msg.toolCallId)) {
@@ -412,8 +405,13 @@ export function createOpenAICompletionsProvider(
 ): LLMProvider {
   // 公共观测束单源（轮 43 #5）：四项三适配器必备告警一次产出，防新增观测点三处
   // 同步漏挂；协议专属告警（baseUrl 守卫族等）留本地
-  const { onTemperatureClamp, onMaxTokensInvalid, onTimeoutInvalid, onAssistantImageDropped } =
-    createSharedAdapterWarners(deps.log);
+  const {
+    onTemperatureClamp,
+    onTemperatureInvalid,
+    onMaxTokensInvalid,
+    onTimeoutInvalid,
+    onAssistantImageDropped,
+  } = createSharedAdapterWarners(deps.log);
   const capabilities = resolveCapabilities(config);
   // baseUrl 整段端点 URL 误配的一次性告警（轮 26 #2，与 anthropic /v1、gemini
   // /v1beta 同族）：官方 curl 示例以 /chat/completions 结尾，整段复制进卡片会
@@ -483,7 +481,7 @@ export function createOpenAICompletionsProvider(
       //（轮 21 #11；gpt-4.1/gpt-oss 支持 0-2 不抑制）
       ...(temperatureSuppressed
         ? suppressedTemperatureEntry(req, config, onTemperatureClamp)
-        : temperatureEntry(req, config, onTemperatureClamp)),
+        : temperatureEntry(req, config, onTemperatureClamp, onTemperatureInvalid)),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

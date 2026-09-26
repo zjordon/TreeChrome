@@ -708,3 +708,14 @@ smoke 产物摘要：
 - **#11 不采纳（评审自标「可选改进」）**：temperature 回退链等无告警类用例的跨文件参数化 describe 需新建跨适配器测试架构，P2 收尾阶段收益低于引入的间接层——登记为后续测试债。
 
 测试 441 例全绿（覆盖率 98.32%）。
+
+### 评审轮 45（review-p2-llm-client-45.json，2026-09-26，9/9 全采纳（状态 partial：一条 code_search PCRE 噪音）；轨迹 17→8→28→14→21→9）
+
+采纳 9 条。要点：
+
+- **smoke 纵深防御三连（#1/#2/#7）**：getAction 结果 kind 显式校验（未知 kind 报契约漂移而非误报 empty——tools/ 无类型检查，client 演进第三种 kind 时诊断工具不失真）；log 回调改走 rawWarn（message 已过 redact，patched console.warn 会二次脱敏——幂等但链路冗余，patch 保留给键名漂移回落路径）；fetchCalls 零调用归因分流（catch 已抛错路径下零调用是前置失败的正常结果，不再误指 deps 注入）。
+- **观测实例拆分（#6）**：onTemperatureClamp 与 onTemperatureInvalid 分实例——请求级 NaN（宿主解析错误）与卡片级越界（配置漂移）两类病态源修复方不同，共享 makeOnceWarn 实例会跨请求先到永久压制后到者；temperatureEntry 增 onInvalid 参数（缺省回落 onClamp 兼容）。
+- **病态拦截补口**：description 非 string（#9，name 非 string 的对称缺口，缺失是可选字段合法形态不拦）；normalizeImageMime 非 string 守卫（#4——返回空串必不入枚举集，自然落入降级占位留证据而非 TypeError 直穿）。
+- **单源收敛**：openai「后无 toolResult 跟随」冗余检测删除（#5——其触发场景是 warnPending 的真子集，同事实每请求双发两条近似日志）；SMOKE_TIMEOUT_MS 补上界 2^31-1（#3，与核心 isInvalidTimeoutMs 同口径）；isRecord 死导入清理（#8）。
+
+测试 443 例全绿（覆盖率 98.47%）。
