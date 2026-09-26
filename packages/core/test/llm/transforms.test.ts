@@ -440,14 +440,15 @@ describe("cloneWorkMessages", () => {
   });
 });
 
-describe("replaceSensitiveDeep 环引用守卫（轮 39 #4：路径式 seen——退出即删）", () => {
-  it("循环引用 args 不再 RangeError 硬崩：环子树原样返回（保真降级），非环路径照常替换", () => {
+describe("replaceSensitiveDeep 环引用守卫（轮 39 #4 起源；轮 46 #1 改重建缓存：环回边指向副本）", () => {
+  it("循环引用 args 不再 RangeError 硬崩：环回边指向重建副本（轮 46 #1——替换完整、明文不残留），非环路径照常替换", () => {
     const circular: Record<string, unknown> = { note: "has sk-abc inside" };
     circular.self = circular;
     const out = replaceSensitiveDeep(circular, { "sk-abc": "<K1>" });
     const o = out as Record<string, unknown>;
     expect(o.note).toBe("has <K1> inside"); // 顶层字符串仍替换
-    expect(o.self).toBe(circular); // 环边：递归栈上的对象原样返回
+    expect(o.self).toBe(o); // 环回边指向本副本（自引用闭环，非原对象）
+    expect((o.self as Record<string, unknown>).note).toBe("has <K1> inside"); // 副本内已替换
   });
 
   it("DAG 共享子树两处引用都完整替换（seen 退出即删——访问集式实现会漏替换第二处，泄露方向）", () => {
@@ -461,11 +462,11 @@ describe("replaceSensitiveDeep 环引用守卫（轮 39 #4：路径式 seen—�
     expect(out.b.key).toBe("<K1>"); // 后到访的共享子树不得因 seen 命中而漏替换
   });
 
-  it("数组环同款降级", () => {
+  it("数组环同款：环回边指向重建副本（轮 46 #1）", () => {
     const arr: unknown[] = ["sk-abc"];
     arr.push(arr);
     const out = replaceSensitiveDeep(arr, { "sk-abc": "<K1>" }) as unknown[];
     expect(out[0]).toBe("<K1>");
-    expect(out[1]).toBe(arr);
+    expect(out[1]).toBe(out); // 自引用闭环
   });
 });
