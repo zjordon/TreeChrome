@@ -25,7 +25,6 @@ import {
   replaceSensitiveText,
   restoreSensitiveInOutput,
   restoreUrlsInOutput,
-  safeJsonStringify,
   shortenUrlsInMessages,
   stripImageBlocks,
   tryParseJson,
@@ -72,12 +71,15 @@ function isValidDeadlineMs(value: number): boolean {
   return !isInvalidTimeoutMs(value);
 }
 
-/** abort reason 兜底单源（轮 39 #6）：WHATWG 规范下 abort 后 signal.reason 恒非
- *  undefined（缺省为 AbortError DOMException；deps.ts engines node>=22 满足）——
- *  右侧兜底仅防非规范宿主/polyfill，非契约路径。defaultSleep 与 callWithBackoff
- *  预检两处共用（竞态还原 external.reason ?? e 是第三处变体，兜底对象不同不并入） */
+/** abort reason 兜底单源（轮 39 #6 起，轮 44 #20 收紧）：WHATWG 规范下 abort 后
+ *  signal.reason 恒非 undefined（缺省为 AbortError DOMException）——但显式
+ *  abort(null) 的 reason === null 是规范可达形态，?? 兜底会吞掉 null 违背 #186
+ *  「reason 任意形态透传」：仅对 undefined 兜底。defaultSleep 与 callWithBackoff
+ *  预检两处共用（竞态还原 external.reason 是第三处变体，兜底对象不同不并入） */
 const abortReasonOr = (signal: AbortSignal | undefined): unknown =>
-  signal?.reason ?? new DOMException("Aborted", "AbortError");
+  signal !== undefined && signal.reason !== undefined
+    ? signal.reason
+    : new DOMException("Aborted", "AbortError");
 
 export interface GetActionOptions {
   /**
@@ -491,9 +493,10 @@ export class LLMClient {
       // abort(external.reason) 已不再生效——e 是 ladder 缺省形态而非宿主 reason，
       // 在此还原（宿主以自定义 reason 区分停止来源的能力不因竞态顺序丢失）
       if (external?.aborted && isAbortError(e)) {
-        // external.reason 右侧兜底同 abortReasonOr 语义（轮 39 #6：规范不可达仅
-        // 防非规范宿主）；兜底对象是 e（竞态现场错误）而非规范缺省形态，独立保留
-        throw external.reason ?? e;
+        // external.reason 右侧兜底同 abortReasonOr 语义（轮 39 #6；轮 44 #21 仅
+        // undefined 兜底——显式 abort(null) 的 null 是规范可达 reason，?? 会吞掉）；
+        // 兜底对象是 e（竞态现场错误）而非规范缺省形态，独立保留
+        throw external.reason !== undefined ? external.reason : e;
       }
       if (isAbortError(e) && windowExpired && !external?.aborted) {
         // 归因实际生效的约束来源（轮 20 #8）：该分支同时覆盖仅传 opts.timeoutMs

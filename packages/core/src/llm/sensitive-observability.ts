@@ -39,7 +39,8 @@ export class SensitiveObservability {
    *  掩盖另一类）。reals 滤空串键（轮 25 #6）：空 real 全链路从不参与替换。
    *  成本取舍（轮 32 #4 显式裁决）：交叉冲突/占位符嵌套是 O(n²) 字符串包含检测，
    *  且每次 getAction 全量重跑（去重的只是告警不短路检测）——维持重跑是有意
-   *  支持宿主原地修改同一 map 后新增病态仍可观测 */
+   *  支持宿主原地修改同一 map 后新增**类别**仍可观测（已告警类别的增量实例
+   *  不重复告警——类别已在去重集）*/
   warnMapPathologies(sensitive: Record<string, string> | undefined): void {
     if (sensitive === undefined) {
       return;
@@ -212,11 +213,14 @@ export class SensitiveObservability {
     tool: ToolDefinition,
     sensitive: Record<string, string> | undefined,
   ): void {
+    // 先短路（轮 44 #9）：无 map / 该 map 已告警时免串化——本方法经
+    // buildChatRequest 每轮退避重建调用，无条件串化整份 schema 是重复开销
+    if (sensitive === undefined || this.schemaLeaks.has(sensitive)) {
+      return;
+    }
     const toolText = safeJsonStringify(tool);
     if (
-      sensitive !== undefined &&
       toolText !== undefined &&
-      !this.schemaLeaks.has(sensitive) &&
       nonEmptySensitiveReals(sensitive).some((real) => toolText.includes(real))
     ) {
       this.schemaLeaks.add(sensitive);

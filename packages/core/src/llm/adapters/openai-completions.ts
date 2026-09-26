@@ -143,6 +143,9 @@ function toWireMessages(
       continue;
     }
     if (msg.role === "assistant") {
+      // 残留 pending 在被覆盖/清空前留证据（轮 44 #2，与 user 分支/循环结尾同款）：
+      // 部分配对后紧跟 assistant 的场景（校验漂移）否则静默清空
+      warnPending();
       // OpenAI 的 assistant content 仅 string|null：历史中 image 块无 wire 形态，
       // 静默丢弃（与 user 侧 image_url 数组形态的不对称是协议约束，非遗漏）
       const text = msg.blocks.map((b) => (b.kind === "text" ? b.text : "")).join("");
@@ -371,15 +374,17 @@ function parseResponse(
         log(`[llm] openai 忽略非请求工具名的 tool_call：${fn.name}`);
         continue;
       }
+      // 缺失/空 id 直接丢弃（先于 arguments 校验，轮 44 #3——与 anthropic
+      // name→id→input 顺序对齐：双病态并存时归因到更根本的「无法回传配对」）：
+      // 回传历史时 tool_call_id="" 会被官方端点 400 且难定位
+      if (typeof item.id !== "string" || item.id === "") {
+        log(`[llm] openai tool_call 缺失 id，丢弃调用：${fn.name}`);
+        continue;
+      }
       const args = parseArguments(fn.arguments);
       if (args === undefined) {
         log(`[llm] openai tool_call arguments 解析失败，丢弃调用：${fn.name}`);
         continue; // 截断容错：不带病 args 进 canonical，消费侧自然落入文本兜底
-      }
-      // 缺失/空 id 直接丢弃：回传历史时 tool_call_id="" 会被官方端点 400 且难定位
-      if (typeof item.id !== "string" || item.id === "") {
-        log(`[llm] openai tool_call 缺失 id，丢弃调用：${fn.name}`);
-        continue;
       }
       toolCalls.push({ id: item.id, name: fn.name, args });
     }

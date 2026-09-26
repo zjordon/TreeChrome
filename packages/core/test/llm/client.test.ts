@@ -1235,6 +1235,17 @@ describe("deadline 与取消", () => {
     expect(mock.calls.length).toBe(1);
   });
 
+  it("宿主显式 abort(null) → null 原样穿透（轮 44 #20：WHATWG 规范可达形态——abort(null) 的 reason===null，?? 兜底会吞掉 null 违背 #186 任意形态透传）", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r429());
+    const ctrl = new AbortController();
+    const p = client.getAction("sys", msgs(), TOOL, { signal: ctrl.signal });
+    await clock.advance(0); // sleep 挂起
+    ctrl.abort(null);
+    const err = await p.catch((e: unknown) => e);
+    expect(err).toBeNull(); // null 哨兵不被变形为 AbortError DOMException
+  });
+
   it("宿主自定义 abort reason 穿透不变形（轮 10 #5；#186 取消不变形的边缘收口）", async () => {
     const { mock, clock, client } = setup();
     mock.queueMany(r429());

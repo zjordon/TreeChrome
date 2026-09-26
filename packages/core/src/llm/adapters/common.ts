@@ -6,7 +6,7 @@
 import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProtocol } from "../provider.js";
-import { isRecord } from "../transforms.js";
+import { isPlainRecord, isRecord } from "../transforms.js";
 import type {
   AssistantMessage,
   ChatMessage,
@@ -190,12 +190,12 @@ export function assertToolContract(req: ChatRequest, config: ProviderConfig): vo
       provider: config.name,
     });
   }
-  // parameters 非对象（轮 42 #13，undefined/数组等运行时病态——P4 registry 产出）：
-  // anthropic 缺 input_schema 是硬 400、gemini sanitize 对 undefined 直穿 TypeError
-  //（比 400 更糟的编程错误形态）——与名空串/重名同族的最低级病态前置拦截，
-  // 不属「字符集/长度按协议各异由端点兜底」豁免类
-  if (tools.some((t) => !isRecord(t.parameters))) {
-    throw new LLMProtocolViolationError(`工具 parameters 非对象（端点 400 形态）`, {
+  // parameters 非纯对象（轮 42 #13，undefined/数组/Date/Map 等运行时病态——P4
+  // registry 产出）：anthropic 缺 input_schema 是硬 400、gemini sanitize 对
+  // undefined 直穿 TypeError（比 400 更糟）、Date 经 JSON 序列化成 ISO 串同为 400
+  // ——谓词与 canonical args 拦截共用 isPlainRecord 单源（轮 44 #1，防口径分叉）
+  if (tools.some((t) => !isPlainRecord(t.parameters))) {
+    throw new LLMProtocolViolationError(`工具 parameters 非纯对象（端点 400 形态）`, {
       provider: config.name,
     });
   }

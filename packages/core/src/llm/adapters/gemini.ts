@@ -181,6 +181,23 @@ function toWireContents(
   return out;
 }
 
+/** 官方已知 finishReason 值集（轮 44 #14，轮 42 #10 口径对齐）：候选级拦截与
+ *  OTHER 等官方枚举成员同为 deliberate 已知值——映射 other 让梯子处理但不按
+ *  「未知」留证据（OTHER 在大量实现中是安全拦截的常见报告值，逐响应告警会把
+ *  官方常态行为误判为网关私货）；网关私货/拼写变体仍走未知档 */
+const KNOWN_FINISH_REASONS = new Set([
+  "STOP",
+  "MAX_TOKENS",
+  "SAFETY",
+  "RECITATION",
+  "OTHER",
+  "LANGUAGE",
+  "BLOCKLIST",
+  "PROHIBITED_CONTENT",
+  "SPII",
+  "MALFORMED_FUNCTION_CALL",
+]);
+
 function mapFinishReason(
   raw: unknown,
   hasKeptToolCall: boolean,
@@ -195,10 +212,11 @@ function mapFinishReason(
   if (raw === "MAX_TOKENS") {
     return "length";
   }
-  if (raw !== undefined && raw !== "SAFETY" && raw !== "RECITATION") {
-    // SAFETY/RECITATION 等候选级拦截：有 candidates 时不全局抛，按 other 让梯子
-    // 处理（deliberate 设计决策，02 §3.3）——其余未知值（网关私货/拼写变体）留
-    // 证据（轮 39 #9，与 anthropic 未知 stop_reason 同口径）；缺失不告警
+  if (typeof raw === "string" && !KNOWN_FINISH_REASONS.has(raw)) {
+    // SAFETY/RECITATION 等候选级拦截及其余官方枚举成员（KNOWN_FINISH_REASONS，
+    // 轮 44 #14）：有 candidates 时不全局抛，按 other 让梯子处理（deliberate 设计
+    // 决策，02 §3.3）——网关私货/拼写变体留证据（轮 39 #9，与 anthropic 未知
+    // stop_reason 同口径）；缺失（undefined）与非 string 形态不告警
     log(`[llm] gemini 未知 finishReason 映射为 other：${stringifyForLog(raw)}`);
   }
   return "other";
@@ -387,7 +405,9 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
   //（client.ts trySwitchToFallback）会在会话中途重建 provider 实例，纯自增
   // 序号会在同一会话内复用 id（历史已存 gemini-call-0 时新实例再产出同 id）——
   // 盐前缀保证跨实例唯一（宿主可能以 toolCallId 作跨回合键）
-  const synthSalt = Math.random().toString(36).slice(2, 8);
+  // padEnd 补齐（轮 44 #12）：Math.random() 恰为短 base36 表示时 slice(2,8) 不足
+  // 6 位——测试侧 /^[a-z0-9]{6}$/ 正则锚定存在理论缝隙；跨实例同盐概率 ~4.6e-10
+  const synthSalt = Math.random().toString(36).slice(2, 8).padEnd(6, "0");
   let synthSeq = 0;
   // schema 清洗事件告警的去重集：工具 schema 逐请求固定，同一事件重复告警只有
   // 噪音；每条一次即保留「约束被清洗丢失」的排障线索。设条数上限防动态工具

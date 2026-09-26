@@ -315,7 +315,9 @@ describe("请求构造（canonical → wire）", () => {
     ).resolves.toBe(0);
   });
 
-  it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）；工具 name 空串（轮 36 #8）/ 重名（轮 37 #14）同款", async () => {
+  // 三拦截点独立成 it（轮 44 #10：单 it 内 rejects 失败会短路后续断言与
+  // mock.calls 终态检查，无法区分哪个契约拦截失效）
+  it("forced toolChoice 名不在 tools → 前置拦截不出站（端点 400 形态，轮 35 #13）", async () => {
     const { mock, provider } = setup();
     await expect(
       provider.chat({
@@ -324,7 +326,12 @@ describe("请求构造（canonical → wire）", () => {
         tools: [TOOL],
         toolChoice: { kind: "forced", name: "nonexistent" },
       }),
-    ).rejects.toThrow(LLMProtocolViolationError);
+    ).rejects.toThrow("不在请求 tools 中"); // 文案断言（轮 44 #10 补绑）
+    expect(mock.calls.length).toBe(0);
+  });
+
+  it("工具 name 空串 → 前置拦截（轮 36 #8）", async () => {
+    const { mock, provider } = setup();
     await expect(
       provider.chat({
         systemPrompt: null,
@@ -332,6 +339,11 @@ describe("请求构造（canonical → wire）", () => {
         tools: [{ name: "", description: "d", parameters: {} }],
       }),
     ).rejects.toThrow("工具 name 为空串");
+    expect(mock.calls.length).toBe(0);
+  });
+
+  it("工具 name 重名 → 前置拦截（轮 37 #14）", async () => {
+    const { mock, provider } = setup();
     await expect(
       provider.chat({
         systemPrompt: null,
@@ -367,6 +379,31 @@ describe("请求构造（canonical → wire）", () => {
         ),
       ),
     ).toHaveLength(1);
+  });
+
+  it("thinking 块携带 signature → 剥离一次性告警（轮 44 #15：canonical 无槽位，与 gemini textPartSignature 轮 42 #21 口径对齐；重放两次仍只告警一次）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    const resp = () => ({
+      status: 200,
+      body: {
+        content: [
+          { type: "thinking", thinking: "hmm", signature: "sig-t" },
+          { type: "text", text: "answer" },
+        ],
+        stop_reason: "end_turn",
+        usage: null,
+      },
+    });
+    mock.queueMany(resp(), resp());
+    const req: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "q" }] }],
+      tools: null,
+    };
+    const r1 = await provider.chat(req);
+    expect(r1.reasoningText).toBe("hmm"); // thinking 文本照常进 reasoningText
+    await provider.chat(req);
+    expect(logs.filter((m) => m.includes("丢弃 thinking 块携带的 signature"))).toHaveLength(1);
   });
 
   it("官方安全拒答/暂停值（refusal/pause_turn）→ other 不告警（轮 42 #10：与 gemini SAFETY/openai content_filter 的 deliberate 口径对齐）；未知网关值留证据；缺失不告警", async () => {

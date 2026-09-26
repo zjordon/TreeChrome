@@ -214,6 +214,18 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     expect(sanitizeGeminiSchema({ type: ["null"] })).toEqual({ type: "string", nullable: true });
   });
 
+  it("type 联合数组非 string 成员（宽化输入病态）→ 跳过留证据（轮 44 #16：本模块清洗路径唯一无上报的丢弃点收口；null 成员是合法语义不上报）", () => {
+    const issues: string[] = [];
+    expect(
+      sanitizeGeminiSchema({ type: ["string", 42], description: "d" }, (d) => issues.push(d)),
+    ).toEqual({ type: "string", description: "d" });
+    expect(issues).toEqual(["type 成员「42」非字符串，跳过"]);
+    // null 成员合法（nullable 语义），不上报
+    const nullIssues: string[] = [];
+    sanitizeGeminiSchema({ type: ["string", null] }, (d) => nullIssues.push(d));
+    expect(nullIssues).toEqual([]);
+  });
+
   it("nullable 派生与显式键：显式优先且与键序无关（轮 40 #5：此前 {type:[…,null],nullable:false} 与反序产出相反结果）", () => {
     // 两种键序语义相同 → 输出必须一致（显式 nullable 优先）
     const a = sanitizeGeminiSchema({ type: ["string", "null"], nullable: false });
@@ -390,7 +402,10 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
       type: "string",
     });
     expect(issues).toEqual([
+      // 成员级留证（轮 44 #16）：非 string 病态成员被 filter 丢弃同样必上报
+      "type 成员「5」非字符串，跳过",
       "type 全 null/病态元素，兜底为 string",
+      "type 成员「42」非字符串，跳过",
       "type 全 null/病态元素，兜底为 string",
     ]);
   });
@@ -1318,22 +1333,23 @@ describe("响应解析（wire → canonical）", () => {
     const r2 = await feedbackForm.provider.chat(baseReq());
     expect(r2.text).toBe("");
     expect(feedbackForm.logs.some((m) => m.includes("丢弃形态异常的 promptFeedback"))).toBe(true);
+  });
 
-    // 嵌套三级（轮 33 #1）：candidate 非对象 / content 非对象 / parts 非数组——各自留证据
-    for (const [label, first] of [
-      ["candidate", "junk"],
-      ["content", { content: "junk" }],
-      ["parts", { content: { parts: "junk" } }],
-    ] as const) {
-      const nested = setupLogs();
-      nested.mock.queueMany({
-        status: 200,
-        body: { candidates: [first], usageMetadata: { promptTokenCount: 1 } },
-      });
-      const r = await nested.provider.chat(baseReq());
-      expect(r.text).toBe("");
-      expect(nested.logs.some((m) => m.includes(`丢弃形态异常的 ${label}`))).toBe(true);
-    }
+  // 嵌套三级（轮 33 #1）：candidate 非对象 / content 非对象 / parts 非数组——各自
+  // 留证据；it.each 化（轮 44 #19）：失败信息自带形态名（for 循环只报行号）
+  it.each([
+    ["candidate", "junk"],
+    ["content", { content: "junk" }],
+    ["parts", { content: { parts: "junk" } }],
+  ] as const)("嵌套域 %s 形态异常 → 归空留证据（轮 33 #1）", async (label, first) => {
+    const nested = setupLogs();
+    nested.mock.queueMany({
+      status: 200,
+      body: { candidates: [first], usageMetadata: { promptTokenCount: 1 } },
+    });
+    const r = await nested.provider.chat(baseReq());
+    expect(r.text).toBe("");
+    expect(nested.logs.some((m) => m.includes(`丢弃形态异常的 ${label}`))).toBe(true);
   });
 
   it("非对象形态的 part（网关畸形，如字符串）→ 丢弃留证据（轮 30 #4）", async () => {
@@ -1546,7 +1562,7 @@ describe("响应解析（wire → canonical）", () => {
     });
   });
 
-  it("跨实例盐唯一（fallback 切换重建 provider 后 id 不复用，轮 15 #14）", async () => {
+  it("跨实例盐唯一（fallback 切换重建 provider 后 id 不复用，轮 15 #14；碰撞概率口径（轮 44 #12）：两实例同盐 ~4.6e-10，CI 假红风险极低非零；实现侧 padEnd(6) 已补齐短表示缝隙）", async () => {
     const a = setup();
     a.mock.queueMany(fnCallOk({}));
     const b = setup();

@@ -695,3 +695,16 @@ smoke 产物摘要：
 - **测试质量**：pause_turn/SAFETY/RECITATION 返回值独立锚定（#1/#12）；病态十场景大 it 拆分（#11，it.each + 方向/阴性特殊对保留独立用例——单 it 聚合时 expect 失败中止后续无法定位形态）。
 
 测试 424 例全绿（覆盖率 98.26%——新模块防御分支待后续轮次锚定）。
+
+### 评审轮 44（review-p2-llm-client-44.json，2026-09-26，20/21 采纳（#11 不采纳）；轨迹 17→8→28→14→21）
+
+采纳 20 条。要点：
+
+- **abort(null) 规范可达（#20+#21，#186 契约缝隙）**：WHATWG 规范下显式 `abort(null)` 的 `signal.reason === null` 是可达形态（规范仅在 undefined 时缺省 AbortError），`??` 兜底会吞掉 null——宿主以 null 哨兵区分停止来源的能力在 defaultSleep/取消预检/竞态还原三处变形；改仅对 undefined 兜底的显式判别，补 null 穿透用例。
+- **谓词与留证对称**：parameters 校验收紧 isPlainRecord（#1，与 canonical args 单源——Date 经 stringify 成 ISO 串即 400、gemini sanitize 对 Date 静默降级空 schema）；gemini KNOWN_FINISH_REASONS 扩全官方枚举（#14——OTHER 是安全拦截常见报告值，逐响应告警会把官方常态误判为私货）；anthropic thinking 块 signature 剥离一次性告警（#15，与 gemini textPartSignature 口径对齐）；schema type 联合数组非 string 成员跳过留证（#16，本模块唯一无上报丢弃点收口）；openai assistant 分支补 warnPending（#2，部分配对后紧跟 assistant 的场景）。
+- **openai id 检查前移（#3）**：与 anthropic name→id→input 顺序对齐——双病态并存时归因到更根本的「无法回传配对」。
+- **杂项**：client.ts 死导入清理（#4）；warnToolDefinitionLeak 先短路再串化（#9——每轮退避重建调用，无条件串化整份 schema 是重复开销）；synthSalt padEnd(6)（#12，短 base36 表示的正则锚定缝隙）；transformed 三处孤儿 JSDoc 归位（#5/#6/#7——双段堆叠时仅末段绑定声明）；病态检测注释措辞收敛「新增类别」（#8）。
+- **测试质量**：anthropic 三拦截点独立成 it（#10）；openai 模型清单/嵌套三级 for 循环 it.each 化（#13/#19——失败信息自带迭代值）；usage 缺失形态补齐（#17，计数断言兼守「缺失不告警」）；name 非 string 前置拦截锚定（#18）；forced 失配文案断言补绑（#10）。
+- **#11 不采纳（评审自标「可选改进」）**：temperature 回退链等无告警类用例的跨文件参数化 describe 需新建跨适配器测试架构，P2 收尾阶段收益低于引入的间接层——登记为后续测试债。
+
+测试 441 例全绿（覆盖率 98.32%）。

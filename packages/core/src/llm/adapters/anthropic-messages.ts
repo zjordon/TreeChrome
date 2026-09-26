@@ -210,6 +210,7 @@ function parseResponse(
   requestedNames: ReadonlySet<string>,
   log: (message: string) => void,
   providerName: string,
+  onThinkingSignatureDropped: (message: string) => void,
 ): ChatResponse {
   if (!isRecord(json)) {
     throw new LLMProtocolViolationError(`anthropic 响应不是对象：${stringifyForLog(json)}`, {
@@ -246,6 +247,14 @@ function parseResponse(
       // 的畸形块（与 openai reasoning_content 轮 29 #8 同族）
       if (typeof item.thinking === "string") {
         reasoningText += item.thinking;
+        // signature 是 thinking 块标配域（回传验证用）：canonical 无槽位静默剥离
+        // 与 gemini textPartSignature（轮 42 #21）口径不一致——一次性告警留证据
+        //（轮 44 #15；未来启用 thinking 块回传时该签名是硬要求）
+        if (item.signature !== undefined) {
+          onThinkingSignatureDropped(
+            "anthropic 丢弃 thinking 块携带的 signature（canonical 无槽位，thinking 回传验证域）",
+          );
+        }
       } else {
         log(
           `[llm] anthropic 丢弃形态异常的 thinking 块（thinking 非 string）：${stringifyForLog(item.thinking)}`,
@@ -307,6 +316,10 @@ export function createAnthropicProvider(
     createSharedAdapterWarners(deps.log);
   const capabilities = resolveCapabilities(config);
   // baseUrl 疑似 OpenAI 形态（/v1 结尾）的一次性告警（轮 23 #1）
+  // thinking 块 signature 剥离的实例级一次性告警（轮 44 #15，协议专属——与
+  // gemini textPartSignature 轮 42 #21 口径对齐：extended thinking 默认开启的网关
+  // 下是逐响应常态形态，防刷屏）
+  const onThinkingSignatureDropped = makeOnceWarn(deps.log);
   const onBaseUrlV1 = makeOnceWarn(deps.log);
   // baseUrl 整段端点 URL（/v1/messages 结尾）的一次性告警（轮 34 #9）：官方 curl
   // 示例即全端点，整段复制进卡片拼出 /v1/messages/v1/messages → 404——与
@@ -378,7 +391,7 @@ export function createAnthropicProvider(
       onInvalidTimeout: onTimeoutInvalid,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
-    return parseResponse(json, requestedNames, deps.log, config.name);
+    return parseResponse(json, requestedNames, deps.log, config.name, onThinkingSignatureDropped);
   };
 
   return {

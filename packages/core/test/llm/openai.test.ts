@@ -234,15 +234,20 @@ describe("请求构造（canonical → wire）", () => {
     expect(oss.mock.lastBody()).not.toHaveProperty("max_tokens");
 
     // 前缀清单其余成员逐个锁定（轮 12 #10）：正则被误改（误删成员/误拼写）在此处红，
-    // 回归面不再直接落在端点 400
-    for (const model of ["gpt-4.1-mini", "o1", "o3-mini", "o4-mini"]) {
+    // 回归面不再直接落在端点 400；it.each 化（轮 44 #13）：失败信息自带模型名
+    //（for 循环只报行号，需手工复原迭代值）
+  });
+
+  it.each(["gpt-4.1-mini", "o1", "o3-mini", "o4-mini"])(
+    "新契约前缀 %s → 发送 max_completion_tokens（轮 12 #10 清单锁定）",
+    async (model) => {
       const s = setup({ model });
       s.mock.queueMany(toolOk("{}"));
       await s.provider.chat(baseReq());
       expect(s.mock.lastBody()).toHaveProperty("max_completion_tokens");
       expect(s.mock.lastBody()).not.toHaveProperty("max_tokens");
-    }
-  });
+    },
+  );
 
   it("tools null / temperature 显式 / maxTokens 请求级覆盖", async () => {
     const { mock, provider } = setup();
@@ -309,12 +314,6 @@ describe("请求构造（canonical → wire）", () => {
 
     // gpt-5 全系同样只接受默认温度（400 "Unsupported value: 'temperature' does
     // not support X with this model. Only the default (1) value is supported"）
-    for (const model of ["gpt-5", "gpt-5-mini", "gpt-5-pro"]) {
-      const gpt5 = setup({ model, temperature: 0.7 });
-      gpt5.mock.queueMany(toolOk("{}"));
-      await gpt5.provider.chat(baseReq());
-      expect(gpt5.mock.lastBody()).not.toHaveProperty("temperature");
-    }
 
     const normal = setup({ model: "gpt-4o", temperature: 0.2 });
     normal.mock.queueMany(toolOk("{}"));
@@ -322,18 +321,30 @@ describe("请求构造（canonical → wire）", () => {
     expect(normal.mock.lastBody().temperature).toBe(0.2);
   });
 
-  it("两清单刻意不同的分叉成员（gpt-4.1/gpt-oss）：新上限字段但温度照发（轮 27 #11）", async () => {
-    // NEW_CONTRACT_PREFIX（max_completion_tokens）与 TEMPERATURE_UNSUPPORTED_PREFIX
-    //（温度抑制）成员集刻意不同——锁定温度维度，防两前缀清单被「统一」重构后
-    // gpt-4.1/gpt-oss 用户静默丢温控且全套无红测
-    for (const model of ["gpt-4.1", "gpt-oss-120b"]) {
+  it.each(["gpt-5", "gpt-5-mini", "gpt-5-pro"])(
+    "温度抑制前缀 %s → 不发 temperature（轮 44 #13 it.each 化）",
+    async (model) => {
+      const gpt5 = setup({ model, temperature: 0.7 });
+      gpt5.mock.queueMany(toolOk("{}"));
+      await gpt5.provider.chat(baseReq());
+      expect(gpt5.mock.lastBody()).not.toHaveProperty("temperature");
+    },
+  );
+
+  // 两清单刻意不同的分叉成员：NEW_CONTRACT_PREFIX（max_completion_tokens）与
+  // TEMPERATURE_UNSUPPORTED_PREFIX（温度抑制）成员集刻意不同——锁定温度维度，防
+  // 两前缀清单被「统一」重构后 gpt-4.1/gpt-oss 用户静默丢温控且全套无红测
+  //（轮 27 #11；it.each 化轮 44 #13）
+  it.each(["gpt-4.1", "gpt-oss-120b"])(
+    "分叉成员 %s：新上限字段但温度照发（轮 27 #11）",
+    async (model) => {
       const dual = setup({ model, temperature: 0.4 });
       dual.mock.queueMany(toolOk("{}"));
       await dual.provider.chat(baseReq());
       expect(dual.mock.lastBody().temperature).toBe(0.4);
       expect(dual.mock.lastBody()).toHaveProperty("max_completion_tokens");
-    }
-  });
+    },
+  );
 
   it("temperatureSuppressed 逃生门：显式 false 恢复发送 / 显式 true 强制抑制（轮 29 #3，与 maxTokensField 同款）", async () => {
     // 前缀误命中自定义/网关模型（o1-finetune 等实际支持温度）时恢复发送
@@ -465,15 +476,16 @@ describe("请求构造（canonical → wire）", () => {
     });
     mock.queueMany(
       resp("nope"),
+      resp(undefined), // 缺失：JSON.stringify 丢键 → json.usage === undefined（benign 形态）
       resp({ prompt_tokens: 1, completion_tokens: 2, prompt_tokens_details: "bad" }),
     );
     const r1 = await provider.chat(baseReq());
     expect(r1.usage).toBeNull();
-    const r2 = await provider.chat(baseReq());
-    expect(r2.usage?.outputTokens).toBe(2); // details 畸形仅丢 cache 统计
-    expect(logs.some((m) => m.includes('openai 丢弃形态异常的 usage（非对象）："nope"'))).toBe(
-      true,
-    );
+    await provider.chat(baseReq()); // 缺失 benign：不告警（轮 44 #17 补齐）
+    const r3 = await provider.chat(baseReq());
+    expect(r3.usage?.outputTokens).toBe(2); // details 畸形仅丢 cache 统计
+    // 计数兼守「缺失不告警」（误入告警档则变 2）
+    expect(logs.filter((m) => m.includes("丢弃形态异常的 usage（非对象）"))).toHaveLength(1);
     expect(logs.some((m) => m.includes('usage.prompt_tokens_details（非对象）："bad"'))).toBe(true);
   });
 

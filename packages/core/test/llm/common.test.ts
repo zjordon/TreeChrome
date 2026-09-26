@@ -264,19 +264,26 @@ describe("collectToolResults（轮 37 #10 单源：anthropic/gemini 折叠骨架
   });
 });
 
-describe("assertToolContract 工具名唯一性（轮 37 #14）", () => {
+describe("assertToolContract 工具契约（名/重名/parameters；轮 37 #14 起累积）", () => {
   const tool = (name: string): ToolDefinition => ({
     name,
     description: "d",
     parameters: { type: "object" },
   });
 
-  it("重名 → LLMProtocolViolationError；唯一名（含 forced 匹配）放行", () => {
+  it("重名 → LLMProtocolViolationError；唯一名放行", () => {
     const c = card("anthropic-messages");
     expect(() => assertToolContract(req({ tools: [tool("dup"), tool("dup")] }), c)).toThrow(
       LLMProtocolViolationError,
     );
     expect(() => assertToolContract(req({ tools: [tool("dup"), tool("other")] }), c)).not.toThrow();
+  });
+
+  it("name 非 string（轮 43 #13，JS 宿主宽化输入——undefined 经 stringify 丢键、数字直传均为端点 400）→ 拦截", () => {
+    const bad = { name: 42, description: "d", parameters: {} } as unknown as ToolDefinition;
+    expect(() => assertToolContract(req({ tools: [bad] }), card("gemini"))).toThrow(
+      LLMProtocolViolationError,
+    );
   });
 
   it("空串名（轮 36 #8）在共享层同样拦截", () => {
@@ -285,7 +292,7 @@ describe("assertToolContract 工具名唯一性（轮 37 #14）", () => {
     );
   });
 
-  it("parameters 非对象（undefined/数组，轮 42 #13）→ LLMProtocolViolationError；对象放行", () => {
+  it("parameters 非纯对象（undefined/数组/Date，轮 42 #13 + 轮 44 #1 isPlainRecord 收紧）→ LLMProtocolViolationError；纯对象放行", () => {
     const bad = (parameters: unknown): ToolDefinition =>
       ({ name: "t", description: "d", parameters }) as ToolDefinition;
     const c = card("openai-completions");
@@ -293,6 +300,9 @@ describe("assertToolContract 工具名唯一性（轮 37 #14）", () => {
       LLMProtocolViolationError,
     );
     expect(() => assertToolContract(req({ tools: [bad([1])] }), c)).toThrow(
+      LLMProtocolViolationError,
+    );
+    expect(() => assertToolContract(req({ tools: [bad(new Date())] }), c)).toThrow(
       LLMProtocolViolationError,
     );
     expect(() => assertToolContract(req({ tools: [tool("ok")] }), c)).not.toThrow();

@@ -146,6 +146,14 @@ export function sanitizeGeminiSchema(
       // 合法枚举、不删键；成员逐一过标量枚举口径（小写归一、非法跳过），首个
       // 合法成员胜出（比盲目兜底 string 更保真：["str","object"] 取 object）
       const list = Array.isArray(value) ? value : [value];
+      // 非 string 成员（宽化输入病态，如 42/对象）被 filter 丢弃同样必留证据
+      //（轮 44 #16，轮 31 #3 口径——本模块清洗路径唯一无上报的丢弃点）；null
+      // 成员是联合 nullable 的合法语义，不上报
+      for (const t of list) {
+        if (typeof t !== "string" && t !== null) {
+          onSchemaIssue?.(`type 成员「${stringifyForLog(t)}」非字符串，跳过`);
+        }
+      }
       const nonNull = list.filter((t) => typeof t === "string" && t !== "null");
       const skipped: string[] = [];
       let chosen: string | undefined;

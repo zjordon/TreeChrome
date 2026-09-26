@@ -7,9 +7,8 @@ import type { ChatMessage, ContentBlock } from "./types.js";
 /** URL 缩写阈值（Python _URL_MIN_LENGTH=100） */
 export const URL_MIN_LENGTH = 100;
 
-/** 纯对象判别（轮 16 #2 单源；轮 20 #9 上提为中立导出——transforms 属 canonical
- * 低层，adapters/common 反向引用恢复「adapters 依赖 core」的单向分层） */
-/** 普通对象判定（轮 43 #6/#7 单源）：proto 为 Object.prototype/null——与
+/** 普通对象判定（轮 43 #6/#7 单源；前身轮 16 #2 纯对象判别/轮 20 #9 中立导出）：
+ * proto 为 Object.prototype/null——与
  *  rewriteStrings 的重建口径一致；Date/Map/Set/类实例非普通对象（浅拷贝展开会
  *  静默清空/丢原型）。canonical 拦截（assertValidMessages）与 cloneWorkMessages
  *  的透传分支共用本谓词，防「拦截-透传-展开」三口径分叉 */
@@ -105,15 +104,6 @@ export function shortenUrlsInMessages(messages: ChatMessage[]): Map<string, stri
   return urlMap;
 }
 
-/**
- * 敏感值文本替换的单一实现（轮 13 #10）：滤空 real 键 + 回调式 replaceAll
- * 防 $ 替换模式 + 按对象插入序（键有包含关系时顺序影响结果，Python dict 序
- * 等价，锚定测试覆盖正反两序）。请求侧占位 / R4 回显占位 / redactToolPayloads
- * 三处共用，防语义失同步。
- * 注意（轮 15 #10，轮 21 #15 表述收窄）：canonical 数组索引键（≤10 位非负
- * 数字串，引擎重排到枚举首位升序）存在包含关系键时替换序不可依赖；负数与
- * 超界数字串（手机号/卡号）是普通字符串键，恒插入序无此风险。
- */
 /** 敏感值 entries 构造单源（轮 32 #5）：滤空 real + 插入序，文本侧与深层侧
  * 共用——各写一份时任一侧调整过滤条件/顺序会静默漂移 */
 function filteredSensitiveEntries(
@@ -130,6 +120,15 @@ export function nonEmptySensitiveReals(sensitiveMap: Record<string, string>): st
   return Object.keys(sensitiveMap).filter((real) => real !== "");
 }
 
+/**
+ * 敏感值文本替换的单一实现（轮 13 #10）：滤空 real 键 + 回调式 replaceAll
+ * 防 $ 替换模式 + 按对象插入序（键有包含关系时顺序影响结果，Python dict 序
+ * 等价，锚定测试覆盖正反两序）。请求侧占位 / R4 回显占位 / redactToolPayloads
+ * 三处共用，防语义失同步。
+ * 注意（轮 15 #10，轮 21 #15 表述收窄）：canonical 数组索引键（≤10 位非负
+ * 数字串，引擎重排到枚举首位升序）存在包含关系键时替换序不可依赖；负数与
+ * 超界数字串（手机号/卡号）是普通字符串键，恒插入序无此风险。
+ */
 export function replaceSensitiveText(
   text: string,
   sensitiveMap: Record<string, string> | undefined,
@@ -382,16 +381,16 @@ export function stripImageBlocks(messages: ChatMessage[]): void {
   }
 }
 
-/**
- * work 副本：请求侧变换只落在副本上，不改动调用方消息（03 偏离 1）。
- * 复制会被改写的对象（消息对象、blocks 数组、TextBlock）；ImageBlock 与
- * toolResult 的字符串字段不可变，共享/浅拷贝即可。
- */
 /** blocks 拷贝单点（轮 32 #1）：「TextBlock 拷贝、ImageBlock 共享」的偏离 1 契约
  * 只在此一处维护——两分支各写一份时未来只改一处会静默破坏副本语义 */
 const cloneBlocks = (blocks: ContentBlock[]): ContentBlock[] =>
   blocks.map((b) => (b.kind === "text" ? { ...b } : b));
 
+/**
+ * work 副本：请求侧变换只落在副本上，不改动调用方消息（03 偏离 1）。
+ * 复制会被改写的对象（消息对象、blocks 数组、TextBlock）；ImageBlock 与
+ * toolResult 的字符串字段不可变，共享/浅拷贝即可。
+ */
 export function cloneWorkMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((msg) => {
     if (msg.role === "toolResult") {
