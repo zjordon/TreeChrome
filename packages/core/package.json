@@ -1,0 +1,30 @@
+{
+  "name": "@tw/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "TreeWalker 核心 TS 库：LLM 多协议客户端（P2，移植自 tree_walker/llm/client.py 的行为层）。纯 TS：禁 chrome.* / process.*，仅依赖 Web 标准全局（fetch/AbortSignal/performance）。AbortSignal.any 需 Node 20.3+/Chrome 116+",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  }
+}

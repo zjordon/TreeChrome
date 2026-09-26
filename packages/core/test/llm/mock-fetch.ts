@@ -1,0 +1,257 @@
+// 测试注入夹具：MockFetch（按序回放 + 调用记录）与 FakeClock（冻结时钟）。
+// 设计见 docs/implement-plan/p2/04 §2；Response 用真实 Response 构造（status/headers/body
+// 走真解析路径）。rawBody 形态用于构造非 JSON 纯文本错误体（截断断言）。
+
+export type MockResponseSpec =
+  | { status: number; headers?: Record<string, string>; body?: unknown }
+  /** 非 JSON 原文响应体（如 text/plain 错误页）：不做 JSON.stringify */
+  | { status: number; headers?: Record<string, string>; rawBody: string }
+  | { networkError: Error }
+  /** 永不 resolve，直到 signal 中止才 reject AbortError（测 deadline 强杀在飞请求） */
+  | { hangUntilAbort: true };
+
+/** 真实 fetch 按 signal 的 abort reason 拒绝（AbortSignal.timeout 到点 reason 为
+ * name="TimeoutError" 的 DOMException）；无 reason 回退标准 AbortError 形态。
+ * applySpec / makeHangingBodyFetch / FakeClock.sleep 三处共同复刻该运行时形态
+ * （轮 31 #1 单源化），任一处演进（TimeoutError 特判等）不再手工同步 */
+function abortReason(signal: AbortSignal): unknown {
+  // 与 client.ts abortReasonOr 同口径（轮 44 #20；轮 47 #2）：仅对 undefined 兜底
+  // ——?? 会吞掉显式 abort(null) 的 null（#186 要透传的规范可达形态）
+  return signal.reason !== undefined ? signal.reason : new DOMException("Aborted", "AbortError");
+}
+
+function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise<Response> {
+  if ("networkError" in spec) {
+    return Promise.reject(spec.networkError);
+  }
+  if ("hangUntilAbort" in spec) {
+    if (signal === null || signal === undefined) {
+      // fail-fast（轮 13 #1）：无 signal 的挂起永不 settle，只会拖到 vitest 5s
+      // 超时。AbortError 形态可穿透 postJson/callWithBackoff 的分型原样上抛
+      //（轮 38 #19：普通 Error 会被包装成 LLMConnectionError 走 5 轮退避后再
+      // 挂起，显式报错反而被吞——与 MockFetch.fetch 队列耗尽守卫同款口径）
+      return Promise.reject(
+        new DOMException(
+          "MockFetch: hangUntilAbort 需请求携带 AbortSignal（timeoutMs/窗口/外部取消），否则永不 settle",
+          "AbortError",
+        ),
+      );
+    }
+    return new Promise((_resolve, reject) => {
+      // reject(signal.reason)：真实 fetch 按 signal 的 abort reason 拒绝——
+      // AbortSignal.timeout 到点的 reason 是 name="TimeoutError" 的 DOMException
+      //（非 AbortError），mock 必须复刻该形态，否则分型测试与真实运行时脱节
+      const onAbort = () => reject(abortReason(signal));
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+  // 真实 fetch 对 signal 已中止的调用立即以 abort reason 拒绝（不触网，轮 38
+  // #21）——普通 spec 同样复刻（与 hangUntilAbort 分支的已中止预检对称），否则
+  // 「abort 后请求的分类形态」用例与真实运行时脱节
+  if (signal !== null && signal !== undefined && signal.aborted) {
+    return Promise.reject(abortReason(signal));
+  }
+  const headers = new Headers(spec.headers ?? { "content-type": "application/json" });
+  let bodyText: string;
+  if ("rawBody" in spec) {
+    bodyText = spec.rawBody;
+  } else {
+    bodyText = spec.body === undefined ? "" : JSON.stringify(spec.body);
+  }
+  // null-body 状态（204/205/304，轮 31 #8）：真 Response 构造约束——显式 body
+  //（含空串）直接抛 TypeError，会被 postJson 分型成网络层假象；类型契约
+  // status: number 允许这些值，显式降为 null 保持真解析路径可用
+  const nullBodyStatus = spec.status === 204 || spec.status === 205 || spec.status === 304;
+  return Promise.resolve(
+    new Response(nullBodyStatus ? null : bodyText, {
+      status: spec.status,
+      headers,
+    }),
+  );
+}
+
+export class MockFetch {
+  readonly calls: Array<{ url: string; init: RequestInit }> = [];
+  private readonly queue: MockResponseSpec[] = [];
+
+  readonly fetch = (url: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
+    const u = String(url);
+    this.calls.push({ url: u, init: init ?? ({} as RequestInit) });
+    const next = this.queue.shift();
+    if (next === undefined) {
+      // 队列耗尽即测试编排错误（不是被测行为）。AbortError 形态可穿透各层分类
+      //（postJson 非超时中止原样上抛 → callWithBackoff 非 LLMError 直接抛 →
+      // getAction 非窗口中止穿透）——立即失败且携带 URL；普通 Error 会被分类成
+      // LLMConnectionError（infra 成员）被退避/fallback 吞掉，挂到 5s 超时才暴露
+      console.error(`MockFetch: unexpected request ${u}（队列已耗尽，检查用例的 queueMany 编排）`);
+      throw new DOMException(`MockFetch: unexpected request ${u}`, "AbortError");
+    }
+    return applySpec(next, init?.signal);
+  };
+
+  /** 顺序消费（耗尽后再有请求即失败） */
+  queueMany(...specs: MockResponseSpec[]): this {
+    this.queue.push(...specs);
+    return this;
+  }
+
+  bodyAt(index: number): Record<string, unknown> {
+    const body = this.calls[index]?.init.body;
+    if (typeof body !== "string") {
+      // 越界/缺 body 时 JSON.parse(String(undefined)) 只会抛无线索的 SyntaxError——
+      // 与队列耗尽的显式报错对称，携带 calls 数量辅助定位编排问题
+      throw new Error(
+        `MockFetch.bodyAt(${index})：无对应请求记录或请求未携带 body（实际 calls=${this.calls.length}，检查 queueMany 编排或重试次数预期）`,
+      );
+    }
+    return JSON.parse(body) as Record<string, unknown>;
+  }
+
+  lastBody(): Record<string, unknown> {
+    return this.bodyAt(this.calls.length - 1);
+  }
+}
+
+/**
+ * 「状态行已返回、body 读取挂起至 abort」的 fetch 桩（MockFetch 的真实 Response
+ * 无法构造此形态）——覆盖 postJson 的 resp.text() 分类路径。reject(signal.reason)：
+ * 复刻真实 fetch 形态（超时 reason 是 TimeoutError）。
+ * opts：ok/status/headers 定形态；onBodyRead 在 text() 首次调用时打点（确定性同步
+ * 「恰逢读体挂起」）；rejectDelayMs 把 abort reject 推迟 N 毫秒（构造 deadline
+ * watcher 先行的竞态临界，走真实定时器）。
+ */
+export function makeHangingBodyFetch(
+  opts: {
+    ok?: boolean;
+    status?: number;
+    headers?: Record<string, string>;
+    onBodyRead?: () => void;
+    rejectDelayMs?: number;
+  } = {},
+): typeof fetch {
+  const { ok = true, status = 200, headers = {}, onBodyRead, rejectDelayMs = 0 } = opts;
+  return (async (_url: unknown, init?: { signal?: AbortSignal }) => {
+    return {
+      ok,
+      status,
+      headers: new Headers(headers),
+      text: () => {
+        onBodyRead?.();
+        return new Promise<string>((_resolve, reject) => {
+          // fail-fast（与 MockFetch hangUntilAbort 同款，轮 14 #1）：无 signal 的
+          // 挂起永不 settle，只会拖到 vitest 5s 超时
+          if (init?.signal === null || init?.signal === undefined) {
+            // AbortError 形态穿透 postJson 分型原样上抛（轮 38 #20）：普通 Error
+            // 在 ok 路径被包装成 LLMConnectionError 退避重试、在错误体路径被状态码
+            // 分型吞掉（429 假象还误触 fallback 单向切换）
+            reject(
+              new DOMException(
+                "makeHangingBodyFetch 需请求携带 AbortSignal（timeoutMs/窗口/外部取消），否则 text() 永不 settle",
+                "AbortError",
+              ),
+            );
+            return;
+          }
+          const signal = init.signal;
+          const onAbort = () => setTimeout(() => reject(abortReason(signal)), rejectDelayMs);
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener("abort", onAbort, { once: true });
+        });
+      },
+    } as unknown as Response;
+  }) as typeof fetch;
+}
+
+interface FakeTimer {
+  due: number;
+  resolve: () => void;
+  off?: () => void;
+}
+
+/** 收敛参数：轮数上限与每轮微任务冲刷深度（具名便于调档；超限直接抛错 fail fast
+ * 并携带 due/t 线索——见 advance 尾部，掩蔽成 vitest 5s 挂起只会降低可诊断性） */
+const MAX_ROUNDS = 6;
+const MICROTASK_FLUSH = 50;
+
+/** 假时钟：now() 手动推进；sleep 登记为可推进定时器，signal 中止立即 reject */
+export class FakeClock {
+  private t = 1000; // 非零起点，防「0 即缺省」类误判
+  private timers: FakeTimer[] = [];
+
+  readonly now = (): number => this.t;
+
+  readonly sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const timer: FakeTimer = {
+        due: this.t + ms,
+        resolve,
+      };
+      if (signal !== undefined) {
+        // signal 存在才注册中止回调（轮 34 #1/#7：onAbort 内不再有不可达的
+        // undefined 分支）；透传 abort reason（与 client.defaultSleep 同款：
+        // 宿主自定义 reason 不变形），缺省回退由 abortReason 内部兜底
+        const onAbort = () => {
+          const i = this.timers.indexOf(timer);
+          if (i >= 0) {
+            this.timers.splice(i, 1);
+          }
+          timer.off?.();
+          reject(abortReason(signal));
+        };
+        timer.off = () => signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+      this.timers.push(timer);
+    });
+
+  /**
+   * 推进时钟：先冲刷微任务链（fetch→错误分类→sleep 注册…一轮可能串多次 fetch，
+   * 如 fallback 切换），再触发到期 sleep；循环到无新到期定时器为止（收敛）。
+   * 这保证 sleep 的 due 总以「本轮推进后的 t」注册，退避/预算断言的绝对时间可预期。
+   */
+  async advance(ms: number): Promise<void> {
+    this.t += ms;
+    for (let round = 0; round < MAX_ROUNDS; round += 1) {
+      for (let i = 0; i < MICROTASK_FLUSH; i += 1) {
+        await Promise.resolve();
+      }
+      const due = this.timers.filter((tm) => tm.due <= this.t);
+      if (due.length === 0) {
+        return;
+      }
+      for (const tm of due) {
+        const i = this.timers.indexOf(tm);
+        if (i >= 0) {
+          this.timers.splice(i, 1);
+        }
+        tm.off?.();
+        tm.resolve();
+      }
+    }
+    // 末轮 resolve 的续体尚未冲刷（循环内顺序是先冲刷后触发）——补一轮冲刷再做
+    // 收敛判定（轮 38 #18）：否则末轮续体注册的到期 sleep 不可见，该检查恒为
+    // false（死代码），非收敛链仍以 vitest 5s 挂起收场
+    for (let i = 0; i < MICROTASK_FLUSH; i += 1) {
+      await Promise.resolve();
+    }
+    if (this.timers.some((tm) => tm.due <= this.t)) {
+      // fail fast：未收敛时到期 sleep 永不 resolve，等 vitest 超时只会把编排问题
+      // 掩蔽成 5s 挂起——直接抛出并携带 due/t 线索
+      const stuck = this.timers.filter((tm) => tm.due <= this.t).map((tm) => tm.due);
+      throw new Error(
+        `FakeClock.advance: ${MAX_ROUNDS} 轮内未收敛，仍有到期 sleep 未触发（due=[${stuck.join(", ")}], t=${this.t}；调大 MAX_ROUNDS/MICROTASK_FLUSH 或检查链路）`,
+      );
+    }
+  }
+}
