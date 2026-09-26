@@ -17,11 +17,11 @@ import type {
   StopReason,
   TokenUsage,
   ToolCall,
-  ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
   assertToolContract,
+  collectToolResults,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -135,42 +135,33 @@ function toWireContents(
         parts.push({ text: IMAGE_OMITTED_PLACEHOLDER });
       }
       pushMerged("model", parts);
-      const results = new Map<string, ToolResultMessage>();
-      let j = i + 1;
-      while (j < messages.length) {
-        const cur = messages[j];
-        if (cur.role !== "toolResult") {
-          break;
-        }
-        results.set(cur.toolCallId, cur);
-        j += 1;
-      }
-      if (results.size > 0) {
-        const resultParts: Array<Record<string, unknown>> = [];
-        for (const call of msg.toolCalls ?? []) {
-          const tr = results.get(call.id);
-          if (tr !== undefined) {
-            resultParts.push({
-              functionResponse: {
-                name: tr.toolName,
-                // isError 无原生字段：[error] 前缀约定（与 openai 同款）
-                response: {
-                  result: tr.isError ? `${TOOL_RESULT_ERROR_PREFIX}${tr.text}` : tr.text,
-                },
+      // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排——collectToolResults
+      // 与 anthropic 单源，轮 37 #10）
+      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? []);
+      if (pairs.length > 0) {
+        pushMerged(
+          "user",
+          pairs.map(({ call, result }) => ({
+            functionResponse: {
+              name: result.toolName,
+              // isError 无原生字段：[error] 前缀约定（与 openai 同款）
+              response: {
+                result: result.isError ? `${TOOL_RESULT_ERROR_PREFIX}${result.text}` : result.text,
               },
-              // 官方 SDK 形态：签名随 functionResponse part 回传（评审轮 10 #9——
-              // 官方文档两处口径并存：错误文案指向 functionCall part、SDK 组装
-              // 指向 functionResponse，双携带待真机核验，README 风险 3）
-              ...(call.signature !== undefined ? { thoughtSignature: call.signature } : {}),
-            });
-          }
-        }
-        pushMerged("user", resultParts);
+            },
+            // 官方 SDK 形态：签名随 functionResponse part 回传（评审轮 10 #9——
+            // 官方文档两处口径并存：错误文案指向 functionCall part、SDK 组装
+            // 指向 functionResponse，双携带待真机核验，README 风险 3）
+            ...(call.signature !== undefined ? { thoughtSignature: call.signature } : {}),
+          })),
+        );
       }
-      i = j;
+      i = next;
       continue;
     }
-    // toolResult 不在 assistant 之后：assertValidMessages 已拦，兜底跳过
+    // toolResult 不在 assistant 之后：assertValidMessages 已拦，兜底跳过——分支
+    // 真实触发（校验与折叠逻辑漂移时）同样留证据（轮 37 #9，与全文件「丢弃必留证据」口径一致）
+    log(`[llm] gemini 跳过不在 assistant 之后的 toolResult：${msg.toolCallId}`);
     i += 1;
   }
   return out;
@@ -381,6 +372,8 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
   const onBaseUrlV1beta = makeOnceWarn(deps.log);
   const onBaseUrlOpenAiForm = makeOnceWarn(deps.log);
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
+  // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
+  const onTimeoutInvalid = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
@@ -461,6 +454,7 @@ export function createGeminiProvider(config: ProviderConfig, deps: Required<LLMD
       provider: config.name,
       signal: req.signal,
       timeoutMs: req.timeoutMs,
+      onInvalidTimeout: onTimeoutInvalid,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
     return parseResponse(

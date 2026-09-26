@@ -247,6 +247,46 @@ describe("postJson 成功与网络层", () => {
     expect((err as LLMTimeoutError).cause).toMatchObject({ name: "TimeoutError" });
   });
 
+  it.each([0, -5, Number.NaN])(
+    "timeoutMs %s 非法 → 视为未设置：请求正常完成 + onInvalidTimeout 留证据（轮 37 #7：AbortSignal.timeout 立即到点是每请求 LLMTimeoutError + 误触 fallback 切换）",
+    async (bad) => {
+      const mock = new MockFetch();
+      mock.queueMany({ status: 200, body: { ok: 1 } });
+      const warnings: string[] = [];
+      const out = await postJson(
+        mock.fetch,
+        "https://unit.example/api",
+        {},
+        {},
+        {
+          provider: "unit",
+          timeoutMs: bad,
+          onInvalidTimeout: (m) => warnings.push(m),
+        },
+      );
+      expect(out).toEqual({ ok: 1 });
+      expect(warnings).toEqual([`timeoutMs ${bad} 非正有限数值（NaN/0/负值），视为未设置（unit）`]);
+    },
+  );
+
+  it("合法 timeoutMs 不触发 onInvalidTimeout（负对照，防守卫误伤正常超时）", async () => {
+    const mock = new MockFetch();
+    mock.queueMany({ status: 200, body: { ok: 1 } });
+    const warnings: string[] = [];
+    await postJson(
+      mock.fetch,
+      "https://unit.example/api",
+      {},
+      {},
+      {
+        provider: "unit",
+        timeoutMs: 5000,
+        onInvalidTimeout: (m) => warnings.push(m),
+      },
+    );
+    expect(warnings).toEqual([]);
+  });
+
   it("外部 signal 为 AbortSignal.timeout 时到点 → 原样穿透，不误分型为 LLMTimeoutError（轮 24 #3）", async () => {
     // 姊妹用例：宿主 deadline 场景（外部 signal 而非自身 timeoutMs）。abort reason
     // 与自身超时同形（name="TimeoutError" 的 DOMException）——分型唯一依据是自身

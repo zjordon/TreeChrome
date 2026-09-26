@@ -229,7 +229,7 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ]);
   });
 
-  it("约束键标量类型校验分域：pattern 非字符串、int64 四键非整数（含小数）、minimum/maximum 非有限数值删除并上报（轮 15 #13 + 轮 21 #12）", () => {
+  it("约束键标量类型校验分域：pattern 非字符串、int64 四键非整数（含小数）、minimum/maximum 非有限数值删除并上报（轮 15 #13 + 轮 21 #12；文案含负值维度，轮 37 #13）", () => {
     const issues: string[] = [];
     expect(
       sanitizeGeminiSchema(
@@ -245,12 +245,35 @@ describe("sanitizeGeminiSchema（白名单递归清洗）", () => {
     ).toEqual({ type: "string" }); // 约束键删空后补注入缺省 type（轮 19 #1）
     expect(issues).toEqual([
       "约束键「pattern」非字符串，删除该键：123",
-      "约束键「minlength」非整数，删除该键：true",
+      "约束键「minlength」非整数或为负值，删除该键：true",
       '约束键「minimum」非有限数值，删除该键："5"',
-      "约束键「minitems」非整数，删除该键：null",
-      "约束键「maxlength」非整数，删除该键：2.5",
+      "约束键「minitems」非整数或为负值，删除该键：null",
+      "约束键「maxlength」非整数或为负值，删除该键：2.5",
       "节点缺 type，补注入缺省 string",
     ]);
+  });
+
+  it("长度约束负值删除并上报（轮 37 #13：int64 四键官方语义非负，负值同为 400）；0 合法保留；minimum 负值语义合法不收口", () => {
+    const issues: string[] = [];
+    expect(sanitizeGeminiSchema({ maxLength: -1, minItems: -2 }, (d) => issues.push(d))).toEqual({
+      type: "string",
+    });
+    expect(issues).toEqual([
+      "约束键「maxlength」非整数或为负值，删除该键：-1",
+      "约束键「minitems」非整数或为负值，删除该键：-2",
+      "节点缺 type，补注入缺省 string",
+    ]);
+    expect(sanitizeGeminiSchema({ type: "array", minItems: 0, maxItems: 0 })).toEqual({
+      type: "array",
+      minItems: 0,
+      maxItems: 0,
+    });
+    // minimum/maximum 为 double 且负值语义合法（如 minimum: -10），维持有限数值校验
+    expect(sanitizeGeminiSchema({ type: "number", minimum: -10, maximum: -1 })).toEqual({
+      type: "number",
+      minimum: -10,
+      maximum: -1,
+    });
   });
 
   it("pattern 可编译性校验：编译失败的正则删除并上报，可编译的保留（轮 24 #5）", () => {

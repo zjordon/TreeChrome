@@ -287,18 +287,21 @@ export function sanitizeGeminiSchema(
         onSchemaIssue?.(`约束键「pattern」非可编译正则，删除该键：${stringifyForLog(value)}`);
         continue;
       }
-      // 约束键标量类型校验分域（轮 15 #13 + 轮 21 #12）：minLength/maxLength/
-      // minItems/maxItems 官方为 int64——小数（如 maxLength: 2.5）proto3 解析失败
-      // 同为 400（Number.isInteger 蕴含 number+finite）；minimum/maximum 为
-      // double，维持有限数值校验
+      // 约束键标量类型校验分域（轮 15 #13 + 轮 21 #12 + 轮 37 #13）：
+      // minLength/maxLength/minItems/maxItems 官方为 int64 且语义非负——小数
+      //（如 maxLength: 2.5）proto3 解析失败、负值（maxLength: -1）同为 400
+      // INVALID_ARGUMENT（Number.isInteger 蕴含 number+finite）；minimum/maximum
+      // 为 double 且负值语义合法（minimum: -10），维持有限数值校验
       if (
         (normalized === "minlength" ||
           normalized === "maxlength" ||
           normalized === "minitems" ||
           normalized === "maxitems") &&
-        !Number.isInteger(value)
+        (typeof value !== "number" || !Number.isInteger(value) || value < 0)
       ) {
-        onSchemaIssue?.(`约束键「${normalized}」非整数，删除该键：${stringifyForLog(value)}`);
+        onSchemaIssue?.(
+          `约束键「${normalized}」非整数或为负值，删除该键：${stringifyForLog(value)}`,
+        );
         continue;
       }
       if (

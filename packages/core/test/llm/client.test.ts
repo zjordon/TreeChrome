@@ -740,7 +740,7 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠
     expect(mock.calls.length).toBe(2);
   });
 
-  it("墙钟预算耗尽 → 立即抛最后错误（setCallWindow(40s)：cap=30s，5 次请求后 31000+30000>31000）", async () => {
+  it("墙钟预算耗尽 → 立即抛最后错误（setCallWindow(40s)：cap=30s，5 次请求后 31000+30000=61000>41000 即 deadline）", async () => {
     const { mock, clock, client } = setup();
     client.setCallWindow(40_000);
     mock.queueMany(r429(), r429(), r429(), r429(), r429());
@@ -1259,7 +1259,7 @@ describe("deadline 与取消", () => {
     await clock.advance(0); // 429 → sleep(2s)
     await clock.advance(2000);
     await clock.advance(4000);
-    await clock.advance(8000); // t=15s；下一轮 delay 16s，15+16 > 20 → 窗口耗尽
+    await clock.advance(8000); // t=15000；下一轮 delay 16s，15000+16000=31000 > 21000（deadline）→ 窗口耗尽
     await expect(p).rejects.toBeInstanceOf(LLMRateLimitError);
     expect(logs.some((m) => m.includes("window deadline exhausted"))).toBe(true);
     expect(logs.some((m) => m.includes("budget (30s"))).toBe(false);

@@ -14,11 +14,11 @@ import type {
   StopReason,
   TokenUsage,
   ToolCall,
-  ToolResultMessage,
 } from "../types.js";
 import { assertValidMessages } from "../types.js";
 import {
   assertToolContract,
+  collectToolResults,
   defaultTestConnection,
   isRecord,
   makeOnceWarn,
@@ -119,36 +119,26 @@ function toWireMessages(
         content.push({ type: "text", text: IMAGE_OMITTED_PLACEHOLDER });
       }
       pushMerged("assistant", content);
-      // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排）
-      const results = new Map<string, ToolResultMessage>();
-      let j = i + 1;
-      while (j < messages.length) {
-        const cur = messages[j];
-        if (cur.role !== "toolResult") {
-          break;
-        }
-        results.set(cur.toolCallId, cur);
-        j += 1;
+      // 折叠紧随的 toolResult 段（乱序到达，按 toolCalls 顺序重排——collectToolResults
+      // 与 gemini 单源，轮 37 #10）
+      const { pairs, next } = collectToolResults(messages, i + 1, msg.toolCalls ?? []);
+      if (pairs.length > 0) {
+        pushMerged(
+          "user",
+          pairs.map(({ result }) => ({
+            type: "tool_result",
+            tool_use_id: result.toolCallId,
+            content: result.text,
+            ...(result.isError ? { is_error: true } : {}),
+          })),
+        );
       }
-      if (results.size > 0) {
-        const resultBlocks: Array<Record<string, unknown>> = [];
-        for (const call of msg.toolCalls ?? []) {
-          const tr = results.get(call.id);
-          if (tr !== undefined) {
-            resultBlocks.push({
-              type: "tool_result",
-              tool_use_id: tr.toolCallId,
-              content: tr.text,
-              ...(tr.isError ? { is_error: true } : {}),
-            });
-          }
-        }
-        pushMerged("user", resultBlocks);
-      }
-      i = j;
+      i = next;
       continue;
     }
-    // toolResult 不在 assistant 之后：assertValidMessages 已拦，兜底跳过
+    // toolResult 不在 assistant 之后：assertValidMessages 已拦，兜底跳过——分支
+    // 真实触发（校验与折叠逻辑漂移时）同样留证据（轮 37 #8，与全文件「丢弃必留证据」口径一致）
+    log(`[llm] anthropic 跳过不在 assistant 之后的 toolResult：${msg.toolCallId}`);
     i += 1;
   }
   return out;
@@ -294,6 +284,8 @@ export function createAnthropicProvider(
   // 示例即全端点，整段复制进卡片拼出 /v1/messages/v1/messages → 404——与
   // openai /chat/completions（轮 26 #2）、gemini :generateContent（轮 34 #10）同族
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
+  // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
+  const onTimeoutInvalid = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
@@ -348,6 +340,7 @@ export function createAnthropicProvider(
       provider: config.name,
       signal: req.signal,
       timeoutMs: req.timeoutMs,
+      onInvalidTimeout: onTimeoutInvalid,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
     return parseResponse(json, requestedNames, deps.log, config.name);

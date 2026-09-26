@@ -28,8 +28,18 @@ function resolveEsbuild() {
   try {
     return require.resolve("esbuild");
   } catch {
-    const vitestPkgPath = require.resolve("vitest/package.json");
-    return require.resolve("esbuild", { paths: [dirname(vitestPkgPath)] });
+    // 兜底也失败时错误须指向 esbuild/依赖安装（轮 37 #5）：最先抛出的
+    // "Cannot find module 'vitest/package.json'" 会把排障引向 vitest
+    try {
+      const vitestPkgPath = require.resolve("vitest/package.json");
+      return require.resolve("esbuild", { paths: [dirname(vitestPkgPath)] });
+    } catch (fallbackError) {
+      throw new Error(
+        `esbuild 解析失败（请先 pnpm install——packages/core devDependencies 显式声明了 esbuild）：${
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        }`,
+      );
+    }
   }
 }
 
@@ -246,14 +256,14 @@ async function main() {
       console.log(`\n>> POST ${redact(url)}`);
       console.log(`   headers: ${JSON.stringify(headers)}`);
       console.log(`   body: ${body.slice(0, 800)}${body.length > 800 ? " …" : ""}`);
-      // 响应侧证据（轮 35 #1）：直接可见 tool_calls 形态，人工验收可裁决「真工具
-      // 调用 vs text-JSON 兜底」（核心层兜底成功路径静默，GetActionResult 不带
-      // 路径信息）；clone 必须在 body 被核心层消费前完成，读取失败不影响主流程
+      // 响应侧证据（轮 35 #1）：直接可见 tool_calls 形态，与 ok 分支的
+      // result.toolCall 结构化判定（轮 37 #1）互为印证；clone 必须在 body 被
+      // 核心层消费前完成，读取失败不影响主流程
       const resp = await fetch(url, init);
       try {
         const text = await resp.clone().text();
         const r = redact(text);
-        console.log(`<< ${resp.status} ${r.slice(0, 800)}${text.length > 800 ? " …" : ""}`);
+        console.log(`<< ${resp.status} ${r.slice(0, 800)}${r.length > 800 ? " …" : ""}`);
       } catch {
         // clone/读取失败（流式或空体形态）不影响主流程
       }
@@ -280,10 +290,17 @@ async function main() {
         `\n== ${card.name} (${card.protocol}, model=${card.model}) → kind=${result.kind} (${ms}ms)`,
       );
       if (result.kind === "ok") {
-        // ok 有两条路径：toolCalls 命中，或模型返回纯文本恰为非空 JSON（text-JSON
-        // 兜底）。GetActionResult 不携带路径信息，此处仅能做形状校验：兜底 JSON
-        // 缺 action.name 判失败；兜底 JSON 恰符合 schema（端点忽略强制
-        // tool_choice）会被漏判为通过，人工验收时需结合请求日志复核 tool_calls 形态
+        // ok 有两条路径：toolCalls 命中（携带 result.toolCall——wire id 与 gemini
+        // thoughtSignature）或模型返回纯文本恰为非空 JSON（text-JSON 兜底，不携带
+        // toolCall）。smoke 的验收目的是真工具调用：兜底命中直接判失败（轮 37 #1
+        // 闭合「合规兜底 JSON 恰符合 schema 会被漏判为通过」的缺口，不再依赖人工
+        // 复核请求日志）
+        if (result.toolCall === undefined) {
+          failed = true;
+          console.error(
+            `   ${card.name} ok 但走 text-JSON 兜底（result.toolCall 缺失，非真工具调用）`,
+          );
+        }
         const action = result.toolInput?.action;
         if (typeof action !== "object" || action === null || typeof action.name !== "string") {
           failed = true;
@@ -298,9 +315,12 @@ async function main() {
         console.log(`usage: ${JSON.stringify(result.usage)}`);
       } else {
         // empty = 解析梯子耗尽仍未产出 agent_response 调用——对 smoke 就是失败，
-        // 不能静默 exitCode 0 造成假通过
+        // 不能静默 exitCode 0 造成假通过；reason/lastUsage（轮 35 #11）区分「模型
+        // 持续回文本拒绝工具调用」与「端点响应不可解析」两类故障方向（轮 37 #2）
         failed = true;
-        console.error(`   ${card.name} 返回 empty：解析梯子耗尽仍未产出 ${TOOL.name} 工具调用`);
+        console.error(
+          `   ${card.name} 返回 empty（reason=${result.reason}，lastUsage=${JSON.stringify(result.lastUsage)}）：解析梯子耗尽仍未产出 ${TOOL.name} 工具调用`,
+        );
       }
     } catch (e) {
       failed = true;

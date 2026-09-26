@@ -369,6 +369,43 @@ describe("请求构造（canonical → wire）", () => {
     expect(wire).toContain("data:image/jpeg;base64,AAAA");
   });
 
+  it("image mime 越界降级占位：image/svg+xml 不在官方枚举（png/jpeg/webp/gif）→ [image omitted] + 留日志；枚举内原样出站（轮 37 #12，与 anthropic/gemini 轮 36 #2 同口径）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    mock.queueMany(toolOk("{}"));
+    await provider.chat({
+      systemPrompt: null,
+      messages: [
+        {
+          role: "user",
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", mimeType: "image/svg+xml", base64: "AAAA" },
+            { kind: "image", mimeType: "image/gif", base64: "BBBB" },
+          ],
+        },
+      ],
+      tools: [TOOL],
+    });
+    const wire = JSON.stringify(mock.lastBody().messages);
+    expect(wire).toContain("[image omitted]");
+    expect(wire).toContain("data:image/gif;base64,BBBB"); // 枚举内不受降级影响
+    expect(wire).not.toContain("svg");
+    expect(logs.some((m) => m.includes("openai image mime「image/svg+xml」不在官方枚举"))).toBe(
+      true,
+    );
+  });
+
+  it("timeoutMs 非法 → 视为未设置 + 实例级一次性告警（轮 37 #7 接线锚定：第二次调用不再告警）", async () => {
+    const { mock, provider, logs } = setupLogs();
+    const badReq = (): ChatRequest => ({ ...baseReq(), timeoutMs: 0 });
+    mock.queueMany(toolOk("{}"), toolOk("{}"));
+    await provider.chat(badReq());
+    await provider.chat(badReq());
+    expect(logs.filter((m) => m.includes("timeoutMs 0 非正有限数值"))).toHaveLength(1);
+    // 两次请求都正常完成（非法值不制造每请求超时）
+    expect(mock.calls).toHaveLength(2);
+  });
+
   it("extraHeaders 最后合并（可覆盖 authorization）——三处独立实现的接线锚定（轮 30 #8，对齐 anthropic 侧）", async () => {
     const { mock, provider } = setup({
       extraHeaders: { authorization: "Bearer override", "x-custom": "1" },

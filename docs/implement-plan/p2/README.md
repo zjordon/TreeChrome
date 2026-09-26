@@ -590,3 +590,19 @@ smoke 产物摘要：
 - **其余**：LlmProtocol/LlmDeps 统一为 LLM 前缀（#1，未发布窗口）；408 解析 Retry-After 与 429 对称（#9）；错误体读取失败并入 detail（#4）；工具 name 空串前置拦截（#8，与轮 18 #13 对称）；defaultTestConnection JSDoc 归位（#3）；U1 按阈值派生（#5）。
 
 测试 359 例全绿（覆盖率 98.79%）。
+
+### 评审轮 37（review-p2-llm-client-37.json，2026-09-26，14/14 全采纳）
+
+采纳 14 条。要点：
+
+- **折叠骨架单源化（#10）**：anthropic toWireMessages 与 gemini toWireContents 的 toolResult 段收集/重排（Map 收集 + 按前置 toolCalls 顺序 + 配对过滤）逐字同构约 30 行——提取 common.collectToolResults（返回 pairs 携带配对 call，gemini 侧 functionResponse 需回挂 signature），后续单点修补不再改一漏一（本轮 #8/#9 兜底日志即双处同步实例）。
+- **timeoutMs 非法值守卫（#7，temperature/maxTokens 同族雷）**：NaN/0/负值经宿主 parseFloat 可达，AbortSignal.timeout 立即到点 → 直连 provider.chat 的调用方每请求 LLMTimeoutError（infra 可重试 + 误触 fallback 切换 + 空转 5 轮退避）——非法值视为未设置 + onInvalidTimeout 一次性告警（三适配器接线）。
+- **openai mime 枚举补齐（#12，轮 36 #2 同族收口）**：OPENAI_IMAGE_MIME（png/jpeg/webp/gif）越界降级占位 + 留日志（log 线程化进 userContent/toWireMessages），三协议口径一致（此前 openai 越界 mime 裸出站烧 400）。
+- **stringifyForLog 串化兜底（#6）**：BigInt/循环引用（宿主程序化构造的 parameters 可达）原先在 schema 清洗的删除上报路径抛裸 TypeError——try/catch 兜底 String(value)，留证据路径自身不崩溃。
+- **工具重名前置拦截（#14）**：三协议端点均校验 tools 名字唯一，assertToolContract 补 Set 大小比较（P4 registry 合并场景的现实病态）。
+- **兜底跳过留证据（#8/#9）**：「toolResult 不在 assistant 之后」双协议兜底分支补日志（assertValidMessages 已拦、真实触发时漂移可观测，与全文件「丢弃必留证据」口径一致）。
+- **schema 负值约束（#13）**：minLength/maxLength/minItems/maxItems 官方语义非负 int64，负值（maxLength: -1）与小数同为 400——补符号位校验（minimum/maximum 负值语义合法不收口）。
+- **smoke 脚本（#1/#2/#3/#5）**：ok 分支用 result.toolCall 结构化判定 text-JSON 兜底（闭合轮 35 #1「合规兜底漏判为通过」缺口，不再依赖人工复核请求日志）；empty 打印 reason/lastUsage 区分两类故障方向；响应截断省略号口径统一（redact 后长度）；esbuild 兜底解析失败错误指向根因。
+- **测试算式修正（#4/#11）**：FakeClock t0=1000，setCallWindow(40s/20s) 的 deadline 是 41000/21000——两处「窗口大小当 deadline」的笔误修正。
+
+测试 371 例全绿（覆盖率 98.73%）。

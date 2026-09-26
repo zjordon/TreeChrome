@@ -68,8 +68,17 @@ function suppressedTemperatureEntry(
   return {};
 }
 
+/** openai 官方输入图封闭枚举（轮 37 #12，与 anthropic/gemini 轮 36 #2 同族）：
+ * PNG/JPEG/WEBP/非动图 GIF——svg/bmp/tiff 等越界即硬 400（非 infra 不重试还误触
+ * fallback 切换）；兼容端点（GLM/vLLM 等）的接受集均含这四类，越界降级占位
+ * 留证据（请求可继续，图片未出站可观测，与 IMAGE_OMITTED_PLACEHOLDER 口径一致） */
+const OPENAI_IMAGE_MIME = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
 /** 纯文本 user → content 字符串（最大化兼容）；含图 → 数组形态（data-URL image_url） */
-function userContent(blocks: ContentBlock[]): string | Array<Record<string, unknown>> {
+function userContent(
+  blocks: ContentBlock[],
+  log: (message: string) => void,
+): string | Array<Record<string, unknown>> {
   // 类型谓词守卫（轮 21 #10）：评审建议的 some(image) 反向守卫无法让 TS 收窄
   //（never 断言编译不过）——every 谓词对现联合语义等价，且联合扩展新成员
   //（PDF 等）时自然落入数组路径的穷尽断言
@@ -81,10 +90,18 @@ function userContent(blocks: ContentBlock[]): string | Array<Record<string, unkn
       return { type: "text", text: b.text };
     }
     if (b.kind === "image") {
-      // mimeType 别名归一（轮 28 #5）：与 anthropic/gemini 同口径（normalizeImageMime 单源）
+      // mimeType 别名归一（轮 28 #5，normalizeImageMime 单源）+ 枚举越界降级
+      //（轮 37 #12，与 anthropic/gemini 同口径）：越界 mime 裸出站即硬 400
+      const mimeType = normalizeImageMime(b.mimeType);
+      if (!OPENAI_IMAGE_MIME.has(mimeType)) {
+        log(
+          `[llm] openai image mime「${mimeType}」不在官方枚举（png/jpeg/webp/gif），降级占位——图片未出站`,
+        );
+        return { type: "text", text: IMAGE_OMITTED_PLACEHOLDER };
+      }
       return {
         type: "image_url",
-        image_url: { url: `data:${normalizeImageMime(b.mimeType)};base64,${b.base64}` },
+        image_url: { url: `data:${mimeType};base64,${b.base64}` },
       };
     }
     const _exhaustive: never = b;
@@ -93,11 +110,14 @@ function userContent(blocks: ContentBlock[]): string | Array<Record<string, unkn
 }
 
 /** canonical → wire 消息。toolResult 每条独立 tool 消息（与 anthropic 相反，不合并） */
-function toWireMessages(messages: ChatMessage[]): Array<Record<string, unknown>> {
+function toWireMessages(
+  messages: ChatMessage[],
+  log: (message: string) => void,
+): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
   for (const msg of messages) {
     if (msg.role === "user") {
-      out.push({ role: "user", content: userContent(msg.blocks) });
+      out.push({ role: "user", content: userContent(msg.blocks, log) });
       continue;
     }
     if (msg.role === "assistant") {
@@ -320,6 +340,8 @@ export function createOpenAICompletionsProvider(
   // /v1beta 同族）：官方 curl 示例以 /chat/completions 结尾，整段复制进卡片会
   // 拼出 …/chat/completions/chat/completions → 404
   const onBaseUrlEndpoint = makeOnceWarn(deps.log);
+  // timeoutMs 非法值视为未设置的一次性告警（轮 37 #7，与 maxTokens 同观测口径）
+  const onTimeoutInvalid = makeOnceWarn(deps.log);
   const chat = async (req: ChatRequest): Promise<ChatResponse> => {
     assertValidMessages(req.messages, config.name);
     assertToolContract(req, config); // 轮 35 #13：forced 名不在 tools 是端点 400 形态，前置拦截
@@ -342,7 +364,7 @@ export function createOpenAICompletionsProvider(
     if (req.systemPrompt !== null && req.systemPrompt !== "") {
       wireMessages.push({ role: "system", content: req.systemPrompt });
     }
-    wireMessages.push(...toWireMessages(req.messages));
+    wireMessages.push(...toWireMessages(req.messages, deps.log));
     // temperature 抑制判定（轮 30 #6 提取为具名布尔，恢复单层三元——嵌套三元
     // 违反清单规范）：缺省走 TEMPERATURE_UNSUPPORTED_PREFIX 前缀启发式，
     // temperatureSuppressed（轮 29 #3）是显式逃生门——前缀误命中自定义/网关模型
@@ -381,6 +403,7 @@ export function createOpenAICompletionsProvider(
       provider: config.name,
       signal: req.signal,
       timeoutMs: req.timeoutMs,
+      onInvalidTimeout: onTimeoutInvalid,
     });
     const requestedNames = new Set((req.tools ?? []).map((t) => t.name));
     return parseResponse(json, requestedNames, deps.log, config.name);

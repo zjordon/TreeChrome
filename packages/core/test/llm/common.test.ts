@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderConfig } from "../../src/index.js";
 import {
+  assertToolContract,
+  collectToolResults,
   isRecord,
   makeOnceWarn,
   normalizeImageMime,
@@ -17,7 +19,14 @@ import {
 } from "../../src/llm/adapters/common.js";
 import { ERROR_DETAIL_MAX } from "../../src/llm/adapters/http.js";
 import { DEFAULT_MAX_TOKENS } from "../../src/llm/config.js";
-import type { ChatRequest } from "../../src/llm/types.js";
+import { LLMProtocolViolationError } from "../../src/llm/errors.js";
+import type {
+  ChatMessage,
+  ChatRequest,
+  ToolCall,
+  ToolDefinition,
+  ToolResultMessage,
+} from "../../src/llm/types.js";
 
 const card = (
   protocol: ProviderConfig["protocol"],
@@ -136,6 +145,13 @@ describe("stringifyForLog", () => {
     const long = "x".repeat(ERROR_DETAIL_MAX + 100);
     expect(stringifyForLog(long)).toHaveLength(ERROR_DETAIL_MAX);
   });
+
+  it("BigInt/循环引用不抛——String 兜底（轮 37 #6：schema 清洗的删除上报以宿主程序化构造的 parameters 原值为入参，非 JSON-only 来源）", () => {
+    expect(stringifyForLog(10n)).toBe("10");
+    const circular: Record<string, unknown> = { a: 1 };
+    circular.self = circular;
+    expect(stringifyForLog(circular)).toBe("[object Object]");
+  });
 });
 
 describe("连通性探测常量（轮 35 #12 导出锚定）", () => {
@@ -161,5 +177,64 @@ describe("isRecord / stripTrailingSlash", () => {
     expect(isRecord(null)).toBe(false);
     expect(isRecord([])).toBe(false);
     expect(stripTrailingSlash("https://x.example///")).toBe("https://x.example");
+  });
+});
+
+describe("collectToolResults（轮 37 #10 单源：anthropic/gemini 折叠骨架的行为矩阵）", () => {
+  const call = (id: string): ToolCall => ({ id, name: `t-${id}`, args: {} });
+  const tr = (id: string, text = `r-${id}`): ToolResultMessage => ({
+    role: "toolResult",
+    toolCallId: id,
+    toolName: `t-${id}`,
+    text,
+  });
+
+  it("收集紧随段并按 toolCalls 顺序重排（乱序到达）；next 指向段后首条", () => {
+    const calls = [call("a"), call("b")];
+    const messages: ChatMessage[] = [
+      { role: "assistant", blocks: [], toolCalls: calls },
+      tr("b"),
+      tr("a"),
+      { role: "user", blocks: [{ kind: "text", text: "obs" }] },
+    ];
+    const { pairs, next } = collectToolResults(messages, 1, calls);
+    expect(pairs.map((p) => p.call.id)).toEqual(["a", "b"]);
+    expect(pairs.map((p) => p.result.text)).toEqual(["r-a", "r-b"]);
+    expect(next).toBe(3);
+  });
+
+  it("段首非 toolResult → 空收集且 next 不前进；配对过滤：id 不匹配任何 call 的结果不进 pairs（防御分支）", () => {
+    const user: ChatMessage = { role: "user", blocks: [{ kind: "text", text: "q" }] };
+    expect(collectToolResults([user], 0, [])).toEqual({ pairs: [], next: 0 });
+    const messages: ChatMessage[] = [
+      { role: "assistant", blocks: [], toolCalls: [call("a")] },
+      tr("zzz"),
+      tr("a"),
+    ];
+    const { pairs, next } = collectToolResults(messages, 1, [call("a")]);
+    expect(pairs.map((p) => p.result.toolCallId)).toEqual(["a"]);
+    expect(next).toBe(3);
+  });
+});
+
+describe("assertToolContract 工具名唯一性（轮 37 #14）", () => {
+  const tool = (name: string): ToolDefinition => ({
+    name,
+    description: "d",
+    parameters: { type: "object" },
+  });
+
+  it("重名 → LLMProtocolViolationError；唯一名（含 forced 匹配）放行", () => {
+    const c = card("anthropic-messages");
+    expect(() => assertToolContract(req({ tools: [tool("dup"), tool("dup")] }), c)).toThrow(
+      LLMProtocolViolationError,
+    );
+    expect(() => assertToolContract(req({ tools: [tool("dup"), tool("other")] }), c)).not.toThrow();
+  });
+
+  it("空串名（轮 36 #8）在共享层同样拦截", () => {
+    expect(() => assertToolContract(req({ tools: [tool("")] }), card("gemini"))).toThrow(
+      LLMProtocolViolationError,
+    );
   });
 });

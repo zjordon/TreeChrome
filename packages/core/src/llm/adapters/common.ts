@@ -1,11 +1,18 @@
 // 三适配器共享的小件：isRecord / stripTrailingSlash / defaultTestConnection /
-// temperatureEntry。折叠连续 toolResult、块形状转换等协议差异逻辑不在此抽象
-//（改一漏二的风险主要来自逐字重复的小件与完全同构的探测逻辑）。
+// temperatureEntry / collectToolResults（toolResult 段收集重排——纯同构骨架，
+// 轮 37 #10 收敛于此防改一漏一）。块形状转换、wire 角色名等协议差异逻辑不在
+// 此抽象（改一漏二的风险主要来自逐字重复的小件与完全同构的探测逻辑）。
 
 import { DEFAULT_MAX_TOKENS, type ProviderConfig } from "../config.js";
 import { LLMProtocolViolationError } from "../errors.js";
 import type { LLMProtocol } from "../provider.js";
-import type { ChatRequest, ChatResponse } from "../types.js";
+import type {
+  ChatMessage,
+  ChatRequest,
+  ChatResponse,
+  ToolCall,
+  ToolResultMessage,
+} from "../types.js";
 import { ERROR_DETAIL_MAX } from "./http.js";
 
 export { isRecord } from "../transforms.js";
@@ -16,6 +23,39 @@ export const TOOL_RESULT_ERROR_PREFIX = "[error] ";
 
 export function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
+}
+
+/**
+ * 收集紧随 assistant 的 toolResult 段并按 toolCalls 顺序重排（轮 37 #10 单源）：
+ * anthropic toWireMessages 与 gemini toWireContents 的折叠骨架（Map 收集 + 按
+ * 前置 assistant.toolCalls 顺序重排 + 配对过滤）逐字同构，仅结果块形状与 wire
+ * 角色名是协议差异——骨架收敛防单点修补改一漏一（兜底跳过补日志轮 37 #8/#9
+ * 即需双处同步的实例）。assertValidMessages 已保证完备配对，配对过滤仅为防御；
+ * pairs 携带配对的 call（gemini 的 functionResponse 需回挂 call.signature）。
+ */
+export function collectToolResults(
+  messages: ChatMessage[],
+  from: number,
+  calls: readonly ToolCall[],
+): { pairs: Array<{ call: ToolCall; result: ToolResultMessage }>; next: number } {
+  const byId = new Map<string, ToolResultMessage>();
+  let j = from;
+  while (j < messages.length) {
+    const cur = messages[j];
+    if (cur.role !== "toolResult") {
+      break;
+    }
+    byId.set(cur.toolCallId, cur);
+    j += 1;
+  }
+  const pairs: Array<{ call: ToolCall; result: ToolResultMessage }> = [];
+  for (const call of calls) {
+    const result = byId.get(call.id);
+    if (result !== undefined) {
+      pairs.push({ call, result });
+    }
+  }
+  return { pairs, next: j };
 }
 
 /** 连通性探测的输出上限（轮 35 #12 导出锚定）：16 是全协议安全最小值（o 系
@@ -50,8 +90,9 @@ export async function defaultTestConnection(
 }
 
 /**
- * 工具契约前置校验（轮 35 #13 起，轮 36 #8 扩并补工具名校验，三适配器共用）：
- * ① forced toolChoice 名不在本次 tools 中、② 工具 name 空串——均为端点硬 400
+ * 工具契约前置校验（轮 35 #13 起，轮 36 #8 补工具名空串、轮 37 #14 补重名，三适配器共用）：
+ * ① forced toolChoice 名不在本次 tools 中、② 工具 name 空串、③ 工具 name 重复
+ * ——均为端点硬 400
  * 形态（非 infra 不重试还误触 fallback 切换），调用方数据病态在适配器层拦截
  * 而非烧 400 后错误归因（与 toolCall id/name 空串的 canonical 拦截同口径；
  * assertValidMessages 只裁决消息序列）。名字字符集/长度按协议各异的约束不在
@@ -72,8 +113,16 @@ export function assertToolContract(req: ChatRequest, config: ProviderConfig): vo
   }
   // 工具名空串与轮 18 #13 的 toolCall name 空串对称（anthropic ^[a-zA-Z0-9_-]{1,128}$
   // 下限即非空；openai/gemini 同为必填非空）
-  if ((req.tools ?? []).some((t) => t.name === "")) {
+  const tools = req.tools ?? [];
+  if (tools.some((t) => t.name === "")) {
     throw new LLMProtocolViolationError(`工具 name 为空串（端点 400 形态）`, {
+      provider: config.name,
+    });
+  }
+  // 工具重名（轮 37 #14）：三协议端点均校验 tools 名字唯一（重复即硬 400，非
+  // infra 不重试还误触 fallback 切换）——P4 registry 合并场景下重名是现实病态
+  if (new Set(tools.map((t) => t.name)).size !== tools.length) {
+    throw new LLMProtocolViolationError(`工具 name 存在重复（端点 400 形态）`, {
       provider: config.name,
     });
   }
@@ -153,7 +202,14 @@ export function normalizeImageMime(mimeType: string): string {
  * 不能直挂 .slice——String 包装 + 与 http.ts 错误体同源截断
  */
 export function stringifyForLog(value: unknown): string {
-  return String(JSON.stringify(value)).slice(0, ERROR_DETAIL_MAX);
+  try {
+    return String(JSON.stringify(value)).slice(0, ERROR_DETAIL_MAX);
+  } catch {
+    // BigInt/循环引用（JSON.stringify 既知抛点）——入参不全是网关 JSON 来源
+    //（schema-sanitize 以宿主程序化构造的 parameters 原值为入调删除上报），串化
+    // 兜底不让「删除留证据」路径自身崩溃（轮 37 #6）；网关 JSON 来源行为不变
+    return String(value).slice(0, ERROR_DETAIL_MAX);
+  }
 }
 
 /**
