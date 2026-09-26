@@ -119,14 +119,16 @@ function toWireMessages(
   log: (message: string) => void,
 ): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
-  // 前一消息是否为带 toolCalls 的 assistant（轮 38 #15）：openai 的孤儿 tool
-  // 消息（无前置 assistant.tool_calls）是官方端点硬 400 形态——assertValidMessages
-  // 已拦，兜底与 anthropic/gemini（轮 37 #8/#9）同口径跳过留证据，不透传烧 400
-  let afterToolCallAssistant = false;
+  // 待配对的 toolCall id 集合（轮 38 #15 起源，轮 41 #4 改按 id 配对）：openai 的
+  // 孤儿/未配对 tool 消息（无前置 assistant.tool_calls 匹配项）是官方端点硬 400
+  // 形态——assertValidMessages 已拦，兜底与 anthropic/gemini
+  //（collectToolResults 逐 id 配对过滤）同口径跳过留证据，不透传烧 400；
+  // 消费后 delete 使同 id 第二条结果自然落入跳过分支（后写覆盖语义不存在，直接跳过）
+  let pendingToolCallIds: Set<string> | undefined;
   for (const [idx, msg] of messages.entries()) {
     if (msg.role === "user") {
       out.push({ role: "user", content: userContent(msg.blocks, log) });
-      afterToolCallAssistant = false;
+      pendingToolCallIds = undefined;
       continue;
     }
     if (msg.role === "assistant") {
@@ -146,15 +148,17 @@ function toWireMessages(
         content = text;
       }
       const wire: Record<string, unknown> = { role: "assistant", content };
-      if (msg.toolCalls !== undefined && msg.toolCalls.length > 0) {
-        wire.tool_calls = msg.toolCalls.map((c) => ({
+      if (hasCalls) {
+        wire.tool_calls = msg.toolCalls?.map((c) => ({
           id: c.id,
           type: "function",
           function: { name: c.name, arguments: JSON.stringify(c.args) }, // args 字符串化是 openai 独有
         }));
+        pendingToolCallIds = new Set(msg.toolCalls?.map((c) => c.id));
+      } else {
+        pendingToolCallIds = undefined;
       }
       out.push(wire);
-      afterToolCallAssistant = hasCalls;
       if (hasCalls) {
         // calls 缺结果方向的防御观测（轮 40 #4，与 collectToolResults「仅配对 N 条
         // 结果」日志对称）：wire 产出无 tool 消息跟随的 tool_calls 同为官方端点
@@ -168,12 +172,15 @@ function toWireMessages(
       }
       continue;
     }
-    if (!afterToolCallAssistant) {
-      // toolResult 不在带调用的 assistant 之后：assertValidMessages 已拦，兜底
-      // 跳过留证据（轮 38 #15，与 anthropic/gemini 轮 37 #8/#9 同口径）
-      log(`[llm] openai 跳过不在 assistant 之后的 toolResult：${msg.toolCallId}`);
+    if (pendingToolCallIds === undefined || !pendingToolCallIds.has(msg.toolCallId)) {
+      // 未配对（孤儿）或同 id 重复结果：assertValidMessages 已拦，兜底跳过留证据
+      //（轮 41 #4，与 anthropic/gemini 逐 id 配对过滤同口径）
+      log(
+        `[llm] openai 跳过未配对前置 assistant.toolCalls 的 toolResult：${msg.toolCallId}（canonical 校验漂移的防御分支）`,
+      );
       continue;
     }
+    pendingToolCallIds.delete(msg.toolCallId);
     out.push({
       role: "tool",
       tool_call_id: msg.toolCallId,

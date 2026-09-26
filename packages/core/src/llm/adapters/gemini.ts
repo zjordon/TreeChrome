@@ -146,7 +146,11 @@ function toWireContents(
           "user",
           pairs.map(({ call, result }) => ({
             functionResponse: {
-              name: result.toolName,
+              // 名字取配对 call.name 而非 result.toolName（轮 41 #7）：配对按 id
+              // 进行、前置 functionCall part 发的是 call.name——同请求内名字自洽，
+              // 不依赖 assertValidMessages 的 toolName 一致性不变量（校验漂移时
+              // 失配名照发是按 name 关联的端点硬 400）
+              name: call.name,
               // isError 无原生字段：[error] 前缀约定（与 openai 同款）
               response: {
                 result: result.isError ? `${TOOL_RESULT_ERROR_PREFIX}${result.text}` : result.text,

@@ -652,3 +652,16 @@ smoke 产物摘要：
 - **单源化与测试质量**：nonEmptySensitiveReals 导出（#16，client 四处命中检测与替换侧共用滤空口径）；gemini wire 响应工厂收敛（#7）、signature 用例死防御分支重构（#15）、视觉/滤图用例拆独立 describe（#8）、FakeClock 收敛用例的前提锚定注释（#6）。
 
 测试 406 例全绿（覆盖率 98.50%）。第二轮额度（轮 31-40）收束：10 轮 140 条采纳 136 驳回 4。
+
+### 评审轮 41（review-p2-llm-client-41.json，2026-09-26，8/8 全采纳——第三轮额度首轮，轨迹 17→8）
+
+采纳 8 条。要点：
+
+- **schema 泄露告警上提覆盖主路径（#1，轮 39 #5 的对称补口）**：tools 路径把同一份 parameters/description 原文放进请求体，此前检测只挂 no-tools 承重墙小众分支——上提到 caps 分支之前，对 safeJsonStringify(tool) 全量命中检测（串化崩溃安全，按 map 去重）。
+- **归因与守卫自洽（#2）**：非法 timeoutMs「视为未设置」后，catch 侧 source 归因仍按 `opts.timeoutMs !== undefined` 判定——deadline 实际只来自窗口的场景被误标 timeoutMs(+window)；改 deadlineFromTimeoutMs 布尔标记（仅合法值分支置位）。
+- **watcher 注册移入 try（#3）**：deps.sleep 同步抛出（JS 宿主可绕过 TS 类型）时 finally 的 removeEventListener 不可达——once 监听器泄漏在调用方长寿命 signal 上；注册移入 try 首部（watchCancel 声明留 try 外）。
+- **openai 兜底配对对称化（#4）**：afterToolCallAssistant 布尔不按 id 配对（段内未匹配 id/同 id 重复结果原样透传）——改 pendingToolCallIds 集合（消费后 delete，重复第二条自然落入跳过留证），与 collectToolResults 逐 id 配对语义对齐。
+- **gemini functionResponse.name 取 call.name（#7）**：配对按 id、前置 functionCall part 发 call.name——同请求内名字自洽，解除对 assertValidMessages toolName 一致性不变量的依赖（校验漂移时失配名照发是按 name 关联端点的硬 400）。
+- **测试补齐**：gemini maxTokens 锚定双请求都断言（#6，仅锁 lastBody 会漏首请求回归）；gemini 侧 image 丢弃告警接线锚定（#8——轮 39 #21 改标题时声称「已锁定」实无测试，一并补上）；窗口用例注释记法对齐（#5）。
+
+测试 406 例全绿（覆盖率 98.50%）。

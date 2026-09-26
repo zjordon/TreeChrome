@@ -1334,7 +1334,7 @@ describe("deadline 与取消", () => {
 
   it("预算耗尽日志归因实际生效约束：窗口先到标 window deadline 而非预算秒数（轮 12 #15）", async () => {
     const { mock, clock, logs, client } = setupClockWithLogs();
-    // t=20s → cap=max(30s, 0.75×20s)=30s > 窗口 20s：实际生效约束是窗口
+    // 窗口=20s → cap=max(30s, 0.75×20s)=30s > 窗口 20s：实际生效约束是窗口（deadline=1000+20000=21000；轮 41 #5 记法对齐——t 恒指当前时刻，此处调用时 t=1000）
     client.setCallWindow(20_000);
     mock.queueMany(r429(), r429(), r429(), r429());
     const p = client.getAction("sys", msgs(), TOOL);
@@ -1437,21 +1437,32 @@ describe("承重墙（02 §6：不支持 forced tool_choice / 不支持 tools）
     expect(mock.lastBody().system).toContain("IMPORTANT: You must respond with only a JSON");
   });
 
-  it("承重墙 schema 含 sensitiveMap 命中值 → 按 map 去重的一次性 WARNING（轮 39 #5：明文出站面留证据，与 systemPrompt 告警同口径）", async () => {
+  it("tool 定义含 sensitiveMap 命中值 → 按 map 去重的一次性 WARNING（轮 39 #5 起源，轮 41 #1 上提覆盖主路径：tools 路径的 parameters/description 同样明文进请求体）", async () => {
+    // 主路径（supportsTools 默认 true）：description 命中 → 告警，wire 照发不阻断
+    const toolsPath = setupWithLogs();
+    toolsPath.mock.queueMany(toolOk({ done: 1 }), toolOk({ done: 2 }));
+    const tool: ToolDefinition = {
+      ...TOOL,
+      description: "uses secret-key-here internally",
+    };
+    const map = { "secret-key-here": "<K1>" };
+    await toolsPath.client.getAction("sys", msgs(), tool, { sensitiveMap: map });
+    await toolsPath.client.getAction("sys", msgs(), tool, { sensitiveMap: map }); // 同 map 去重
+    expect(toolsPath.logs.filter((m) => m.includes("含 sensitiveMap 命中值"))).toHaveLength(1);
+    expect(JSON.stringify(toolsPath.mock.lastBody().tools)).toContain("secret-key-here");
+
+    // 承重墙路径（no-tools）：同一检测覆盖 schema 内嵌 systemPrompt 的形态
     const { mock, logs, client } = setupWithLogs({
       capabilities: { supportsTools: false, supportsForcedTool: false },
     });
     mock.queueMany(text('{"a": 1}'), text('{"a": 2}'));
-    const tool: ToolDefinition = {
+    const noToolsTool: ToolDefinition = {
       ...TOOL,
       parameters: { type: "object", description: "secret-key-here" },
     };
-    const map = { "secret-key-here": "<K1>" };
-    await client.getAction("sys", msgs(), tool, { sensitiveMap: map });
-    await client.getAction("sys", msgs(), tool, { sensitiveMap: map }); // 同 map 去重
-    expect(logs.filter((m) => m.includes("tool.parameters 含 sensitiveMap 命中值"))).toHaveLength(
-      1,
-    );
+    await client.getAction("sys", msgs(), noToolsTool, { sensitiveMap: map });
+    await client.getAction("sys", msgs(), noToolsTool, { sensitiveMap: map }); // 同 map 去重
+    expect(logs.filter((m) => m.includes("含 sensitiveMap 命中值"))).toHaveLength(1);
     // schema 原文仍出站（由宿主自担——告警只留证据不阻断）
     expect(mock.lastBody().system).toContain("secret-key-here");
   });

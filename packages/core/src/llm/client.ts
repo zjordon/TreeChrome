@@ -501,9 +501,13 @@ export class LLMClient {
     // 未设置并一次性告警（per-request 参数降级不拒单，与 setCallWindow 的 TypeError
     // 分流：持久状态登记点 fail fast，单次参数降级可观测）
     let deadlineAt: number | undefined;
+    // timeoutMs 是否实际生效（轮 41 #2）：非法值「视为未设置」后不参与 catch 侧
+    // 的 source 归因——否则 deadline 实际只来自窗口的场景被误标 timeoutMs(+window)
+    let deadlineFromTimeoutMs = false;
     if (opts.timeoutMs !== undefined) {
       if (isValidDeadlineMs(opts.timeoutMs)) {
         deadlineAt = now + opts.timeoutMs;
+        deadlineFromTimeoutMs = true;
       } else if (!this.warnedInvalidDeadline) {
         this.warnedInvalidDeadline = true;
         this.deps.log(
@@ -535,27 +539,30 @@ export class LLMClient {
         external.addEventListener("abort", onExternalAbort, { once: true });
       }
     }
-    // deadline 计时走注入 sleep（与退避预算同钟域，不旁路 deps.now）——FakeClock 下
-    // 时钟不推进即不触发（退避预算的 gate 判定同域）；getAction 结束时 abort 取消
-    // watcher，不留悬挂定时器
-    const watchCancel = new AbortController();
-    if (deadlineAt !== undefined) {
-      void this.deps.sleep(Math.max(0, deadlineAt - now), watchCancel.signal).then(
-        () => {
-          windowExpired = true;
-          controller.abort();
-        },
-        () => {
-          // 被取消（正常收尾）——无事可做
-        },
-      );
-    }
     // 无梯子 deadline 时给单次请求挂保守缺省超时：调用方漏传 timeoutMs 且未
     // setCallWindow 的失败模式不该是无限挂死（TCP 黑洞/网关不回包无超时无错误）。
     // 有 deadline 时由 ladder signal 负责到点强杀，不重复设
     const httpTimeoutMs = resolveChatHttpTimeoutMs(deadlineAt);
+    // 声明留在 try 外供 finally 的 abort 引用（轮 41 #3：注册移入 try，声明不动）
+    const watchCancel = new AbortController();
 
     try {
+      // deadline 计时走注入 sleep（与退避预算同钟域，不旁路 deps.now）——FakeClock 下
+      // 时钟不推进即不触发（退避预算的 gate 判定同域）；getAction 结束时 abort 取消
+      // watcher，不留悬挂定时器。注册位于 try 内首部（轮 41 #3）：注入 sleep 同步
+      // 抛出/返回非 thenable 时（JS 宿主可绕过 TS 类型），finally 的
+      // removeEventListener 仍可达——once 监听器不泄漏在调用方的长寿命 signal 上
+      if (deadlineAt !== undefined) {
+        void this.deps.sleep(Math.max(0, deadlineAt - now), watchCancel.signal).then(
+          () => {
+            windowExpired = true;
+            controller.abort();
+          },
+          () => {
+            // 被取消（正常收尾）——无事可做
+          },
+        );
+      }
       // 1. 请求侧变换：全部落在 work 副本（03 偏离 1：不原地改调用方消息）
       const work = cloneWorkMessages(messages);
       const urlMap = shortenUrlsInMessages(work);
@@ -738,11 +745,13 @@ export class LLMClient {
       if (isAbortError(e) && windowExpired && !external?.aborted) {
         // 归因实际生效的约束来源（轮 20 #8）：该分支同时覆盖仅传 opts.timeoutMs
         //（从未 setCallWindow）的场景——固定写「窗口预算到期」会把单次调用超时
-        // 误导为步级窗口登记问题（与 callWithBackoff 轮 12 #15 的归因口径一致）
+        // 误导为步级窗口登记问题（与 callWithBackoff 轮 12 #15 的归因口径一致）。
+        // 按 deadlineFromTimeoutMs 归因（轮 41 #2）：非法值已被守卫「视为未设置」，
+        // deadline 实际只来自窗口时不误标 timeoutMs(+window)——与守卫告警自洽
         let source: string;
-        if (opts.timeoutMs !== undefined && this.windowDeadline !== undefined) {
+        if (deadlineFromTimeoutMs && this.windowDeadline !== undefined) {
           source = "timeoutMs+window";
-        } else if (opts.timeoutMs !== undefined) {
+        } else if (deadlineFromTimeoutMs) {
           source = "timeoutMs";
         } else {
           source = "window";
@@ -839,6 +848,24 @@ export class LLMClient {
     let sys = systemPrompt;
     let tools: ToolDefinition[] | null = null;
     let toolChoice: ToolChoice | undefined;
+    // tool 定义（name/parameters/description）的明文出站面命中检测（轮 39 #5 起，
+    // 轮 41 #1 上提覆盖主路径）：tools 路径把同一份 parameters/description 原文
+    // 放进请求体、no-tools 承重墙内嵌 systemPrompt——同一「明文出站面至少留
+    // 证据」口径（按 map 去重一次；schema 与 systemPrompt 同为宿主可信自持
+    // 内容，占位不由核心层代行）；串化崩溃安全（BigInt/循环引用，与
+    // noToolsConstraint 内的 try/catch 同款）
+    const toolText = safeJsonStringify(tool);
+    if (
+      sensitive !== undefined &&
+      toolText !== undefined &&
+      !this.loggedSchemaLeaks.has(sensitive) &&
+      nonEmptySensitiveReals(sensitive).some((real) => toolText.includes(real))
+    ) {
+      this.loggedSchemaLeaks.add(sensitive);
+      this.deps.log(
+        "[llm] WARNING: tool 定义（parameters/description）含 sensitiveMap 命中值，将随请求明文出站（schema 不在占位范围，由宿主自担）",
+      );
+    }
     if (caps.supportsTools) {
       tools = [tool];
       if (caps.supportsForcedTool) {
@@ -847,21 +874,7 @@ export class LLMClient {
         sys += forcedToolConstraint(tool.name);
       }
     } else {
-      const constraint = noToolsConstraint(tool);
-      // schema 原文内嵌 systemPrompt 出站，其中的 real 值明文可见（轮 39 #5）——
-      // 与 systemPrompt 命中告警同观测口径（按 map 去重一次；schema 与
-      // systemPrompt 同为宿主可信自持内容，占位不由核心层代行）
-      if (
-        sensitive !== undefined &&
-        !this.loggedSchemaLeaks.has(sensitive) &&
-        nonEmptySensitiveReals(sensitive).some((real) => constraint.includes(real))
-      ) {
-        this.loggedSchemaLeaks.add(sensitive);
-        this.deps.log(
-          "[llm] WARNING: tool.parameters 含 sensitiveMap 命中值，将随承重墙 systemPrompt 明文出站（schema 不在占位范围，由宿主自担）",
-        );
-      }
-      sys += constraint;
+      sys += noToolsConstraint(tool);
     }
     return {
       systemPrompt: sys,

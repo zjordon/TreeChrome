@@ -833,7 +833,7 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody().generationConfig).toEqual({ maxOutputTokens: 77, temperature: 0.5 });
   });
 
-  it("maxTokens 非法回退 DEFAULT_MAX_TOKENS 并留一次性告警（轮 40 #2 补齐接线锚定：接线是独立实现，漏传/内联替代后 NaN 序列化 null 直达端点 400 且无红测）", async () => {
+  it("maxTokens 非法回退 DEFAULT_MAX_TOKENS 并留一次性告警（轮 40 #2 补齐接线锚定：接线是独立实现，漏传/内联替代后 NaN 序列化 null 直达端点 400 且无红测；轮 41 #6 双请求都断言——仅锁 lastBody 会漏首请求路径回归）", async () => {
     const { mock, logs, provider } = setupLogs({ maxTokens: Number.NaN });
     mock.queueMany(fnCallOk({}), fnCallOk({}));
     const req: ChatRequest = {
@@ -843,8 +843,9 @@ describe("请求构造（canonical → wire）", () => {
     };
     await provider.chat(req);
     await provider.chat(req);
-    const genConfig = () => mock.lastBody().generationConfig as Record<string, unknown>;
-    expect(genConfig().maxOutputTokens).toBe(DEFAULT_MAX_TOKENS); // NaN 序列化 null 是端点硬 400
+    const genConfig = (i: number) => mock.bodyAt(i).generationConfig as Record<string, unknown>;
+    expect(genConfig(0).maxOutputTokens).toBe(DEFAULT_MAX_TOKENS); // NaN 序列化 null 是端点硬 400
+    expect(genConfig(1).maxOutputTokens).toBe(DEFAULT_MAX_TOKENS);
     const warnings = logs.filter((m) => m.includes("maxTokens"));
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("gemini-card");
@@ -930,10 +931,10 @@ describe("请求构造（canonical → wire）", () => {
     expect(mock.lastBody()).not.toHaveProperty("systemInstruction");
   });
 
-  it("model turn 的 inlineData 丢弃的 wire 形态（一次性告警由轮 38 #11 预扫描锁定；多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14；标题去「静默」轮 39 #21）", async () => {
-    const { mock, provider } = setup();
-    mock.queueMany(fnCallOk({}));
-    await provider.chat({
+  it("model turn 的 inlineData 丢弃的 wire 形态 + 一次性告警接线锚定（轮 41 #8 补齐 gemini 侧——此前标题声称「已锁定」实无测试；重放两次仍只告警一次；多模态仅 user 角色合法，官方端点 400 形态，轮 13 #14）", async () => {
+    const { mock, logs, provider } = setupLogs();
+    mock.queueMany(fnCallOk({}), fnCallOk({}));
+    const req: ChatRequest = {
       systemPrompt: null,
       messages: [
         { role: "user", blocks: [{ kind: "text", text: "q" }] },
@@ -945,13 +946,20 @@ describe("请求构造（canonical → wire）", () => {
         { role: "toolResult", toolCallId: "t1", toolName: "agent_response", text: "ok" },
       ],
       tools: [TOOL],
-    });
+    };
+    await provider.chat(req);
     const contents = mock.lastBody().contents as Array<Record<string, unknown>>;
     expect(JSON.stringify(contents)).not.toContain("inlineData");
     expect(contents[1]).toEqual({
       role: "model",
       parts: [{ functionCall: { name: "agent_response", args: {} } }],
     });
+    await provider.chat(req); // 重放：仍只告警一次（warnDroppedAssistantNonTextBlocks 接线锚定）
+    expect(
+      logs.filter((m) =>
+        m.includes("gemini assistant 历史非 text 块（image 及未来新 kind）无 wire 形态，丢弃 1 块"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("image-only 且无 toolCalls 的 assistant → 过滤后空 parts 以 [image omitted] 占位（空 parts 是 INVALID_ARGUMENT，轮 14 #9）", async () => {
