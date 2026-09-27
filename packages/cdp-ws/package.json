@@ -1,0 +1,27 @@
+{
+  "name": "@tw/cdp-ws",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Node 宿主 WebSocket CDP transport（Python cdp-use 的 TS 对等物）。纯 TS：禁 chrome.* / process.*，零运行时依赖（Node ≥22 原生 WebSocket）",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tw/dom-snapshot": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  }
+}

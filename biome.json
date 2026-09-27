@@ -38,7 +38,11 @@
   },
   "overrides": [
     {
-      "includes": ["packages/dom-snapshot/src/**", "packages/core/src/**"],
+      "includes": [
+        "packages/dom-snapshot/src/**",
+        "packages/core/src/**",
+        "packages/cdp-ws/src/**"
+      ],
       "linter": {
         "rules": {
           "style": {

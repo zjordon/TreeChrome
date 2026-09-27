@@ -30,7 +30,7 @@ const ok = (msg) => console.log(`[gate] ${msg}`);
 
 // ── 架构铁律：核心包边界 ────────────────────────────────────────────────
 
-const CORE_PACKAGES = ["dom-snapshot", "core"]; // core 尚未建立，先行占位
+const CORE_PACKAGES = ["dom-snapshot", "core", "cdp-ws"];
 // 禁止模式：任何形式的 chrome 模块导入（含 type 导入，类型依赖同样耦合）、
 // process 导入与 process.env 读取。globalThis.crypto/TextEncoder 等 Web 标准不受限。
 const FORBIDDEN = [
