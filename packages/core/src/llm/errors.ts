@@ -91,6 +91,19 @@ export class LLMProtocolViolationError extends LLMError {
 }
 
 /**
+ * extract/structuredCall 的单次内层超时（Python _extract_call 的 asyncio.wait_for →
+ * asyncio.TimeoutError 等价）。**非 LLMError 家族**——Python 侧 TimeoutError 不被
+ * (RateLimitError, APIError) 捕获、不触发 fallback 切换，由 _action_extract 映射为
+ * "Extract timed out"；TS 保持同款不进分罪/退避轴的语义。
+ */
+export class LLMCallTimeoutError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause !== undefined ? { cause } : undefined);
+    this.name = "LLMCallTimeoutError";
+  }
+}
+
+/**
  * 退避谓词：429、连接类与单请求级超时（对齐 Python is_llm_infra_error——
  * auth/5xx 不退避，重试无益，维持 fallback-切换-否则-抛）。
  * LLMTimeoutError 纳入（轮 13 #15）：能到达本谓词的超时只来自单请求级

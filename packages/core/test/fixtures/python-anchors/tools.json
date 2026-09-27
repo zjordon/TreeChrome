@@ -1,0 +1,2112 @@
+{
+  "actions": {
+    "navigate": {
+      "className": "NavigateParams",
+      "description": "Navigate to a URL in the current tab, or open it in a new tab with new_tab=True",
+      "terminates": true,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "The URL to navigate to",
+            "title": "Url",
+            "type": "string"
+          },
+          "new_tab": {
+            "default": false,
+            "description": "If True, open the URL in a new tab instead of navigating the current tab",
+            "title": "New Tab",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "NavigateParams",
+        "type": "object"
+      }
+    },
+    "click": {
+      "className": "ClickParams",
+      "description": "Click an element by its ID from the DOM state. Use index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ID of the element to click, shown in brackets in the DOM tree. Provide exactly one of index / element_id.",
+            "title": "Index"
+          },
+          "element_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id.",
+            "title": "Element Id"
+          }
+        },
+        "title": "ClickParams",
+        "type": "object"
+      }
+    },
+    "input_text": {
+      "className": "InputTextParams",
+      "description": "Type text into an input element identified by index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ID of the element to type into, shown in brackets in the DOM tree. Provide exactly one of index / element_id.",
+            "title": "Index"
+          },
+          "element_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id.",
+            "title": "Element Id"
+          },
+          "text": {
+            "description": "Text to type into the element",
+            "title": "Text",
+            "type": "string"
+          },
+          "clear": {
+            "default": true,
+            "description": "Whether to clear existing text first",
+            "title": "Clear",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "InputTextParams",
+        "type": "object"
+      }
+    },
+    "scroll": {
+      "className": "ScrollParams",
+      "description": "Scroll the page up or down by a number of increments",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "default": 3,
+            "description": "Number of viewport-heights to scroll (1-10). Check the scroll info on scrollable elements in the DOM tree (e.g. '3.4 pages below') to judge how much remains before scrolling.",
+            "maximum": 10,
+            "minimum": 1,
+            "title": "Amount",
+            "type": "integer"
+          },
+          "direction": {
+            "default": "down",
+            "description": "Scroll direction: 'down' (default) or 'up'.",
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Direction",
+            "type": "string"
+          }
+        },
+        "title": "ScrollParams",
+        "type": "object"
+      }
+    },
+    "search": {
+      "className": "SearchParams",
+      "description": "Search the web via a search engine (baidu/google/bing/duckduckgo; default baidu). Navigates to the results page",
+      "terminates": true,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "Search query to type into the search engine",
+            "title": "Query",
+            "type": "string"
+          },
+          "engine": {
+            "default": "baidu",
+            "description": "Search engine: baidu (default, works in China), google, bing, or duckduckgo",
+            "enum": [
+              "baidu",
+              "google",
+              "bing",
+              "duckduckgo"
+            ],
+            "title": "Engine",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "SearchParams",
+        "type": "object"
+      }
+    },
+    "extract": {
+      "className": "ExtractParams",
+      "description": "Extract specific information from the current page as clean markdown (via an LLM). Paginate large pages with start_from_char; dedupe across calls with already_collected.",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "What information to extract from the current page. Be specific: name the fields/items and any filtering criteria. (Equivalent to browser-use `query`.)",
+            "title": "Query",
+            "type": "string"
+          },
+          "extract_links": {
+            "default": true,
+            "description": "If True, preserve <a href> URLs in the source markdown. Set False for text-only extraction.",
+            "title": "Extract Links",
+            "type": "boolean"
+          },
+          "extract_images": {
+            "default": true,
+            "description": "If True, preserve <img src> URLs in the source markdown.",
+            "title": "Extract Images",
+            "type": "boolean"
+          },
+          "start_from_char": {
+            "default": 0,
+            "description": "Character offset to resume extraction from (for paginating large pages). Default 0 = start at the beginning. Use the offset reported by a previous truncated extract call to continue.",
+            "minimum": 0,
+            "title": "Start From Char",
+            "type": "integer"
+          },
+          "already_collected": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Items already extracted (dedupe across pages/chunks). Pass prior results (as text) and the model will skip exact duplicates. Optional.",
+            "title": "Already Collected"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "ExtractParams",
+        "type": "object"
+      }
+    },
+    "send_keys": {
+      "className": "SendKeysParams",
+      "description": "Send keyboard shortcuts or key combinations",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "description": "Key combination or text to send. Combos use '+': 'Control+a', 'Shift+T', 'Alt+F4'. Named keys: 'Enter', 'Tab', 'Escape', 'ArrowUp', 'F5', etc. Plain text (e.g. 'hello') is typed character by character.",
+            "minLength": 1,
+            "title": "Keys",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "title": "SendKeysParams",
+        "type": "object"
+      }
+    },
+    "switch_tab": {
+      "className": "SwitchTabParams",
+      "description": "Switch to a different browser tab by tab ID",
+      "terminates": true,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "tab_id": {
+            "description": "Tab ID (last 4 characters) to switch to",
+            "minLength": 1,
+            "title": "Tab Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tab_id"
+        ],
+        "title": "SwitchTabParams",
+        "type": "object"
+      }
+    },
+    "close_tab": {
+      "className": "CloseTabParams",
+      "description": "Close a browser tab",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "tab_id": {
+            "default": "",
+            "description": "Tab ID (last 4 characters) to close. Empty string closes the current tab.",
+            "title": "Tab Id",
+            "type": "string"
+          }
+        },
+        "title": "CloseTabParams",
+        "type": "object"
+      }
+    },
+    "wait": {
+      "className": "WaitParams",
+      "description": "Wait for a specified number of seconds",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "seconds": {
+            "default": 3,
+            "description": "Seconds to wait",
+            "maximum": 30,
+            "minimum": 1,
+            "title": "Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "WaitParams",
+        "type": "object"
+      }
+    },
+    "go_back": {
+      "className": "GoBackParams",
+      "description": "Navigate back to the previous page in history",
+      "terminates": true,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "GoBackParams",
+        "type": "object"
+      }
+    },
+    "find_elements": {
+      "className": "FindElementsParams",
+      "description": "Query DOM elements by CSS selector (zero LLM cost, instant). Returns matching elements with tag, text, and attributes. Use attributes=['href','src'] to extract specific attributes (src/href resolve to absolute URLs). max_results caps the returned list; the total count is always reported. Use to explore page structure, count items, get links/attributes.",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "selector": {
+            "description": "CSS selector to query elements (e.g. \"table tr\", \"a.link\", \"div.product\")",
+            "title": "Selector",
+            "type": "string"
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Specific attributes to extract (e.g. [\"href\", \"src\", \"class\"]). If not set, returns tag and text only. src/href are resolved to absolute URLs.",
+            "title": "Attributes"
+          },
+          "max_results": {
+            "default": 50,
+            "description": "Maximum elements to return (total count is always reported even when truncated).",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "0-based index of the first element to return (for paginating large result sets; total is always the full count across all roots including shadow DOM / same-origin iframes).",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "include_text": {
+            "default": true,
+            "description": "Include text content of each element",
+            "title": "Include Text",
+            "type": "boolean"
+          },
+          "first_only": {
+            "default": false,
+            "description": "Return only the first matching element; total still reports the full count so you know there are more.",
+            "title": "First Only",
+            "type": "boolean"
+          },
+          "include_geometry": {
+            "default": false,
+            "description": "Add per-element getBoundingClientRect() {x,y,w,h} and a stable visibility flag (checks ancestor display/visibility/opacity + non-zero size). Default off to avoid overhead.",
+            "title": "Include Geometry",
+            "type": "boolean"
+          },
+          "return_node_ids": {
+            "default": false,
+            "description": "Return stable backend node ids usable directly as click/input_text `index` (uses DOM.performSearch — heavier, one CDP round-trip per element; no text). Offset applies to the document-order match list.",
+            "title": "Return Node Ids",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "selector"
+        ],
+        "title": "FindElementsParams",
+        "type": "object"
+      }
+    },
+    "find_text": {
+      "className": "FindTextParams",
+      "description": "Scroll to and highlight the nth visible match of text on the page",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "description": "Text to search for on the page",
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "nth": {
+            "default": 1,
+            "description": "Which match to scroll to, 1-based (default: 1st). The echo reports total/visible counts so the caller can increment to navigate matches.",
+            "minimum": 1,
+            "title": "Nth",
+            "type": "integer"
+          },
+          "case_sensitive": {
+            "default": false,
+            "description": "Case-sensitive match (default: case-insensitive, like Ctrl+F). Aligns with search_page.",
+            "title": "Case Sensitive",
+            "type": "boolean"
+          },
+          "highlight": {
+            "default": "box",
+            "description": "Highlight style: box=element outline (default), selection=native blue text selection (best-effort, Chromium-only), none=off.",
+            "enum": [
+              "box",
+              "selection",
+              "none"
+            ],
+            "title": "Highlight",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "FindTextParams",
+        "type": "object"
+      }
+    },
+    "screenshot": {
+      "className": "ScreenshotParams",
+      "description": "Take a screenshot with optional format, quality (jpeg), clip region, or full page. Saves to save_path if given.",
+      "terminates": false,
+      "schema": {
+        "$defs": {
+          "ScreenshotClipParams": {
+            "additionalProperties": false,
+            "description": "Viewport rectangle for a clipped screenshot, in CSS pixels.",
+            "properties": {
+              "x": {
+                "default": 0.0,
+                "description": "Left offset in CSS pixels",
+                "minimum": 0.0,
+                "title": "X",
+                "type": "number"
+              },
+              "y": {
+                "default": 0.0,
+                "description": "Top offset in CSS pixels",
+                "minimum": 0.0,
+                "title": "Y",
+                "type": "number"
+              },
+              "width": {
+                "description": "Rectangle width in CSS pixels",
+                "exclusiveMinimum": 0.0,
+                "title": "Width",
+                "type": "number"
+              },
+              "height": {
+                "description": "Rectangle height in CSS pixels",
+                "exclusiveMinimum": 0.0,
+                "title": "Height",
+                "type": "number"
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "title": "ScreenshotClipParams",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "default": "png",
+            "description": "Image format. 'jpeg' supports quality; 'png' is lossless.",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "0-100, only effective when format='jpeg'.",
+            "title": "Quality"
+          },
+          "clip": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ScreenshotClipParams"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional viewport rect {x,y,width,height} (CSS px)."
+          },
+          "full_page": {
+            "default": false,
+            "description": "Capture the full scrollable page instead of the viewport.",
+            "title": "Full Page",
+            "type": "boolean"
+          },
+          "save_path": {
+            "default": "",
+            "description": "Optional file path to save the screenshot bytes to disk.",
+            "title": "Save Path",
+            "type": "string"
+          }
+        },
+        "title": "ScreenshotParams",
+        "type": "object"
+      }
+    },
+    "save_as_pdf": {
+      "className": "SaveAsPdfParams",
+      "description": "Save the current page as a PDF. Supports paper_format (letter/legal/a4/a3/tabloid), landscape, scale (0.1-2.0), print_background.",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "File path to save the PDF (parent dirs auto-created).",
+            "title": "Path",
+            "type": "string"
+          },
+          "paper_format": {
+            "default": "letter",
+            "description": "Paper size.",
+            "enum": [
+              "letter",
+              "legal",
+              "a4",
+              "a3",
+              "tabloid"
+            ],
+            "title": "Paper Format",
+            "type": "string"
+          },
+          "landscape": {
+            "default": false,
+            "description": "Landscape orientation.",
+            "title": "Landscape",
+            "type": "boolean"
+          },
+          "print_background": {
+            "default": true,
+            "description": "Include background graphics/colors.",
+            "title": "Print Background",
+            "type": "boolean"
+          },
+          "scale": {
+            "default": 1.0,
+            "description": "Render scale (0.1-2.0).",
+            "maximum": 2.0,
+            "minimum": 0.1,
+            "title": "Scale",
+            "type": "number"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SaveAsPdfParams",
+        "type": "object"
+      }
+    },
+    "dropdown_options": {
+      "className": "DropdownOptionsParams",
+      "description": "Get all options from a dropdown element: native <select>, role=combobox, role=listbox, or custom dropdown",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "ID of the select element, shown in brackets in the DOM tree",
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "DropdownOptionsParams",
+        "type": "object"
+      }
+    },
+    "select_dropdown": {
+      "className": "SelectDropdownParams",
+      "description": "Select an option in a dropdown element (native <select>, role=combobox, role=listbox, or custom dropdown). Pass the dropdown's index — do not click it first. For <select multiple>, pass all wanted options at once as values=[...]",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "ID of the select element, shown in brackets in the DOM tree",
+            "title": "Index",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Option value to select (single option). Each call REPLACES the selection.",
+            "title": "Value"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For <select multiple> only: ALL wanted option values in ONE call — replaces the whole selection (repeated single-value calls keep only the last one)",
+            "title": "Values"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "SelectDropdownParams",
+        "type": "object"
+      }
+    },
+    "upload_file": {
+      "className": "UploadFileParams",
+      "description": "Upload a file to a file input element. Do NOT click the input or an upload button first — upload_file sets the file directly without opening the OS file picker",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "ID of the file input element (or its labeled upload area / dropzone), shown in brackets in the DOM tree",
+            "title": "Index",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to the file to upload",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "path"
+        ],
+        "title": "UploadFileParams",
+        "type": "object"
+      }
+    },
+    "write_file": {
+      "className": "WriteFileParams",
+      "description": "Write UTF-8 text to a local file (parent directories are auto-created). Default is overwrite: the file's previous content is fully replaced. Set append=True to add to the end of an existing file instead (it is created if missing). trailing_newline (default True) ensures the content ends with exactly one newline — no-op if it already does; set leading_newline=True only when appending to a file you know lacks a trailing newline, to separate the new content. Prefer replace_file for in-place edits to a small region of a large file you have already read.",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "File path to write to (parent directories are auto-created).",
+            "title": "Path",
+            "type": "string"
+          },
+          "content": {
+            "description": "Text content to write (UTF-8 by default; see encoding).",
+            "title": "Content",
+            "type": "string"
+          },
+          "append": {
+            "default": false,
+            "description": "If True, append to the end of an existing file instead of overwriting it. Default False overwrites the entire file.",
+            "title": "Append",
+            "type": "boolean"
+          },
+          "trailing_newline": {
+            "default": true,
+            "description": "If True (default), ensure the written content ends with exactly one newline (no-op if it already does).",
+            "title": "Trailing Newline",
+            "type": "boolean"
+          },
+          "leading_newline": {
+            "default": false,
+            "description": "If True, prepend a newline before the content (useful when appending to a file that lacks a trailing newline).",
+            "title": "Leading Newline",
+            "type": "boolean"
+          },
+          "encoding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Text encoding to write with (default UTF-8). Set e.g. 'latin-1' or 'cp936' for legacy files; the byte-count echo reflects this encoding.",
+            "title": "Encoding"
+          },
+          "newline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "description": "Python open() newline translation mode (default '' = no translation; \\n/\\r\\n written as-is). Set '\\r\\n' to force CRLF output, None to translate \\n to the OS native line ending (\\r\\n on Windows). Distinct from trailing_newline/leading_newline, which only add/remove a \\n in the content.",
+            "title": "Newline"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "title": "WriteFileParams",
+        "type": "object"
+      }
+    },
+    "read_file": {
+      "className": "ReadFileParams",
+      "description": "Read content from a local text (UTF-8) or PDF/DOCX file; paginate large files with offset/limit.",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Path to a local file to read: UTF-8 text by default (see encoding), or PDF/DOCX for text extraction.",
+            "title": "Path",
+            "type": "string"
+          },
+          "encoding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Text encoding to decode with (default UTF-8). Set e.g. 'latin-1' or 'cp936' for legacy files.",
+            "title": "Encoding"
+          },
+          "newline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "description": "Python open() newline mode (default '' = no translation, preserves \\r\\n byte-for-byte). Set None for universal-newline (collapses \\r\\n / \\r to \\n); other values do not translate on a full-file read.",
+            "title": "Newline"
+          },
+          "offset": {
+            "default": 0,
+            "description": "0-based character offset to start reading at (for paginating files larger than the effective read window; pair with the truncation footer's 'use offset=N to continue').",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Max characters to return from this read (default: the effective read window = min(read_file_max_chars, LLM display cap) minus a footer reserve). Use with offset to page through very large files.",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ReadFileParams",
+        "type": "object"
+      }
+    },
+    "replace_file": {
+      "className": "ReplaceFileParams",
+      "description": "Replace occurrences of text inside an existing local file, in place. By default performs a case-sensitive literal substring replace of every non-overlapping occurrence (phase-1 behavior preserved). Set regex=True to treat 'old' as a Python regex (then 'new' supports backreferences), or case_sensitive=False for case-insensitive matching. count limits replacements to the first N (default: all). expected_count guards against typos: if the file does not contain exactly that many matches it is left unchanged and an error is returned. backup=True first copies the original to <path>.bak. old must be non-empty; zero matches returns 'no occurrences' rather than silently succeeding. Prefer this over write_file for small edits to a large file you have already read.",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Path to an existing local file to edit in place.",
+            "title": "Path",
+            "type": "string"
+          },
+          "old": {
+            "description": "Text to find. A literal substring by default (case-sensitive); set regex=True to treat it as a Python regular expression. Must be non-empty.",
+            "minLength": 1,
+            "title": "Old",
+            "type": "string"
+          },
+          "new": {
+            "description": "Replacement text (literal; may be empty to delete matches). In regex mode this is an re.sub replacement template and supports backreferences (\\1, \\g<name>); escape backslashes for literal paths.",
+            "title": "New",
+            "type": "string"
+          },
+          "encoding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Text encoding to read/write with (default UTF-8). Set e.g. 'latin-1' or 'cp936' for legacy files.",
+            "title": "Encoding"
+          },
+          "newline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "description": "Python open() newline mode (default '' = no translation, preserves original line endings byte-for-byte). Set None for universal-newline translation on read.",
+            "title": "Newline"
+          },
+          "regex": {
+            "default": false,
+            "description": "When True, treat 'old' as a Python regular expression (re.sub semantics, including backreference expansion \\1 / \\g<name> in 'new'; escape backslashes for literal paths). When False (default), 'old' is a literal substring.",
+            "title": "Regex",
+            "type": "boolean"
+          },
+          "case_sensitive": {
+            "default": true,
+            "description": "When True (default), match case-sensitively. When False, match case-insensitively regardless of regex mode. Note: defaults to True (unlike search_page's False) to preserve replace_file's historical case-sensitive behavior.",
+            "title": "Case Sensitive",
+            "type": "boolean"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum number of occurrences to replace, from the top of the file. None (default) replaces all; a positive integer replaces only the first N (or fewer if the file has fewer matches).",
+            "title": "Count"
+          },
+          "expected_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "If set, the file must contain exactly this many matches for the operation to proceed; on mismatch the file is left UNCHANGED and an error is returned (typo-guard against 0 or unexpectedly-many replacements). Compared against the TOTAL match count, before the 'count' limit is applied.",
+            "title": "Expected Count"
+          },
+          "backup": {
+            "default": false,
+            "description": "When True, copy the original (pre-edit) file to <path>.bak before replacing (shutil.copy2 metadata retained). Default False; .bak is overwritten if it exists.",
+            "title": "Backup",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "old",
+          "new"
+        ],
+        "title": "ReplaceFileParams",
+        "type": "object"
+      }
+    },
+    "evaluate": {
+      "className": "EvaluateParams",
+      "description": "Execute arbitrary JavaScript in the page and return the result. Wrap in an IIFE with try-catch so errors become return values; use only browser APIs (no Node.js). Supports async (await / fetch). Result is normalized to a string (objects -> JSON). Escape hatch when find_elements / search_page / click cannot express the need. Avoid backslash escapes in the code (they get mangled in transport): for newlines/tabs inside regex use String.fromCharCode(10)/String.fromCharCode(9) instead of \\n/\\t.",
+      "terminates": true,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "JavaScript to execute in the page. The code runs as a SCRIPT BODY — a top-level `return` is a SyntaxError unless wrapped, so use an IIFE: ((function(){try{...}catch(e){return 'Error: '+e.message}})()). Contrast: with `args`/`elements` the code IS wrapped as function(...a){ ... } and then MUST `return`. Use ONLY browser APIs (document, window, fetch); NO Node.js APIs. Return a primitive or a JSON-serializable object/array. Keep output small. Keep CODE short (< ~300 chars) — longer nested code tends to lose brace balance; split into several evaluate calls instead.",
+            "title": "Code",
+            "type": "string"
+          },
+          "await_promise": {
+            "default": true,
+            "description": "Await a returned Promise (default True; needed for await fetch(...)). Set False for fire-and-forget / strictly synchronous code.",
+            "title": "Await Promise",
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "anyOf": [
+              {
+                "maximum": 300000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Per-call CDP execution timeout in ms, clamped to [1, 300000]. Default None → 30000 (project default). Larger for long fetches, smaller to fail fast. Only applies when no args/elements are given.",
+            "title": "Timeout Ms"
+          },
+          "user_gesture": {
+            "default": false,
+            "description": "Run as a user gesture — required by some APIs (fullscreen, certain clipboard / pointer-lock calls). No-op for most code.",
+            "title": "User Gesture",
+            "type": "boolean"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional JSON arguments injected as a[0], a[1], ... Your code is wrapped as function(...a){ ... } so it MUST `return` a value. Eliminates string-concat injection: pass values as JSON, reference them as a[i]. Example: args=['.btn'] with code `return document.querySelector(a[0]).disabled`.",
+            "title": "Args"
+          },
+          "elements": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Backend node ids (index/element_id from get_state or find_elements(return_node_ids=True)) of elements to inject as handles e[0], e[1], ... When present, code is wrapped as function(...a, ...e){ ... } (JSON args first, element handles last) and MUST `return`. Lets JS act on the exact node click/input_text operate on, without re-querying. Example: elements=[42] with code `return e[0].value`.",
+            "title": "Elements"
+          },
+          "return_element_ids": {
+            "default": false,
+            "description": "If True, a returned DOM node is resolved to its backend node id (usable as `index`/`element_id` for click/input_text) and reported. Expects the code to `return` a single element (e.g. `return document.querySelector('form')`). Only the first returned node is resolved; non-node returns fall back to normal normalization.",
+            "title": "Return Element Ids",
+            "type": "boolean"
+          },
+          "frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Backend node id of an iframe element to execute inside (cross-origin safe). Default None → top document. When set, the call runs in that iframe's context (attached via Target.attachToTarget). Use when the parent cannot reach a cross-origin iframe's document. Same-origin iframes do NOT need this — just reference `iframe.contentDocument` in your code.",
+            "title": "Frame"
+          },
+          "extract_images": {
+            "default": false,
+            "description": "If True, scan the result text for `data:image/...;base64,...` URIs, collect them into ActionResult.metadata['images'], and replace each in the returned text with a short placeholder ([image 1], [image 2], ...) to avoid bloating context. Default False.",
+            "title": "Extract Images",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "EvaluateParams",
+        "type": "object"
+      }
+    },
+    "search_page": {
+      "className": "SearchPageParams",
+      "description": "Search page text for a pattern (like grep). Zero LLM cost, instant. Returns matches with surrounding context, element path, and a total count; paginate large result sets with offset. Traverses same-origin iframes and open shadow roots. Set regex=True for regex patterns; use css_scope to search within a section; search_attributes=True to also match href/value/etc. Read-only — does not scroll or highlight (use find_text for that).",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "Text or regex pattern to search for within the current page",
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "regex": {
+            "default": false,
+            "description": "Treat query as a regex (default: literal text match).",
+            "title": "Regex",
+            "type": "boolean"
+          },
+          "case_sensitive": {
+            "default": false,
+            "description": "Case-sensitive match (default: case-insensitive).",
+            "title": "Case Sensitive",
+            "type": "boolean"
+          },
+          "context_chars": {
+            "default": 150,
+            "description": "Characters of surrounding context per match.",
+            "minimum": 0,
+            "title": "Context Chars",
+            "type": "integer"
+          },
+          "css_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CSS selector to limit search scope (e.g. 'div#main'). Selector not matching anything is an error.",
+            "title": "Css Scope"
+          },
+          "max_results": {
+            "default": 25,
+            "description": "Maximum matches to return (total count is always reported even when truncated).",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "0-based index of the first match to return (for paginating large result sets; total is always the full count).",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "search_attributes": {
+            "default": false,
+            "description": "Also search element attribute values (href / value / data-* etc). Returns a separate attribute_matches list; offset applies to text matches only.",
+            "title": "Search Attributes",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "SearchPageParams",
+        "type": "object"
+      }
+    },
+    "read_grid": {
+      "className": "ReadGridParams",
+      "description": "Read structured rows from the page's tables and data grids — UI-component grids, legacy AJAX grids, plain HTML tables, and report result tables. Rows come back keyed by column header (plain/report tables and legacy grids) or by data-source field name (UI-component grids — check the returned keys before passing fields). For tables, adjacent numeric columns cannot be confused — use this instead of reading table values off the DOM snapshot by cell position. When the table has a Total/合计 row, it is returned as footer together with computed per-column sums (totals-check) for cross-checking. Bypasses row-render freezes; returns JSON rows plus metadata (total_records, sorting, active filters). Pass sorting='field desc' for top-N/latest queries — never assume row order. Read-only data channel: does NOT update the page UI (filter chips) — tasks graded on visible filter state must use the Filters panel.",
+      "terminates": true,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Grid namespace, e.g. 'sales_order_grid' / 'product_listing'. Omit to auto-detect from the current page (first non-notification UI-component grid data source).",
+            "title": "Namespace"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Grid filters applied server-side, e.g. {'status':'complete'} or {'qty':{'from':2,'to':3}}. Replaces current filters (leftover bookmark filters are cleared first). Pass {} to read unfiltered.",
+            "title": "Filters"
+          },
+          "search": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fulltext keyword for the grid's search box (replaces current).",
+            "title": "Search"
+          },
+          "sorting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "'<field> <asc|desc>', e.g. 'created_at desc'. REQUIRED for top-N / latest / max queries — grid row order is otherwise NOT guaranteed.",
+            "title": "Sorting"
+          },
+          "page_size": {
+            "default": 200,
+            "description": "Rows per page for this read (server-side paging; use 1000+ to read all).",
+            "maximum": 2000,
+            "minimum": 1,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "page": {
+            "default": 1,
+            "description": "1-based page number to read.",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Row fields to return, e.g. ['entity_id','increment_id','created_at','status']. Omit for all grid columns.",
+            "title": "Fields"
+          },
+          "fresh": {
+            "default": true,
+            "description": "True (default): clear leftover server-side bookmark filters/search before applying the given params — grids inherit filter state from previous sessions. False: apply on top of the current state.",
+            "title": "Fresh",
+            "type": "boolean"
+          },
+          "group_count": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Field name to aggregate on, e.g. 'billing_name': returns per-value row counts computed in Python over the rows this call returned (no context tallying; the decisive tool for count-per-X questions). Watch the appended warnings — 'counted X of total Y' means page through for exact totals; legacy/DOM channels are page-local (current page/pageSize rows only, no total reported). Works on every channel. Pass fields=[that field] to slim the returned rows. If counts come back '(missing)', the field name is not present in the rows (legacy/DOM channels use display-name headers).",
+            "title": "Group Count"
+          }
+        },
+        "title": "ReadGridParams",
+        "type": "object"
+      }
+    },
+    "done": {
+      "className": "DoneParams",
+      "description": "Signal that the task is complete and stop the agent. Must be the only action in the step. Provide a final summary of what was accomplished; set success=False if any requirement was unmet or could not be verified.",
+      "terminates": false,
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "description": "Final message to the user. ONLY report data you directly observed in page state, tool outputs, or screenshots during this session. Do NOT use training knowledge to fill gaps — if information was not found on the page, say so explicitly. Do NOT claim completion of steps from compacted_memory or prior session summaries unless you explicitly verified them yourself. If uncertain whether a prior step completed, say so explicitly. Must be non-empty.",
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "success": {
+            "default": true,
+            "description": "Whether the task was completed successfully. Set to False if any stated requirement was unmet, the page did not contain the expected data, or a step could not be verified. Leave True only when every requirement was directly confirmed this session. If any part of your data is incomplete or still marked uncertain — a value with `?`, an unread gap, a partial tally — verify it first or set success=False.",
+            "title": "Success",
+            "type": "boolean"
+          },
+          "files_to_display": {
+            "description": "Absolute file paths to attach to the final result (downloads, saved reports, screenshots). Each must exist and be under an allowed read path; invalid paths are skipped with a warning. Shown as a short manifest in the summary.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Files To Display",
+            "type": "array"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "DoneParams",
+        "type": "object"
+      }
+    }
+  },
+  "batch1": {
+    "names": [
+      "navigate",
+      "click",
+      "input_text",
+      "scroll",
+      "extract",
+      "wait",
+      "go_back",
+      "switch_tab",
+      "send_keys",
+      "done"
+    ],
+    "registryVersion": "v1-0f8b68e02222",
+    "toolSchema": {
+      "flash-single": {
+        "name": "agent_response",
+        "description": "Respond with the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "done",
+                    "extract",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "scroll",
+                    "send_keys",
+                    "switch_tab",
+                    "wait"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            }
+          }
+        }
+      },
+      "flash-multi": {
+        "name": "agent_response",
+        "description": "Respond with the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "description": "One or more actions to execute in order (up to 3). Chain when targeting the same stable DOM: form filling, clearing multiple items, sequential scrolls, multi-field extraction. The runtime stops the sequence automatically if the page changes.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "enum": [
+                      "click",
+                      "done",
+                      "extract",
+                      "go_back",
+                      "input_text",
+                      "navigate",
+                      "scroll",
+                      "send_keys",
+                      "switch_tab",
+                      "wait"
+                    ],
+                    "description": "The action to execute"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "standard-single": {
+        "name": "agent_response",
+        "description": "Respond with your evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "done",
+                    "extract",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "scroll",
+                    "send_keys",
+                    "switch_tab",
+                    "wait"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            }
+          }
+        }
+      },
+      "standard-multi": {
+        "name": "agent_response",
+        "description": "Respond with your evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "description": "One or more actions to execute in order (up to 3). Chain when targeting the same stable DOM: form filling, clearing multiple items, sequential scrolls, multi-field extraction. The runtime stops the sequence automatically if the page changes.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "enum": [
+                      "click",
+                      "done",
+                      "extract",
+                      "go_back",
+                      "input_text",
+                      "navigate",
+                      "scroll",
+                      "send_keys",
+                      "switch_tab",
+                      "wait"
+                    ],
+                    "description": "The action to execute"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "thinking-single": {
+        "name": "agent_response",
+        "description": "Respond with your thinking process, evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action",
+            "thinking"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "done",
+                    "extract",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "scroll",
+                    "send_keys",
+                    "switch_tab",
+                    "wait"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            },
+            "thinking": {
+              "type": "string",
+              "description": "Your step-by-step reasoning process. Think through the current state, evaluate options, and explain your decision."
+            }
+          }
+        }
+      },
+      "thinking-single-planning": {
+        "name": "agent_response",
+        "description": "Respond with your thinking process, evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action",
+            "thinking"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "done",
+                    "extract",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "scroll",
+                    "send_keys",
+                    "switch_tab",
+                    "wait"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            },
+            "thinking": {
+              "type": "string",
+              "description": "Your step-by-step reasoning process. Think through the current state, evaluate options, and explain your decision."
+            },
+            "plan_update": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Replace the entire plan with these steps. Use when creating a new plan or revising the current plan. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            },
+            "current_plan_item": {
+              "type": "integer",
+              "description": "Index of the current plan step to advance to. Steps between current and this index will be marked as done. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            }
+          }
+        }
+      },
+      "standard-multi-planning": {
+        "name": "agent_response",
+        "description": "Respond with your evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "description": "One or more actions to execute in order (up to 3). Chain when targeting the same stable DOM: form filling, clearing multiple items, sequential scrolls, multi-field extraction. The runtime stops the sequence automatically if the page changes.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "enum": [
+                      "click",
+                      "done",
+                      "extract",
+                      "go_back",
+                      "input_text",
+                      "navigate",
+                      "scroll",
+                      "send_keys",
+                      "switch_tab",
+                      "wait"
+                    ],
+                    "description": "The action to execute"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                  }
+                }
+              }
+            },
+            "plan_update": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Replace the entire plan with these steps. Use when creating a new plan or revising the current plan. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            },
+            "current_plan_item": {
+              "type": "integer",
+              "description": "Index of the current plan step to advance to. Steps between current and this index will be marked as done. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            }
+          }
+        }
+      }
+    },
+    "descriptionsText": "- **click**(index: ID of the element to click, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id.): Click an element by its ID from the DOM state. Use index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **done**(text: Final message to the user. ONLY report data you directly observed in page state, tool outputs, or screenshots during this session. Do NOT use training knowledge to fill gaps — if information was not found on the page, say so explicitly. Do NOT claim completion of steps from compacted_memory or prior session summaries unless you explicitly verified them yourself. If uncertain whether a prior step completed, say so explicitly. Must be non-empty., success: Whether the task was completed successfully. Set to False if any stated requirement was unmet, the page did not contain the expected data, or a step could not be verified. Leave True only when every requirement was directly confirmed this session. If any part of your data is incomplete or still marked uncertain — a value with `?`, an unread gap, a partial tally — verify it first or set success=False., files_to_display: Absolute file paths to attach to the final result (downloads, saved reports, screenshots). Each must exist and be under an allowed read path; invalid paths are skipped with a warning. Shown as a short manifest in the summary.): Signal that the task is complete and stop the agent. Must be the only action in the step. Provide a final summary of what was accomplished; set success=False if any requirement was unmet or could not be verified.\n- **extract**(query: What information to extract from the current page. Be specific: name the fields/items and any filtering criteria. (Equivalent to browser-use `query`.), extract_links: If True, preserve <a href> URLs in the source markdown. Set False for text-only extraction., extract_images: If True, preserve <img src> URLs in the source markdown., start_from_char: Character offset to resume extraction from (for paginating large pages). Default 0 = start at the beginning. Use the offset reported by a previous truncated extract call to continue., already_collected: Items already extracted (dedupe across pages/chunks). Pass prior results (as text) and the model will skip exact duplicates. Optional.): Extract specific information from the current page as clean markdown (via an LLM). Paginate large pages with start_from_char; dedupe across calls with already_collected.\n- **go_back**() [terminates sequence]: Navigate back to the previous page in history\n- **input_text**(index: ID of the element to type into, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id., text: Text to type into the element, clear: Whether to clear existing text first): Type text into an input element identified by index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **navigate**(url: The URL to navigate to, new_tab: If True, open the URL in a new tab instead of navigating the current tab) [terminates sequence]: Navigate to a URL in the current tab, or open it in a new tab with new_tab=True\n- **scroll**(amount: Number of viewport-heights to scroll (1-10). Check the scroll info on scrollable elements in the DOM tree (e.g. '3.4 pages below') to judge how much remains before scrolling., direction: Scroll direction: 'down' (default) or 'up'.): Scroll the page up or down by a number of increments\n- **send_keys**(keys: Key combination or text to send. Combos use '+': 'Control+a', 'Shift+T', 'Alt+F4'. Named keys: 'Enter', 'Tab', 'Escape', 'ArrowUp', 'F5', etc. Plain text (e.g. 'hello') is typed character by character.): Send keyboard shortcuts or key combinations\n- **switch_tab**(tab_id: Tab ID (last 4 characters) to switch to) [terminates sequence]: Switch to a different browser tab by tab ID\n- **wait**(seconds: Seconds to wait): Wait for a specified number of seconds",
+    "pageFiltered": {
+      "descriptionsText": "- **click**(index: ID of the element to click, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id.): Click an element by its ID from the DOM state. Use index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **done**(text: Final message to the user. ONLY report data you directly observed in page state, tool outputs, or screenshots during this session. Do NOT use training knowledge to fill gaps — if information was not found on the page, say so explicitly. Do NOT claim completion of steps from compacted_memory or prior session summaries unless you explicitly verified them yourself. If uncertain whether a prior step completed, say so explicitly. Must be non-empty., success: Whether the task was completed successfully. Set to False if any stated requirement was unmet, the page did not contain the expected data, or a step could not be verified. Leave True only when every requirement was directly confirmed this session. If any part of your data is incomplete or still marked uncertain — a value with `?`, an unread gap, a partial tally — verify it first or set success=False., files_to_display: Absolute file paths to attach to the final result (downloads, saved reports, screenshots). Each must exist and be under an allowed read path; invalid paths are skipped with a warning. Shown as a short manifest in the summary.): Signal that the task is complete and stop the agent. Must be the only action in the step. Provide a final summary of what was accomplished; set success=False if any requirement was unmet or could not be verified.\n- **extract**(query: What information to extract from the current page. Be specific: name the fields/items and any filtering criteria. (Equivalent to browser-use `query`.), extract_links: If True, preserve <a href> URLs in the source markdown. Set False for text-only extraction., extract_images: If True, preserve <img src> URLs in the source markdown., start_from_char: Character offset to resume extraction from (for paginating large pages). Default 0 = start at the beginning. Use the offset reported by a previous truncated extract call to continue., already_collected: Items already extracted (dedupe across pages/chunks). Pass prior results (as text) and the model will skip exact duplicates. Optional.): Extract specific information from the current page as clean markdown (via an LLM). Paginate large pages with start_from_char; dedupe across calls with already_collected.\n- **go_back**() [terminates sequence]: Navigate back to the previous page in history\n- **input_text**(index: ID of the element to type into, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id., text: Text to type into the element, clear: Whether to clear existing text first): Type text into an input element identified by index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **navigate**(url: The URL to navigate to, new_tab: If True, open the URL in a new tab instead of navigating the current tab) [terminates sequence]: Navigate to a URL in the current tab, or open it in a new tab with new_tab=True\n- **scroll**(amount: Number of viewport-heights to scroll (1-10). Check the scroll info on scrollable elements in the DOM tree (e.g. '3.4 pages below') to judge how much remains before scrolling., direction: Scroll direction: 'down' (default) or 'up'.): Scroll the page up or down by a number of increments\n- **send_keys**(keys: Key combination or text to send. Combos use '+': 'Control+a', 'Shift+T', 'Alt+F4'. Named keys: 'Enter', 'Tab', 'Escape', 'ArrowUp', 'F5', etc. Plain text (e.g. 'hello') is typed character by character.): Send keyboard shortcuts or key combinations\n- **switch_tab**(tab_id: Tab ID (last 4 characters) to switch to) [terminates sequence]: Switch to a different browser tab by tab ID\n- **wait**(seconds: Seconds to wait): Wait for a specified number of seconds",
+      "descriptionsTextOther": "- **click**(index: ID of the element to click, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id.): Click an element by its ID from the DOM state. Use index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **done**(text: Final message to the user. ONLY report data you directly observed in page state, tool outputs, or screenshots during this session. Do NOT use training knowledge to fill gaps — if information was not found on the page, say so explicitly. Do NOT claim completion of steps from compacted_memory or prior session summaries unless you explicitly verified them yourself. If uncertain whether a prior step completed, say so explicitly. Must be non-empty., success: Whether the task was completed successfully. Set to False if any stated requirement was unmet, the page did not contain the expected data, or a step could not be verified. Leave True only when every requirement was directly confirmed this session. If any part of your data is incomplete or still marked uncertain — a value with `?`, an unread gap, a partial tally — verify it first or set success=False., files_to_display: Absolute file paths to attach to the final result (downloads, saved reports, screenshots). Each must exist and be under an allowed read path; invalid paths are skipped with a warning. Shown as a short manifest in the summary.): Signal that the task is complete and stop the agent. Must be the only action in the step. Provide a final summary of what was accomplished; set success=False if any requirement was unmet or could not be verified.\n- **go_back**() [terminates sequence]: Navigate back to the previous page in history\n- **input_text**(index: ID of the element to type into, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id., text: Text to type into the element, clear: Whether to clear existing text first): Type text into an input element identified by index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **navigate**(url: The URL to navigate to, new_tab: If True, open the URL in a new tab instead of navigating the current tab) [terminates sequence]: Navigate to a URL in the current tab, or open it in a new tab with new_tab=True\n- **scroll**(amount: Number of viewport-heights to scroll (1-10). Check the scroll info on scrollable elements in the DOM tree (e.g. '3.4 pages below') to judge how much remains before scrolling., direction: Scroll direction: 'down' (default) or 'up'.): Scroll the page up or down by a number of increments\n- **send_keys**(keys: Key combination or text to send. Combos use '+': 'Control+a', 'Shift+T', 'Alt+F4'. Named keys: 'Enter', 'Tab', 'Escape', 'ArrowUp', 'F5', etc. Plain text (e.g. 'hello') is typed character by character.): Send keyboard shortcuts or key combinations\n- **switch_tab**(tab_id: Tab ID (last 4 characters) to switch to) [terminates sequence]: Switch to a different browser tab by tab ID\n- **wait**(seconds: Seconds to wait): Wait for a specified number of seconds",
+      "schemaNames": [
+        "click",
+        "done",
+        "extract",
+        "go_back",
+        "input_text",
+        "navigate",
+        "scroll",
+        "send_keys",
+        "switch_tab",
+        "wait"
+      ],
+      "schemaNamesOther": [
+        "click",
+        "done",
+        "go_back",
+        "input_text",
+        "navigate",
+        "scroll",
+        "send_keys",
+        "switch_tab",
+        "wait"
+      ]
+    }
+  },
+  "structuredDone": {
+    "className": "StructuredDoneParams",
+    "schema": {
+      "$defs": {
+        "SampleOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "total": {
+              "title": "Total",
+              "type": "integer"
+            },
+            "note": {
+              "default": "",
+              "title": "Note",
+              "type": "string"
+            }
+          },
+          "required": [
+            "total"
+          ],
+          "title": "SampleOutput",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/SampleOutput",
+          "description": "Structured final output."
+        },
+        "success": {
+          "default": true,
+          "title": "Success",
+          "type": "boolean"
+        },
+        "files_to_display": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files To Display",
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "title": "StructuredDoneParams",
+      "type": "object"
+    },
+    "descriptionsText": "- **done**(data: Structured final output.): Signal that the task is complete and stop the agent. Must be the only action in the step. Provide a final summary of what was accomplished; set success=False if any requirement was unmet or could not be verified.\n- **navigate**(url: The URL to navigate to, new_tab: If True, open the URL in a new tab instead of navigating the current tab) [terminates sequence]: Navigate to a URL in the current tab, or open it in a new tab with new_tab=True"
+  },
+  "validate": {
+    "click-both-missing": {
+      "error": ": Value error, provide exactly one of `index` or `element_id` (currently both missing or both given)",
+      "input": {}
+    },
+    "click-both-given": {
+      "error": ": Value error, provide exactly one of `index` or `element_id` (currently both missing or both given)",
+      "input": {
+        "index": 1,
+        "element_id": 2
+      }
+    },
+    "click-extra-field": {
+      "error": "foo: Extra inputs are not permitted",
+      "input": {
+        "index": 1,
+        "foo": "bar"
+      }
+    },
+    "click-index-string": {
+      "error": "index: Input should be a valid integer, unable to parse string as an integer",
+      "input": {
+        "index": "abc"
+      }
+    },
+    "click-index-numeric-string": {
+      "error": null,
+      "input": {
+        "index": "12"
+      }
+    },
+    "navigate-missing-url": {
+      "error": "url: Field required",
+      "input": {}
+    },
+    "navigate-newtab-string": {
+      "error": null,
+      "input": {
+        "url": "x.com",
+        "new_tab": "true"
+      }
+    },
+    "navigate-url-int": {
+      "error": "url: Input should be a valid string",
+      "input": {
+        "url": 42
+      }
+    },
+    "scroll-amount-low": {
+      "error": "amount: Input should be greater than or equal to 1",
+      "input": {
+        "amount": 0
+      }
+    },
+    "scroll-amount-high": {
+      "error": "amount: Input should be less than or equal to 10",
+      "input": {
+        "amount": 11
+      }
+    },
+    "scroll-amount-string": {
+      "error": null,
+      "input": {
+        "amount": "3"
+      }
+    },
+    "scroll-direction-bad": {
+      "error": "direction: Input should be 'up' or 'down'",
+      "input": {
+        "direction": "left"
+      }
+    },
+    "extract-already-collected-dedupe": {
+      "error": null,
+      "input": {
+        "query": "q",
+        "already_collected": [
+          "",
+          " a ",
+          "b"
+        ]
+      }
+    },
+    "sendkeys-empty": {
+      "error": "keys: String should have at least 1 character",
+      "input": {
+        "keys": ""
+      }
+    },
+    "switchtab-empty": {
+      "error": "tab_id: String should have at least 1 character",
+      "input": {
+        "tab_id": ""
+      }
+    },
+    "wait-range": {
+      "error": "seconds: Input should be less than or equal to 30",
+      "input": {
+        "seconds": 31
+      }
+    },
+    "dropdown-xor": {
+      "error": ": Value error, pass exactly one of value (single) or values (multi-select)",
+      "input": {
+        "index": 1,
+        "value": "a",
+        "values": [
+          "a"
+        ]
+      }
+    },
+    "dropdown-values-bad": {
+      "error": null,
+      "input": {
+        "index": 1,
+        "values": []
+      }
+    },
+    "done-missing-text": {
+      "error": "text: Field required",
+      "input": {}
+    },
+    "screenshot-quality-range": {
+      "error": "quality: Input should be less than or equal to 100",
+      "input": {
+        "quality": 101
+      }
+    },
+    "screenshot-clip-nested": {
+      "error": "clip.width: Input should be greater than 0",
+      "input": {
+        "clip": {
+          "x": 0,
+          "y": 0,
+          "width": -1,
+          "height": 10
+        }
+      }
+    },
+    "evaluate-timeout-range": {
+      "error": "timeout_ms: Input should be greater than or equal to 1",
+      "input": {
+        "code": "return 1",
+        "timeout_ms": 0
+      }
+    },
+    "find-elements-max-range": {
+      "error": "max_results: Input should be less than or equal to 200",
+      "input": {
+        "selector": "a",
+        "max_results": 500
+      }
+    }
+  },
+  "chunk": [
+    {
+      "name": "small",
+      "input": "hello world",
+      "maxChars": 50,
+      "output": [
+        {
+          "content": "hello world",
+          "start": 0,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "maxChars": 50,
+      "output": []
+    },
+    {
+      "name": "table",
+      "input": "# Title\n\nintro paragraph here\n\n| h1 | h2 |\n| --- | --- |\n| r0a | r0b |\n| r1a | r1b |\n| r2a | r2b |\n| r3a | r3b |\n| r4a | r4b |\n| r5a | r5b |\n| r6a | r6b |\n| r7a | r7b |\n| r8a | r8b |\n| r9a | r9b |\n| r10a | r10b |\n| r11a | r11b |\n| r12a | r12b |\n| r13a | r13b |\n| r14a | r14b |\n| r15a | r15b |\n| r16a | r16b |\n| r17a | r17b |\n| r18a | r18b |\n| r19a | r19b |\n\ntail text after table\n",
+      "maxChars": 120,
+      "output": [
+        {
+          "content": "# Title\n\nintro paragraph here\n\n| h1 | h2 |\n| --- | --- |\n| r0a | r0b |\n| r1a | r1b |\n| r2a | r2b |\n| r3a | r3b |\n",
+          "start": 0,
+          "end": 113
+        },
+        {
+          "content": "| r4a | r4b |\n| r5a | r5b |\n| r6a | r6b |\n| r7a | r7b |\n| r8a | r8b |\n| r9a | r9b |\n| r10a | r10b |\n| r11a | r11b |\n",
+          "start": 113,
+          "end": 229
+        },
+        {
+          "content": "| r12a | r12b |\n| r13a | r13b |\n| r14a | r14b |\n| r15a | r15b |\n| r16a | r16b |\n| r17a | r17b |\n| r18a | r18b |\n",
+          "start": 229,
+          "end": 341
+        },
+        {
+          "content": "| r19a | r19b |\n\ntail text after table\n",
+          "start": 341,
+          "end": 380
+        }
+      ]
+    },
+    {
+      "name": "hard-split-line",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "maxChars": 100,
+      "output": [
+        {
+          "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "start": 0,
+          "end": 100
+        },
+        {
+          "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "start": 100,
+          "end": 200
+        },
+        {
+          "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "start": 200,
+          "end": 300
+        }
+      ]
+    },
+    {
+      "name": "island",
+      "input": "short head\n\nline 0 with some text\nline 1 with some text\nline 2 with some text\nline 3 with some text\nline 4 with some text\nline 5 with some text\nline 6 with some text\nline 7 with some text\nline 8 with some text\nline 9 with some text\nline 10 with some text\nline 11 with some text\nline 12 with some text\nline 13 with some text\nline 14 with some text\nline 15 with some text\nline 16 with some text\nline 17 with some text\nline 18 with some text\nline 19 with some text\nline 20 with some text\nline 21 with some text\nline 22 with some text\nline 23 with some text\nline 24 with some text\nline 25 with some text\nline 26 with some text\nline 27 with some text\nline 28 with some text\nline 29 with some text\nline 30 with some text\nline 31 with some text\nline 32 with some text\nline 33 with some text\nline 34 with some text\nline 35 with some text\nline 36 with some text\nline 37 with some text\nline 38 with some text\nline 39 with some text\nline 40 with some text\nline 41 with some text\nline 42 with some text\nline 43 with some text\nline 44 with some text\nline 45 with some text\nline 46 with some text\nline 47 with some text\nline 48 with some text\nline 49 with some text\nline 50 with some text\nline 51 with some text\nline 52 with some text\nline 53 with some text\nline 54 with some text\nline 55 with some text\nline 56 with some text\nline 57 with some text\nline 58 with some text\nline 59 with some text\n",
+      "maxChars": 200,
+      "output": [
+        {
+          "content": "short head\n\nline 0 with some text\nline 1 with some text\nline 2 with some text\nline 3 with some text\nline 4 with some text\nline 5 with some text\nline 6 with some text\nline 7 with some text\n",
+          "start": 0,
+          "end": 188
+        },
+        {
+          "content": "line 8 with some text\nline 9 with some text\nline 10 with some text\nline 11 with some text\nline 12 with some text\nline 13 with some text\nline 14 with some text\nline 15 with some text\n",
+          "start": 188,
+          "end": 370
+        },
+        {
+          "content": "line 16 with some text\nline 17 with some text\nline 18 with some text\nline 19 with some text\nline 20 with some text\nline 21 with some text\nline 22 with some text\nline 23 with some text\n",
+          "start": 370,
+          "end": 554
+        },
+        {
+          "content": "line 24 with some text\nline 25 with some text\nline 26 with some text\nline 27 with some text\nline 28 with some text\nline 29 with some text\nline 30 with some text\nline 31 with some text\n",
+          "start": 554,
+          "end": 738
+        },
+        {
+          "content": "line 32 with some text\nline 33 with some text\nline 34 with some text\nline 35 with some text\nline 36 with some text\nline 37 with some text\nline 38 with some text\nline 39 with some text\n",
+          "start": 738,
+          "end": 922
+        },
+        {
+          "content": "line 40 with some text\nline 41 with some text\nline 42 with some text\nline 43 with some text\nline 44 with some text\nline 45 with some text\nline 46 with some text\nline 47 with some text\n",
+          "start": 922,
+          "end": 1106
+        },
+        {
+          "content": "line 48 with some text\nline 49 with some text\nline 50 with some text\nline 51 with some text\nline 52 with some text\nline 53 with some text\nline 54 with some text\nline 55 with some text\n",
+          "start": 1106,
+          "end": 1290
+        },
+        {
+          "content": "line 56 with some text\nline 57 with some text\nline 58 with some text\nline 59 with some text\n",
+          "start": 1290,
+          "end": 1382
+        }
+      ]
+    },
+    {
+      "name": "multi-table",
+      "input": "| a | b |\n| --- | --- |\n| 1 | 2 |\n\npara\n\n| c | d |\n| --- | --- |\n| 3 | 4 |\n",
+      "maxChars": 40,
+      "output": [
+        {
+          "content": "| a | b |\n| --- | --- |\n| 1 | 2 |\n\npara\n",
+          "start": 0,
+          "end": 40
+        },
+        {
+          "content": "\n| c | d |\n| --- | --- |\n| 3 | 4 |\n",
+          "start": 40,
+          "end": 75
+        }
+      ]
+    }
+  ],
+  "cleanMarkdown": [
+    {
+      "name": "basic",
+      "html": "<html><body><h1>T</h1><p>Hello <b>world</b></p></body></html>",
+      "links": true,
+      "images": true,
+      "out": "# T\n\nHello **world**"
+    },
+    {
+      "name": "basic",
+      "html": "<html><body><h1>T</h1><p>Hello <b>world</b></p></body></html>",
+      "links": false,
+      "images": false,
+      "out": "# T\n\nHello **world**"
+    },
+    {
+      "name": "links",
+      "html": "<p>See <a href=\"/x\">docs</a> and <a href=\"/y\">more</a></p>",
+      "links": true,
+      "images": true,
+      "out": "See [docs](/x) and [more](/y)"
+    },
+    {
+      "name": "links",
+      "html": "<p>See <a href=\"/x\">docs</a> and <a href=\"/y\">more</a></p>",
+      "links": false,
+      "images": false,
+      "out": "See docs and more"
+    },
+    {
+      "name": "strip-nav",
+      "html": "<body><nav><a href=\"/m\">menu</a></nav><main><p>content</p></main></body>",
+      "links": true,
+      "images": true,
+      "out": "[menu](/m)\n\ncontent"
+    },
+    {
+      "name": "strip-nav",
+      "html": "<body><nav><a href=\"/m\">menu</a></nav><main><p>content</p></main></body>",
+      "links": false,
+      "images": false,
+      "out": "menu\n\ncontent"
+    },
+    {
+      "name": "image",
+      "html": "<p>pic</p><img src=\"/i.png\" alt=\"i\">",
+      "links": true,
+      "images": true,
+      "out": "pic\n\n![i](/i.png)"
+    },
+    {
+      "name": "image",
+      "html": "<p>pic</p><img src=\"/i.png\" alt=\"i\">",
+      "links": false,
+      "images": false,
+      "out": "pic"
+    }
+  ]
+}

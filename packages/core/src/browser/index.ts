@@ -13,6 +13,7 @@ export {
 } from "./evaluate-basic.js";
 export { HighlightManager } from "./highlight.js";
 export { documentBodyToHtml, nodeToHtml } from "./html-source.js";
+export type { PageSettleResult, ScrollResult } from "./navigation.js";
 export { NetworkIdleTracker } from "./network-idle.js";
 export type { BrowserSessionOptions, GetStateOptions } from "./session.js";
 export { BrowserSession } from "./session.js";
