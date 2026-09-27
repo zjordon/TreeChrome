@@ -11,7 +11,7 @@
 
 ## 2. Python 锚定值（P2/P1 方法延续）
 
-`_gen_p4_anchors.py`（`_` 前缀草稿不入库）经 evals venv（`D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe`）实跑，产物落 `packages/core/test/fixtures/python-anchors/`：
+`tools/gen-anchors.py`（入库工具，对齐 dom-snapshot `tools/gen_fixtures.py` 惯例——P5 基准更新需再生能力；实施时从 `_` 前缀草稿改为入库，登记计划小偏离）经 evals venv（`D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe`）实跑，产物落 `packages/core/test/fixtures/python-anchors/`：
 
 | 锚定对象 | Python 来源 | 产物 |
 |---|---|---|

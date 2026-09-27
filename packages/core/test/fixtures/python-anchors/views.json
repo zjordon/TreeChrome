@@ -1,0 +1,158 @@
+{
+  "renders": [
+    {
+      "input": {},
+      "expected": "OK"
+    },
+    {
+      "input": {
+        "error": "boom"
+      },
+      "expected": "ERROR: boom"
+    },
+    {
+      "input": {
+        "extracted_content": "hello world"
+      },
+      "expected": "EXTRACTED: hello world"
+    },
+    {
+      "input": {
+        "is_done": true
+      },
+      "expected": "DONE (success=None)"
+    },
+    {
+      "input": {
+        "is_done": true,
+        "success": true
+      },
+      "expected": "DONE (success=True)"
+    },
+    {
+      "input": {
+        "is_done": true,
+        "success": false
+      },
+      "expected": "DONE (success=False)"
+    },
+    {
+      "input": {
+        "is_done": true,
+        "success": null
+      },
+      "expected": "DONE (success=None)"
+    },
+    {
+      "input": {
+        "error": "e",
+        "extracted_content": "x",
+        "is_done": true,
+        "success": true
+      },
+      "expected": "ERROR: e | EXTRACTED: x | DONE (success=True)"
+    },
+    {
+      "input": {
+        "extracted_content": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBB"
+      },
+      "expected": "EXTRACTED: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [...display truncated: showing 500 of 511 chars — re-read with a smaller window]"
+    },
+    {
+      "input": {
+        "extracted_content": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "expected": "EXTRACTED: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "input": {
+        "is_done": false,
+        "success": null,
+        "long_term_memory": "m",
+        "metadata": {
+          "q": 1
+        }
+      },
+      "expected": "OK"
+    }
+  ],
+  "redact": [
+    {
+      "value": "login password123 ok",
+      "map": {
+        "a": "password123",
+        "b": "password"
+      },
+      "expected": "login <secret>a</secret> ok"
+    },
+    {
+      "value": "no secrets here",
+      "map": {
+        "a": "zzz"
+      },
+      "expected": "no secrets here"
+    },
+    {
+      "value": "",
+      "map": {
+        "a": "x"
+      },
+      "expected": ""
+    },
+    {
+      "value": "k1 and k1",
+      "map": {
+        "k1": "k1"
+      },
+      "expected": "<secret>k1</secret> and <secret>k1</secret>"
+    }
+  ],
+  "history_normalization": {
+    "input_model_output": {
+      "evaluation_previous_goal": "ok",
+      "actions": [
+        42,
+        {
+          "name": "click",
+          "params": "bad"
+        },
+        " bare "
+      ]
+    },
+    "input_after_construction": {
+      "evaluation_previous_goal": "ok",
+      "actions": [
+        42,
+        {
+          "name": "click",
+          "params": "bad"
+        },
+        " bare "
+      ]
+    },
+    "constructed_model_output": {
+      "evaluation_previous_goal": "ok",
+      "actions": [
+        42,
+        {
+          "name": "click",
+          "params": {}
+        },
+        " bare "
+      ],
+      "action": 42
+    }
+  },
+  "history_list": {
+    "final_result": "final answer",
+    "is_done": true,
+    "is_successful": true,
+    "fail_final_result": "gave up",
+    "fail_is_done": true,
+    "fail_is_successful": false,
+    "open_final_result": null,
+    "open_is_done": false,
+    "empty_is_done": false
+  },
+  "action_result_validator_first_line": "Value error, success=True can only be set when is_done=True. For regular actions that succeed, leave success as None. [type=value_error, input_value={'success': True}, input_type=dict]"
+}
