@@ -75,7 +75,17 @@
 
 ## 6. 任务拆分与顺序
 
-分支约定：`feat/p4-core` 单分支，按工作项提交（评审循环授权同 P3 惯例）。每项完成跑 `node scripts/gate.mjs pre-commit`。
+分支约定（2026-09-27 评审后修订：**单分支改 5 段闸门**——P2/P3 评审循环实证 diff 体量是收敛质量的第一变量，P4 全量单分支不可评审）：按下表 5 个分支串行实施，每段独立走完「开分支（自最新 main）→ 按工作项提交 → `/review-loop --from main --to <branch>` → 合并 --no-ff → 删分支」，下一段从更新后的 main 开。段内提交粒度不变（笔笔过门）。4.2 若评审体量失控可再对半拆（纯子件先行 / Facade+交互族后行），预先不拆死。
+
+| 分支 | 覆盖工作项 | 体量 |
+|---|---|---|
+| `feat/p4-foundation` | 4.0 架构修订+类型基座 + 4.1 EventBus | ~0.75d |
+| `feat/p4-browser` | 4.2 browser 层 | 2.5~3d |
+| `feat/p4-tools` | 4.3 tools 层 + llm 扩面 | 1.5~2d |
+| `feat/p4-agent` | 4.4 agent 层 | 2~2.5d |
+| `feat/p4-policy-smoke` | 4.5 policy 门 + 4.6 真机 smoke | ~1.25~1.5d |
+
+每项完成跑 `node scripts/gate.mjs pre-commit`。
 
 | # | 工作项 | 内容 | 验收 | 预估 | 依赖 |
 |---|---|---|---|---|---|
@@ -106,4 +116,27 @@
 
 ## 8. 完成记录
 
-（实施时补登）
+### feat/p4-foundation（4.0 + 4.1，2026-09-27）
+
+| # | 提交 | 内容 | 验收 |
+|---|---|---|---|
+| 分支修订 | 7da244f | §6 分支约定改 5 段闸门（评审后定） | — |
+| 4.0 | 7b044cf | agent/action-shape.ts + agent/views.ts + tools/gen-anchors.py + python-anchors fixtures + architecture.md 六处修订 | 59 例全绿（34+25），期望值锚定 Python 实跑 |
+| 4.1 | 80262c7 | events/events.ts（9 类 + 工厂）+ events/event-bus.ts + index.ts 导出面 | 9 例全绿（行为语义对齐，时间戳跨语言不可锚） |
+
+全仓 672→731 例（core 454→522）；core 覆盖率 97.11%。对计划的小偏离：
+
+- **锚定生成脚本从 `_` 前缀草稿改为入库 `tools/gen-anchors.py`**（05 §2 已同步修订）——对齐 dom-snapshot gen_fixtures.py 惯例；P5 基准更新需要确定性再生能力（复跑与已提交 fixture 零差异已验证）。实施中踩过一次路径坑：脚本移入 tools/ 后 `__file__.parent` 相对定位漂移写出错位置，已改 `parents[1]` 并清理残渣。
+- `describeActionEntry` 的类型名按 Python 字面量渲染（`typeName`：str/int/float/bool/NoneType）——它进 #197 的 LLM 可见澄清反馈，是 prompt 契约的一部分（03 文档未显式列出，实施时定性为字节保真对象）。
+- `ActionResult.render()` 的 Python f-string 布尔字面量（True/False/None）逐字节保真（进 `[Previous Action Results]` 段）——03 §1 已有原则，此处落为实现。
+- 事件 timestamp 用 JS `toISOString()`（毫秒 Z 后缀）而非 Python isoformat 微秒形态——无跨语言字节可比性，文件头注登记。
+
+#### 评审轮 1（review-p4-foundation-1.json，2026-09-27）
+
+9 文件 6m35s，**2 条意见均为 P3 级（low/maintainability，gen-anchors.py 死代码：未使用 `import sys` + 未调用 `dump()`）**，0 P1/P2。两条核实属实且满足「改动极小 + 当轮触碰文件」顺手修条件 → 采纳实施；修复后脚本复跑 fixture 零差异验证。采纳 2 / 驳回 0 / stale 0。
+
+#### 评审轮 2（review-p4-foundation-2.json，2026-09-27，增量基线 36afc15）
+
+状态 `skipped: no items were selected`——增量 diff 仅含 .py 工具脚本与 README 文本，rule.json include（真实代码）未选中条目，0 意见。语义等同「本轮无 P1/P2」；与轮 1 连续两轮无 P1/P2，**循环收敛终止**。累计：2 轮，2 条意见（全 P3），采纳 2 / 驳回 0 / stale 0，无 P3 backlog 遗留。分支 6 提交待合并。
+
+### feat/p4-browser（4.2，未开始）

@@ -40,17 +40,19 @@ apps/
 
 ### 3.1 agent loop（五阶段 step pipeline）
 
+> 行号锚点基准：TreeWalker `640d52a`（2026-09-27 快照审查核验；P5 parity 以此为 Python 侧版本）。
+
 对照 `TreeWalker/src/tree_walker/agent/agent.py` + `step.py`：
 
 | 阶段 | Python 来源 | 移植要点 |
 |---|---|---|
-| run 外层 | agent.py:281 | 初始导航 → 任务级 skill 匹配（一次）→ 步循环（max_steps=100、连续失败 5 次停、stop/pause 检查）→ done 后跑 Judge |
-| Sense | step.py:284 | `get_state()`（DOM+URL/tabs+可选截图）→ 循环检测指纹 → 组装 state 消息（**替换式**，保留最近 2 份）→ `<agent_history>` 滑动窗口 → 步数预算警告 → done-only schema 降级 |
-| Think | step.py:760 | `_trim_messages`（20 条硬限）→ LLM 调用（120s 超时）→ 响应归一化 → done 门禁 → 每步最多 5 个动作 → 无效动作重试梯（澄清重试 1 次 → fallback done） |
-| Act | step.py:1274 | 动作严格顺序执行（每动作 30s 超时）；5 个中断守卫 + **权限门（新增，挂点见 §5.2）**；动作后 URL/target 漂移即截断余下动作 |
-| Post/Finalize | step.py:1518/1602 | 失败计数（仅单动作步 error 计 consecutive_failures；**deny 不计**）→ AgentHistory 追加（model_output + results + interacted_element 投影 + 截图） |
+| run 外层 | agent.py:287 | 初始导航 → 任务级 skill 匹配（一次）→ 步循环（max_steps=100、连续失败 5 次停、**#194 infra 失败 8 次独立停**、stop/pause 检查）→ done 后跑 Judge |
+| Sense | step.py:320 | `get_state()`（DOM+URL/tabs+可选截图）→ 循环检测指纹 → 组装 state 消息（**替换式**，保留最近 2 份）→ `<agent_history>` 滑动窗口 → 步数预算警告 → done-only schema 降级 |
+| Think | step.py:796 | `_trim_messages`（20 条硬限）→ LLM 调用（120s 超时）→ 响应归一化 → done 门禁 → 每步最多 5 个动作 → **畸形动作双梯（#197：外梯澄清 2 次且第 2 次去图、内梯参数校验 3 次共用预算）→ fallback done** |
+| Act | step.py:1357 | 动作严格顺序执行（每动作 30s 超时）；5 个中断守卫 + **权限门（新增，挂点见 §5.2）**；动作后 URL/target 漂移即截断余下动作 |
+| Post/Finalize | step.py:1601/1691 | 失败计数（仅单动作步 error 计 consecutive_failures；**deny 不计**）→ AgentHistory 追加（model_output + results + interacted_element 投影 + 截图） |
 
-错误处理三分支保留：InterruptedError（用户停）/ 连接类错误（重连循环）/ 其他（计失败）。
+错误处理四分支保留：InterruptedError（用户停）/ **LLM 基建失败（#194 分罪：不烧步数、指数退避 5/10/20/40/60s、run 层 8 次预算独立死法）** / 连接类错误（重连循环）/ 其他（计失败）。
 
 ### 3.2 公共 API 规格（来自 evals/webarena/runner.py:34 的调用契约）
 
@@ -66,7 +68,7 @@ class Agent { constructor(opts: { task, llm, browser, settings }); run(opts?: { 
 
 ### 3.3 动作空间
 
-首期移植 10 个核心动作：navigate / click / input_text / scroll / extract / wait / go_back / switch_tab / send_keys / done。`ACTION_DEFINITIONS` 三元组扩为四元组：`(params 模型, 描述, terminates_sequence, capability)`。`page_patterns` 只影响 LLM 可见性不拦截执行——**不能当权限用**（运行时强制由权限门负责）。
+首期移植 10 个核心动作：navigate / click / input_text / scroll / extract / wait / go_back / switch_tab / send_keys / done。其余 15 个（search / close_tab / find_elements / find_text / screenshot / save_as_pdf / dropdown_options / select_dropdown / upload_file / write_file / read_file / replace_file / evaluate / search_page / read_grid）在 **P4b** 补全（动作清单与依赖族见 `docs/implement-plan/p4/02` §7）——评测 Tier1 的 CDPPageAdapter 依赖其中的 evaluate 增强通道。`ACTION_DEFINITIONS` 三元组扩为四元组：`(params 模型, 描述, terminates_sequence, capability)`。`page_patterns` 只影响 LLM 可见性不拦截执行——**不能当权限用**（运行时强制由权限门负责）。
 
 ### 3.4 LLM 客户端（多协议）
 
@@ -93,6 +95,9 @@ class Agent { constructor(opts: { task, llm, browser, settings }); run(opts?: { 
 ```ts
 interface CdpTransport {                       // 实现：cdp-chrome / cdp-ws
   send<T>(method: string, params?: object, sessionId?: string): Promise<T>;
+  on(method: string, listener: (params: unknown, sessionId?: string) => void):
+    () => void;                                // 事件订阅（返回解订函数）——BrowserSession
+                                               // 的 dialog/下载/network-idle/file-chooser 事件态需要
 }
 interface PolicyInteraction {                  // 实现：扩展侧边栏交互卡 / 评测 AutoAllowPolicy
   requestPermission(req: { capability, host, action }): Promise<'allow-once'|'allow-always'|'deny'>;
@@ -119,7 +124,7 @@ interface FileSystemProvider { /* 扩展：downloads/OPFS；Node：fs */ }
 
 | 门行为 | 动作 |
 |---|---|
-| 不过门（只读） | extract / find_elements / find_text / search_page / read_grid / dropdown_options / screenshot / wait |
+| 不过门（只读） | extract / find_elements / find_text / search_page / read_grid / dropdown_options / screenshot / wait / scroll |
 | CLICK | click、select_dropdown、send_keys（含 Enter） |
 | TYPE | input_text、send_keys（普通键） |
 | NAVIGATE | navigate（按目标 URL）/ go_back / search / switch_tab / close_tab |
@@ -205,6 +210,12 @@ run 结束 → 门槛：done(success) 且 Judge 复核通过
 | dom_snapshot/serializer.py | `@tw/dom-snapshot/src/serializer/` | 五步过滤 + 编号 + selector_map；输出格式是 prompt 契约 |
 | dom_snapshot/interactive.py / paint_order.py | `@tw/dom-snapshot/src/` | 交互判定 / 遮挡标记 |
 | tree_walker/agent/{agent,step}.py | `@tw/core/src/agent/` | §3.1 表 |
+| tree_walker/browser/session.py | `@tw/core/src/browser/`（16 模块拆分，`docs/implement-plan/p4/01` §2） | BrowserSession Facade；ws_url 直连改 transportFactory 注入（§4） |
+| tree_walker/browser/{network_idle,circuit_breaker,highlight,html_source}.py | `@tw/core/src/browser/` | session 子件全量移植 |
+| tree_walker/action_shape.py | `@tw/core/src/agent/action-shape.ts` | 畸形动作归一化策略表（无依赖叶子模块，#197 诊断文案同源） |
+| tree_walker/agent/{loop_detector,message_compactor,actionability,plan_manager}.py | `@tw/core/src/agent/` | 五阶段配套纯件 |
+| tree_walker/tools/extract_markdown.py | `@tw/core/src/tools/extract-markdown.ts` | markdownify→turndown（分块算法保真，转换器偏离登记） |
+| tree_walker/agent/upload_identity.py | `@tw/core/src/`（P4b） | upload file input 身份 JS（#151） |
 | tree_walker/tools/{models,registry,actions}.py | `@tw/core/src/tools/` | 四元组（加 capability） |
 | tree_walker/llm/client.py | `@tw/core/src/llm/` | fetch 直连多协议（§3.4：openai-completions / anthropic-messages / gemini 三适配器；webbrain providers 为参考） |
 | tree_walker/prompts/system_prompt.py | `@tw/core/src/prompts/` | state 消息分段保持一致 |

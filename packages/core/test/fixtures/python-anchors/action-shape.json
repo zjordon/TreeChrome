@@ -1,0 +1,766 @@
+{
+  "normalize": [
+    {
+      "input": {
+        "actions": [
+          " click "
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "click",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          null
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "done",
+            "params": {
+              "text": "Invalid action shape",
+              "success": false
+            }
+          }
+        ],
+        "action": {
+          "name": "done",
+          "params": {
+            "text": "Invalid action shape",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          123
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "done",
+            "params": {
+              "text": "Invalid action shape",
+              "success": false
+            }
+          }
+        ],
+        "action": {
+          "name": "done",
+          "params": {
+            "text": "Invalid action shape",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          "ok",
+          42
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "ok",
+            "params": {}
+          },
+          42
+        ],
+        "action": {
+          "name": "ok",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          true,
+          {
+            "name": "click"
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          true,
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": true
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": null,
+            "params": "x"
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "done",
+            "params": {
+              "text": "Invalid action shape",
+              "success": false
+            }
+          }
+        ],
+        "action": {
+          "name": "done",
+          "params": {
+            "text": "Invalid action shape",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": ""
+          },
+          {
+            "name": "click"
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "",
+            "params": {}
+          },
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": 7,
+            "params": null
+          },
+          {
+            "name": "wait"
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": 7,
+            "params": {}
+          },
+          {
+            "name": "wait",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": 7,
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": "click",
+            "params": "bad"
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "click",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": "click",
+            "params": 5
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "click",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": "click",
+            "params": null
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "click",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "action": {
+          "name": "go_back"
+        }
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "action": {
+          "name": "go_back",
+          "params": {}
+        },
+        "actions": [
+          {
+            "name": "go_back",
+            "params": {}
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": "click"
+          },
+          {
+            "name": "ghost"
+          }
+        ]
+      },
+      "context": "live",
+      "known": [
+        "click",
+        "done"
+      ],
+      "output": {
+        "actions": [
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "click",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": "plan_update"
+          },
+          {
+            "name": "click"
+          }
+        ]
+      },
+      "context": "live",
+      "known": [
+        "click"
+      ],
+      "output": {
+        "actions": [
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "click",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": "ghost"
+          }
+        ]
+      },
+      "context": "live",
+      "known": [
+        "click"
+      ],
+      "output": {
+        "actions": [
+          {
+            "name": "ghost",
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": "ghost",
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": "click"
+      },
+      "context": "history",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "params": {}
+          }
+        ],
+        "action": {
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": {
+          "name": "click"
+        }
+      },
+      "context": "history",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "params": {}
+          }
+        ],
+        "action": {
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "action": " done "
+      },
+      "context": "history",
+      "known": null,
+      "output": {
+        "action": " done ",
+        "actions": [
+          " done "
+        ]
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          42,
+          {
+            "name": "click",
+            "params": "x"
+          }
+        ]
+      },
+      "context": "history",
+      "known": null,
+      "output": {
+        "actions": [
+          42,
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": 42
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          {
+            "name": null
+          }
+        ]
+      },
+      "context": "history",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": null,
+            "params": {}
+          }
+        ],
+        "action": {
+          "name": null,
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": []
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "params": {}
+          }
+        ],
+        "action": {
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": null,
+        "action": null
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "params": {}
+          }
+        ],
+        "action": {
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {},
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "params": {}
+          }
+        ],
+        "action": {
+          "params": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          "   "
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          {
+            "name": "done",
+            "params": {
+              "text": "Invalid action shape",
+              "success": false
+            }
+          }
+        ],
+        "action": {
+          "name": "done",
+          "params": {
+            "text": "Invalid action shape",
+            "success": false
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "actions": [
+          "   ",
+          {
+            "name": "click"
+          }
+        ]
+      },
+      "context": "live",
+      "known": null,
+      "output": {
+        "actions": [
+          "   ",
+          {
+            "name": "click",
+            "params": {}
+          }
+        ],
+        "action": "   "
+      }
+    }
+  ],
+  "accessors": {
+    "inputs": {
+      "name_of": [
+        {
+          "action": {
+            "params": {}
+          }
+        },
+        {
+          "action": {
+            "name": null
+          }
+        },
+        {
+          "action": {
+            "name": ""
+          }
+        },
+        {
+          "action": {
+            "name": 9
+          }
+        },
+        {
+          "action": " click "
+        },
+        {
+          "action": "  "
+        },
+        {
+          "action": 42
+        }
+      ],
+      "params_of": [
+        {
+          "action": {
+            "name": "click"
+          }
+        },
+        {
+          "action": {
+            "name": "click",
+            "params": "x"
+          }
+        },
+        {
+          "action": {
+            "name": "click",
+            "params": {
+              "index": 1
+            }
+          }
+        },
+        {
+          "action": "click"
+        }
+      ],
+      "actions_of": [
+        {
+          "mo": {
+            "actions": [
+              {
+                "name": "a"
+              },
+              {
+                "name": "b"
+              }
+            ]
+          }
+        },
+        {
+          "mo": {
+            "actions": [],
+            "action": {
+              "name": "a"
+            }
+          }
+        },
+        {
+          "mo": {
+            "action": "done"
+          }
+        },
+        {
+          "mo": {}
+        },
+        {
+          "mo": null
+        }
+      ],
+      "describe_action_entry": [
+        {
+          "entry": {
+            "name": "click"
+          }
+        },
+        {
+          "entry": {
+            "name": null,
+            "params": {}
+          }
+        },
+        {
+          "entry": {
+            "params": {
+              "x": 1
+            }
+          }
+        },
+        {
+          "entry": {}
+        },
+        {
+          "entry": "click"
+        },
+        {
+          "entry": 123
+        },
+        {
+          "entry": null
+        },
+        {
+          "entry": true
+        },
+        {
+          "entry": 1.5
+        }
+      ]
+    },
+    "expected": {
+      "name_of": [
+        "done",
+        null,
+        "",
+        9,
+        "click",
+        null,
+        null
+      ],
+      "params_of": [
+        {},
+        {},
+        {
+          "index": 1
+        },
+        {}
+      ],
+      "actions_of": [
+        [
+          {
+            "name": "a"
+          },
+          {
+            "name": "b"
+          }
+        ],
+        [
+          {
+            "name": "a"
+          }
+        ],
+        [
+          "done"
+        ],
+        [
+          {}
+        ],
+        []
+      ],
+      "describe_action_entry": [
+        "click",
+        "<dict:name,params>",
+        "<dict:params>",
+        "<dict:empty>",
+        "<non-dict:str>",
+        "<non-dict:int>",
+        "<non-dict:NoneType>",
+        "<non-dict:bool>",
+        "<non-dict:float>"
+      ]
+    }
+  }
+}
