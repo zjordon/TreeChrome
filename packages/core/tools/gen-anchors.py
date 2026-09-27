@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent / "test/fixtures/python-anchors"
+OUT = Path(__file__).resolve().parents[1] / "test/fixtures/python-anchors"
 OUT.mkdir(parents=True, exist_ok=True)
 
 from tree_walker.action_shape import (  # noqa: E402
