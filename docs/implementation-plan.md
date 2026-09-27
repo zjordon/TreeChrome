@@ -46,6 +46,8 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 
 ## P3 cdp-ws transport（packages/cdp-ws）
 
+架构定位：`@tw/cdp-ws` 是 Python cdp-use 的 TS 对等物（transport 层；BrowserSession 语义属 P4）。详细实施计划（transport 契约 / 会话原语规格 / 测试与 P1.6 对拍设计，2026-09-27）见 `docs/implement-plan/p3/`——双层对拍基准：文档冻结契约与有意偏离，cdp-use + TreeWalker session.py + 评测仓 runner.py 冻结行为语义。真机验证收敛到单一 smoke 脚本（不设 vitest 集成用例，理由见该目录 03 文档）。
+
 | # | 工作项 | 内容 | 验收标准 | 预估 |
 |---|---|---|---|---|
 | 3.1 | WebSocket transport | 连 `/json/version` 的 webSocketDebuggerUrl；send（含 sessionId 的 flat 协议）+ 事件订阅 + 超时/重连；实现 `CdpLikeClient` | 对本地 Chrome 的单测（9222，task 级 integration，标记 slow）；mock WebSocket 单测 | 1~1.5d |
