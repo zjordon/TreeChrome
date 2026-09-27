@@ -68,4 +68,29 @@
 
 ## 6. 完成记录
 
-（随实施逐项补记：工作项提交 hash、偏离清单修订、smoke 结果。）
+### 3.0~3.3 全项完成（2026-09-27，分支 `feat/p3-cdp-ws`）
+
+| # | 提交 | 内容 | 验收 |
+|---|---|---|---|
+| 计划入库 | bc39099 | 本目录四文件 | — |
+| 3.0 | 9033c44 | 包脚手架；biome 边界与 gate CORE_PACKAGES 纳入 cdp-ws | `pnpm -r typecheck/test` 绿 |
+| 3.1 | f9aeb8f | errors/discovery/transport + FakeWebSocket 假件 | 36 例全绿；CdpLikeClient 编译期断言 |
+| 3.2 | 2243ed6 | CdpPageSession（attach/navigate/tabs/switchTab/cookie） | 累计 51 例全绿；覆盖率 96.62%/分支 88.95% |
+| 3.3 | e40bd0d | tools/page-parity-smoke.mjs | **P1.6 达成（见下）** |
+
+### P1.6 真机对拍通过（2026-09-27）
+
+`node tools/page-parity-smoke.mjs --url https://example.com/ --url https://example.org/ --url https://www.python.org/ --wait 3`——**3 个真实页面 round 1 全部 PASS（exitCode 0）**：element_tree_text 逐字节一致 + selector_map 八字段投影全等 + file_input_backend_ids/file_inputs_meta/page_stats 全等 + metrics（degradation=full/source_statuses/element_count）全等。python.org（53 交互元素）兼作风险 1 的压力页——undici 原生 WebSocket 承载 MB 级 captureSnapshot 响应无截断。风险 6 亦关闭：cdp-batch 错误分类仅依赖 `instanceof Error`，与 CdpCommandError 兼容（dom-snapshot 全量测试绿复核）。
+
+### 实施中的修正与补充（对计划的小偏离）
+
+- **首跑抓到真实缺陷（P1.6 的价值实证）**：初版 smoke 的 TS 侧 navigate 触发文档重载，backendNodeId 全套更换（selector_map 键恒等 backendNodeId——P1.2 认知的再验证），三页全部假红（example.com 59 vs 79、python.org 4344 vs 6512）。修正：文档归属 Python 侧（gen_fixtures 导航），TS 侧只附着+采集。navigate 原语因此未在真机路径覆盖（单测已锚定 errorText/transitionType），真机首次覆盖留待 P4 BrowserSession。
+- **SocketLike 最小 socket 面**（01 §2 的类型层细化）：lib 无 DOM，`WebSocket`/`MessageEvent` 有 @types/node 全局声明而 `CloseEvent` 无——transport 改用自定义最小接口，原生 WebSocket 在默认工厂一次转型收敛；`onClosed` 事件类型相应为 `CdpCloseEvent{code, reason, wasClean}`。
+- **CdpPageSession 构造器第二参为 `options{logger}`**（02 §1 之外的注入面扩展）：cookie 注入的单条失败观测需要日志通道。
+- **send() 内层 Promise 一律 unknown、边界一次 `as Promise<T>`**：与 fetch json() 的泛型透传同款（PendingEntry 的 unknown 收窄与 T 泛型逆变冲突）。
+- 3.0 的占位导出（CDP_WS_SCAFFOLD）在 3.1 被真实导出面替换。
+
+### 待 P4 复核项
+
+- 事件订阅偏离（监听器列表 vs cdp-use 覆盖式）：P4 移植 session.py 时按 01 §5.2 自行管理单例语义。
+- 域 enable 序列 / close_tab / create_tab / settle 等 BrowserSession 语义按 02 §3 留待 P4。
