@@ -40,7 +40,7 @@ import { NetworkIdleTracker } from "./network-idle.js";
 import type { PrintToPdfOptions, ScreenshotOptions } from "./screenshot.js";
 import { printToPdf, takeScreenshot } from "./screenshot.js";
 import { closeTab, createTab, getTabs, switchTab } from "./tabs.js";
-import { typeText } from "./text-input.js";
+import { clearTextField, forceSetValue, readActiveText, typeText } from "./text-input.js";
 import type { BoundSend, CdpTransport, DownloadRecord, SessionInternals } from "./transport.js";
 import type {
   BrowserEvent,
@@ -412,6 +412,16 @@ export class BrowserSession {
   }
   typeText(text: string, options?: { clear?: boolean }): Promise<void> {
     return typeText(this.context(), text, options);
+  }
+  /** Python 私有方法的 Facade 委托（tools 层 input_text 直赋值分支/回读验证消费） */
+  clearTextField(): Promise<boolean> {
+    return clearTextField(this.context());
+  }
+  forceSetValue(text: string): Promise<void> {
+    return forceSetValue(this.context(), text);
+  }
+  readActiveText(): Promise<string> {
+    return readActiveText(this.context());
   }
   sendKeys(keys: string): Promise<void> {
     return sendKeys(this.context(), keys);

@@ -74,6 +74,7 @@ export {
   isInfraError,
   LLMAuthError,
   LLMBlockedError,
+  LLMCallTimeoutError,
   LLMConnectionError,
   LLMError,
   LLMInvalidRequestError,
@@ -105,3 +106,42 @@ export type {
   UserMessage,
 } from "./llm/types.js";
 export { assertValidMessages } from "./llm/types.js";
+export type { ExtractClientFace, ToolsContext } from "./tools/actions/context.js";
+// —— P4.3 tools 层（p4/02 §3 导出面）——
+export { Tools } from "./tools/actions/index.js";
+export type { MarkdownChunk } from "./tools/extract-markdown.js";
+export {
+  chunkMarkdownByStructure,
+  extractCleanMarkdown,
+} from "./tools/extract-markdown.js";
+export type { FileSystemProvider } from "./tools/fs.js";
+export type {
+  ActionDefinition,
+  Capability,
+  FieldSpec,
+  ParamModel,
+  ValidateFail,
+  ValidateOk,
+  ValidateResult,
+} from "./tools/models.js";
+export {
+  ACTION_DEFINITIONS,
+  fieldTitle,
+  makeStructuredDoneParams,
+  paramJsonSchema,
+  validateParams,
+} from "./tools/models.js";
+export { pyJsonDumps } from "./tools/py-json.js";
+export type {
+  AgentResponseToolSchema,
+  GetToolSchemaOptions,
+  RegisteredAction,
+} from "./tools/registry.js";
+export {
+  ActionRegistry,
+  fnmatchLike,
+  hideFieldsFromSchema,
+} from "./tools/registry.js";
+export type { ToolsOptions, ToolsTruncationSettings } from "./tools/settings.js";
+export { DEFAULT_TRUNCATION_SETTINGS } from "./tools/settings.js";
+export type { ActionHandler, ToolsBrowser } from "./tools/types.js";

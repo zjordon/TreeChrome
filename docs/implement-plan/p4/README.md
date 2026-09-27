@@ -176,4 +176,67 @@ batch2 槽位 P4b）。core 522→587 例全绿（新增 65：子件 16 + 连接
 
 状态 `skipped: no items were selected`——轮 1 修复提交即分支 tip，增量为空（0 文件 0 意见，零成本跳过）。按空增量条款计为无 P1/P2 轮；分支此后无新提交则后续轮增量必然为空，「连续两轮无 P1/P2」判据必然满足——**循环收敛终止**。累计：2 轮，12 条意见（P1 1/P2 7/P3 1/驳回 2），采纳 10、驳回 2、stale 0，无 P3 backlog 遗留（#10 已顺手修）。注意：轮 1 修复提交本身未独立过 LLM 评审（增量机制以修复提交为基线，属设计行为）；修复面均为轮 1 评审员建议的同域改动且 592 例全绿。分支 4 提交待合并。驳回的 #5/#6 两个真机验证点已并入 4.6 smoke 清单。
 
+### feat/p4-tools（4.3，2026-09-27）
+
+提交 f1c899f（tools 层，37 文件）+ d39bb73（llm 扩面）。4.3 按 02 文档全量落地：
+
+- **models.ts（25 参数模型 + validateParams + paramJsonSchema）**：pydantic v2 语义锚定
+  （extra=forbid / Literal / ge·le·minLength / lax 数值与布尔强转 / model_validator 后置）；
+  **25 个 schema 与 registry tool schema 矩阵（7 变体）逐字节对拍** fixtures/python-anchors/
+  tools.json（新锚点生成器 tools/gen-tools-anchors.py 入库，evals venv 实跑）。
+  ACTION_DEFINITIONS 四元组（capability 映射按 04 §1.1；send_keys=[CLICK,TYPE] 分流、done=[]）。
+- **registry.ts**：registryVersion（sha256[:12]）/ getToolSchema / getActionDescriptionsText /
+  pagePatterns-fnmatch（POSIX 恒定大小写敏感，Windows normcase 小写化登记为偏离）。
+- **actions/**：Tools 编排器（execute / flattenParams 含 done.data 真字段不拆 / normalize /
+  applyPageFilters）+ batch1 十动作 handler（工厂函数收 ToolsContext 闭包，Python self 显式化）+
+  shared 四族（4 个 JS 探针逐字节照抄；6 处内联落盘抽公共 saveOversizedResult=偏离 4 等价重构）。
+- **extract-markdown.ts**：turndown 替代 markdownify（输出不锚字节）；chunk 算法（表格延续/
+  反孤岛/硬切长行）与 Python 实跑逐边界对拍。pyJsonDumps（json.dumps 分隔符/indent 保真）。
+  FileSystemProvider 最小接口（未注入降级 + metadata 标注=偏离 6）。
+- **llm 扩面（d39bb73）**：extract/structuredCall 经私有 extractCall 单发直发（不走梯子/退避）；
+  fallback 单向切换重入一次；callTimeoutMs 超时抛 LLMCallTimeoutError（**非 LLMError 家族**=
+  Python asyncio.TimeoutError 同款不进分罪轴）；承重墙三档复用。
+- browser 补 clearTextField/forceSetValue/readActiveText 三委托；dom-snapshot re-export
+  sha256Hex；turndown ^7.2 入 core deps。models.ts 1438 行超软提醒（90% 逐字节字面量，
+  按 02 §3 布局保持单文件——已在提交信息登记）。
+- 实施中对拍测试抓到 1 真 bug（done 空附件清单：JS `[]` 恒真 vs Python 空列表 falsy）与
+  4 处测试期望错位（变体 B payload 含缺省字段/校验 loc 不带 data. 前缀/free-text 大结果
+  落盘原文直出/tool schema 不嵌动作 schema）——按 Python 实际行为修正。
+- **更正**：f1c899f 提交信息中「core 592→771 例」为手算虚增，实际提交时 755 例（+163）。
+
+#### 评审轮 1（review-p4-tools-1.json，2026-09-27）
+
+37 文件 12m7s，**10 条意见（自评 high 1 / medium 6 / low 3）**——裁决 P1 1 / P2 6 / P3 3，
+采纳 10、驳回 0、stale 0（四项外部事实声明经 venv 实测全部成立）。修复 9 处，core 755→764 例。
+
+**采纳**：
+- **#4（P1，泛化 5 处）** input_text 漏传 `text` 静默清空字段（数据损坏级）：Python
+  `params["text"]` KeyError → execute 包装 error，TS `String(undefined ?? "")` 吞掉且 clear
+  默认值销毁原值——同款漂移遍布 navigate（空目标）/send_keys/extract（空 query 白烧 LLM）/
+  switch_tab（空后缀 endswith 恒真匹配全部页签），五 handler 统一补 `typeof !== "string"` 守卫
+  （空串仍放行=Python 执行路径语义）。
+- **#8（P2）** 容器本层类型错误 loc 单级：pydantic 实跑 `files_to_display: Input should be a
+  valid list`（venv 复核），TS 此前对 ref/array 一律 `.` 拼接产出 `files_to_display.Input...`
+  畸形 loc——validateField 增 childErrors 标志区分本层/子层。
+- **#5（P2）** laxBool 补数值 0/1/1.0（venv 实测 2 拒绝且文案为 bool_parsing 分档
+  "unable to interpret input"——两档文案均对齐）。
+- **#6（P2）** array integer 元素 lax 强转值回写（清洗值 ["42",7]→[42,7]，对齐 model_validate
+  产物；进 done 变体 B 的 metadata/LLM 可见回显）。
+- **#1（P2）** fnmatch 类内 `^` 是字面量非否定（venv 实测 `a[^x]c` = 类 {^,x}，对 a^c/axc 均
+  True）；**#2（P2）** escapeClass 不转义 `-` 保留 `[0-9]` 范围语义（Python translate 同款）。
+- **#7（P2）** register 的 pagePatterns 展开默认值陷阱：显式 undefined 覆盖 null 哨兵 →
+  actionAvailable `.some` 裸 TypeError；改展开后 `?? null` 归一。
+- **#3/#9/#10（P3 顺手修，触碰文件内）**：registry getToolSchema 死代码（Python :110-116
+  同款收集未消费——TS 不移植死代码，登记）；models.test 死代码（解构残留/candidates 数组）。
+- 双向验证：三处行为级修复（fnmatch ^/laxBool 数值/容器 loc）临时还原旧实现确认新用例必红。
+
+#### 评审轮 2（review-p4-tools-2.json 未产生，2026-09-27，增量基线 0d0d9db）
+
+轮 1 修复提交即分支 tip，增量恒空（browser 段同构：ocr 会产出 `skipped: no items were
+selected`）——按空增量条款计为无 P1/P2 轮，不空跑评审；分支此后无新提交则后续轮增量必然为空，
+「连续两轮无 P1/P2」判据必然满足——**循环收敛终止**。累计：2 轮，10 条意见（P1 1/P2 6/P3 3），
+采纳 10、驳回 0、stale 0，无 backlog 遗留（P3 三条均触碰文件内顺手修）。注意（与 browser 段
+同款设计行为）：轮 1 修复提交本身未独立过 LLM 评审——修复面均为评审员建议的同域改动且 764 例
+全绿。分支 3 提交（f1c899f→d39bb73→0d0d9db）待合并。
+
 ### feat/p4-policy-smoke（4.5+4.6，未开始）

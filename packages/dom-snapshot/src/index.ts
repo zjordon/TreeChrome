@@ -12,4 +12,5 @@ export * from "./interactive.js";
 export * from "./paint-order.js";
 export * from "./protocol.js";
 export * from "./serializer.js";
+export * from "./sha256.js";
 export * from "./types.js";

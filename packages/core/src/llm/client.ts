@@ -2,6 +2,7 @@
 // 退避与预算、fallback 单向切换、滤图、承重墙）——移植自 tree_walker/llm/client.py
 // 的 get_action/_create_with_backoff/_try_switch_to_fallback（03 文档，偏离清单见其 §4）。
 
+import { pyJsonDumps } from "../tools/py-json.js";
 import { createAnthropicProvider } from "./adapters/anthropic-messages.js";
 import { createGeminiProvider } from "./adapters/gemini.js";
 import {
@@ -13,7 +14,13 @@ import {
 import { createOpenAICompletionsProvider } from "./adapters/openai-completions.js";
 import type { ProviderConfig } from "./config.js";
 import type { LLMDeps } from "./deps.js";
-import { isInfraError, LLMError, LLMProtocolViolationError, LLMTimeoutError } from "./errors.js";
+import {
+  isInfraError,
+  LLMCallTimeoutError,
+  LLMError,
+  LLMProtocolViolationError,
+  LLMTimeoutError,
+} from "./errors.js";
 import type { LLMProvider } from "./provider.js";
 import { SensitiveObservability } from "./sensitive-observability.js";
 import {
@@ -542,6 +549,182 @@ export class LLMClient {
    */
   testConnection(): Promise<{ ok: boolean; error?: string; model?: string }> {
     return this.provider.testConnection();
+  }
+
+  // ── extract / structuredCall（client.py :635-780 扩面，p4/02 §6） ──
+
+  /**
+   * 页面数据抽取的二级 LLM 调用。outputSchema 为合法 JSON Schema（顶层
+   * type=object + properties）时经 forced tool `extract_result` 强制结构化并返回
+   * 校验后的 JSON 字符串；否则返回自由文本。alreadyCollected 拼进 user message
+   * 作「跳过这些」去重列表（≤200 条）；callTimeoutMs 为单次调用内层超时（到点抛
+   * LLMCallTimeoutError，不触发 fallback）。maxTokens 恒 2048（Python 同款）。
+   */
+  async extract(
+    prompt: string,
+    content: string,
+    opts: {
+      maxContentChars?: number;
+      outputSchema?: Record<string, unknown> | null;
+      alreadyCollected?: string[] | null;
+      callTimeoutMs?: number | null;
+    } = {},
+  ): Promise<string> {
+    const maxContentChars = opts.maxContentChars ?? 8000;
+    const callTimeoutMs = opts.callTimeoutMs ?? null;
+    // 最低限度校验 schema；不可用则降级 free-text（对齐 browser-use try/except 降级）
+    let outputSchema = opts.outputSchema ?? null;
+    if (
+      outputSchema !== null &&
+      (typeof outputSchema !== "object" ||
+        outputSchema.type !== "object" ||
+        !outputSchema.properties ||
+        Object.keys(outputSchema.properties as object).length === 0)
+    ) {
+      this.deps.log("[llm] Invalid output_schema, falling back to free-text extraction");
+      outputSchema = null;
+    }
+
+    const bounded = content.slice(0, maxContentChars);
+    let collectedBlock = "";
+    if (opts.alreadyCollected && opts.alreadyCollected.length > 0) {
+      const joined = opts.alreadyCollected
+        .slice(0, 200)
+        .map((c) => `- ${c}`)
+        .join("\n");
+      collectedBlock =
+        "\n\nItems already collected (DO NOT re-extract these, skip exact duplicates):\n" + joined;
+    }
+    const userMsg = `${prompt}${collectedBlock}\n\n---\n${bounded}`;
+
+    if (outputSchema !== null) {
+      const systemPrompt =
+        "You are an expert at extracting structured data from a webpage. " +
+        "Extract exactly what the query asks for and return it via the " +
+        "extract_result tool, conforming strictly to the provided JSON Schema. " +
+        "Omit fields you cannot find rather than guessing.";
+      const tool: ToolDefinition = {
+        name: "extract_result",
+        description: "Structured extraction result conforming to the given schema.",
+        parameters: outputSchema,
+      };
+      const response = await this.extractCall(systemPrompt, userMsg, tool, 2048, callTimeoutMs);
+      for (const block of response.toolCalls) {
+        if (block.name === "extract_result") {
+          return pyJsonDumps(block.args);
+        }
+      }
+      // 模型未用工具 → 同一响应里取 text 兜底
+      this.deps.log("[llm] LLM did not use extract_result tool; falling back to free-text");
+      return response.text;
+    }
+
+    // free-text 路径（prompt 进 user message）
+    const response = await this.extractCall(null, userMsg, null, 2048, callTimeoutMs);
+    return response.text;
+  }
+
+  /**
+   * 一次性 tool-forced 结构化输出（任务级 skill 匹配等轻量分类调用的通用底座）：
+   * forced tool `structured_result` 强制 schema，模型未用工具时 text 兜底
+   * tryParseJson。返回解析后的对象；不可解析返回 null；API 失败先 fallback
+   * 切换仍失败向上抛（调用方自行降级）。maxTokens 缺省回落 ProviderConfig.maxTokens。
+   */
+  async structuredCall(
+    systemPrompt: string,
+    userPrompt: string,
+    outputSchema: Record<string, unknown>,
+    opts: { maxTokens?: number; callTimeoutMs?: number | null } = {},
+  ): Promise<Record<string, unknown> | null> {
+    const tool: ToolDefinition = {
+      name: "structured_result",
+      description: "Structured result conforming to the given JSON Schema.",
+      parameters: outputSchema,
+    };
+    const response = await this.extractCall(
+      systemPrompt,
+      userPrompt,
+      tool,
+      opts.maxTokens,
+      opts.callTimeoutMs ?? null,
+    );
+    for (const block of response.toolCalls) {
+      if (block.name === "structured_result") {
+        return block.args;
+      }
+    }
+    this.deps.log("[llm] LLM did not use structured_result tool; falling back to text parse");
+    return tryParseJson(response.text) ?? null;
+  }
+
+  /**
+   * 单次直发调用（Python _extract_call :621-633 等价）：**不走 getAction 的解析梯子
+   * 与退避**——RateLimit/APIError 仅触发 fallback 单向切换（切换成功重入自身一次）；
+   * callTimeoutMs 内层超时抛 LLMCallTimeoutError（不被 fallback 捕获，Python
+   * asyncio.TimeoutError 同款）。承重墙复用：supportsForcedTool=false 落 prompt
+   * 约束，无 tools 能力落 schema 进 system。
+   */
+  private async extractCall(
+    systemPrompt: string | null,
+    userPrompt: string,
+    tool: ToolDefinition | null,
+    maxTokens: number | undefined,
+    callTimeoutMs: number | null,
+  ): Promise<ChatResponse> {
+    const caps = this.provider.capabilities;
+    let sys = systemPrompt;
+    let tools: ToolDefinition[] | null = null;
+    let toolChoice: ToolChoice | undefined;
+    if (tool !== null && caps.supportsTools) {
+      tools = [tool];
+      if (caps.supportsForcedTool) {
+        toolChoice = { kind: "forced", name: tool.name };
+      } else {
+        sys = (sys ?? "") + forcedToolConstraint(tool.name);
+      }
+    } else if (tool !== null) {
+      sys = (sys ?? "") + noToolsConstraint(tool);
+    }
+    const req: ChatRequest = {
+      systemPrompt: sys,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: userPrompt }] }],
+      tools,
+      toolChoice,
+      maxTokens,
+    };
+    try {
+      if (callTimeoutMs !== null && callTimeoutMs > 0) {
+        const controller = new AbortController();
+        const cancel = new AbortController();
+        void this.deps.sleep(callTimeoutMs, cancel.signal).then(
+          () => controller.abort(new DOMException("Extract call timed out", "AbortError")),
+          () => {
+            // 被取消（正常收尾）——无事可做
+          },
+        );
+        try {
+          return await this.provider.chat({ ...req, signal: controller.signal });
+        } catch (e) {
+          if (controller.signal.aborted && isAbortError(e)) {
+            throw new LLMCallTimeoutError(
+              `单次调用超时（${callTimeoutMs}ms，extract/structuredCall 内层超时）`,
+              e,
+            );
+          }
+          throw e;
+        } finally {
+          cancel.abort(); // 取消计时（真实时钟下不留悬挂定时器）
+        }
+      }
+      return await this.provider.chat(req);
+    } catch (e) {
+      // fallback 切换不占重试名额：切换成功重入自身（新卡重发）；否则原样上抛。
+      // ProtocolViolation 不切换（trySwitchToFallback 内部拒绝）
+      if (e instanceof LLMError && this.trySwitchToFallback(e)) {
+        return this.extractCall(systemPrompt, userPrompt, tool, maxTokens, callTimeoutMs);
+      }
+      throw e;
+    }
   }
 
   private okResult(
