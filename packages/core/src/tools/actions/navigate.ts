@@ -15,7 +15,7 @@ export function createNavigateHandler(ctx: ToolsContext): ActionHandler {
     }
     let url = params.url;
     if (!(url.startsWith("http://") || url.startsWith("https://"))) {
-      url = "https://" + url;
+      url = `https://${url}`;
     }
     const newTab = params.new_tab === true;
 

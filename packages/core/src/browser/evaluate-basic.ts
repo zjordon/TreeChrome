@@ -200,7 +200,7 @@ export function syntaxRepairCandidates(
     if (idx > 0) candidates.push(code.slice(0, idx) + catchClause + code.slice(idx));
     // 形态②：连函数闭合括号也缺——去掉尾部 })() 重建闭合
     if (code.endsWith("})()")) {
-      candidates.push(code.slice(0, -4) + "}" + catchClause + "})()");
+      candidates.push(`${code.slice(0, -4)}}${catchClause}})()`);
     }
     // 缺 catch 叠加失衡——内层补全闭合后再插 catch（仅 EOF 缺闭合形态）
     const [stack, firstExtra] = delimiterScan(code);

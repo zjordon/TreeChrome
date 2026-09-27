@@ -52,7 +52,7 @@ function applySpec(spec: MockResponseSpec, signal?: AbortSignal | null): Promise
   // 真实 fetch 对 signal 已中止的调用立即以 abort reason 拒绝（不触网，轮 38
   // #21）——普通 spec 同样复刻（与 hangUntilAbort 分支的已中止预检对称），否则
   // 「abort 后请求的分类形态」用例与真实运行时脱节
-  if (signal !== null && signal !== undefined && signal.aborted) {
+  if (signal?.aborted) {
     return Promise.reject(abortReason(signal));
   }
   const headers = new Headers(spec.headers ?? { "content-type": "application/json" });

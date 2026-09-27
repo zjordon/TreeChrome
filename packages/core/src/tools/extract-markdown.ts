@@ -35,7 +35,7 @@ export function extractCleanMarkdown(
   options: { extractLinks?: boolean; extractImages?: boolean } = {},
 ): string {
   const { extractLinks = true, extractImages = true } = options;
-  if (!html || !html.trim()) return "";
+  if (!html?.trim()) return "";
   let src = html;
   if (!extractLinks) {
     // 去掉 <a> 的 href 与标签本身，保留链接文本

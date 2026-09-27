@@ -130,6 +130,7 @@ describe("saveOversizedResult", () => {
         writeTextFile: async (_p, c) => {
           writes.push(c);
         },
+        writeBytes: async () => {},
       },
     });
     expect(out).toBeNull();
@@ -155,6 +156,7 @@ describe("saveOversizedResult", () => {
         readTextFile: async () => "",
         ensureDir: async () => {},
         writeTextFile: async () => {},
+        writeBytes: async () => {},
       },
     });
     expect(ok).toBe("out/act_123456.txt");
@@ -169,6 +171,7 @@ describe("saveOversizedResult", () => {
           throw new Error("disk full");
         },
         writeTextFile: async () => {},
+        writeBytes: async () => {},
       },
       log: (m) => logs.push(m),
     });

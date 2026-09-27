@@ -229,7 +229,7 @@ function projectSelectorMap(selectorMap) {
   return projected;
 }
 
-function compare(url, fixture, ts) {
+function compare(_url, fixture, ts) {
   const failures = [];
   const out = fixture.output;
   const meta = fixture.meta;
