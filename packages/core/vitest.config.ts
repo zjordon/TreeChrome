@@ -12,8 +12,9 @@ export default defineConfig({
       // `pnpm -r run test:coverage`（跨包统一契约），core 的门禁入口是 test
       include: ["src/**/*.ts"],
       // 纯类型声明文件，无运行时代码，不参与覆盖率统计（types.ts 含 assertValidMessages，
-      // 是运行时代码，不在此列）
-      exclude: ["src/llm/provider.ts", "src/llm/deps.ts"],
+      // 是运行时代码，不在此列；skills/types.ts 含 catalogLine/renderTaskCard 两个运行时
+      // 函数，不排除）
+      exclude: ["src/llm/provider.ts", "src/llm/deps.ts", "src/tools/actions/context.ts"],
       // 项目门槛：≥ 85%（根 AGENTS.md「单元测试要求」）；不达标即失败
       thresholds: { statements: 85, lines: 85, functions: 85, branches: 85 },
       reporter: ["text", "html"],

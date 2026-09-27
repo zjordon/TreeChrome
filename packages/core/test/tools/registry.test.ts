@@ -36,7 +36,7 @@ describe("registryVersion（动作名集合 sha256[:12]）", () => {
     const before = r.registryVersion;
     r.actions.delete("wait");
     expect(r.registryVersion).not.toBe(before);
-    expect(r.registryVersion).not.toBe(r.registryVersion + "x");
+    expect(r.registryVersion).not.toBe(`${r.registryVersion}x`);
   });
 });
 

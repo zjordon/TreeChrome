@@ -239,4 +239,71 @@ selected`）——按空增量条款计为无 P1/P2 轮，不空跑评审；分�
 同款设计行为）：轮 1 修复提交本身未独立过 LLM 评审——修复面均为评审员建议的同域改动且 764 例
 全绿。分支 3 提交（f1c899f→d39bb73→0d0d9db）待合并。
 
+### feat/p4-agent（4.4，2026-09-27）
+
+提交 dc1645b（agent 层，40 文件）+ 83cff02（biome 新规则全仓自动修复，等价重写）。4.4 按 03 文档全量落地：
+
+- **Agent**（agent.ts）：run 外层三预算破环（maxSteps/maxFailures/#194
+  maxInfraFailures）+ 初始导航 URL 提取 + 任务级 skill 匹配一次（host 优先
+  导航目标 URL 消竞态）+ judge（verdict 写最后 done result）+ finalize 降级
+  ≥3 升级终止 + stop/pause/resume 纯 API（偏离 2：SIGINT/stdin 不移植）+
+  sensitive 双格式归一化与 safeTask 占位替换 + `<agent_history>` 滑窗（字节
+  锚定 agent.json window3）。
+- **五阶段 pipeline**（step/）：Sense（state 替换式保留 2 份·旧图丢留文 /
+  nudge 汇编 peek·ack / 下载通知 / sensitive·skill·taskSkill 装配 / 预算警
+  告 / done-only schema 两处降级）/ Think（setCallWindow + 步级超时 /
+  #197 双梯：外梯形状澄清 2 次第二次去图、内梯参数校验 3 次共用预算 /
+  #186 done 门禁 2 档封顶 + 剩余额度内层超时 / 动作数硬截断）/ Act（五守
+  卫 + actionability 探索等待 + per-action 超时 + 权限门挂点预留）/ Post
+  （infra 清零先于 early return；单动作 error 才计连败）/ Finalize
+  （domExcerpt 仅 done 步；截图落盘 step_NNN.png，FS 未注入跳过）。
+  错误四分支：Interrupted / infra 退避 5·10·20·40·60 不烧步数 / 连接类
+  reconnect 耗尽 stopped / 其余计连败。
+- **配套纯件**：loop-detector（哈希/nudge 文案锚定）、actionability、
+  plan-manager、message-compactor、url-utils、py-repr、constants（偏离 8
+  常量收拢 + 不确定标记扫描含否定窗口/n't 豁免）。
+- **prompts/skills/judge 字节锚定**：prompt-consts.ts 由 gen-agent-
+  prompt-consts.py 实跑生成入库（SYSTEM_PROMPT/taskMatcher/judge 三组常量
+  + 决策规范段）；buildStateMessage 17 段 fixture 三形态逐字节；blocks 版产
+  TS 规范 ContentBlock。SkillSource 宿主接口 + task-matcher 保守降档；judge
+  两轮尝试 + trace 尾截断 Step 边界对齐（LLMClient 新增 singleShot 公共面
+  + model getter）。
+- **接线**：FileSystemProvider 增 writeBytes；browser 补 getElementCoordinates/
+  isElementOccluded 委托；vitest 覆盖排除两个纯类型文件（tools/context、
+  skills/types——纯 interface 无运行时代码）。
+- 实施小偏离（代码注释登记）：截图降采样 passthrough（Python 无 Pillow 同款
+  回落；4.6 真机观察）；assistant 消息纯文本摘要（toolCall 回放槽位在宿主轨
+  迹层——canonical 不变量优先）；AgentSettings 未含 BrowserSettings 的
+  waitBetweenActions（默认 0，宿主经 browser 设置表达）。
+- 测试 764→839（+75：锚定 18 / 纯件 19 / pipeline 集成 38——FakeAgentLLM
+  脚本化 + FakeAgentBrowser，覆盖双梯/门禁/分罪四分支/守卫链/消息管理/视觉
+  门/judge/skill/压缩器）；覆盖率 92.61%/分支 85.09%。
+
+#### 评审轮 1（review-p4-agent-1.json，2026-09-27）
+
+51 文件 19m0s，**7 条意见（自评 critical 1 / high 4 / medium 2）**——裁决 P1 3 / P2 3 / 驳回 1，采纳 6、驳回 1、stale 0。修复 6 处，core 839→848 例（覆盖率 92.74%/85.27%）。
+
+**采纳（P1）**：
+- **#4** judge 工具 schema 形态错配：JUDGE_TOOL_SCHEMA 是 codegen 的 `{name, description, input_schema}`（Python dict 形），`as unknown as ToolDefinition` 后 parameters=undefined → 真实 LLMClient 路径在适配器契约校验处抛违例、judge 的 catch 静默吞掉——**judge 复核在真实执行路径整体失效**。judge.ts 内做 `input_schema→parameters` 映射（think.ts toolDef 同款）。
+- **#2** pause() 重复触发丢 resolver 死锁：run() 挂在旧 gate 上时再次 pause 会覆盖 gate+resolver，resume/stop 只释放新 gate → run 永久挂起且 finally 的 browser.stop 不执行。幂等短路（Python asyncio.Event.clear 天然幂等）。
+- **#5** `||` 在 JS 数组上恒真：`scanUncertaintyMarkers(...) || scanUncertaintyKeywords(text)` 的右侧永不执行（Python or 空列表 falsy 才落右侧）——done.text 含 "not sure" 等关键词漏检、不完整结果被标成功。改 `.length > 0` 判空。
+**采纳（P2）**：
+- **#1** 覆盖率排除失真：`src/agent/skills/types.ts` 含 catalogLine/renderTaskCard 两个运行时函数（不是纯类型文件），排除使门禁失真；`src/tools/context.ts` 路径不存在（实际是 `src/tools/actions/context.ts`）。纠正 exclude + 补两函数测试（catalogLine 锚定 fixture catalogLines）。
+- **#6** JudgeSettings.model 注释宣称「空串=复用主 llm」但无注入口：AgentOptions 增 judgeLlm（Python AGENT_JUDGE_MODEL 装载独立卡的宿主侧等价注入口），缺省回落主 llm。
+- **#7** judge 调用缺 03 §8 冻结的 60s 超时（端点挂起时 run() 永不返回）：JudgeLLM 接口补 callTimeoutMs + 调用处传 60_000（超时 → catch → null，"Judge 失败不挂任务"语义保持）。
+**驳回**：
+- **#3**（run 循环 `<=` off-by-one 多跑一步）：Python agent.py:314 逐字符同款 `while self.state.n_steps <= self.max_steps`——force-done 在 maxSteps-1 与循环上界 maxSteps 的组合是上游自身语义，TS 保真移植（评测步数口径以 Python 为准）。
+
+三处行为级修复（#4/#5/#2）双向验证：临时还原旧实现确认新用例必红再还原。
+
+#### 评审轮 2（review-p4-agent-2.json 未产生，2026-09-27，增量基线 84ec937）
+
+轮 1 修复提交即分支 tip，增量恒空（与前两段同构：ocr 会产出 `skipped: no items
+were selected`）——按空增量条款计为无 P1/P2 轮，不空跑评审；分支此后无新提交则
+后续轮增量必然为空，「连续两轮无 P1/P2」判据必然满足——**循环收敛终止**。累计：
+2 轮，7 条意见（P1 3/P2 3/驳回 1），采纳 6、驳回 1、stale 0，无 backlog 遗留。
+注意（与前两段同款设计行为）：轮 1 修复提交本身未独立过 LLM 评审——修复面均为
+评审员建议的同域改动且 848 例全绿（三处行为级修复另有双向验证兜底）。分支 4 提交
+（dc1645b→84ec937）待合并。
+
 ### feat/p4-policy-smoke（4.5+4.6，未开始）

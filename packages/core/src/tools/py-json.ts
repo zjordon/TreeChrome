@@ -12,7 +12,12 @@ function encodeString(s: string): string {
   return JSON.stringify(s);
 }
 
-function dumps(value: unknown, indent: number, currentIndent: number): string {
+function dumps(
+  value: unknown,
+  indent: number,
+  currentIndent: number,
+  opts: { sortKeys?: boolean } = {},
+): string {
   if (value === null) return "null";
   if (typeof value === "string") return encodeString(value);
   if (typeof value === "number") {
@@ -25,28 +30,30 @@ function dumps(value: unknown, indent: number, currentIndent: number): string {
     if (value.length === 0) return "[]";
     if (indent > 0) {
       const items = value.map(
-        (v) => `${" ".repeat(currentIndent + indent)}${dumps(v, indent, currentIndent + indent)}`,
+        (v) =>
+          `${" ".repeat(currentIndent + indent)}${dumps(v, indent, currentIndent + indent, opts)}`,
       );
       return `[\n${items.join(",\n")}\n${" ".repeat(currentIndent)}]`;
     }
-    return `[${value.map((v) => dumps(v, indent, currentIndent)).join(", ")}]`;
+    return `[${value.map((v) => dumps(v, indent, currentIndent, opts)).join(", ")}]`;
   }
   if (isPlain(value)) {
     const keys = Object.keys(value);
     if (keys.length === 0) return "{}";
+    const ordered = opts.sortKeys ? [...keys].sort() : keys;
     if (indent > 0) {
-      const items = keys.map(
+      const items = ordered.map(
         (k) =>
-          `${" ".repeat(currentIndent + indent)}${encodeString(k)}: ${dumps(value[k], indent, currentIndent + indent)}`,
+          `${" ".repeat(currentIndent + indent)}${encodeString(k)}: ${dumps(value[k], indent, currentIndent + indent, opts)}`,
       );
       return `{\n${items.join(",\n")}\n${" ".repeat(currentIndent)}}`;
     }
-    return `{${keys.map((k) => `${encodeString(k)}: ${dumps(value[k], indent, currentIndent)}`).join(", ")}}`;
+    return `{${ordered.map((k) => `${encodeString(k)}: ${dumps(value[k], indent, currentIndent, opts)}`).join(", ")}}`;
   }
   return String(value); // undefined / 函数等 JSON 外值（防御分支）
 }
 
-/** json.dumps(value, ensure_ascii=False[, indent=N]) 等价 */
-export function pyJsonDumps(value: unknown, indent = 0): string {
-  return dumps(value, indent, 0);
+/** json.dumps(value, ensure_ascii=False[, indent=N][, sort_keys=True]) 等价 */
+export function pyJsonDumps(value: unknown, indent = 0, sortKeys = false): string {
+  return dumps(value, indent, 0, { sortKeys });
 }

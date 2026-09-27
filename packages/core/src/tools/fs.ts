@@ -10,4 +10,6 @@ export interface FileSystemProvider {
   readTextFile(path: string, maxChars?: number): Promise<string>;
   ensureDir(path: string): Promise<void>;
   writeTextFile(path: string, content: string): Promise<void>;
+  /** 二进制写（截图落盘 step_NNN.png） */
+  writeBytes(path: string, data: Uint8Array): Promise<void>;
 }

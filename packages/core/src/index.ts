@@ -15,6 +15,56 @@ export {
   paramsOf,
   typeName,
 } from "./agent/action-shape.js";
+export {
+  ACTIONABILITY_ACTIONS,
+  isActionable,
+  waitForActionability,
+} from "./agent/actionability.js";
+export type { AgentOptions } from "./agent/agent.js";
+// —— P4.4 agent 层（p4/03 §1 公共 API + 五阶段）——
+export { Agent, extractUrl, summarizeStepResult } from "./agent/agent.js";
+export {
+  formatStepError,
+  InterruptedError,
+  invalidActionFeedback,
+  isConnectionError,
+  scanUncertaintyKeywords,
+  scanUncertaintyMarkers,
+} from "./agent/constants.js";
+export type { JudgeLLM, JudgementResult } from "./agent/judge.js";
+export { JudgeEvaluator } from "./agent/judge.js";
+export {
+  ActionLoopDetector,
+  computeActionHash,
+  FailureStreakTracker,
+  ZeroResultStreakTracker,
+} from "./agent/loop-detector.js";
+export type { CompactorLLM } from "./agent/message-compactor.js";
+export { MessageCompactor } from "./agent/message-compactor.js";
+export { PlanManager } from "./agent/plan-manager.js";
+export type { StateMessageOptions } from "./agent/prompts/system-prompt.js";
+export {
+  buildStateBlocks,
+  buildStateMessage,
+  buildSystemPrompt,
+} from "./agent/prompts/system-prompt.js";
+export type {
+  AgentSettings,
+  JudgeSettings,
+  MessageCompactionSettings,
+  SensitiveDataSpec,
+} from "./agent/settings.js";
+export {
+  DEFAULT_AGENT_SETTINGS,
+  DEFAULT_JUDGE_SETTINGS,
+  DEFAULT_MESSAGE_COMPACTION_SETTINGS,
+  resolveAgentSettings,
+} from "./agent/settings.js";
+export type { MatcherLLM, TaskSkillMatch } from "./agent/skills/task-matcher.js";
+export { buildTaskSkillText, matchTaskSkill } from "./agent/skills/task-matcher.js";
+export type { HostSkill, SkillSource, TaskCardMeta } from "./agent/skills/types.js";
+export { catalogLine, renderTaskCard } from "./agent/skills/types.js";
+export { extractHost, extractHostWithPort } from "./agent/url-utils.js";
 export type {
   ActionResultInit,
   AgentHistoryInit,

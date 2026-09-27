@@ -50,7 +50,7 @@ export function isHonestFailureAction(action: unknown): boolean {
 
 function hasInvalidName(action: Record<string, unknown>): boolean {
   if (!("name" in action)) return false;
-  const name = action["name"];
+  const name = action.name;
   return !(typeof name === "string" && name);
 }
 
@@ -72,11 +72,11 @@ function dropUnregisteredActions(
     if (
       isRecord(a) &&
       !isHonestFailureAction(a) &&
-      typeof a["name"] === "string" &&
-      a["name"] &&
-      !knownNames.has(a["name"])
+      typeof a.name === "string" &&
+      a.name &&
+      !knownNames.has(a.name)
     ) {
-      const name = a["name"];
+      const name = a.name;
       if (RESPONSE_FIELD_ACTION_NAMES.has(name)) {
         log?.(
           `action[${i}] (${JSON.stringify(name)}) is a response field, not an action — ` +
@@ -136,27 +136,27 @@ export function normalizeActionsList(actionsList: unknown[], options: NormalizeO
     } else {
       if (hasInvalidName(a)) {
         if (context === "live" && single) {
-          log?.(`action[0] has invalid name (${inspect(a["name"])}) — honest-failure done`);
+          log?.(`action[0] has invalid name (${inspect(a.name)}) — honest-failure done`);
           actionsList[i] = honestDoneAction();
         } else if (context === "live") {
           // 多元素列表：无效 name 原样保留（不造合成名进重试梯——镜像过不了校验走澄清）
           log?.(
-            `action[${i}] has invalid name (${inspect(a["name"])}) — left as-is ` +
+            `action[${i}] has invalid name (${inspect(a.name)}) — left as-is ` +
               "(invalid mirror → clarification retry)",
           );
         } else {
           log?.(`history action[${i}] has invalid name — left as-is`);
         }
       }
-      const params = a["params"];
+      const params = a.params;
       if (!isRecord(params)) {
         if (params !== undefined && params !== null) {
           log?.(
-            `action[${i}] (${inspect(a["name"])}) params malformed (${typeName(params)})` +
+            `action[${i}] (${inspect(a.name)}) params malformed (${typeName(params)})` +
               " — coerced to {}",
           );
         }
-        a["params"] = {};
+        a.params = {};
       }
     }
   }
@@ -171,7 +171,7 @@ export function normalizeActionsList(actionsList: unknown[], options: NormalizeO
  */
 export function describeActionEntry(entry: unknown): string {
   if (isRecord(entry)) {
-    const name = entry["name"];
+    const name = entry.name;
     if (typeof name === "string" && name) return name;
     const keys = Object.keys(entry).map(String).sort().join(",");
     return `<dict:${keys || "empty"}>`;
@@ -187,7 +187,7 @@ export function describeActionEntry(entry: unknown): string {
 export function nameOf(action: unknown): unknown {
   if (isRecord(action)) {
     if (!("name" in action)) return "done";
-    return action["name"];
+    return action.name;
   }
   if (typeof action === "string" && action.trim()) return action.trim();
   return null;
@@ -196,7 +196,7 @@ export function nameOf(action: unknown): unknown {
 /** 「params 非对象 → {}」的唯一实现——替换散落各处的手写变体 */
 export function paramsOf(action: unknown): Record<string, unknown> {
   if (isRecord(action)) {
-    const params = action["params"];
+    const params = action.params;
     return isRecord(params) ? params : {};
   }
   return {};
@@ -205,9 +205,9 @@ export function paramsOf(action: unknown): Record<string, unknown> {
 /** model_output 的 actions 分发：非空列表优先（浅拷贝），否则单动作包列表（falsy → [{}]） */
 export function actionsOf(modelOutput: unknown): unknown[] {
   if (!isRecord(modelOutput)) return [];
-  const actions = modelOutput["actions"];
+  const actions = modelOutput.actions;
   if (Array.isArray(actions) && actions.length > 0) return [...actions];
-  const act = modelOutput["action"];
+  const act = modelOutput.action;
   return [act === undefined ? {} : act];
 }
 
@@ -220,17 +220,17 @@ export function normalizeModelOutput(
   modelOutput: ModelOutput,
   options: NormalizeOptions = {},
 ): ModelOutput {
-  const actions = modelOutput["actions"];
+  const actions = modelOutput.actions;
   let list: unknown[];
   if (Array.isArray(actions) && actions.length > 0) {
     list = actions;
   } else {
-    const act = modelOutput["action"];
+    const act = modelOutput.action;
     list = typeof act === "string" || isRecord(act) ? [act] : [{}];
   }
   normalizeActionsList(list, options);
-  modelOutput["actions"] = list;
-  modelOutput["action"] = list[0];
+  modelOutput.actions = list;
+  modelOutput.action = list[0];
   return modelOutput;
 }
 

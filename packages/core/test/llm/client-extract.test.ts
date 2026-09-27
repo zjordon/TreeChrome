@@ -93,7 +93,7 @@ describe("extract（client.py :635-730 等价）", () => {
     const { mock, client } = setup({}, [toolUse("extract_result", { items: ["a", 1] })]);
     const out = await client.extract("find", "content", { outputSchema: SCHEMA });
     expect(out).toBe('{"items": ["a", 1]}'); // json.dumps 分隔符（非 JSON.stringify 紧凑态）
-    const body = mock.lastBody() as Record<string, any>;
+    const body = mock.lastBody() as Record<string, unknown>;
     expect(body.system).toBe(
       "You are an expert at extracting structured data from a webpage. " +
         "Extract exactly what the query asks for and return it via the " +
@@ -181,7 +181,7 @@ describe("extract（client.py :635-730 等价）", () => {
       toolUse("extract_result", { items: [] }),
     ]);
     await client.extract("q", "c", { outputSchema: SCHEMA });
-    const body = mock.lastBody() as Record<string, any>;
+    const body = mock.lastBody() as Record<string, unknown>;
     expect(body.tool_choice).toBeUndefined();
     expect(body.system).toContain(
       'IMPORTANT: You must respond by calling the tool "extract_result" with your complete answer as the tool arguments. Do not reply with plain text.',
@@ -196,7 +196,7 @@ describe("extract（client.py :635-730 等价）", () => {
     // 无 tools 能力：extract 的 toolUse 解析不适用——text 命中即返回
     const out = await client.extract("q", "c", { outputSchema: SCHEMA });
     expect(out).toBe('{"items": ["x"]}');
-    const body = mock.lastBody() as Record<string, any>;
+    const body = mock.lastBody() as Record<string, unknown>;
     expect(body.tools).toBeUndefined();
     expect(body.system).toContain("IMPORTANT: You must respond with only a JSON object");
   });
@@ -207,7 +207,7 @@ describe("structuredCall（client.py :732-780 等价）", () => {
     const { mock, client } = setup({}, [toolUse("structured_result", { kind: "yes" })]);
     const out = await client.structuredCall("sys prompt", "user prompt", SCHEMA);
     expect(out).toEqual({ kind: "yes" });
-    const body = mock.lastBody() as Record<string, any>;
+    const body = mock.lastBody() as Record<string, unknown>;
     expect(body.system).toBe("sys prompt");
     expect(body.messages).toEqual([
       { role: "user", content: [{ type: "text", text: "user prompt" }] },

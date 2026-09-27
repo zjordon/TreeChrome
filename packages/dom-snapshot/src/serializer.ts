@@ -464,32 +464,32 @@ export class DOMTreeSerializer {
     // Step 1: 创建简化树
     let start = nowSec();
     const simplifiedTree = this.createSimplifiedTree(this.rootNode, 0);
-    this.timingInfo["create_simplified_tree"] = nowSec() - start;
+    this.timingInfo.create_simplified_tree = nowSec() - start;
 
     // Step 2: 绘制顺序过滤
     if (this.paintOrderFiltering && simplifiedTree) {
       start = nowSec();
       new PaintOrderRemover(simplifiedTree).calculatePaintOrder();
-      this.timingInfo["paint_order_filtering"] = nowSec() - start;
+      this.timingInfo.paint_order_filtering = nowSec() - start;
     }
 
     // Step 3: 树优化
     start = nowSec();
     const optimizedTree = this.optimizeTree(simplifiedTree);
-    this.timingInfo["optimize_tree"] = nowSec() - start;
+    this.timingInfo.optimize_tree = nowSec() - start;
 
     // Step 4: 包围盒过滤
     let filteredTree = optimizedTree;
     if (this.enableBboxFiltering && optimizedTree) {
       start = nowSec();
       filteredTree = this.applyBoundingBoxFiltering(optimizedTree);
-      this.timingInfo["bbox_filtering"] = nowSec() - start;
+      this.timingInfo.bbox_filtering = nowSec() - start;
     }
 
     // Step 5: 分配交互索引
     start = nowSec();
     this.assignInteractiveIndicesAndMarkNewNodes(filteredTree);
-    this.timingInfo["assign_interactive_indices"] = nowSec() - start;
+    this.timingInfo.assign_interactive_indices = nowSec() - start;
 
     // 生成文本输出
     const elementTreeText = DOMTreeSerializer.serializeTree(
@@ -501,9 +501,9 @@ export class DOMTreeSerializer {
     // + selector_map，是唯一能可靠统计的位置
     start = nowSec();
     const pageStats = this.collectPageStats(filteredTree);
-    this.timingInfo["page_stats"] = nowSec() - start;
+    this.timingInfo.page_stats = nowSec() - start;
 
-    this.timingInfo["serialize_accessible_elements_total"] = nowSec() - startTotal;
+    this.timingInfo.serialize_accessible_elements_total = nowSec() - startTotal;
 
     const state = new SerializedDOMState(
       filteredTree,
@@ -1034,7 +1034,7 @@ export class DOMTreeSerializer {
 
     // 4. 非空 aria-label（语义上标注为独立交互目标）
     const ariaLabel = on.attributes["aria-label"];
-    if (ariaLabel !== undefined && ariaLabel.trim()) return false;
+    if (ariaLabel?.trim()) return false;
 
     // 5. 交互 role
     const role = on.attributes.role;
@@ -1088,8 +1088,8 @@ export class DOMTreeSerializer {
     if (cached !== undefined) return cached;
     const start = nowSec();
     const result = isInteractive(node);
-    this.timingInfo["clickable_detection_time"] =
-      (this.timingInfo["clickable_detection_time"] ?? 0) + (nowSec() - start);
+    this.timingInfo.clickable_detection_time =
+      (this.timingInfo.clickable_detection_time ?? 0) + (nowSec() - start);
     this.clickableCache.set(node.nodeId, result);
     return result;
   }

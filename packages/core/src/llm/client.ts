@@ -270,6 +270,11 @@ export class LLMClient {
     this.fallbackConfig = config.fallback ?? null;
   }
 
+  /** 当前卡模型名（fallback 切换后跟随——Python llm.model 同款读取面） */
+  get model(): string {
+    return this.provider.model;
+  }
+
   /**
    * P4 step 在 wait_for 起点登记的步级共享窗口（Python set_llm_window）：
    * deadline = now + timeoutMs（梯子内所有调用共享）；单次预算上限 = max(30s, 0.75×t)。
@@ -592,8 +597,7 @@ export class LLMClient {
         .slice(0, 200)
         .map((c) => `- ${c}`)
         .join("\n");
-      collectedBlock =
-        "\n\nItems already collected (DO NOT re-extract these, skip exact duplicates):\n" + joined;
+      collectedBlock = `\n\nItems already collected (DO NOT re-extract these, skip exact duplicates):\n${joined}`;
     }
     const userMsg = `${prompt}${collectedBlock}\n\n---\n${bounded}`;
 
@@ -655,6 +659,28 @@ export class LLMClient {
     }
     this.deps.log("[llm] LLM did not use structured_result tool; falling back to text parse");
     return tryParseJson(response.text) ?? null;
+  }
+
+  /**
+   * 单发直发公共面（judge / messageCompactor 消费——Python 直接调 SDK
+   * messages.create 的等价物）：自定义工具名（judge 的 agent_response）、
+   * 纯文本（tool 省略）皆可；语义与 extract/structuredCall 同（无梯子/退避，
+   * fallback 切换重入一次）。返回原始 ChatResponse（text/toolCalls 自行消费）。
+   */
+  singleShot(req: {
+    systemPrompt: string | null;
+    userPrompt: string;
+    tool?: ToolDefinition | null;
+    maxTokens?: number;
+    callTimeoutMs?: number | null;
+  }): Promise<ChatResponse> {
+    return this.extractCall(
+      req.systemPrompt,
+      req.userPrompt,
+      req.tool ?? null,
+      req.maxTokens,
+      req.callTimeoutMs ?? null,
+    );
   }
 
   /**

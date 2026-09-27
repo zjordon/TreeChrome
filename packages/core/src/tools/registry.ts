@@ -117,7 +117,7 @@ export class ActionRegistry {
   /** 动作名集合的稳定指纹（写入历史文件用于注册表漂移校验；仅按名字集合，参数细节不触发） */
   get registryVersion(): string {
     const names = [...this.actions.keys()].sort().join("|");
-    return "v1-" + sha256Hex(names).slice(0, 12);
+    return `v1-${sha256Hex(names).slice(0, 12)}`;
   }
 
   private actionAvailable(name: string, pageUrl: string | null): boolean {

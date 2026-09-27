@@ -3,9 +3,7 @@
 // 按 p4/02 §8 断言。
 import { describe, expect, it } from "vitest";
 import type { ActionResult } from "../../src/agent/views.js";
-import { LLMCallTimeoutError } from "../../src/llm/errors.js";
 import type { Tools } from "../../src/tools/actions/index.js";
-import type { FileSystemProvider } from "../../src/tools/fs.js";
 import { FakeBrowser, makeNode, makeTools } from "./fake-browser.js";
 
 async function exec(
