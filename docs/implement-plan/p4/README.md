@@ -130,3 +130,9 @@
 - `describeActionEntry` 的类型名按 Python 字面量渲染（`typeName`：str/int/float/bool/NoneType）——它进 #197 的 LLM 可见澄清反馈，是 prompt 契约的一部分（03 文档未显式列出，实施时定性为字节保真对象）。
 - `ActionResult.render()` 的 Python f-string 布尔字面量（True/False/None）逐字节保真（进 `[Previous Action Results]` 段）——03 §1 已有原则，此处落为实现。
 - 事件 timestamp 用 JS `toISOString()`（毫秒 Z 后缀）而非 Python isoformat 微秒形态——无跨语言字节可比性，文件头注登记。
+
+#### 评审轮 1（review-p4-foundation-1.json，2026-09-27）
+
+9 文件 6m35s，**2 条意见均为 P3 级（low/maintainability，gen-anchors.py 死代码：未使用 `import sys` + 未调用 `dump()`）**，0 P1/P2。两条核实属实且满足「改动极小 + 当轮触碰文件」顺手修条件 → 采纳实施；修复后脚本复跑 fixture 零差异验证。采纳 2 / 驳回 0 / stale 0。
+
+### feat/p4-browser（4.2，未开始）

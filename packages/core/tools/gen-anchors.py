@@ -5,7 +5,6 @@
 packages/core/test/fixtures/python-anchors/{action-shape,views}.json。
 """
 import json
-import sys
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "test/fixtures/python-anchors"
@@ -24,10 +23,6 @@ from tree_walker.agent.views import (  # noqa: E402
     AgentHistoryList,
     redact_sensitive_string,
 )
-
-
-def dump(obj):
-    return json.dumps(obj, ensure_ascii=False, sort_keys=False)
 
 
 # ---------- action-shape ----------
