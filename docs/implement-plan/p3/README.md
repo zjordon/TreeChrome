@@ -94,3 +94,7 @@
 
 - 事件订阅偏离（监听器列表 vs cdp-use 覆盖式）：P4 移植 session.py 时按 01 §5.2 自行管理单例语义。
 - 域 enable 序列 / close_tab / create_tab / settle 等 BrowserSession 语义按 02 §3 留待 P4。
+
+### 评审轮 1（review-p3-cdp-ws-1.json，2026-09-27，**零意见收敛**）
+
+glm-5.3 全分支评审（main..feat/p3-cdp-ws，17 文件，7m28s），状态 complete、意见数 0。严重度门控的收敛判据首轮即达成（零意见是比「连续两轮无 P1/P2」更强的出口）。产出体量三道闸（rule.json 严重度边界 / dump 滤读 / P1-P3 门控）+ 计划文档预先冻结契约与有意偏离清单，是零意见的 presumed 成因——对照 P2 同口径 47 轮 676 条，diff 规模与基准文档完备度的差异是主要变量。
