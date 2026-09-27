@@ -110,11 +110,15 @@ describe("dialog 事件态（自动处理 + 无条件记录）", () => {
 });
 
 describe("file-chooser 拦截（per-session）", () => {
-  it("开启后记录 Page.fileChooserOpened；失败 best-effort 不置位", async () => {
+  it("开启后记录 Page.fileChooserOpened；失败 best-effort 不置位；重复启用监听去重", async () => {
     const h = makeInternals();
     h.transport.respond("Page.setInterceptFileChooserDialog", {});
     await enableFileChooserIntercept(h.s);
     expect(h.s.fileChooserInterceptEnabled).toBe(true);
+    // 评审轮 1 #4/#9：switchTab 每次重发命令，但监听必须单份（先解订再注册）
+    await enableFileChooserIntercept(h.s);
+    await enableFileChooserIntercept(h.s);
+    expect(h.transport.listenerCount("Page.fileChooserOpened")).toBe(1);
     h.transport.emit(
       "Page.fileChooserOpened",
       { mode: "selectSingle", backendNodeId: 7, frameId: "f1" },
@@ -133,7 +137,7 @@ describe("file-chooser 拦截（per-session）", () => {
 });
 
 describe("下载追踪", () => {
-  it("begin 记 pending；completed 移入缓冲并 consume 清空", async () => {
+  it("begin 记 pending（url 只在 begin 携带）；completed 移入缓冲并 consume 清空", async () => {
     const h = makeInternals();
     h.transport.respond("Browser.setDownloadBehavior", {});
     await setupDownloadTracking(h.s, "D:/dl");
@@ -142,17 +146,18 @@ describe("下载追踪", () => {
       eventsEnabled: true,
       downloadPath: "D:/dl",
     });
-    h.transport.emit("Browser.downloadWillBegin", { guid: "g1", suggestedFilename: "a.zip" });
+    // downloadWillBegin 协议形状：{frameId, guid, url, suggestedFilename}
+    h.transport.emit("Browser.downloadWillBegin", {
+      guid: "g1",
+      url: "https://x/a.zip",
+      suggestedFilename: "a.zip",
+    });
+    // downloadProgress 协议形状：{guid, totalBytes, receivedBytes, state}——无 url/filePath
     h.transport.emit("Browser.downloadProgress", { guid: "g1", state: "inProgress" });
     expect(h.s.completedDownloads).toHaveLength(0);
-    h.transport.emit("Browser.downloadProgress", {
-      guid: "g1",
-      state: "completed",
-      url: "https://x/a.zip",
-      filePath: "D:/dl/a.zip",
-    });
+    h.transport.emit("Browser.downloadProgress", { guid: "g1", state: "completed" });
     expect(h.s.completedDownloads).toEqual([
-      { filename: "a.zip", url: "https://x/a.zip", path: "D:/dl/a.zip" },
+      { filename: "a.zip", url: "https://x/a.zip", path: null },
     ]);
     const consumed = h.s.completedDownloads.splice(0);
     expect(consumed).toHaveLength(1);

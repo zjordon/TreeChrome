@@ -240,7 +240,10 @@ export async function scroll(
   amount = 3,
 ): Promise<ScrollResult> {
   const metrics = await s.send<Record<string, unknown>>("Page.getLayoutMetrics", {});
-  const viewport = isRecord(metrics.cssVisualViewport) ? metrics.cssVisualViewport : {};
+  // clientWidth/clientHeight 在 LayoutViewport 类型上（css 前缀 = CSS 像素）——评审轮 1
+  // #7：cssVisualViewport 是 VisualViewport 形状（width/height），读它恒走兜底
+  // （Python @640d52a :3558-3560 同款缺陷，TS 侧修正字段来源）
+  const viewport = isRecord(metrics.cssLayoutViewport) ? metrics.cssLayoutViewport : {};
   const viewportHeight = numberOr(viewport.clientHeight, 1000);
   const viewportWidth = numberOr(viewport.clientWidth, 1280);
   let delta = amount * viewportHeight;

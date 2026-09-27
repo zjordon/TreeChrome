@@ -71,10 +71,13 @@ export interface SessionInternals {
   autoDialogEnabled: boolean;
   recentEventsEnabled: boolean;
   readonly recentEvents: BrowserEvent[];
-  readonly pendingDownloads: Map<string, string>;
+  /** begin 事件捕获的 {filename, url}（url 只在 downloadWillBegin 携带） */
+  readonly pendingDownloads: Map<string, { filename: string; url: string }>;
   readonly completedDownloads: DownloadRecord[];
   lastFileChooser: FileChooserRecord | null;
   fileChooserInterceptEnabled: boolean;
+  /** fileChooserOpened 监听的去重解订柄（重发命令 per-session，监听只此一份） */
+  fileChooserListenerDispose: (() => void) | null;
   /** transport.on 的解订函数集合（重连/停止先全量解订——多播下的单例纪律） */
   readonly eventDisposers: Array<() => void>;
   /** 非网格页 URL 缓存（grid-meta 跳过重复探测） */

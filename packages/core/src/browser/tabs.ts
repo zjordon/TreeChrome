@@ -1,6 +1,8 @@
 // Tab 管理：getTabs/switchTab/closeTab/createTab。移植自 TreeWalker session.py
 // :3617-3670 @640d52a。switchTab 清缓存 + 重挂 file-chooser 拦截（per-session，
 // Bug-1 回归源）+ settle；不重发域 enable（Python 现状，p4/01 §3.2 登记复核项）。
+// Target.* 浏览器级命令一律不绑 sessionId 发送（Python 同款；评审轮 1 #8——关闭当前
+// tab 后旧 session 已销毁，绑定发送会命中 "Session with given id not found"）。
 
 import { enableFileChooserIntercept } from "./connection.js";
 import { waitForReadyStateSettle } from "./navigation.js";
@@ -11,11 +13,17 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
+/** 浏览器级命令发送（无 sessionId——Target.* 域与页面会话无关） */
+function browserSend<T>(method: string, s: SessionInternals, params?: object): Promise<T> {
+  if (!s.transport) throw new Error(`tabs: not connected (${method})`);
+  return s.transport.send<T>(method, params);
+}
+
 /** 列出 page 类型 target（单次 Target.getTargets；异常吞掉返空） */
 export async function getTabs(s: SessionInternals): Promise<TabInfo[]> {
   const tabs: TabInfo[] = [];
   try {
-    const targets = await s.send<Record<string, unknown>>("Target.getTargets", {});
+    const targets = await browserSend<Record<string, unknown>>("Target.getTargets", s, {});
     for (const t of Array.isArray(targets.targetInfos) ? targets.targetInfos : []) {
       if (isRecord(t) && t.type === "page" && typeof t.targetId === "string") {
         tabs.push({
@@ -34,8 +42,8 @@ export async function getTabs(s: SessionInternals): Promise<TabInfo[]> {
 /** 切换 tab（:3637-3651）：清两层缓存 → activate + attach → 重挂拦截 → settle */
 export async function switchTab(s: SessionInternals, targetId: string): Promise<void> {
   s.clearSelectorMapCaches();
-  await s.send("Target.activateTarget", { targetId });
-  const result = await s.send<Record<string, unknown>>("Target.attachToTarget", {
+  await browserSend("Target.activateTarget", s, { targetId });
+  const result = await browserSend<Record<string, unknown>>("Target.attachToTarget", s, {
     targetId,
     flatten: true,
   });
@@ -50,9 +58,9 @@ export async function switchTab(s: SessionInternals, targetId: string): Promise<
 /** 关 tab（:3653-3663）：关的是当前 tab 时切到剩余页，全无则开 about:blank */
 export async function closeTab(s: SessionInternals, targetId: string): Promise<void> {
   const wasCurrent = targetId === s.currentTargetId;
-  await s.send("Target.closeTarget", { targetId });
+  await browserSend("Target.closeTarget", s, { targetId });
   if (!wasCurrent) return;
-  const targets = await s.send<Record<string, unknown>>("Target.getTargets", {});
+  const targets = await browserSend<Record<string, unknown>>("Target.getTargets", s, {});
   for (const t of Array.isArray(targets.targetInfos) ? targets.targetInfos : []) {
     if (
       isRecord(t) &&
@@ -69,7 +77,7 @@ export async function closeTab(s: SessionInternals, targetId: string): Promise<v
 
 /** 开新 tab（:3665-3670）：createTarget + switch，返回 targetId */
 export async function createTab(s: SessionInternals, url = "about:blank"): Promise<string> {
-  const result = await s.send<Record<string, unknown>>("Target.createTarget", { url });
+  const result = await browserSend<Record<string, unknown>>("Target.createTarget", s, { url });
   const targetId = String(result.targetId);
   await switchTab(s, targetId);
   return targetId;

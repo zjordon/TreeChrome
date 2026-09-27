@@ -105,12 +105,14 @@ describe("navigation", () => {
       quality: 20,
     });
   });
-  it("scroll：cssVisualViewport 高度 × amount、方向、at_edge 回读", async () => {
+  it("scroll：cssLayoutViewport 高度 × amount、方向、at_edge 回读", async () => {
     const h = makeInternals();
     h.transport
       .respond("Input.dispatchMouseEvent", {})
+      // 真实协议形状：clientWidth/clientHeight 在 LayoutViewport 类型上（评审轮 1 #7）
       .respond("Page.getLayoutMetrics", {
-        cssVisualViewport: { clientWidth: 1000, clientHeight: 500 },
+        cssLayoutViewport: { clientWidth: 1000, clientHeight: 500, pageX: 0, pageY: 0 },
+        cssVisualViewport: { width: 1000, height: 500, scale: 1 },
       })
       .respond("Runtime.evaluate", evalValue(JSON.stringify({ sy: 950, sh: 1450, ch: 500 })));
     const r = await scroll(h.s, "down", 2);
@@ -118,6 +120,20 @@ describe("navigation", () => {
     expect(wheel).toMatchObject({ type: "mouseWheel", x: 500, y: 250, deltaY: 1000 });
     expect(r).toEqual({ vertical_percentage: 100, at_edge: true }); // sy=950=maxTop → 100%
     expect(h.sleeps).toContain(200); // 滚动后固定 0.2s
+  });
+  it("scroll 读不到视口时走兜底（1000/1280）不报错", async () => {
+    const h = makeInternals();
+    h.transport
+      .respond("Input.dispatchMouseEvent", {})
+      .respond("Page.getLayoutMetrics", {})
+      .respond("Runtime.evaluate", evalValue(JSON.stringify({ sy: 0, sh: 3000, ch: 1000 })));
+    const r = await scroll(h.s, "up", 1);
+    expect(h.transport.framesOf("Input.dispatchMouseEvent")[0].params).toMatchObject({
+      x: 640,
+      y: 500,
+      deltaY: -1000,
+    });
+    expect(r.vertical_percentage).toBe(0);
   });
 });
 

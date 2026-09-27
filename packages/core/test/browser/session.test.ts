@@ -56,6 +56,54 @@ describe("BrowserSession 生命周期", () => {
     scriptConnect(s2.transport);
     await expect(s2.session.start({ trackDownloads: true })).rejects.toThrow(/downloadsPath/);
   });
+  it("connect 失败回滚半连接态（评审轮 1 #2）", async () => {
+    const transport = new FakeCdpTransport();
+    transport.respond("Target.getTargets", { targetInfos: [] }); // 无 page target → connect 抛
+    const session = new BrowserSession(async () => transport, {}, { log: () => {} });
+    await expect(session.start()).rejects.toThrow(/--remote-debugging-port/);
+    expect(session.isConnected).toBe(false);
+    expect(session.currentSessionId).toBeNull();
+  });
+  it("reconnect 后下载追踪按原路径重建（评审轮 1 #1）", async () => {
+    const t1 = new FakeCdpTransport();
+    const t2 = new FakeCdpTransport();
+    for (const t of [t1, t2]) {
+      scriptConnect(t);
+      t.respond("Browser.setDownloadBehavior", {});
+    }
+    let next = 0;
+    const session = new BrowserSession(async () => (next++ === 0 ? t1 : t2), {}, { log: () => {} });
+    await session.start({ trackDownloads: true, downloadsPath: "D:/dl" });
+    expect(t1.framesOf("Browser.setDownloadBehavior")).toHaveLength(1);
+    expect(await session.reconnect()).toBe(true);
+    expect(t2.framesOf("Browser.setDownloadBehavior")).toHaveLength(1); // 重连后重建
+    t2.emit("Browser.downloadWillBegin", {
+      guid: "g",
+      url: "https://x/f.bin",
+      suggestedFilename: "f.bin",
+    });
+    t2.emit("Browser.downloadProgress", { guid: "g", state: "completed" });
+    expect(session.consumeCompletedDownloads()).toEqual([
+      { filename: "f.bin", url: "https://x/f.bin", path: null },
+    ]);
+  });
+  it("Target.* 浏览器级命令不绑 sessionId（评审轮 1 #8 回归锚）", async () => {
+    const { session, transport } = makeSession();
+    scriptConnect(transport);
+    transport
+      .respond("Target.activateTarget", {})
+      .respond("Runtime.evaluate", { result: { value: "complete" } })
+      .respond("Target.createTarget", { targetId: "TN" });
+    await session.start();
+    await session.getTabs();
+    await session.switchTab("T1");
+    const browserLevel = ["Target.getTargets", "Target.activateTarget", "Target.attachToTarget"];
+    for (const method of browserLevel) {
+      for (const frame of transport.framesOf(method)) {
+        expect(frame.sessionId).toBeUndefined();
+      }
+    }
+  });
   it("stop：清缓存/解订/关 transport；幂等", async () => {
     const { session, transport } = makeSession();
     scriptConnect(transport);

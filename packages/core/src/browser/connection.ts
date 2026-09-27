@@ -103,6 +103,7 @@ export async function connectSession(s: SessionInternals): Promise<void> {
 export function unsubscribeAllEvents(s: SessionInternals): void {
   for (const dispose of s.eventDisposers) dispose();
   s.eventDisposers.length = 0;
+  s.fileChooserListenerDispose = null;
 }
 
 /**
@@ -168,6 +169,10 @@ export async function enableFileChooserIntercept(s: SessionInternals): Promise<v
     await s.send("Page.setInterceptFileChooserDialog", { enabled: true });
     const transport = s.transport;
     if (!transport) return;
+    // 事件监听是 transport 级的：重发命令（per-session）每次必须，但监听先解订再注册
+    // （评审轮 1 #4/#9——多播下重复注册会随 switchTab 次数线性累积）
+    s.fileChooserListenerDispose?.();
+    s.fileChooserListenerDispose = null;
     const dispose = transport.on("Page.fileChooserOpened", (event, sessionId) => {
       const e = isRecord(event) ? event : {};
       s.lastFileChooser = {
@@ -183,6 +188,7 @@ export async function enableFileChooserIntercept(s: SessionInternals): Promise<v
       );
     });
     s.eventDisposers.push(dispose);
+    s.fileChooserListenerDispose = dispose;
     s.fileChooserInterceptEnabled = true;
   } catch (e) {
     s.log(`setInterceptFileChooserDialog unavailable/failed: ${String(e)}`);
@@ -209,7 +215,10 @@ export async function setupDownloadTracking(
       const e = isRecord(event) ? event : {};
       const guid = typeof e.guid === "string" ? e.guid : "";
       const filename = typeof e.suggestedFilename === "string" ? e.suggestedFilename : "unknown";
-      s.pendingDownloads.set(guid, filename);
+      // url 只在 begin 事件携带（评审轮 1 #3：downloadProgress 协议无 url/filePath——
+      // Python :1907-1915 同款缺口，在此捕获）
+      const url = typeof e.url === "string" ? e.url : "";
+      s.pendingDownloads.set(guid, { filename, url });
       s.log(`Download started: ${filename}`);
     }),
   );
@@ -218,14 +227,14 @@ export async function setupDownloadTracking(
       const e = isRecord(event) ? event : {};
       if (e.state !== "completed") return;
       const guid = typeof e.guid === "string" ? e.guid : "";
-      const filename = s.pendingDownloads.get(guid) ?? "unknown";
+      const entry = s.pendingDownloads.get(guid) ?? { filename: "unknown", url: "" };
       s.pendingDownloads.delete(guid);
       s.completedDownloads.push({
-        filename,
-        url: typeof e.url === "string" ? e.url : "",
-        path: typeof e.filePath === "string" ? e.filePath : null,
+        filename: entry.filename,
+        url: entry.url,
+        path: null, // downloadProgress 无 filePath；实际路径属宿主/文件族（P4b）
       });
-      s.log(`Download completed: ${filename}`);
+      s.log(`Download completed: ${entry.filename}`);
     }),
   );
 }

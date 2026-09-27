@@ -64,12 +64,16 @@ export async function takeScreenshot(
   try {
     const call = s.send<Record<string, unknown>>("Page.captureScreenshot", params);
     if (timeout > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
       result = await Promise.race([
         call,
         new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new GuardTimeout()), timeout * 1000);
+          timer = setTimeout(() => reject(new GuardTimeout()), timeout * 1000);
         }),
-      ]);
+      ]).finally(() => {
+        // 提前成功也要清计时器（评审轮 1 #10）：悬挂句柄会把进程退出挂住至多 timeout 秒
+        if (timer !== undefined) clearTimeout(timer);
+      });
     } else {
       result = await call;
     }

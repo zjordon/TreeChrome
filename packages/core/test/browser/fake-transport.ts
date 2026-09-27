@@ -191,6 +191,7 @@ export function makeInternals(
     completedDownloads: [],
     lastFileChooser: null,
     fileChooserInterceptEnabled: false,
+    fileChooserListenerDispose: null,
     eventDisposers: [],
     gridNoGridUrls: new Set(),
     sleep,

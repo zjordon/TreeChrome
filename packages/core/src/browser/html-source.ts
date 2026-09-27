@@ -76,7 +76,12 @@ export interface HtmlSourceOptions {
   extractImages?: boolean;
 }
 
-/** 递归 children/shadowRoots/contentDocument 重建干净 HTML（nodeType 1/3 以外丢弃） */
+/**
+ * 递归 children/shadowRoots/contentDocument 重建干净 HTML（nodeType 1/3 以外丢弃）。
+ * CDP 伪节点壳（#document=9 / #shadow-root=11）解壳拼接 children——评审轮 1 #11/#12：
+ * contentDocument 与 shadowRoots 条目都是壳节点，直落「非元素即丢弃」恒返空
+ * （Python html_source.py @640d52a 同款缺陷；TS 修复对齐其头注承诺的递归带出语义）。
+ */
 export function nodeToHtml(node: unknown, options: HtmlSourceOptions = {}): string {
   const extractLinks = options.extractLinks ?? true;
   const extractImages = options.extractImages ?? true;
@@ -85,6 +90,13 @@ export function nodeToHtml(node: unknown, options: HtmlSourceOptions = {}): stri
   if (nodeType === 3) {
     const val = typeof node.nodeValue === "string" ? node.nodeValue : "";
     return val ? escapeHtml(val) : "";
+  }
+  if (nodeType === 9 || nodeType === 11) {
+    const parts: string[] = [];
+    for (const child of Array.isArray(node.children) ? node.children : []) {
+      parts.push(nodeToHtml(child, options));
+    }
+    return parts.join("");
   }
   if (nodeType !== 1) return "";
 

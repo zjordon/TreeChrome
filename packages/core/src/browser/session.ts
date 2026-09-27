@@ -79,10 +79,13 @@ export class BrowserSession {
   private readonly networkIdle: NetworkIdleTracker;
   private readonly highlight: HighlightManager;
   private readonly recentEventsBuf: BrowserEvent[] = [];
-  private readonly pendingDownloads = new Map<string, string>();
+  private readonly pendingDownloads = new Map<string, { filename: string; url: string }>();
   private readonly completedDownloads: DownloadRecord[] = [];
   private lastFileChooserRef: SessionInternals["lastFileChooser"] = null;
   private fileChooserInterceptEnabledRef = false;
+  private fileChooserListenerDisposeRef: (() => void) | null = null;
+  /** start(trackDownloads) 的路径——reconnect 后据此重建下载追踪 */
+  private downloadsPath: string | null = null;
   private recentEventsEnabled = false;
   private readonly eventDisposers: Array<() => void> = [];
   private readonly gridNoGridUrls = new Set<string>();
@@ -122,9 +125,10 @@ export class BrowserSession {
 
   /** 模块共享上下文（单一实例；可变连接态经 getter/setter 直达会话字段） */
   private context(): SessionInternals {
-    if (this.ctx) return this.ctx;
+    const cached = this.ctx;
+    if (cached) return cached;
     const self = this;
-    this.ctx = {
+    const ctx: SessionInternals = {
       settings: this.settings,
       log: this.log,
       get transport() {
@@ -168,6 +172,12 @@ export class BrowserSession {
       set fileChooserInterceptEnabled(v) {
         self.fileChooserInterceptEnabledRef = v;
       },
+      get fileChooserListenerDispose() {
+        return self.fileChooserListenerDisposeRef;
+      },
+      set fileChooserListenerDispose(v) {
+        self.fileChooserListenerDisposeRef = v;
+      },
       eventDisposers: this.eventDisposers,
       gridNoGridUrls: this.gridNoGridUrls,
       sleep: this.sleepImpl,
@@ -177,7 +187,8 @@ export class BrowserSession {
     // highlight 的 executeJs 闭包引用 context()——构造期先装订（连接前调用会因
     // transport 空走各自降级路径，与 Python 未连线行为一致）
     this.highlight.attach(null);
-    return this.ctx;
+    this.ctx = ctx;
+    return ctx;
   }
 
   private boundSend: BoundSend = <T>(method: string, params?: object) => {
@@ -197,13 +208,22 @@ export class BrowserSession {
 
   async start(options: StartOptions = {}): Promise<void> {
     this.transportRef = await acquireTransport(this.transportFactory);
-    await connectSession(this.context());
+    try {
+      await connectSession(this.context());
+    } catch (e) {
+      // 回滚半连接态（评审轮 1 #2）：connect 中途失败不得遗留 isConnected=true 的
+      // 空壳——与 reconnect 失败分支的不变量一致
+      unsubscribeAllEvents(this.context());
+      this.transportRef = null;
+      throw e;
+    }
     if (options.trackDownloads) {
       if (!options.downloadsPath) {
         throw new Error(
           "trackDownloads 需要显式 downloadsPath（宿主解析并确保目录存在——核心包不读 env/home）",
         );
       }
+      this.downloadsPath = options.downloadsPath;
       await setupDownloadTracking(this.context(), options.downloadsPath);
     }
     this.recentEventsEnabled = options.enableRecentEvents ?? false;
@@ -220,6 +240,11 @@ export class BrowserSession {
       this.domCircuitBreaker.reset();
       this.transportRef = await acquireTransport(this.transportFactory);
       await connectSession(this.context());
+      // 下载追踪随 unsubscribeAllEvents 一并释放，重连成功后按原路径重建
+      // （评审轮 1 #1——Python :1856-1874 同款缺口，TS 侧补齐）
+      if (this.downloadsPath) {
+        await setupDownloadTracking(this.context(), this.downloadsPath);
+      }
       return true;
     } catch (e) {
       this.log(`Reconnect failed: ${String(e)}`);

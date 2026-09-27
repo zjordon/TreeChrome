@@ -152,7 +152,7 @@ describe("html-source", () => {
       '<body>a&lt;b &amp; &quot;c&quot;<a href="https://x/?q=1&amp;&quot;" title="t">link</a><img src="i.png"></body>',
     );
   });
-  it("shadow DOM 与同源 iframe contentDocument 递归带出；跨源 iframe 丢标签", () => {
+  it("shadow DOM 与同源 iframe contentDocument 递归带出；跨源 iframe 丢标签（真实协议形状）", () => {
     const root = {
       nodeName: "body",
       nodeType: 1,
@@ -160,18 +160,32 @@ describe("html-source", () => {
         {
           nodeName: "DIV",
           nodeType: 1,
+          // shadowRoots 条目是 nodeType=11 的 #shadow-root 伪节点壳（评审轮 1 #12）
           shadowRoots: [
-            { nodeName: "SPAN", nodeType: 1, children: [{ nodeType: 3, nodeValue: "shadow" }] },
+            {
+              nodeName: "#shadow-root",
+              nodeType: 11,
+              children: [
+                { nodeName: "SPAN", nodeType: 1, children: [{ nodeType: 3, nodeValue: "shadow" }] },
+              ],
+            },
           ],
         },
         {
           nodeName: "IFRAME",
           nodeType: 1,
+          // contentDocument 是 nodeType=9 的 #document 壳，children[0] 才是 <html>（#11）
           contentDocument: {
-            nodeName: "html",
-            nodeType: 1,
+            nodeName: "#document",
+            nodeType: 9,
             children: [
-              { nodeName: "P", nodeType: 1, children: [{ nodeType: 3, nodeValue: "inner" }] },
+              {
+                nodeName: "html",
+                nodeType: 1,
+                children: [
+                  { nodeName: "P", nodeType: 1, children: [{ nodeType: 3, nodeValue: "inner" }] },
+                ],
+              },
             ],
           },
         },

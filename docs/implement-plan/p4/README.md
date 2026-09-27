@@ -157,4 +157,19 @@ batch2 槽位 P4b）。core 522→587 例全绿（新增 65：子件 16 + 连接
 - 踩坑记录：validateAndFix 规则 7 正则初版丢前导 `/`（已修）；switch_tab 的
   activateTarget 曾笔误复数（对照源码 3641 修正）。
 
+#### 评审轮 1（review-p4-browser-1.json，2026-09-27）
+
+25 文件 16m17s，**12 条意见（自评 high 5 / medium 4 / low 3）**——P1 1（合并计）/ P2 7 / P3 1 + 驳回 2 + 同题合并 2（#4≡#9、#11≡#12）。采纳 10、驳回 2、stale 0。修复 8 处，core 588→592 例。
+
+**采纳（含三处「Python 上游同款缺陷、TS 修复并登记」）**：
+- **#11/#12（P1）** html-source 伪节点壳：contentDocument（#document/9）与 shadowRoots 条目（#shadow-root/11）直落「非元素即丢弃」恒返空——Python html_source.py @640d52a 同款缺陷（头注承诺的递归带出从未生效）。解壳拼接 children；测试 fixture 改真实协议形状。
+- **#7（P2）** scroll 改读 `cssLayoutViewport`：cssVisualViewport 是 VisualViewport 形状（width/height）无 clientWidth/Height，Python :3558-3560 同款缺口（滚动量恒走 1000px 兜底）。
+- **#3（P2）** 下载 url 改在 downloadWillBegin 捕获：downloadProgress 协议无 url/filePath（Python :1907-1915 同款缺口）；pendingDownloads 存 {filename, url}，path 恒 null。
+- **#8（P2）** tabs 的 Target.* 浏览器级命令改不绑 sessionId（Python 同款无绑定；我移植时错绑——关当前 tab 后死 session 全链失败）。回归锚：unbound 断言。
+- **#1（P2）** reconnect 后按 downloadsPath 重建下载追踪（Python :1856-1874 同款缺口）。**#2（P2）** start 失败回滚半连接态（与 reconnect 失败不变量对齐）。**#4/#9（P2）** fileChooserOpened 监听先解订再注册（switchTab 重发命令但监听单份——冻结单例纪律）。**#10（P3 顺手修）** 截图 race 计时器成功后 clearTimeout。
+
+**驳回（保真优先）**：
+- **#5**（getBoxModel 坐标系须减滚动偏移）：Python :2518-2535 逐字节同款无换算，且 getContentQuads/getBoxModel 同属 DOM 域几何；建议改动是无证据的偏离——留 4.6 真机观察点。
+- **#6**（组合键 char 事件应带 modifiers）：Python :3480-3506 与 browser-use 同源逐字节一致（char 不带 modifiers），行为断言无法离线证实——留 4.6 真机验证点（send_keys ctrl+a 变体）。
+
 ### feat/p4-policy-smoke（4.5+4.6，未开始）
