@@ -135,4 +135,8 @@
 
 9 文件 6m35s，**2 条意见均为 P3 级（low/maintainability，gen-anchors.py 死代码：未使用 `import sys` + 未调用 `dump()`）**，0 P1/P2。两条核实属实且满足「改动极小 + 当轮触碰文件」顺手修条件 → 采纳实施；修复后脚本复跑 fixture 零差异验证。采纳 2 / 驳回 0 / stale 0。
 
+#### 评审轮 2（review-p4-foundation-2.json，2026-09-27，增量基线 36afc15）
+
+状态 `skipped: no items were selected`——增量 diff 仅含 .py 工具脚本与 README 文本，rule.json include（真实代码）未选中条目，0 意见。语义等同「本轮无 P1/P2」；与轮 1 连续两轮无 P1/P2，**循环收敛终止**。累计：2 轮，2 条意见（全 P3），采纳 2 / 驳回 0 / stale 0，无 P3 backlog 遗留。分支 6 提交待合并。
+
 ### feat/p4-browser（4.2，未开始）
