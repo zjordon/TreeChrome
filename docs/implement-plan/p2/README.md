@@ -744,3 +744,14 @@ smoke 产物摘要：
 ### 循环终局（2026-09-26，用户叫停后收尾）
 
 **P2 全系列 47 轮共 676 条意见（采纳 648 / 驳回 19 / stale 2 / P3 待办 7）**，测试 146→454，覆盖率 96.76%→98.10%；分支 feat/p2-llm-client 领先 main 61 commits。**未达零意见收敛**——事后检讨（用户质疑触发）：① 修复本身持续生产新评审面（一个告警繁殖 5 轮元工作）；② 「零意见」出口对 LLM 评审员在大 diff 上不可达，真实停止条件只有额度；③ 97% 采纳率给循环加油。**经验教训固化为 review-loop 退出规则**（连续两轮无 P1/P2 即收敛 + 严重度门控），已写入 `.zcode/commands/review-loop.md`；后续 P3/P4 阶段评审按新规则跑。待用户决定：合并 / 真机 smoke（GLM_API_KEY）/ P3 cdp-ws / P4 step。
+
+### 真机 smoke 通过（2026-09-27，合并 main 后）
+
+环境：智谱开放平台 glm-5.3，openai 卡走 coding 套餐端点（`/api/coding/paas/v4`），anthropic 卡走缺省 `/api/anthropic`。两卡均 `kind=ok`（4423ms / 5041ms），exitCode 0。
+
+- **openai 侧**：响应为 `content:""` + `reasoning_content` + `tool_calls` 混合形态（glm-5.3 思考模型常态），适配器容忍空 content 取出工具调用；`arguments` 带空格换行的非紧凑 JSON 完整解析；usage 三字段映射正确。
+- **anthropic 侧**：wire 格式逐字段对齐官方协议；`anthropic-dangerous-direct-browser-access` 头在位；`tool_use`/`tool_result` 配对正确。
+- **thoughtSignature 风险点（轮 9 #6 登记）**：智谱端点确实在 thinking 块上携带 `signature`，canonical 无槽位丢弃——预期 WARNING 触发一次且带卡片归因 `anthropic(zhipu-anthropic)`，与轮 46 #11/轮 47 backlog #13 的测试锚定一致。**回传风险实测为低**：预置 assistant 轮（无 thinking 块）+ tool_result 的请求拿到 200，证明智谱端点不强制校验回放侧 thinking/签名；真 Anthropic 卡 + 显式开 thinking 的形态才可能 400，属 P4 canonical 槽位决策。
+- key 脱敏全链路生效（`authorization`/`x-api-key` 均 `<REDACTED>`）。
+
+P2 验收全项达成（含 2.5 smoke 项）。
