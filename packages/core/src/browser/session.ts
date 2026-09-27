@@ -23,7 +23,7 @@ import {
   unsubscribeAllEvents,
 } from "./connection.js";
 import { getPageHtml } from "./dom-access.js";
-import { clickElement } from "./element-pointer.js";
+import { clickElement, getElementCoordinates, isElementOccluded } from "./element-pointer.js";
 import { evalFunctionOnNode, executeJs } from "./evaluate-basic.js";
 import { readGridMeta } from "./grid-meta.js";
 import { HighlightManager } from "./highlight.js";
@@ -46,6 +46,7 @@ import type {
   BrowserEvent,
   BrowserSessionSettings,
   BrowserStateSummary,
+  DOMRect,
   StorageState,
   TabInfo,
 } from "./views.js";
@@ -425,6 +426,14 @@ export class BrowserSession {
   }
   sendKeys(keys: string): Promise<void> {
     return sendKeys(this.context(), keys);
+  }
+  /** 三级回退坐标（actionability 探测/几何归一化消费） */
+  getElementCoordinates(backendNodeId: number): Promise<DOMRect | null> {
+    return getElementCoordinates(this.context(), backendNodeId);
+  }
+  /** elementFromPoint 运行时遮挡（actionability L3 消费） */
+  isElementOccluded(backendNodeId: number, x: number, y: number): Promise<boolean> {
+    return isElementOccluded(this.context(), backendNodeId, x, y);
   }
   getTabs(): Promise<TabInfo[]> {
     return getTabs(this.context());

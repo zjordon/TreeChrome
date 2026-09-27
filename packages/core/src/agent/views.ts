@@ -7,6 +7,8 @@
 
 import { isRecord, type ModelOutput, normalizeModelOutput } from "./action-shape.js";
 
+export type { ModelOutput } from "./action-shape.js";
+
 /** Python f"{success}" 的字面量渲染（prompt 保真） */
 function pyBool(value: boolean | null): string {
   if (value === true) return "True";
@@ -157,12 +159,12 @@ export interface AgentHistoryInit {
  */
 function copyModelOutputForHistory(mo: ModelOutput): ModelOutput {
   const moCopy: ModelOutput = { ...mo };
-  const actions = moCopy["actions"];
+  const actions = moCopy.actions;
   if (Array.isArray(actions)) {
-    moCopy["actions"] = actions.map((a) => (isRecord(a) ? { ...a } : a));
+    moCopy.actions = actions.map((a) => (isRecord(a) ? { ...a } : a));
   }
-  const act = moCopy["action"];
-  if (isRecord(act)) moCopy["action"] = { ...act };
+  const act = moCopy.action;
+  if (isRecord(act)) moCopy.action = { ...act };
   return moCopy;
 }
 
