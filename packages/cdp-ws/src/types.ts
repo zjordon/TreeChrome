@@ -35,3 +35,10 @@ export interface SocketLike {
 /** 宽松对象谓词（wire 消费子集哲学：容忍未知字段，只判形态） */
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** page target 的标签页信息（getTabs 产物，02 §2.3） */
+export interface TabInfo {
+  targetId: string;
+  url: string;
+  title: string;
+}

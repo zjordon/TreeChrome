@@ -44,3 +44,14 @@ export class CdpTimeoutError extends CdpError {
     this.name = "CdpTimeoutError";
   }
 }
+
+/** Page.navigate 失败（errorText 仅在导航失败时存在——CDP 契约，02 §2.2） */
+export class CdpNavigationError extends CdpError {
+  readonly errorText: string;
+
+  constructor(errorText: string) {
+    super(`导航失败：${errorText}`);
+    this.name = "CdpNavigationError";
+    this.errorText = errorText;
+  }
+}
