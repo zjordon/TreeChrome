@@ -8,7 +8,12 @@ import { errText, mapNavigationError, navigateHealthCheck } from "./shared/nav-h
 
 export function createNavigateHandler(ctx: ToolsContext): ActionHandler {
   return async (params: Record<string, unknown>, browser: ToolsBrowser) => {
-    let url = String(params.url ?? "");
+    // 必填守卫（Python params["url"] KeyError → execute 包装 error 的等价补偿）：
+    // 漏传若落到 String(undefined ?? "") 会导航 "https://" 空目标
+    if (typeof params.url !== "string") {
+      return new ActionResult({ error: "navigate requires a string `url` parameter." });
+    }
+    let url = params.url;
     if (!(url.startsWith("http://") || url.startsWith("https://"))) {
       url = "https://" + url;
     }

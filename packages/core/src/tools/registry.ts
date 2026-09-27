@@ -40,7 +40,10 @@ export function fnmatchLike(name: string, pattern: string): boolean {
     else if (c === "[") {
       let j = i + 1;
       let negated = false;
-      if (pattern[j] === "!" || pattern[j] === "^") {
+      // 否定前缀仅认 `!`（POSIX fnmatch 语义）——类内 `^` 是字面量字符
+      //（venv 实测：fnmatch('a^c', 'a[^x]c') 与 fnmatch('axc', 'a[^x]c') 均 True，
+      // `[^x]` = 类 {^, x}，非否定类）
+      if (pattern[j] === "!") {
         negated = true;
         j++;
       }
@@ -63,12 +66,13 @@ export function fnmatchLike(name: string, pattern: string): boolean {
   return new RegExp(`^${re}$`, "s").test(name);
 }
 
+/**
+ * 类内容转义：仅 `\` `]` `^`（^ 在 RegExp 类首会被当否定，须字面化）。`-` 不转义
+ * ——保留 `[0-9]` 范围语义（Python fnmatch.translate 同款；`[a-]`/`[-a]` 的字面
+ * `-` 位置 RegExp 本身按字面处理，无需特判）。
+ */
 function escapeClass(cls: string): string {
-  return cls
-    .replace(/\\/g, "\\\\")
-    .replace(/\]/g, "\\]")
-    .replace(/\^/g, "\\^")
-    .replace(/-/g, "\\-");
+  return cls.replace(/\\/g, "\\\\").replace(/\]/g, "\\]").replace(/\^/g, "\\^");
 }
 
 /** schema 深拷贝摘除字段（properties + required；变体 B done 对 LLM 隐藏 success/files_to_display） */
@@ -129,8 +133,9 @@ export class ActionRegistry {
     action: Omit<RegisteredAction, "pagePatterns"> & { pagePatterns?: string[] | null },
   ): void {
     this.actions.set(action.name, {
-      pagePatterns: null,
       ...action,
+      // ?? 归一：显式传 undefined（宿主透传可空配置的常见形态）不得覆盖 null 哨兵
+      pagePatterns: action.pagePatterns ?? null,
     });
   }
 
@@ -151,14 +156,9 @@ export class ActionRegistry {
           (includeActions === null || includeActions.includes(name)),
       )
       .sort();
-    const actionDescriptions: Record<string, string> = {};
-    const paramsByAction: Record<string, unknown> = {};
-    for (const name of actionNames) {
-      const act = this.actions.get(name);
-      if (act === undefined) continue;
-      actionDescriptions[name] = act.description;
-      paramsByAction[name] = paramJsonSchema(act.params);
-    }
+    // 注：Python registry.py:110-116 同样收集 action_descriptions/params_by_action
+    // 但从未消费（原样死代码）——TS 侧不移植死代码；参数细节经
+    // getActionDescriptionsText 输出，tool schema 的 params 是通用 object 描述
 
     const actionProperty: Record<string, unknown> = {
       type: "object",

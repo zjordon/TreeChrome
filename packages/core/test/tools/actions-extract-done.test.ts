@@ -19,6 +19,19 @@ async function exec(
 const LONG_TEXT = "word ".repeat(4000); // 20k chars——够大结果阈值（10000）
 
 describe("extract", () => {
+  it("漏传 query → error（Python KeyError 等价；防空 query 白烧 LLM）", async () => {
+    const { tools, ctx } = makeTools();
+    let called = 0;
+    ctx.extractClient = {
+      extract: async () => {
+        called += 1;
+        return "r";
+      },
+    };
+    const r = await exec(tools, new FakeBrowser(), "extract", {});
+    expect(r.error).toBe("extract requires a string `query` parameter.");
+    expect(called).toBe(0);
+  });
   it("空页面 → (empty page)", async () => {
     const { tools } = makeTools();
     const browser = new FakeBrowser();

@@ -76,47 +76,31 @@ describe("capability 映射（04 §1.1 batch1 面）", () => {
 
 describe("validateParams 错误文案锚定（pydantic v2 实跑样例）", () => {
   const modelOf = (name: string): ParamModel => ACTION_DEFINITIONS[name].params;
-  for (const [key, anchor] of Object.entries(FIXTURE.validate)) {
-    const [actionName, ...rest] = key.split("-");
-    // 用例键形如 "click-both-missing"——还原动作名（含下划线动作取最后一段反查）
-    it(`${key}`, () => {
-      // 动作名 = 去掉最后一段后的前缀（click-both-missing → click；find-elements-max-range → find_elements）
-      const segs = key.split("-");
-      const candidates = [
-        "find_elements",
-        "select_dropdown",
-        "sendkeys",
-        "switchtab",
-        "navigate",
-        "click",
-        "scroll",
-        "extract",
-        "wait",
-        "dropdown",
-        "done",
-        "screenshot",
-        "evaluate",
-      ];
-      let action = "";
-      for (let i = segs.length - 1; i >= 1; i--) {
-        const prefix = segs.slice(0, i).join("-");
-        const norm =
-          prefix === "find-elements"
-            ? "find_elements"
-            : prefix === "dropdown"
-              ? "select_dropdown"
-              : prefix === "sendkeys"
-                ? "send_keys"
-                : prefix === "switchtab"
-                  ? "switch_tab"
-                  : prefix;
-        if (ACTION_DEFINITIONS[norm] !== undefined) {
-          action = norm;
-          break;
-        }
+  /** 用例键形如 "click-both-missing"——按段前缀还原动作名（find_elements 等下划线动作取多段） */
+  const actionOf = (key: string): string => {
+    const segs = key.split("-");
+    for (let i = segs.length - 1; i >= 1; i--) {
+      const prefix = segs.slice(0, i).join("-");
+      const norm =
+        prefix === "find-elements"
+          ? "find_elements"
+          : prefix === "dropdown"
+            ? "select_dropdown"
+            : prefix === "sendkeys"
+              ? "send_keys"
+              : prefix === "switchtab"
+                ? "switch_tab"
+                : prefix;
+      if (ACTION_DEFINITIONS[norm] !== undefined) {
+        return norm;
       }
+    }
+    return "";
+  };
+  for (const [key, anchor] of Object.entries(FIXTURE.validate)) {
+    it(`${key}`, () => {
+      const action = actionOf(key);
       expect(action).not.toBe("");
-      void rest;
       const result = validateParams(modelOf(action), anchor.input);
       if (anchor.error === null) {
         expect(result.ok).toBe(true);
@@ -175,6 +159,51 @@ describe("validateParams 语义补充（fixture 外的关键边界）", () => {
     expect(r.ok && r.value.already_collected).toEqual([" a ", "b"]);
     const r2 = validateParams(extract, { query: "q", already_collected: ["", "  "] });
     expect(r2.ok && r2.value.already_collected).toBe(null);
+  });
+  it("布尔字段 lax 数值强转：1/0/1.0 接受，2 报 bool_parsing 分档文案（venv 实测）", () => {
+    const nav = ACTION_DEFINITIONS.navigate.params;
+    expect(validateParams(nav, { url: "https://x", new_tab: 1 }).ok).toBe(true);
+    expect(validateParams(nav, { url: "https://x", new_tab: 0 }).ok).toBe(true);
+    expect(validateParams(nav, { url: "https://x", new_tab: 1.0 }).ok).toBe(true);
+    const bad = validateParams(nav, { url: "https://x", new_tab: 2 });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) {
+      expect(bad.errors).toEqual([
+        "new_tab: Input should be a valid boolean, unable to interpret input",
+      ]);
+    }
+    const badObj = validateParams(nav, { url: "https://x", new_tab: {} });
+    if (!badObj.ok) {
+      expect(badObj.errors).toEqual(["new_tab: Input should be a valid boolean"]);
+    }
+  });
+  it("数组 integer 元素 lax 强转值回写（清洗值 = [42, 7]，venv 实测对齐）", () => {
+    const model: ParamModel = {
+      name: "Ids",
+      fields: [{ name: "ids", type: "array", items: { type: "integer" }, defaultEmptyList: true }],
+    };
+    const r = validateParams(model, { ids: ["42", 7] });
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.value.ids).toEqual([42, 7]);
+    const bad = validateParams(model, { ids: ["42", "x"] });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok)
+      expect(bad.errors).toEqual([
+        "ids.1: Input should be a valid integer, unable to parse string as an integer",
+      ]);
+  });
+  it("容器本层类型错误 loc 单级（`{loc}: {msg}`，非 `.` 拼接——venv 实测 pydantic 形态）", () => {
+    const done = ACTION_DEFINITIONS.done.params;
+    const r = validateParams(done, { text: "ok", files_to_display: "report.pdf" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors).toEqual(["files_to_display: Input should be a valid list"]);
+    const shot = ACTION_DEFINITIONS.screenshot.params;
+    const r2 = validateParams(shot, { clip: "0,0,100,200" });
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.errors).toEqual(["clip: Input should be a valid dictionary"]);
+    // 嵌套子层错误仍走 `.` 形态（fixture 锚定 screenshot-clip-nested）
+    const r3 = validateParams(shot, { clip: { x: 0, y: 0, width: -1, height: 10 } });
+    if (!r3.ok) expect(r3.errors).toEqual(["clip.width: Input should be greater than 0"]);
   });
   it("非对象输入整体拒绝", () => {
     const r = validateParams(ACTION_DEFINITIONS.wait.params, "nope" as unknown);

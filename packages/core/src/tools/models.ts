@@ -81,6 +81,8 @@ const MSG_INT_TYPE = "Input should be a valid integer";
 const MSG_NUMBER_FROM_STRING = "Input should be a valid number, unable to parse string as a number";
 const MSG_NUMBER_TYPE = "Input should be a valid number";
 const MSG_BOOL_TYPE = "Input should be a valid boolean";
+/** pydantic bool_parsing：number/string 形态存在但无法解释（0/1/"true" 之外） */
+const MSG_BOOL_PARSING = "Input should be a valid boolean, unable to interpret input";
 const MSG_DICT_TYPE = "Input should be a valid dictionary";
 const MSG_LIST_TYPE = "Input should be a valid list";
 const msgGe = (n: number) => `Input should be greater than or equal to ${n}`;
@@ -100,9 +102,17 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** pydantic lax 布尔强转（"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"，大小写不敏感） */
+/**
+ * pydantic lax 布尔强转：数值 0/1（含 1.0）与 "true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"
+ * （大小写不敏感）——venv 实测 2 / "2" 不接受（bool_parsing 错误另档文案）
+ */
 function laxBool(v: unknown): boolean | undefined {
   if (typeof v === "boolean") return v;
+  if (typeof v === "number") {
+    if (v === 1) return true;
+    if (v === 0) return false;
+    return undefined;
+  }
   if (typeof v === "string") {
     const s = v.trim().toLowerCase();
     if (["true", "yes", "on", "1"].includes(s)) return true;
@@ -111,7 +121,11 @@ function laxBool(v: unknown): boolean | undefined {
   return undefined;
 }
 
-type FieldErrors = { ok: false; errors: string[] };
+type FieldErrors = {
+  ok: false;
+  errors: string[] /** errors 是否为子层错误（自带 `{subloc}: ` 前缀，外层拼 `.`）；本层类型错误为 false（外层拼 `: `） */;
+  childErrors?: boolean;
+};
 type FieldOk = { ok: true; value: unknown };
 
 /**
@@ -160,7 +174,15 @@ function validateField(field: FieldSpec, raw: unknown): FieldOk | FieldErrors {
     }
     case "boolean": {
       const b = laxBool(raw);
-      if (b === undefined) return { ok: false, errors: [MSG_BOOL_TYPE] };
+      if (b === undefined) {
+        // 文案分档（pydantic 同款）：number/string 是「无法解释」，其余是类型不符
+        return {
+          ok: false,
+          errors: [
+            typeof raw === "number" || typeof raw === "string" ? MSG_BOOL_PARSING : MSG_BOOL_TYPE,
+          ],
+        };
+      }
       return { ok: true, value: b };
     }
     case "object": {
@@ -184,11 +206,13 @@ function validateField(field: FieldSpec, raw: unknown): FieldOk | FieldErrors {
               errs.push(`${i}: ${r.errors.join("; ")}`);
               continue;
             }
+            out.push(r.value); // lax 清洗值（"42"→42），对齐 pydantic model_validate 产物
+            continue;
           }
         }
         out.push(item);
       }
-      if (errs.length > 0) return { ok: false, errors: errs };
+      if (errs.length > 0) return { ok: false, errors: errs, childErrors: true };
       if (field.dropEmptyItems) {
         const kept = out.filter((item) => typeof item === "string" && item.trim() !== "");
         return { ok: true, value: kept.length > 0 ? kept : null };
@@ -200,7 +224,7 @@ function validateField(field: FieldSpec, raw: unknown): FieldOk | FieldErrors {
       if (model === undefined) return { ok: true, value: raw };
       if (!isPlainObject(raw)) return { ok: false, errors: [MSG_DICT_TYPE] };
       const r = validateParams(model, raw);
-      if (!r.ok) return { ok: false, errors: r.errors };
+      if (!r.ok) return { ok: false, errors: r.errors, childErrors: true };
       return { ok: true, value: r.value };
     }
   }
@@ -240,12 +264,11 @@ export function validateParams(model: ParamModel, raw: unknown): ValidateResult 
     if (r.ok) {
       value[field.name] = r.value;
     } else {
-      // 容器字段（ref/array）的子错误自带 `{subloc}: {msg}` 形 loc，外层拼 `.`；
-      // 标量拼 `: `（对齐 pydantic "{loc}: {msg}"）
+      // 子层错误（ref/array 的嵌套 loc）拼 `.`；本层类型错误拼 `: `（pydantic 单级
+      // loc 实跑形态：files_to_display 传字符串 → "files_to_display: Input should be
+      // a valid list"，clip 传字符串 → "clip: Input should be a valid dictionary"）
       for (const e of r.errors) {
-        errors.push(
-          field.type === "ref" || field.type === "array" ? `${loc}.${e}` : `${loc}: ${e}`,
-        );
+        errors.push(r.childErrors === true ? `${loc}.${e}` : `${loc}: ${e}`);
       }
     }
   }

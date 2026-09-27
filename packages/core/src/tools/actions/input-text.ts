@@ -32,7 +32,12 @@ export function createInputTextHandler(ctx: ToolsContext): ActionHandler {
       return new ActionResult({ error: `Element ${resolvedIndex} not found in DOM state` });
     }
     const backendId = entry.backendNodeId;
-    const text = String(params.text ?? "");
+    // 必填守卫（Python params["text"] KeyError → execute 包装 error 的等价补偿）：
+    // 漏传/非串若落到 String(undefined ?? "") 会以 clear 默认值静默清空字段（数据损坏）
+    if (typeof params.text !== "string") {
+      return new ActionResult({ error: "input_text requires a string `text` parameter." });
+    }
+    const text = params.text;
     const clear = params.clear === undefined ? true : params.clear === true;
 
     // 1. Focus: highlight -> click_element（映射 bool 信号；聚焦失败不静默成功）

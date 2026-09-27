@@ -109,6 +109,13 @@ describe("navigate", () => {
       "(data-grid render kick applied — frozen grid rows forced to render; if rows still look empty, take a screenshot)",
     );
   });
+  it('必填参数守卫（Python params["x"] KeyError 等价）：漏 url 不导航空目标', async () => {
+    const { tools } = makeTools();
+    const browser = new FakeBrowser();
+    const r = await exec(tools, browser, "navigate", {});
+    expect(r.error).toBe("navigate requires a string `url` parameter.");
+    expect(browser.navigations).toEqual([]);
+  });
   it("settle 异常降级放行（settle 失败不阻断导航）", async () => {
     const { tools } = makeTools();
     const browser = new FakeBrowser();
@@ -268,6 +275,15 @@ describe("input_text", () => {
     const r = await exec(tools, new FakeBrowser(), "input_text", { text: "x" });
     expect(r.error).toBe("input_text requires exactly one of `index` or `element_id`.");
   });
+  it("漏传 text → error 且不清空字段（Python KeyError 等价；数据损坏防线）", async () => {
+    const { tools } = makeTools();
+    const browser = new FakeBrowser();
+    browser.selectorMapEntries.set(2, makeNode({ backendNodeId: 2, nodeName: "INPUT" }));
+    const r = await exec(tools, browser, "input_text", { index: 2 });
+    expect(r.error).toBe("input_text requires a string `text` parameter.");
+    expect(browser.cleared).toBe(0); // 未走到 clearTextField——原值未被销毁
+    expect(browser.typed).toEqual([]);
+  });
   it("聚焦失败显式 error", async () => {
     const { tools } = makeTools();
     const browser = new FakeBrowser();
@@ -343,11 +359,14 @@ describe("scroll / wait / send_keys / go_back / switch_tab", () => {
     expect(sleeps).toEqual([5000]);
     expect(r.render()).toBe("OK");
   });
-  it("send_keys 回显与失败", async () => {
+  it("send_keys 回显与失败；漏传 keys → error", async () => {
     const { tools } = makeTools();
     const browser = new FakeBrowser();
     const r = await exec(tools, browser, "send_keys", { keys: "Control+a" });
     expect(r.extractedContent).toBe("Sent keys 'Control+a'");
+    const rMissing = await exec(tools, browser, "send_keys", {});
+    expect(rMissing.error).toBe("send_keys requires a string `keys` parameter.");
+    expect(browser.sentKeys).toEqual(["Control+a"]);
     browser.sendKeysError = new Error("dispatch failed");
     const r2 = await exec(tools, browser, "send_keys", { keys: "Enter" });
     expect(r2.error).toBe("Send keys failed: dispatch failed");
@@ -363,7 +382,7 @@ describe("scroll / wait / send_keys / go_back / switch_tab", () => {
     const r2 = await exec(tools, browser2, "go_back", {});
     expect(r2.extractedContent).toBe("Navigated back to https://prev.example");
   });
-  it("switch_tab：未命中列出现有页；撞车报多匹配；命中切换", async () => {
+  it("switch_tab：未命中列出现有页；撞车报多匹配；命中切换；漏传 tab_id → error", async () => {
     const { tools } = makeTools();
     const browser = new FakeBrowser();
     browser.tabs = [
@@ -371,6 +390,8 @@ describe("scroll / wait / send_keys / go_back / switch_tab", () => {
       { targetId: "BBB2222", url: "https://b.example", title: "B" },
       { targetId: "CCC3333", url: "https://c.example", title: "C" },
     ];
+    const rMissing = await exec(tools, browser, "switch_tab", {});
+    expect(rMissing.error).toBe("switch_tab requires a string `tab_id` parameter.");
     const r = await exec(tools, browser, "switch_tab", { tab_id: "9999" });
     expect(r.error).toContain("No tab ending with '9999'. Open tabs: [1111] A - https://a.example");
     const r2 = await exec(tools, browser, "switch_tab", { tab_id: "" });

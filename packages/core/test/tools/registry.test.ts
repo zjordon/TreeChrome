@@ -128,8 +128,38 @@ describe("fnmatchLike", () => {
     expect(fnmatchLike("abc", "a[!bd]c")).toBe(false);
     expect(fnmatchLike("a.b/c", "*")).toBe(true); // * 含 /
   });
+  it("类内 ^ 是字面量而非否定（POSIX fnmatch 仅认 !；venv 实测 a^c 与 axc 都匹配 a[^x]c）", () => {
+    expect(fnmatchLike("a^c", "a[^x]c")).toBe(true);
+    expect(fnmatchLike("axc", "a[^x]c")).toBe(true); // {^,x} 类的 x 成员命中
+    expect(fnmatchLike("ayc", "a[^x]c")).toBe(false);
+  });
+  it("类内 - 保留范围语义（[0-9] 范围，非字面三点集合）", () => {
+    expect(fnmatchLike("page-42", "page-[0-9]*")).toBe(true);
+    expect(fnmatchLike("page-x", "page-[0-9]*")).toBe(false);
+    expect(fnmatchLike("a", "[a-]")).toBe(true); // 字面 - 的尾位形态（单字符类 {a,-}）
+    expect(fnmatchLike("-", "[a-]")).toBe(true);
+    expect(fnmatchLike("b", "[a-]")).toBe(false);
+    expect(fnmatchLike("-", "[-a]")).toBe(true);
+    expect(fnmatchLike("a", "[-a]")).toBe(true);
+  });
   it("大小写敏感（POSIX 恒定语义——偏离登记见实现头注释）", () => {
     expect(fnmatchLike("ABC", "abc")).toBe(false);
+  });
+});
+
+describe("register 契约", () => {
+  it("pagePatterns 显式 undefined 不覆盖 null 哨兵（?? 归一）", () => {
+    const registry = makeRegistry();
+    registry.register({
+      name: "custom",
+      description: "d",
+      params: { name: "P", fields: [] },
+      handler: async () => null,
+      terminatesSequence: false,
+      pagePatterns: undefined,
+    });
+    // undefined 若泄漏进哨兵判定会在 actionAvailable 的 .some 上 TypeError——能正常产出即通过
+    expect(registry.getActionDescriptionsText("https://example.com/x")).toContain("custom");
   });
 });
 

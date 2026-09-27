@@ -8,7 +8,12 @@ import { summarizeTabs } from "./shared/element-lookup.js";
 
 export function createSwitchTabHandler(ctx: ToolsContext): ActionHandler {
   return async (params: Record<string, unknown>, browser) => {
-    const tabIdSuffix = String(params.tab_id ?? "");
+    // 必填守卫（Python params["tab_id"] KeyError 的等价补偿）：漏传若落到
+    // String(undefined ?? "") 的空后缀 endswith("") 恒真——匹配全部标签页
+    if (typeof params.tab_id !== "string") {
+      return new ActionResult({ error: "switch_tab requires a string `tab_id` parameter." });
+    }
+    const tabIdSuffix = params.tab_id;
     const tabs = await browser.getTabs();
     const matches = tabs.filter((t) => t.targetId.endsWith(tabIdSuffix));
     if (matches.length === 0) {

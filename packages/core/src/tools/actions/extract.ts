@@ -12,7 +12,12 @@ import { errText } from "./shared/nav-health.js";
 
 export function createExtractHandler(ctx: ToolsContext): ActionHandler {
   return async (params: Record<string, unknown>, browser: ToolsBrowser) => {
-    const query = String(params.query ?? "");
+    // 必填守卫（Python params["query"] KeyError 的等价补偿）：漏传若落到
+    // String(undefined ?? "") 会对空 query 白烧一次 LLM 抽取调用
+    if (typeof params.query !== "string") {
+      return new ActionResult({ error: "extract requires a string `query` parameter." });
+    }
+    const query = params.query;
     const extractLinks = params.extract_links === undefined ? true : params.extract_links === true;
     const extractImages =
       params.extract_images === undefined ? true : params.extract_images === true;

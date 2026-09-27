@@ -42,7 +42,11 @@ export function createWaitHandler(ctx: ToolsContext): ActionHandler {
 
 export function createSendKeysHandler(ctx: ToolsContext): ActionHandler {
   return async (params: Record<string, unknown>, browser) => {
-    const keys = String(params.keys ?? "");
+    // 必填守卫（Python params["keys"] KeyError → execute 包装 error 的等价补偿）
+    if (typeof params.keys !== "string") {
+      return new ActionResult({ error: "send_keys requires a string `keys` parameter." });
+    }
+    const keys = params.keys;
     try {
       await browser.sendKeys(keys);
     } catch (e) {
