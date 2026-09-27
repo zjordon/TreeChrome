@@ -139,4 +139,22 @@
 
 状态 `skipped: no items were selected`——增量 diff 仅含 .py 工具脚本与 README 文本，rule.json include（真实代码）未选中条目，0 意见。语义等同「本轮无 P1/P2」；与轮 1 连续两轮无 P1/P2，**循环收敛终止**。累计：2 轮，2 条意见（全 P3），采纳 2 / 驳回 0 / stale 0，无 P3 backlog 遗留。分支 6 提交待合并。
 
-### feat/p4-browser（4.2，未开始）
+### feat/p4-browser（4.2，2026-09-27）
+
+提交 e8708c4：session.py 5081 行按 01 §2 映射落成 16 模块 + Facade（batch1 方法面全量，
+batch2 槽位 P4b）。core 522→587 例全绿（新增 65：子件 16 + 连接 12 + 交互 27 + Facade 10），
+覆盖率 92.89%/分支 88.04%。对计划的小偏离与实施要点：
+
+- **CdpTransport 拆卸方法定名 `stop()`**（01 §1 预留项落地）：cdp-ws 公共面是 `stop()`，
+  契约测试（`CdpWsClient extends CdpTransport` 编译期断言）倒逼 core 接口对齐，零适配层。
+- **evaluate-basic 含 `evaluateScript`（单发路径）**：settle/kick/grid-meta 需要 evaluate 通道，
+  取增强版 evaluate 的无 args/elements 子集；语法自愈重试接线留 P4b（02 §7 边界不变）。
+- **连接自愈=重试工厂一次**（无 url 比较——discover 语义在宿主工厂内，Python 的
+  `_rediscover_ws_url` 无宿主中立对应物）；失败抛**原始**握手异常。
+- **downloadsPath 必须显式传入**：Python 的 env/~/Downloads 回退属宿主职责（核心包禁 ambient）。
+- Facade 上下文装订为单一 ctx 对象（getter/setter 直达会话字段），模块收 `SessionInternals`
+  首参——Python `self` 的显式化；时序（click 50/80/300ms 等）经注入 sleep 断言。
+- 踩坑记录：validateAndFix 规则 7 正则初版丢前导 `/`（已修）；switch_tab 的
+  activateTarget 曾笔误复数（对照源码 3641 修正）。
+
+### feat/p4-policy-smoke（4.5+4.6，未开始）
