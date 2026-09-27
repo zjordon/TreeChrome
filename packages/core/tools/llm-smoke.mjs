@@ -143,10 +143,10 @@ const MESSAGES = [
 // 同源字面量另见 test/llm/openai.test.ts（openai 卡片）/ test/llm/anthropic.test.ts
 // （anthropic 卡片）——端点/型号变更时两处需同步（核心 src 无缺省端点，无第三源，
 // 轮 42 #2 登记；tools/ 不在 vitest include，交叉引用只能靠注释维系）
-const DEFAULT_OPENAI_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
+const DEFAULT_OPENAI_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4";
 const DEFAULT_ANTHROPIC_BASE_URL = "https://open.bigmodel.cn/api/anthropic";
-const DEFAULT_OPENAI_MODEL = "glm-4.7";
-const DEFAULT_ANTHROPIC_MODEL = "glm-5.1";
+const DEFAULT_OPENAI_MODEL = "glm-5.3";
+const DEFAULT_ANTHROPIC_MODEL = "glm-5.3";
 const DEFAULT_SMOKE_TIMEOUT_MS = 60_000;
 
 // 截断展示单源（轮 42 #3）：请求体与响应体两处共用——800 字面量散落会漏改致

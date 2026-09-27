@@ -12,9 +12,9 @@ import type { MockResponseSpec } from "./mock-fetch.js";
 const CARD: ProviderConfig = {
   name: "glm-openai",
   protocol: "openai-completions",
-  baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+  baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
   apiKey: "sk-test",
-  model: "glm-4.7",
+  model: "glm-5.3",
   maxTokens: 8192,
 };
 
@@ -96,13 +96,13 @@ describe("请求构造（canonical → wire）", () => {
       toolChoice: { kind: "forced", name: "agent_response" },
     });
 
-    expect(mock.calls[0].url).toBe("https://open.bigmodel.cn/api/paas/v4/chat/completions");
+    expect(mock.calls[0].url).toBe("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions");
     expect(mock.calls[0].init.headers).toEqual({
       "content-type": "application/json",
       authorization: "Bearer sk-test",
     });
     expect(mock.lastBody()).toEqual({
-      model: "glm-4.7",
+      model: "glm-5.3",
       messages: [
         { role: "system", content: "You are an agent." },
         { role: "user", content: "hi" },
@@ -1084,7 +1084,7 @@ describe("错误映射与 testConnection", () => {
       status: 200,
       body: { choices: [{ message: { content: "hi" }, finish_reason: "stop" }] },
     });
-    await expect(ok.provider.testConnection()).resolves.toEqual({ ok: true, model: "glm-4.7" });
+    await expect(ok.provider.testConnection()).resolves.toEqual({ ok: true, model: "glm-5.3" });
 
     const bad = setup();
     bad.mock.queueMany({ status: 401, body: { error: { message: "no" } } });

@@ -19,7 +19,7 @@ const CARD: ProviderConfig = {
   protocol: "anthropic-messages",
   baseUrl: "https://open.bigmodel.cn/api/anthropic",
   apiKey: "sk-test",
-  model: "glm-5.1",
+  model: "glm-5.3",
   // ≠ DEFAULT_MAX_TOKENS(16384)：与「NaN 回退 DEFAULT」用例形成「卡片直通 vs 回退缺省」区分度（轮 21 #1）
   maxTokens: 4096,
 };
@@ -86,7 +86,7 @@ describe("请求构造（canonical → wire）", () => {
       "anthropic-dangerous-direct-browser-access": "true",
     });
     expect(mock.lastBody()).toEqual({
-      model: "glm-5.1",
+      model: "glm-5.3",
       max_tokens: 4096,
       system: "You are an agent.",
       messages: [
@@ -305,7 +305,7 @@ describe("请求构造（canonical → wire）", () => {
 
   it("baseUrl 以 /v1 结尾 → 一次性 WARNING（OpenAI 形态误配 /v1/v1/messages → 404 的根因留证据，轮 23 #1）", async () => {
     const { mock, logs, provider } = setupLogs({
-      baseUrl: "https://open.bigmodel.cn/api/paas/v4/v1",
+      baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4/v1",
     });
     mock.queueMany(toolOk({}), toolOk({}));
     const req: ChatRequest = {
@@ -900,7 +900,7 @@ describe("testConnection", () => {
         usage: undefined,
       },
     });
-    await expect(ok.provider.testConnection()).resolves.toEqual({ ok: true, model: "glm-5.1" });
+    await expect(ok.provider.testConnection()).resolves.toEqual({ ok: true, model: "glm-5.3" });
 
     const bad = setup();
     bad.mock.queueMany({ status: 401, body: { error: { message: "bad key" } } });
