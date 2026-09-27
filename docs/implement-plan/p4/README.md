@@ -75,7 +75,17 @@
 
 ## 6. 任务拆分与顺序
 
-分支约定：`feat/p4-core` 单分支，按工作项提交（评审循环授权同 P3 惯例）。每项完成跑 `node scripts/gate.mjs pre-commit`。
+分支约定（2026-09-27 评审后修订：**单分支改 5 段闸门**——P2/P3 评审循环实证 diff 体量是收敛质量的第一变量，P4 全量单分支不可评审）：按下表 5 个分支串行实施，每段独立走完「开分支（自最新 main）→ 按工作项提交 → `/review-loop --from main --to <branch>` → 合并 --no-ff → 删分支」，下一段从更新后的 main 开。段内提交粒度不变（笔笔过门）。4.2 若评审体量失控可再对半拆（纯子件先行 / Facade+交互族后行），预先不拆死。
+
+| 分支 | 覆盖工作项 | 体量 |
+|---|---|---|
+| `feat/p4-foundation` | 4.0 架构修订+类型基座 + 4.1 EventBus | ~0.75d |
+| `feat/p4-browser` | 4.2 browser 层 | 2.5~3d |
+| `feat/p4-tools` | 4.3 tools 层 + llm 扩面 | 1.5~2d |
+| `feat/p4-agent` | 4.4 agent 层 | 2~2.5d |
+| `feat/p4-policy-smoke` | 4.5 policy 门 + 4.6 真机 smoke | ~1.25~1.5d |
+
+每项完成跑 `node scripts/gate.mjs pre-commit`。
 
 | # | 工作项 | 内容 | 验收 | 预估 | 依赖 |
 |---|---|---|---|---|---|

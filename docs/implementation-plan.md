@@ -61,7 +61,7 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 2. 快照审查——**已做**（漂移清单与架构修订清单见 `docs/implement-plan/p4/README.md` §2：五阶段行号全漂、#194 infra 三层退避与 #197 双梯重试为架构文档未载的新机制、§10 缺 session.py 等 11 个映射行、§5.2 缺 scroll 行）；
 3. 基准 commit——**`640d52a`**（P5 parity 对照以此为 Python 侧版本）。
 
-内容按架构 §3.1/§3.3：step pipeline 五阶段、10 核心动作（四元组含 capability）、prompts、消息管理、守卫链（权限门挂点）、Judge、BrowserSession Facade（P3 遗留的 session.py 语义）。**P2 已完成的 llm 目录直接并入**（P4 补 `extract`/`structuredCall` 扩面）。详细实施计划（browser 层 16 模块拆分 / tools 双批动作边界 / 五阶段逐阶段契约 / policy+events / 测试与 smoke，2026-09-27）见 `docs/implement-plan/p4/`——对拍基准双层同 P3：文档冻结契约与有意偏离，Python @ `640d52a` 冻结行为语义。**动作分两批**：P4 = 10 核心动作为验收门；batch2 十五动作（含 evaluate 增强通道——评测 Tier1 依赖）独立 P4b（P5 前置，预估 4~5d）。预估 8~9.75d，分支 `feat/p4-core`。
+内容按架构 §3.1/§3.3：step pipeline 五阶段、10 核心动作（四元组含 capability）、prompts、消息管理、守卫链（权限门挂点）、Judge、BrowserSession Facade（P3 遗留的 session.py 语义）。**P2 已完成的 llm 目录直接并入**（P4 补 `extract`/`structuredCall` 扩面）。详细实施计划（browser 层 16 模块拆分 / tools 双批动作边界 / 五阶段逐阶段契约 / policy+events / 测试与 smoke，2026-09-27）见 `docs/implement-plan/p4/`——对拍基准双层同 P3：文档冻结契约与有意偏离，Python @ `640d52a` 冻结行为语义。**动作分两批**：P4 = 10 核心动作为验收门；batch2 十五动作（含 evaluate 增强通道——评测 Tier1 依赖）独立 P4b（P5 前置，预估 4~5d）。预估 8~9.75d，**5 段闸门分支串行**（2026-09-27 评审定：`feat/p4-foundation`（4.0+4.1）→ `feat/p4-browser`（4.2）→ `feat/p4-tools`（4.3）→ `feat/p4-agent`（4.4）→ `feat/p4-policy-smoke`（4.5+4.6），每段独立评审循环 + --no-ff 合并 + 删分支——P2/P3 实证小 diff 是评审收敛的第一变量；详见 p4/README §6）。
 
 ## P5+ （不展开，见架构 §9）
 
