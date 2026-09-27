@@ -139,4 +139,41 @@
 
 状态 `skipped: no items were selected`——增量 diff 仅含 .py 工具脚本与 README 文本，rule.json include（真实代码）未选中条目，0 意见。语义等同「本轮无 P1/P2」；与轮 1 连续两轮无 P1/P2，**循环收敛终止**。累计：2 轮，2 条意见（全 P3），采纳 2 / 驳回 0 / stale 0，无 P3 backlog 遗留。分支 6 提交待合并。
 
-### feat/p4-browser（4.2，未开始）
+### feat/p4-browser（4.2，2026-09-27）
+
+提交 e8708c4：session.py 5081 行按 01 §2 映射落成 16 模块 + Facade（batch1 方法面全量，
+batch2 槽位 P4b）。core 522→587 例全绿（新增 65：子件 16 + 连接 12 + 交互 27 + Facade 10），
+覆盖率 92.89%/分支 88.04%。对计划的小偏离与实施要点：
+
+- **CdpTransport 拆卸方法定名 `stop()`**（01 §1 预留项落地）：cdp-ws 公共面是 `stop()`，
+  契约测试（`CdpWsClient extends CdpTransport` 编译期断言）倒逼 core 接口对齐，零适配层。
+- **evaluate-basic 含 `evaluateScript`（单发路径）**：settle/kick/grid-meta 需要 evaluate 通道，
+  取增强版 evaluate 的无 args/elements 子集；语法自愈重试接线留 P4b（02 §7 边界不变）。
+- **连接自愈=重试工厂一次**（无 url 比较——discover 语义在宿主工厂内，Python 的
+  `_rediscover_ws_url` 无宿主中立对应物）；失败抛**原始**握手异常。
+- **downloadsPath 必须显式传入**：Python 的 env/~/Downloads 回退属宿主职责（核心包禁 ambient）。
+- Facade 上下文装订为单一 ctx 对象（getter/setter 直达会话字段），模块收 `SessionInternals`
+  首参——Python `self` 的显式化；时序（click 50/80/300ms 等）经注入 sleep 断言。
+- 踩坑记录：validateAndFix 规则 7 正则初版丢前导 `/`（已修）；switch_tab 的
+  activateTarget 曾笔误复数（对照源码 3641 修正）。
+
+#### 评审轮 1（review-p4-browser-1.json，2026-09-27）
+
+25 文件 16m17s，**12 条意见（自评 high 5 / medium 4 / low 3）**——P1 1（合并计）/ P2 7 / P3 1 + 驳回 2 + 同题合并 2（#4≡#9、#11≡#12）。采纳 10、驳回 2、stale 0。修复 8 处，core 588→592 例。
+
+**采纳（含三处「Python 上游同款缺陷、TS 修复并登记」）**：
+- **#11/#12（P1）** html-source 伪节点壳：contentDocument（#document/9）与 shadowRoots 条目（#shadow-root/11）直落「非元素即丢弃」恒返空——Python html_source.py @640d52a 同款缺陷（头注承诺的递归带出从未生效）。解壳拼接 children；测试 fixture 改真实协议形状。
+- **#7（P2）** scroll 改读 `cssLayoutViewport`：cssVisualViewport 是 VisualViewport 形状（width/height）无 clientWidth/Height，Python :3558-3560 同款缺口（滚动量恒走 1000px 兜底）。
+- **#3（P2）** 下载 url 改在 downloadWillBegin 捕获：downloadProgress 协议无 url/filePath（Python :1907-1915 同款缺口）；pendingDownloads 存 {filename, url}，path 恒 null。
+- **#8（P2）** tabs 的 Target.* 浏览器级命令改不绑 sessionId（Python 同款无绑定；我移植时错绑——关当前 tab 后死 session 全链失败）。回归锚：unbound 断言。
+- **#1（P2）** reconnect 后按 downloadsPath 重建下载追踪（Python :1856-1874 同款缺口）。**#2（P2）** start 失败回滚半连接态（与 reconnect 失败不变量对齐）。**#4/#9（P2）** fileChooserOpened 监听先解订再注册（switchTab 重发命令但监听单份——冻结单例纪律）。**#10（P3 顺手修）** 截图 race 计时器成功后 clearTimeout。
+
+**驳回（保真优先）**：
+- **#5**（getBoxModel 坐标系须减滚动偏移）：Python :2518-2535 逐字节同款无换算，且 getContentQuads/getBoxModel 同属 DOM 域几何；建议改动是无证据的偏离——留 4.6 真机观察点。
+- **#6**（组合键 char 事件应带 modifiers）：Python :3480-3506 与 browser-use 同源逐字节一致（char 不带 modifiers），行为断言无法离线证实——留 4.6 真机验证点（send_keys ctrl+a 变体）。
+
+#### 评审轮 2（review-p4-browser-2.json，2026-09-27，增量基线 504c256）
+
+状态 `skipped: no items were selected`——轮 1 修复提交即分支 tip，增量为空（0 文件 0 意见，零成本跳过）。按空增量条款计为无 P1/P2 轮；分支此后无新提交则后续轮增量必然为空，「连续两轮无 P1/P2」判据必然满足——**循环收敛终止**。累计：2 轮，12 条意见（P1 1/P2 7/P3 1/驳回 2），采纳 10、驳回 2、stale 0，无 P3 backlog 遗留（#10 已顺手修）。注意：轮 1 修复提交本身未独立过 LLM 评审（增量机制以修复提交为基线，属设计行为）；修复面均为轮 1 评审员建议的同域改动且 592 例全绿。分支 4 提交待合并。驳回的 #5/#6 两个真机验证点已并入 4.6 smoke 清单。
+
+### feat/p4-policy-smoke（4.5+4.6，未开始）

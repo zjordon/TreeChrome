@@ -31,6 +31,8 @@ export {
   SENSITIVE_ACTION_FIELDS,
   StepMetadata,
 } from "./agent/views.js";
+// —— P4.2 browser 层（p4/01 §7 导出面）——
+export * from "./browser/index.js";
 export type { EventBusOptions } from "./events/event-bus.js";
 // —— P4.1 观测事件（p4/04 §4）——
 export { EventBus } from "./events/event-bus.js";
@@ -60,6 +62,7 @@ export {
   toolCallEvent,
   toolResultEvent,
 } from "./events/events.js";
+
 export type { GetActionOptions, GetActionResult } from "./llm/client.js";
 // resolveChatHttpTimeoutMs 为内部决策函数不进公共导出面（防签名调整成 breaking
 // change）；测试锚定直接从 ./llm/client.js 深层导入（同 config/types 测试惯例）

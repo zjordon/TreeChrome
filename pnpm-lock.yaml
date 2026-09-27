@@ -31,7 +31,14 @@ importers:
         version: 3.2.7(@types/node@22.20.3)
 
   packages/core:
+    dependencies:
+      '@tw/dom-snapshot':
+        specifier: workspace:*
+        version: link:../dom-snapshot
     devDependencies:
+      '@tw/cdp-ws':
+        specifier: workspace:*
+        version: link:../cdp-ws
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.3
