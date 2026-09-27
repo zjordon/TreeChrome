@@ -242,7 +242,10 @@ export async function gateUncertainSuccessDone(
     typeof response.evaluation_previous_goal === "string" ? response.evaluation_previous_goal : "";
   const memText = typeof response.memory === "string" ? response.memory : "";
   const textParam = typeof params.text === "string" ? params.text : "";
-  const hits = scanUncertaintyMarkers(evalText, memText) || scanUncertaintyKeywords(textParam);
+  // Python `or`（空列表 falsy）语义：自评无命中才扫 text 关键词——JS [] 恒真，
+  // `||` 会让右侧永不执行（done.text 的 not sure 等关键词漏检）
+  const markerHits = scanUncertaintyMarkers(evalText, memText);
+  const hits = markerHits.length > 0 ? markerHits : scanUncertaintyKeywords(textParam);
   if (hits.length === 0) return response;
   ctx.state.doneGateUses += 1;
   ctx.log(

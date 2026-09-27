@@ -45,6 +45,9 @@ export interface AgentOptions {
   skillSource?: StepCtx["skillSource"] | null;
   /** 观测事件总线（null = 关观测——偏离 5：订阅装配在宿主） */
   eventBus?: EventBus | null;
+  /** judge 独立评审 LLM（对应 JudgeSettings.model 非空的独立模型卡；缺省复用主 llm
+   *  ——Python AGENT_JUDGE_MODEL 装载独立卡的宿主侧等价注入口） */
+  judgeLlm?: LLMClient | null;
   /** I/O 注入（测试） */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   now?: () => number;
@@ -174,7 +177,7 @@ export class Agent implements StepCtx {
     this.fs = options.fs ?? null;
     this.rerunHistoryDir = options.rerunHistoryDir ?? "rerun-history";
     this.waitBetweenActionsS = 0; // Python 读 BrowserSettings.waitBetweenActions——宿主经 browser 设置传入
-    this.judge = s.judge.enabled ? new JudgeEvaluator(this.llm, s.judge) : null;
+    this.judge = s.judge.enabled ? new JudgeEvaluator(options.judgeLlm ?? this.llm, s.judge) : null;
     this.historyMessageProvider = () => this.buildAgentHistoryDescription();
 
     this.systemPrompt = buildSystemPrompt(
@@ -283,6 +286,10 @@ export class Agent implements StepCtx {
   }
 
   pause(): void {
+    // 幂等短路：重复 pause 不得覆盖 run() 正在等待的 gate——旧 promise 的
+    // resolver 会随覆盖丢失（resume/stop 只释放新 gate），run 永久挂起且
+    // finally 的 browser.stop 不执行。Python asyncio.Event.clear 天然幂等。
+    if (this.state.paused) return;
     this.state.paused = true;
     this.resumeGate = new Promise((resolve) => {
       this.resumeRelease = resolve;

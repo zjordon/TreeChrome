@@ -23,7 +23,27 @@ export interface JudgeLLM {
     userPrompt: string;
     tool?: ToolDefinition | null;
     maxTokens?: number;
+    /** 03 §8：judge 单次调用 60s 超时语义（超时 → judge 返 null 不挂任务） */
+    callTimeoutMs?: number | null;
   }): Promise<import("../llm/types.js").ChatResponse>;
+}
+
+/** judge 单次调用超时（03 §8 冻结契约：60s 级；LLMCallTimeoutError 由 catch 兜住返 null） */
+const JUDGE_CALL_TIMEOUT_MS = 60_000;
+
+/** codegen 产物 {name, description, input_schema} → ToolDefinition（parameters 映射，
+ *  与 think.ts toolDef 同款——漏映射会使适配器契约校验抛违例、judge 静默失效） */
+function judgeToolDef(): ToolDefinition {
+  const schema = JUDGE_TOOL_SCHEMA as {
+    name?: unknown;
+    description?: unknown;
+    input_schema?: unknown;
+  };
+  return {
+    name: String(schema.name ?? "agent_response"),
+    description: String(schema.description ?? ""),
+    parameters: (schema.input_schema ?? {}) as Record<string, unknown>,
+  };
 }
 
 export class JudgeEvaluator {
@@ -47,7 +67,8 @@ export class JudgeEvaluator {
         const response = await this.llm.singleShot({
           systemPrompt: JUDGE_SYSTEM_PROMPT,
           userPrompt,
-          tool: JUDGE_TOOL_SCHEMA as unknown as ToolDefinition,
+          tool: judgeToolDef(),
+          callTimeoutMs: JUDGE_CALL_TIMEOUT_MS,
         });
         for (const block of response.toolCalls) {
           if (block.name === "agent_response") {

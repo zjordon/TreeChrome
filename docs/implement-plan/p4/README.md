@@ -279,4 +279,21 @@ selected`）——按空增量条款计为无 P1/P2 轮，不空跑评审；分�
   脚本化 + FakeAgentBrowser，覆盖双梯/门禁/分罪四分支/守卫链/消息管理/视觉
   门/judge/skill/压缩器）；覆盖率 92.61%/分支 85.09%。
 
+#### 评审轮 1（review-p4-agent-1.json，2026-09-27）
+
+51 文件 19m0s，**7 条意见（自评 critical 1 / high 4 / medium 2）**——裁决 P1 3 / P2 3 / 驳回 1，采纳 6、驳回 1、stale 0。修复 6 处，core 839→848 例（覆盖率 92.74%/85.27%）。
+
+**采纳（P1）**：
+- **#4** judge 工具 schema 形态错配：JUDGE_TOOL_SCHEMA 是 codegen 的 `{name, description, input_schema}`（Python dict 形），`as unknown as ToolDefinition` 后 parameters=undefined → 真实 LLMClient 路径在适配器契约校验处抛违例、judge 的 catch 静默吞掉——**judge 复核在真实执行路径整体失效**。judge.ts 内做 `input_schema→parameters` 映射（think.ts toolDef 同款）。
+- **#2** pause() 重复触发丢 resolver 死锁：run() 挂在旧 gate 上时再次 pause 会覆盖 gate+resolver，resume/stop 只释放新 gate → run 永久挂起且 finally 的 browser.stop 不执行。幂等短路（Python asyncio.Event.clear 天然幂等）。
+- **#5** `||` 在 JS 数组上恒真：`scanUncertaintyMarkers(...) || scanUncertaintyKeywords(text)` 的右侧永不执行（Python or 空列表 falsy 才落右侧）——done.text 含 "not sure" 等关键词漏检、不完整结果被标成功。改 `.length > 0` 判空。
+**采纳（P2）**：
+- **#1** 覆盖率排除失真：`src/agent/skills/types.ts` 含 catalogLine/renderTaskCard 两个运行时函数（不是纯类型文件），排除使门禁失真；`src/tools/context.ts` 路径不存在（实际是 `src/tools/actions/context.ts`）。纠正 exclude + 补两函数测试（catalogLine 锚定 fixture catalogLines）。
+- **#6** JudgeSettings.model 注释宣称「空串=复用主 llm」但无注入口：AgentOptions 增 judgeLlm（Python AGENT_JUDGE_MODEL 装载独立卡的宿主侧等价注入口），缺省回落主 llm。
+- **#7** judge 调用缺 03 §8 冻结的 60s 超时（端点挂起时 run() 永不返回）：JudgeLLM 接口补 callTimeoutMs + 调用处传 60_000（超时 → catch → null，"Judge 失败不挂任务"语义保持）。
+**驳回**：
+- **#3**（run 循环 `<=` off-by-one 多跑一步）：Python agent.py:314 逐字符同款 `while self.state.n_steps <= self.max_steps`——force-done 在 maxSteps-1 与循环上界 maxSteps 的组合是上游自身语义，TS 保真移植（评测步数口径以 Python 为准）。
+
+三处行为级修复（#4/#5/#2）双向验证：临时还原旧实现确认新用例必红再还原。
+
 ### feat/p4-policy-smoke（4.5+4.6，未开始）
