@@ -254,11 +254,6 @@ async function main() {
   const { server, baseUrl } = await startServer();
   console.log(`[smoke] 静态页服务：${baseUrl}（policy=${opts.policy}）`);
 
-  const launched = launchChrome(opts);
-  console.log(`[smoke] 已拉起 headless Chrome（port=${opts.port}）`);
-  const ver = await waitVersion(opts.port);
-  const wsUrl = ver.webSocketDebuggerUrl;
-
   const failures = [];
   const check = (cond, label) => {
     if (cond) console.log(`  ok ${label}`);
@@ -270,8 +265,16 @@ async function main() {
 
   let bus = null;
   let browser = null;
+  let launched = null;
 
   try {
+    // 拉起/就绪等待在 try 内（评审轮 1 #1）：路径不存在/waitVersion 超时的早退路径
+    // 同样要收口——server 句柄会吊住事件循环挂起进程，残留 Chrome 占调试端口污染
+    // 后续运行
+    launched = launchChrome(opts);
+    console.log(`[smoke] 已拉起 headless Chrome（port=${opts.port}）`);
+    const ver = await waitVersion(opts.port);
+    const wsUrl = ver.webSocketDebuggerUrl;
     // transport 工厂计数 = 零重连断言的观测面（自愈重连会二次调用工厂）
     let factoryCalls = 0;
     const transportFactory = async () => {
@@ -574,11 +577,14 @@ async function main() {
       // 会话已随异常路径拆卸——清理路径不抛
     }
     server.close();
-    launched.child.kill();
-    try {
-      rmSync(launched.profile, { recursive: true, force: true });
-    } catch {
-      // kill 后 Chrome 仍持有 profile 文件锁（Windows）：残留临时目录无害
+    // launched 可能尚未创建（launchChrome 抛错的早退路径）——空安全收口
+    launched?.child?.kill();
+    if (launched !== null) {
+      try {
+        rmSync(launched.profile, { recursive: true, force: true });
+      } catch {
+        // kill 后 Chrome 仍持有 profile 文件锁（Windows）：残留临时目录无害
+      }
     }
     console.log("[smoke] 已关闭本地服务与自拉起的 Chrome");
   }

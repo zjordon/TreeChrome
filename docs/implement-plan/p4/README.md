@@ -359,3 +359,15 @@ were selected`）——按空增量条款计为无 P1/P2 轮，不空跑评审�
 - 测试 848→892（+44：capability 决策表 17 / gate+policy 纯件与组合 16 / act 挂点集成 6 /
   LLM provider 注入 2 / types 不变量改写等 3）；覆盖率 93.04%/分支 85.51%；门禁
   pre-commit 全绿（exit 0）；两 smoke 变体真机 exitCode 0。
+
+#### 评审轮 1（review-p4-policy-smoke-1.json，2026-09-28）
+
+22 文件 19m51s，**1 条意见（自评 medium 1）**——裁决 P2 1，采纳 1、驳回 0、stale 0。
+
+**采纳（P2）**：
+- **#1** smoke 早退路径资源泄漏：launchChrome/waitVersion 原在 try 外，`--chrome` 路径
+  不存在时已 listen 的 HTTP server 句柄吊住事件循环（进程挂起不退出）；waitVersion 超时
+  时 Chrome 子进程与临时 profile 也不收口（残留实例占调试端口，后续运行会连到旧实例
+  污染结果）。修复：拉起与就绪等待纳入主 try（finally 统一空安全收口，launched 可为
+  null）。负路径实测：坏路径 10s 内 exitCode 1 且 server 已关；正路径 deny-once 变体
+  复验 exitCode 0。tools/ 脚本无单测面，以真机双路径行为验证代偿。
