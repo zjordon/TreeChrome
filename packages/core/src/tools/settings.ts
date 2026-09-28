@@ -62,6 +62,10 @@ export interface ToolsOptions {
   pageSettleStablePolls?: number;
   /** 宿主文件系统能力；未注入时落盘/附件降级 */
   fs?: FileSystemProvider | null;
+  /** 上传后页面级验证（Tools :765-767 缺省 True/1.5s/0.25s——P4b 段 2） */
+  uploadVerifyEnabled?: boolean;
+  uploadVerifyWaitMs?: number;
+  uploadVerifyIntervalMs?: number;
   /** wait 动作与健康检查用（缺省真实 setTimeout） */
   sleep?: (ms: number) => Promise<void>;
   log?: (message: string) => void;

@@ -1,7 +1,8 @@
 // Tools 编排器：注册表持有 + execute 分发（查名 → _flatten_params → handler →
 // 异常包 ActionResult{error}）。移植自 TreeWalker tools/actions.py 的 Tools 类
-// @640d52a（:723-830）。batch1 十动作 + P4b 段 1 十动作（_registerAll 对无 handler
-// 的动作跳过——段 2/3 增补后注册面继续扩维）。
+// @640d52a（:723-830）。batch1 十动作 + P4b 段 1 十动作 + 段 2 三动作（dropdown_options/
+// select_dropdown/upload_file；_registerAll 对无 handler 的动作跳过——段 3 增补后
+// 注册面继续扩维）。
 
 import { ActionResult } from "../../agent/views.js";
 import type { BrowserStateSummary } from "../../browser/views.js";
@@ -14,6 +15,7 @@ import { createClickHandler } from "./click.js";
 import { createCloseTabHandler } from "./close-tab.js";
 import type { ToolsContext } from "./context.js";
 import { createDoneHandler } from "./done.js";
+import { createDropdownOptionsHandler, createSelectDropdownHandler } from "./dropdown.js";
 import { createExtractHandler } from "./extract.js";
 import {
   createReadFileHandler,
@@ -30,8 +32,9 @@ import { createScrollHandler, createSendKeysHandler, createWaitHandler } from ".
 import { createSearchHandler } from "./search.js";
 import { createSearchPageHandler } from "./search-page.js";
 import { createSwitchTabHandler } from "./switch-tab.js";
+import { createUploadFileHandler } from "./upload-file.js";
 
-/** batch1 十动作 + P4b 段 1 十动作 handler 工厂（段 2/3 族在此扩维） */
+/** batch1 十 + P4b 段 1 十 + 段 2 三动作 handler 工厂（段 3 族在此扩维） */
 const HANDLER_FACTORIES: Record<string, (ctx: ToolsContext) => ActionHandler> = {
   navigate: createNavigateHandler,
   click: createClickHandler,
@@ -54,6 +57,10 @@ const HANDLER_FACTORIES: Record<string, (ctx: ToolsContext) => ActionHandler> = 
   write_file: createWriteFileHandler,
   read_file: createReadFileHandler,
   replace_file: createReplaceFileHandler,
+  // ── P4b 段 2（p4b/02）──
+  dropdown_options: createDropdownOptionsHandler,
+  select_dropdown: createSelectDropdownHandler,
+  upload_file: createUploadFileHandler,
 };
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -85,6 +92,9 @@ export class Tools {
       log: options.log ?? ((message) => console.info(message)),
       extractClient: null,
       extractionSchema: null,
+      uploadVerifyEnabled: options.uploadVerifyEnabled ?? true,
+      uploadVerifyWaitMs: options.uploadVerifyWaitMs ?? 1500,
+      uploadVerifyIntervalMs: options.uploadVerifyIntervalMs ?? 250,
       cachedBrowserState: null,
     };
     // 变体 B：outputModel 须在 _registerAll 前就位（registry 据此隐藏字段、注册变体参数模型）

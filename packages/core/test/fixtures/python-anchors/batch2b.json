@@ -1,0 +1,322 @@
+{
+  "js": {
+    "SELECT_OPTION_JS": "\nfunction(targetText) {\n    const element = this;\n    if (!element || element.tagName.toLowerCase() !== 'select') {\n        return { success: false, error: 'Element is not a <select>' };\n    }\n    const targetLower = (targetText || '').toLowerCase();\n    const options = Array.from(element.options);\n    for (const option of options) {\n        const textLower = (option.text || '').trim().toLowerCase();\n        const valueLower = (option.value || '').toLowerCase();\n        if (textLower === targetLower || valueLower === targetLower) {\n            const expectedValue = option.value;\n            element.focus();\n            element.value = expectedValue;\n            option.selected = true;\n            element.selectedIndex = option.index;\n            element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));\n            element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));\n            element.blur();\n            if (element.value !== expectedValue) {\n                return {\n                    success: false,\n                    error: 'Selection was set but reverted by page framework. The dropdown may require clicking.',\n                    selectionReverted: true,\n                    targetOption: { text: (option.text || '').trim(), value: expectedValue, index: option.index },\n                    availableOptions: options.map(o => ({ text: (o.text || '').trim(), value: o.value })),\n                };\n            }\n            return {\n                success: true,\n                message: `Selected option: ${(option.text || '').trim()} (value: ${option.value})`,\n                value: option.value,\n            };\n        }\n    }\n    return {\n        success: false,\n        error: `Option with text or value '${targetText}' not found in select element`,\n        availableOptions: options.map(o => ({ text: (o.text || '').trim(), value: o.value })),\n    };\n}\n",
+    "SELECT_OPTION_MULTI_JS": "\nfunction(targetTexts) {\n    const element = this;\n    if (!element || element.tagName.toLowerCase() !== 'select') {\n        return { success: false, error: 'Element is not a <select>' };\n    }\n    if (!element.multiple) {\n        return { success: false, error: 'Element is not a multi-select (no multiple attribute); pass a single value= instead' };\n    }\n    if (!Array.isArray(targetTexts) || targetTexts.length === 0) {\n        return { success: false, error: 'values must be a non-empty list' };\n    }\n    const targets = [];\n    // Set 去重（review1：普通对象做集合会被原型链污染——\"constructor\"/\"toString\"/\n    // \"__proto__\" 等键取到继承值恒 truthy，目标被静默丢弃不进 missed → 漏选仍报\n    // success，极端时清空全部选中）。空串目标过滤后 targets 仍须非空，否则\n    // 整组 selected=false 会清空既有选中并误报 \"Selected 0 options\"。\n    const seen = new Set();\n    for (const t of targetTexts) {\n        const k = (t || '').toLowerCase();\n        if (k && !seen.has(k)) { seen.add(k); targets.push(k); }\n    }\n    if (targets.length === 0) {\n        return { success: false, error: 'values must be a non-empty list' };\n    }\n    const options = Array.from(element.options);\n    const matches = function(o) {\n        const textLower = (o.text || '').trim().toLowerCase();\n        const valueLower = (o.value || '').toLowerCase();\n        return targets.indexOf(textLower) !== -1 || targets.indexOf(valueLower) !== -1;\n    };\n    const missed = targets.filter(function(t) {\n        return !options.some(function(o) {\n            return (o.text || '').trim().toLowerCase() === t || (o.value || '').toLowerCase() === t;\n        });\n    });\n    if (missed.length > 0) {\n        return {\n            success: false,\n            error: 'Options not found: ' + missed.join(', '),\n            missed: missed,\n            availableOptions: options.map(o => ({ text: (o.text || '').trim(), value: o.value })),\n        };\n    }\n    const matched = options.filter(matches);\n    element.focus();\n    for (const o of options) o.selected = matches(o);\n    element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));\n    element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));\n    element.blur();\n    const selectedNow = options.filter(o => o.selected);\n    if (!(matched.every(o => o.selected) && selectedNow.length === matched.length)) {\n        return {\n            success: false,\n            error: 'Selection was set but reverted by page framework.',\n            availableOptions: options.map(o => ({ text: (o.text || '').trim(), value: o.value, selected: o.selected })),\n        };\n    }\n    return {\n        success: true,\n        message: 'Selected ' + matched.length + ' options: ' + matched.map(o => (o.text || '').trim()).join(', '),\n        values: matched.map(o => o.value),\n    };\n}\n",
+    "SELECT_OPTION_CLICK_FALLBACK_JS": "\nfunction(optionIndex) {\n    const select = this;\n    if (!select || select.tagName.toLowerCase() !== 'select') return { success: false, error: 'Not a select element' };\n    const option = select.options[optionIndex];\n    if (!option) return { success: false, error: `Option not found at index ${optionIndex}` };\n    select.focus();\n    select.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));\n    select.selectedIndex = optionIndex;\n    option.selected = true;\n    option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));\n    select.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));\n    select.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));\n    select.blur();\n    if (select.value === option.value || select.selectedIndex === optionIndex) {\n        return { success: true, message: `Selected via click fallback: ${(option.text || '').trim()}`, value: option.value };\n    }\n    return { success: false, error: 'Click fallback also failed - framework may block all programmatic selection', finalValue: select.value, expectedValue: option.value };\n}\n",
+    "ARIA_OPTIONS_JS": "\nfunction() {\n    const root = this;\n    const role = root.getAttribute('role');\n    const isAriaContainer = ['listbox', 'menu', 'menubar', 'tree', 'grid'].indexOf(role) !== -1;\n    const hasAriaOptions = !!root.querySelector('[role=\"option\"],[role=\"menuitem\"]');\n    if (!isAriaContainer && !hasAriaOptions) return null;\n    const all = Array.from(root.querySelectorAll('[role=\"menuitem\"],[role=\"option\"]'));\n    const capped = all.slice(0, 200);\n    const mapped = capped.map(function(n) {\n        return {\n            text: (n.textContent || '').trim(),\n            value: n.getAttribute('data-value') || n.getAttribute('value') || (n.textContent || '').trim(),\n            selected: n.getAttribute('aria-selected') === 'true' || n.classList.contains('selected') || n.classList.contains('active'),\n        };\n    });\n    if (all.length > 200) {\n        mapped.push({text: '... (showing 200 of ' + all.length + ', use scroll/search_page for more)', value: '', selected: false});\n    }\n    return mapped;\n}\n",
+    "CUSTOM_CLASS_OPTIONS_JS": "\nfunction() {\n    const root = this;\n    if (!(root.classList.contains('dropdown') || root.classList.contains('ui'))) {\n        return null;\n    }\n    const all = Array.from(root.querySelectorAll('.item, .option, [data-value]'));\n    const capped = all.slice(0, 200);\n    const mapped = capped.map(function(n) {\n        return {\n            text: (n.textContent || '').trim(),\n            value: n.getAttribute('data-value') || n.getAttribute('value') || (n.textContent || '').trim(),\n            selected: n.classList.contains('selected') || n.classList.contains('active'),\n        };\n    });\n    if (all.length > 200) {\n        mapped.push({text: '... (showing 200 of ' + all.length + ', use scroll/search_page for more)', value: '', selected: false});\n    }\n    return mapped;\n}\n",
+    "COMBOBOX_OPTIONS_JS": "\nfunction() {\n    const combo = this;\n    const controlsId = combo.getAttribute('aria-controls') || combo.getAttribute('aria-owns');\n    if (!controlsId) return {options: [], listboxFound: false, error: 'no aria-controls/aria-owns'};\n    const listbox = document.getElementById(controlsId);\n    if (!listbox) return {options: [], listboxFound: false, error: 'listbox not found'};\n    const all = Array.from(listbox.querySelectorAll('[role=\"option\"], li'));\n    const capped = all.slice(0, 200);\n    const mapped = capped.map(function(n) {\n        return {\n            text: (n.textContent || '').trim(),\n            value: n.getAttribute('data-value') || n.getAttribute('value') || (n.textContent || '').trim(),\n            selected: n.getAttribute('aria-selected') === 'true' || n.classList.contains('selected'),\n        };\n    });\n    if (all.length > 200) {\n        mapped.push({text: '... (showing 200 of ' + all.length + ', use scroll/search_page for more)', value: '', selected: false});\n    }\n    return {options: mapped, listboxFound: true};\n}\n",
+    "SUBTREE_SEARCH_JS": "\nfunction(maxDepth) {\n    const start = this;\n    function readAria(el) {\n        const ns = Array.from(el.querySelectorAll('[role=\"menuitem\"],[role=\"option\"]')).slice(0, 200);\n        return ns.map(function(n) {\n            return {text: (n.textContent||'').trim(), value: n.getAttribute('data-value')||n.getAttribute('value')||(n.textContent||'').trim(), selected: n.getAttribute('aria-selected')==='true'||n.classList.contains('selected')};\n        });\n    }\n    function readCustom(el) {\n        const ns = Array.from(el.querySelectorAll('.item, .option, [data-value]')).slice(0, 200);\n        return ns.map(function(n) {\n            return {text: (n.textContent||'').trim(), value: n.getAttribute('data-value')||n.getAttribute('value')||(n.textContent||'').trim(), selected: n.classList.contains('selected')||n.classList.contains('active')};\n        });\n    }\n    function classify(el) {\n        if (el.querySelector('[role=\"option\"],[role=\"menuitem\"]')) return 'aria';\n        if ((el.classList.contains('dropdown') || el.classList.contains('ui')) && el.querySelector('.item,.option,[data-value]')) return 'custom';\n        return null;\n    }\n    var queue = [[start, 0]];\n    while (queue.length) {\n        var pair = queue.shift(); var el = pair[0]; var d = pair[1];\n        if (d > 0) {\n            var t = classify(el);\n            if (t === 'aria') return {options: readAria(el), source: 'child-depth-' + d};\n            if (t === 'custom') return {options: readCustom(el), source: 'child-depth-' + d};\n        }\n        if (d < maxDepth) {\n            for (var i = 0; i < el.children.length; i++) queue.push([el.children[i], d + 1]);\n        }\n    }\n    return {options: [], source: null};\n}\n",
+    "SET_ARIA_JS": "\nfunction(targetText) {\n    const root = this;\n    const role = root.getAttribute('role');\n    const isAriaContainer = ['listbox', 'menu', 'menubar', 'tree', 'grid'].indexOf(role) !== -1;\n    const hasAriaOptions = !!root.querySelector('[role=\"option\"],[role=\"menuitem\"]');\n    if (!isAriaContainer && !hasAriaOptions) {\n        return { success: false, error: 'Element is not an ARIA listbox/menu' };\n    }\n    const all = Array.from(root.querySelectorAll('[role=\"menuitem\"],[role=\"option\"]'));\n    const availableOptions = all.map(function(n) {\n        return { text: (n.textContent || '').trim(), value: n.getAttribute('data-value') || n.getAttribute('value') || (n.textContent || '').trim() };\n    });\n    const targetLower = (targetText || '').toLowerCase();\n    for (const item of all) {\n        const textLower = (item.textContent || '').trim().toLowerCase();\n        const valLower = (item.getAttribute('data-value') || item.getAttribute('value') || '').toLowerCase();\n        if (textLower === targetLower || valLower === targetLower) {\n            root.dispatchEvent(new Event('focus', { bubbles: true, cancelable: true }));\n            all.forEach(function(o) {\n                o.setAttribute('aria-selected', 'false');\n                o.classList.remove('selected');\n                o.classList.remove('active');\n            });\n            item.setAttribute('aria-selected', 'true');\n            item.classList.add('selected');\n            item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));\n            item.click();\n            item.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));\n            root.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));\n            const stuck = item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected') || item.classList.contains('active');\n            const chosenValue = item.getAttribute('data-value') || item.getAttribute('value') || (item.textContent || '').trim();\n            if (!stuck) {\n                return {\n                    success: false,\n                    error: 'Selection was set but not retained. The dropdown may require a different interaction.',\n                    targetOption: { text: (item.textContent || '').trim(), value: chosenValue },\n                    availableOptions: availableOptions,\n                };\n            }\n            return {\n                success: true,\n                message: `Selected option: ${(item.textContent || '').trim()} (value: ${chosenValue})`,\n                value: chosenValue,\n            };\n        }\n    }\n    return {\n        success: false,\n        error: `Option with text or value '${targetText}' not found in ARIA listbox/menu`,\n        availableOptions: availableOptions,\n    };\n}\n",
+    "SET_CUSTOM_JS": "\nfunction(targetText) {\n    const root = this;\n    if (!(root.classList.contains('dropdown') || root.classList.contains('ui'))) {\n        return { success: false, error: 'Element is not a custom-class dropdown' };\n    }\n    const all = Array.from(root.querySelectorAll('.item, .option, [data-value]'));\n    const availableOptions = all.map(function(n) {\n        return { text: (n.textContent || '').trim(), value: n.getAttribute('data-value') || n.getAttribute('value') || (n.textContent || '').trim() };\n    });\n    const targetLower = (targetText || '').toLowerCase();\n    for (const item of all) {\n        const textLower = (item.textContent || '').trim().toLowerCase();\n        const valLower = (item.getAttribute('data-value') || item.getAttribute('value') || '').toLowerCase();\n        if (textLower === targetLower || valLower === targetLower) {\n            root.dispatchEvent(new Event('focus', { bubbles: true, cancelable: true }));\n            all.forEach(function(o) { o.classList.remove('selected'); o.classList.remove('active'); });\n            item.classList.add('selected');\n            item.classList.add('active');\n            item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));\n            item.click();\n            item.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));\n            root.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));\n            const stuck = item.classList.contains('selected') || item.classList.contains('active');\n            const chosenValue = item.getAttribute('data-value') || item.getAttribute('value') || (item.textContent || '').trim();\n            if (!stuck) {\n                return {\n                    success: false,\n                    error: 'Selection was set but not retained. The dropdown may require a different interaction.',\n                    targetOption: { text: (item.textContent || '').trim(), value: chosenValue },\n                    availableOptions: availableOptions,\n                };\n            }\n            return {\n                success: true,\n                message: `Selected option: ${(item.textContent || '').trim()} (value: ${chosenValue})`,\n                value: chosenValue,\n            };\n        }\n    }\n    return {\n        success: false,\n        error: `Option with text or value '${targetText}' not found in custom dropdown`,\n        availableOptions: availableOptions,\n    };\n}\n",
+    "COMBOBOX_LISTBOX_ID_JS": "\nfunction() {\n    const combo = this;\n    const controlsId = combo.getAttribute('aria-controls') || combo.getAttribute('aria-owns');\n    if (!controlsId) return null;\n    return document.getElementById(controlsId);\n}\n",
+    "SET_COMBOBOX_OPTION_JS": "\nfunction(targetText) {\n    const listbox = this;\n    const all = Array.from(listbox.querySelectorAll('[role=\"option\"], li'));\n    const availableOptions = all.map(function(n) {\n        return { text: (n.textContent || '').trim(), value: n.getAttribute('data-value') || n.getAttribute('value') || (n.textContent || '').trim() };\n    });\n    if (!all.length) {\n        return { success: false, error: 'combobox listbox has no [role=option] or li', availableOptions: [] };\n    }\n    const targetLower = (targetText || '').toLowerCase();\n    for (const item of all) {\n        const textLower = (item.textContent || '').trim().toLowerCase();\n        const valLower = (item.getAttribute('data-value') || item.getAttribute('value') || '').toLowerCase();\n        if (textLower === targetLower || valLower === targetLower) {\n            all.forEach(function(o) { o.setAttribute('aria-selected', 'false'); });\n            item.setAttribute('aria-selected', 'true');\n            item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));\n            item.click();\n            item.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));\n            const stuck = item.getAttribute('aria-selected') === 'true';\n            const chosenValue = item.getAttribute('data-value') || item.getAttribute('value') || (item.textContent || '').trim();\n            if (!stuck) {\n                return {\n                    success: false,\n                    error: 'Combobox selection was set but not retained.',\n                    targetOption: { text: (item.textContent || '').trim(), value: chosenValue },\n                    availableOptions: availableOptions,\n                };\n            }\n            return {\n                success: true,\n                message: `Selected option: ${(item.textContent || '').trim()} (value: ${chosenValue})`,\n                value: chosenValue,\n            };\n        }\n    }\n    return {\n        success: false,\n        error: `Option with text or value '${targetText}' not found in combobox listbox`,\n        availableOptions: availableOptions,\n    };\n}\n",
+    "SUBTREE_LOCATE_JS": "\nfunction(maxDepth) {\n    const start = this;\n    function classify(el) {\n        if (el.querySelector('[role=\"option\"],[role=\"menuitem\"]')) return 'aria';\n        if ((el.classList.contains('dropdown') || el.classList.contains('ui')) && el.querySelector('.item,.option,[data-value]')) return 'custom';\n        return null;\n    }\n    var queue = [[start, 0]];\n    while (queue.length) {\n        var pair = queue.shift(); var el = pair[0]; var d = pair[1];\n        if (d > 0) {\n            var t = classify(el);\n            if (t) return { found: true, type: t, node: el, depth: d };\n        }\n        if (d < maxDepth) {\n            for (var i = 0; i < el.children.length; i++) queue.push([el.children[i], d + 1]);\n        }\n    }\n    return { found: false, type: null, node: null };\n}\n",
+    "EFFECTIVE_CLICK_TARGET_JS": "\nfunction() {\n    let node = this.parentElement;\n    let best = null;\n    for (let i = 0; i < 4 && node; i++, node = node.parentElement) {\n        const cls = (typeof node.className === 'string') ? node.className : '';\n        const role = node.getAttribute ? node.getAttribute('role') : null;\n        if (/(select|dropdown|combobox|picker)/i.test(cls) || role === 'combobox'\n            || (node.dataset && node.dataset.component)) {\n            best = node;\n        }\n    }\n    return best || this;\n}\n",
+    "CUSTOM_LISTBOX_DISCOVER_JS": "\nfunction() {\n    const trigger = this;\n    const OPTION_SEL = '[role=\"option\"],[role=\"menuitem\"],li,[data-value],.item,.option,[title]';\n    const ROLE_CONT = '[role=\"listbox\"],[role=\"menu\"],[role=\"menubar\"],[role=\"tree\"],[role=\"grid\"]';\n    const GEN_CONT = ROLE_CONT + ',ul,[class*=\"list\"],[class*=\"option\"],[class*=\"menu\"],[class*=\"portal\"],[class*=\"popover\"],[class*=\"dropdown\"]';\n\n    function visible(el) {\n        const cs = getComputedStyle(el);\n        if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return false;\n        const r = el.getBoundingClientRect();\n        return r.width > 0 || r.height > 0;\n    }\n    function isOptionList(el) {\n        if (!el || !visible(el)) return false;\n        return el.querySelectorAll(OPTION_SEL).length >= 2;\n    }\n    function searchScope(root) {\n        if (!root) return null;\n        const roleFirst = Array.from(root.querySelectorAll(ROLE_CONT)).filter(isOptionList);\n        if (roleFirst.length) return roleFirst[0];\n        if (root !== trigger && isOptionList(root)) return root;\n        const generic = Array.from(root.querySelectorAll(GEN_CONT)).filter(isOptionList);\n        return generic.length ? generic[0] : null;\n    }\n\n    const cid = trigger.getAttribute('aria-controls') || trigger.getAttribute('aria-owns');\n    if (cid) { const lb = document.getElementById(cid); if (lb && isOptionList(lb)) return lb; }\n\n    const scopes = [];\n    if (trigger.parentElement) scopes.push(trigger.parentElement);\n    const wrapper = trigger.parentElement\n        ? trigger.parentElement.closest('[class*=\"select\"],[class*=\"dropdown\"],[class*=\"combobox\"],[class*=\"picker\"],[data-component]')\n        : null;\n    if (wrapper && scopes.indexOf(wrapper) === -1) scopes.push(wrapper);\n    if (wrapper && wrapper.parentElement && scopes.indexOf(wrapper.parentElement) === -1)\n        scopes.push(wrapper.parentElement);\n    for (const sc of scopes) { const f = searchScope(sc); if (f) return f; }\n\n    const trect = trigger.getBoundingClientRect();\n    function edgeDist(r) {\n        const dx = Math.max(trect.left - r.right, r.left - trect.right, 0);\n        const dy = Math.max(trect.top - r.bottom, r.top - trect.bottom, 0);\n        return Math.hypot(dx, dy);\n    }\n    function pickFrom(sel) {\n        let best = null, bestD = Infinity;\n        const cands = document.querySelectorAll(sel);\n        for (let i = 0; i < cands.length; i++) {\n            const c = cands[i];\n            if (!isOptionList(c)) continue;\n            const d = edgeDist(c.getBoundingClientRect());\n            if (d < bestD) { bestD = d; best = c; }\n        }\n        return best;\n    }\n    return pickFrom(ROLE_CONT) || pickFrom(GEN_CONT);\n}\n",
+    "CUSTOM_OPEN_OPTIONS_JS": "\nfunction() {\n    const root = this;\n    const GEN_SEL = '[role=\"option\"],[role=\"menuitem\"],li,[data-value],.item,.option,[title]';\n    function readOne(n) {\n        const text = (n.textContent || '').replace(/\\s+/g, ' ').trim();\n        const value = n.getAttribute('data-value') || n.getAttribute('value')\n                      || n.getAttribute('title') || text;\n        const selected = n.getAttribute('aria-selected') === 'true'\n                         || n.classList.contains('selected')\n                         || n.classList.contains('active')\n                         || n.classList.contains('checked');\n        return { text: text, value: value, selected: selected };\n    }\n    const roleOpts = root.querySelectorAll('[role=\"option\"],[role=\"menuitem\"]');\n    const pool = roleOpts.length ? roleOpts : root.querySelectorAll(GEN_SEL);\n    const all = Array.from(pool);\n    const total = all.length;\n    const capped = all.slice(0, 200);\n    const mapped = capped.map(readOne);\n    if (total > 200) {\n        mapped.push({ text: '... (showing 200 of ' + total + ', use scroll/search_page for more)', value: '', selected: false });\n    }\n    return mapped;\n}\n",
+    "CUSTOM_FIND_OPTION_JS": "\nfunction(targetText) {\n    const root = this;\n    const GEN_SEL = '[role=\"option\"],[role=\"menuitem\"],li,[data-value],.item,.option,[title]';\n    function textOf(n) { return (n.textContent || '').replace(/\\s+/g, ' ').trim(); }\n    function valueOf(n) {\n        return n.getAttribute('data-value') || n.getAttribute('value') || n.getAttribute('title') || '';\n    }\n    const roleOpts = root.querySelectorAll('[role=\"option\"],[role=\"menuitem\"]');\n    const all = roleOpts.length ? roleOpts : root.querySelectorAll(GEN_SEL);\n    const tl = (targetText || '').toLowerCase();\n    for (const n of all) {\n        if (textOf(n).toLowerCase() === tl || valueOf(n).toLowerCase() === tl) return n;\n    }\n    if (tl.length >= 2) {\n        for (const n of all) {\n            if (textOf(n).toLowerCase().indexOf(tl) !== -1) return n;\n        }\n    }\n    return null;\n}\n",
+    "SCROLL_LISTBOX_JS": "\nfunction() {\n    const el = this;\n    if (el.scrollHeight <= el.clientHeight + 2) return false;\n    const before = el.scrollTop;\n    el.scrollTop = before + el.clientHeight;\n    if (el.scrollTop === before) return false;\n    el.dispatchEvent(new Event('scroll', { bubbles: true }));\n    return true;\n}\n"
+  },
+  "customScrollCap": 10,
+  "uploadProbeJs": "(() => {  const canvases = document.querySelectorAll('canvas').length;  let imgPreviews = 0;  for (const img of document.querySelectorAll('img')) {    const s = img.getAttribute('src') || img.src || '';    if (s.indexOf('blob:') === 0 || s.indexOf('data:') === 0) imgPreviews++;  }  const bgPreviews = document.querySelectorAll(\"[style*='blob:'],[style*='data:']\").length;  return JSON.stringify({ canvases: canvases, imgPreviews: imgPreviews, bgPreviews: bgPreviews });})()",
+  "uploadContextsJs": "(()=>{const norm=s=>(s||'').replace(/\\s+/g,' ').trim();const out=[];document.querySelectorAll('input[type=file]').forEach(inp=>{const labelText=norm(Array.from(inp.labels||[]).map(l=>l.textContent||'').join(' '));const ariaText=norm((inp.getAttribute('aria-labelledby')||'').split(/\\s+/).filter(Boolean).map(id=>document.getElementById(id)).filter(Boolean).map(el=>el.textContent||'').join(' '));let region='',p=inp.parentElement,depth=0;while(p&&depth<5&&!region){const t=norm(p.textContent||'');if(t&&t.length<200)region=t;p=p.parentElement;depth++;}const inDialog=!!(inp.closest('[role=dialog]')||inp.closest('[aria-modal=true]'));let a=inp.parentElement,affText='',affRole='',affTag='',affRect=null,d2=0;while(a&&d2<6&&!affText){const role=a.getAttribute('role');const click=a.tagName==='BUTTON'||role==='button'||a.tagName==='A'||a.tagName==='LABEL'||role==='link'||(window.getComputedStyle(a).cursor==='pointer');if(click){affText=norm(a.textContent||'');affRole=role||a.tagName.toLowerCase();affTag=a.tagName.toLowerCase();const ar=a.getBoundingClientRect();if(ar.width>0&&ar.height>0)affRect={x:ar.x,y:ar.y,width:ar.width,height:ar.height};}a=a.parentElement;d2++;}let cRect=null,c=inp.parentElement,d3=0;while(c&&d3<6){const r=c.getBoundingClientRect();if(r.width>0&&r.height>0){cRect={x:r.x,y:r.y,width:r.width,height:r.height};break;}c=c.parentElement;d3++;}out.push({accept:(inp.getAttribute('accept')||'').toLowerCase(),label_text:labelText,aria_text:ariaText,region_text:region,in_dialog:inDialog,affordance_text:affText,affordance_role:affRole,affordance_tag:affTag,affordance_rect:affRect,container_rect:cRect});});return out;})()",
+  "uploadContextOnElementJs": "function(){const inp=this;if(!inp||inp.tagName!=='INPUT'||(inp.type||'').toLowerCase()!=='file')return null;const norm=s=>(s||'').replace(/\\s+/g,' ').trim();const labelText=norm(Array.from(inp.labels||[]).map(l=>l.textContent||'').join(' '));const ariaText=norm((inp.getAttribute('aria-labelledby')||'').split(/\\s+/).filter(Boolean).map(id=>document.getElementById(id)).filter(Boolean).map(el=>el.textContent||'').join(' '));let region='',p=inp.parentElement,depth=0;while(p&&depth<5&&!region){const t=norm(p.textContent||'');if(t&&t.length<200)region=t;p=p.parentElement;depth++;}const inDialog=!!(inp.closest('[role=dialog]')||inp.closest('[aria-modal=true]'));let a=inp.parentElement,affText='',affRole='',affTag='',affRect=null,d2=0;while(a&&d2<6&&!affText){const role=a.getAttribute('role');const click=a.tagName==='BUTTON'||role==='button'||a.tagName==='A'||a.tagName==='LABEL'||role==='link'||(window.getComputedStyle(a).cursor==='pointer');if(click){affText=norm(a.textContent||'');affRole=role||a.tagName.toLowerCase();affTag=a.tagName.toLowerCase();const ar=a.getBoundingClientRect();if(ar.width>0&&ar.height>0)affRect={x:ar.x,y:ar.y,width:ar.width,height:ar.height};}a=a.parentElement;d2++;}let cRect=null,c=inp.parentElement,d3=0;while(c&&d3<6){const r=c.getBoundingClientRect();if(r.width>0&&r.height>0){cRect={x:r.x,y:r.y,width:r.width,height:r.height};break;}c=c.parentElement;d3++;}return {accept:(inp.getAttribute('accept')||'').toLowerCase(),label_text:labelText,aria_text:ariaText,region_text:region,in_dialog:inDialog,affordance_text:affText,affordance_role:affRole,affordance_tag:affTag,affordance_rect:affRect,container_rect:cRect};}",
+  "emptyDiagnostics": {
+    "aria": "Listbox/menu found but no [role=option] children (may need expanding).",
+    "custom": "Custom dropdown found but no .item/.option/[data-value] children (may need expanding).",
+    "combobox": "Combobox listbox found but empty (options may load on demand).",
+    "click-select": "Select element has no <option> children (may populate lazily — try dropdown_options again after the page settles).",
+    "custom-open": "Custom dropdown opened but no options found (may load on demand — retry after settle, or scroll)."
+  },
+  "inconclusiveAdvisory": "  ℹ️ File was set on the input successfully (DOM.setFileInputFiles returned OK). No new <canvas>/<img> preview detected within the wait window — the page may still be processing, or use a non-standard preview mechanism. Do NOT conclude the upload failed just because the upload area still shows placeholder text like \"点击上传文件或拖拽文件到这里\" — that text is static markup, not upload state. (This does NOT override explicit failure signals — an error toast / \"rejected\" / red border / size-limit notice still means failure.) To confirm, proceed one step and re-read the DOM (look for a newly appeared preview) rather than taking a screenshot (visual verification is currently disabled).\n",
+  "describeDropdown": {
+    "ariaLabel": "[SELECT] 'Country' at index 7",
+    "title": "[SELECT] 'T' at index 8",
+    "name": "[SELECT] 'region' at index 9",
+    "id": "[SELECT] 'sel1' at index 10",
+    "nodeValue": "[DIV] '省份' at index 11",
+    "bare": "[SELECT] at index 12",
+    "long": "[SELECT] 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...' at index 13",
+    "longNodeValue": "[SELECT] 'yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy...' at index 14"
+  },
+  "describeUpload": {
+    "title": "Uploaded '横.png' to [INPUT] 'Cover' at index 3",
+    "name": "Uploaded 'report.pdf' to [INPUT] 'file' at index 4",
+    "nodeValue": "Uploaded 'x.mp4' to [INPUT] '拖拽上传' at index 5",
+    "bare": "Uploaded 'c.txt' to [INPUT] at index 6",
+    "longName": "Uploaded 'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn...' to [INPUT] at index 7"
+  },
+  "formatOptions": {
+    "native": {
+      "extracted_content": "0: text=\"Alpha\", value=\"a\" (selected)\n1: text=\"Beta 'q'\", value=\"b\"\n2: text=\"\", value=\"\"\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 3 options from [SELECT] 'qty' at index 21",
+      "error": null
+    },
+    "nativeEmpty": {
+      "extracted_content": "Use the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 0 options from [SELECT] 'qty' at index 21",
+      "error": null
+    },
+    "aria": {
+      "extracted_content": "0: text=\"Alpha\", value=\"a\" (selected)\n1: text=\"Beta 'q'\", value=\"b\"\n2: text=\"\", value=\"\"\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 3 options from [SELECT] 'qty' at index 21 via [ARIA]",
+      "error": null
+    },
+    "ariaEmpty": {
+      "extracted_content": "Listbox/menu found but no [role=option] children (may need expanding).\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 0 options from [SELECT] 'qty' at index 21 via [ARIA]",
+      "error": null
+    },
+    "custom": {
+      "extracted_content": "0: text=\"Alpha\", value=\"a\" (selected)\n1: text=\"Beta 'q'\", value=\"b\"\n2: text=\"\", value=\"\"\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 3 options from [SELECT] 'qty' at index 21 via [CUSTOM]",
+      "error": null
+    },
+    "customEmpty": {
+      "extracted_content": "Custom dropdown found but no .item/.option/[data-value] children (may need expanding).\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 0 options from [SELECT] 'qty' at index 21 via [CUSTOM]",
+      "error": null
+    },
+    "combobox": {
+      "extracted_content": "0: text=\"Alpha\", value=\"a\" (selected)\n1: text=\"Beta 'q'\", value=\"b\"\n2: text=\"\", value=\"\"\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 3 options from [SELECT] 'qty' at index 21 via [COMBOBOX]",
+      "error": null
+    },
+    "comboboxEmpty": {
+      "extracted_content": "Combobox listbox found but empty (options may load on demand).\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 0 options from [SELECT] 'qty' at index 21 via [COMBOBOX]",
+      "error": null
+    },
+    "click-select": {
+      "extracted_content": "0: text=\"Alpha\", value=\"a\" (selected)\n1: text=\"Beta 'q'\", value=\"b\"\n2: text=\"\", value=\"\"\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 3 options from [SELECT] 'qty' at index 21 via [CLICK-SELECT]",
+      "error": null
+    },
+    "click-selectEmpty": {
+      "extracted_content": "Select element has no <option> children (may populate lazily — try dropdown_options again after the page settles).\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 0 options from [SELECT] 'qty' at index 21 via [CLICK-SELECT]",
+      "error": null
+    },
+    "custom-open": {
+      "extracted_content": "0: text=\"Alpha\", value=\"a\" (selected)\n1: text=\"Beta 'q'\", value=\"b\"\n2: text=\"\", value=\"\"\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 3 options from [SELECT] 'qty' at index 21 via [CUSTOM-OPEN]",
+      "error": null
+    },
+    "custom-openEmpty": {
+      "extracted_content": "Custom dropdown opened but no options found (may load on demand — retry after settle, or scroll).\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 0 options from [SELECT] 'qty' at index 21 via [CUSTOM-OPEN]",
+      "error": null
+    },
+    "child-depth-2": {
+      "extracted_content": "0: text=\"Alpha\", value=\"a\" (selected)\n1: text=\"Beta 'q'\", value=\"b\"\n2: text=\"\", value=\"\"\nUse the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 3 options from [SELECT] 'qty' at index 21 via child-depth-2",
+      "error": null
+    },
+    "child-depth-2Empty": {
+      "extracted_content": "Use the value in select_dropdown(index=21, value=...)",
+      "long_term_memory": "Got 0 options from [SELECT] 'qty' at index 21 via child-depth-2",
+      "error": null
+    }
+  },
+  "fileMatchesAccept": {
+    "c0": true,
+    "c1": true,
+    "c2": true,
+    "c3": true,
+    "c4": true,
+    "c5": true,
+    "c6": false,
+    "c7": true,
+    "c8": true,
+    "c9": false,
+    "c10": true,
+    "c11": true,
+    "c12": true,
+    "c13": true,
+    "c14": false,
+    "c15": false,
+    "c16": true,
+    "c17": true,
+    "c18": false,
+    "c19": true,
+    "c20": true
+  },
+  "isAutocomplete": {
+    "c0": [
+      true,
+      true
+    ],
+    "c1": [
+      true,
+      true
+    ],
+    "c2": [
+      false,
+      false
+    ],
+    "c3": [
+      false,
+      false
+    ],
+    "c4": [
+      true,
+      false
+    ],
+    "c5": [
+      true,
+      false
+    ],
+    "c6": [
+      false,
+      false
+    ],
+    "c7": [
+      false,
+      false
+    ],
+    "c8": [
+      false,
+      false
+    ]
+  },
+  "findUploadLabelNear": {
+    "classHit": 102,
+    "textHit": 201,
+    "tooDeep": null,
+    "depthOk": null,
+    "shadowHit": 401,
+    "ancestorClimb": 502,
+    "miss": null
+  },
+  "walkFileInputs": [
+    6,
+    9
+  ],
+  "walkFileInputsEmpty": [],
+  "fileInputCandidates": {
+    "byPathPng": [
+      [
+        2,
+        2
+      ]
+    ],
+    "byPathMp4": [
+      [
+        3,
+        3
+      ]
+    ],
+    "byPathTxt": [
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        6,
+        6
+      ]
+    ],
+    "byHintImage": [
+      [
+        2,
+        2
+      ]
+    ],
+    "byHintNone": [
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        6,
+        6
+      ]
+    ]
+  },
+  "buildUploadClue": {
+    "xpath": "//input",
+    "tag": "input",
+    "rect": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 0.0,
+      "height": 0.0
+    },
+    "accept": "image/png",
+    "label_text": "封面上传",
+    "aria_text": "",
+    "region_text": "上传封面",
+    "in_dialog": true,
+    "container_rect": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 300.0,
+      "height": 200.0
+    },
+    "trigger_affordance": {
+      "text": "点击上传",
+      "role": "button",
+      "tag": "button",
+      "rect": {
+        "x": 1.0,
+        "y": 2.0,
+        "width": 80.0,
+        "height": 24.0
+      }
+    }
+  },
+  "buildUploadClueNoAffordance": {
+    "xpath": "//input",
+    "tag": "input",
+    "rect": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 0.0,
+      "height": 0.0
+    },
+    "accept": "image/png",
+    "label_text": "封面上传",
+    "aria_text": "",
+    "region_text": "上传封面",
+    "in_dialog": true,
+    "container_rect": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 300.0,
+      "height": 200.0
+    }
+  },
+  "nonzeroRect": {
+    "zero": false,
+    "widthOnly": true,
+    "none": false,
+    "garbage": false
+  },
+  "effectiveClueRect": {
+    "rect": {
+      "width": 5,
+      "height": 5
+    },
+    "container": {
+      "width": 9,
+      "height": 9
+    },
+    "affordance": {
+      "width": 3,
+      "height": 3
+    },
+    "allZero": {
+      "width": 0,
+      "height": 0
+    }
+  }
+}

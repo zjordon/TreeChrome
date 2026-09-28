@@ -23,6 +23,20 @@ import {
   unsubscribeAllEvents,
 } from "./connection.js";
 import { getPageHtml } from "./dom-access.js";
+import {
+  type DropdownDispatchResult,
+  type DropdownOption,
+  type DropdownSetterResult,
+  expandAndFetchComboboxOptions,
+  expandAndFetchCustomOptions,
+  fetchDropdownOptions,
+  fetchSelectOptions,
+  setComboboxOption,
+  setCustomDropdownOption,
+  setDropdownOption,
+  setSelectOption,
+  setSelectOptionMulti,
+} from "./dropdown.js";
 import { clickElement, getElementCoordinates, isElementOccluded } from "./element-pointer.js";
 import { evalFunctionOnNode, executeJs } from "./evaluate-basic.js";
 import { readGridMeta } from "./grid-meta.js";
@@ -49,6 +63,7 @@ import { findElements, findElementsNodeIds, findText, searchPage } from "./searc
 import { closeTab, createTab, getTabs, switchTab } from "./tabs.js";
 import { clearTextField, forceSetValue, readActiveText, typeText } from "./text-input.js";
 import type { BoundSend, CdpTransport, DownloadRecord, SessionInternals } from "./transport.js";
+import { discoverFileInputViaClick, setFileInput } from "./upload.js";
 import type {
   BrowserEvent,
   BrowserSessionSettings,
@@ -499,6 +514,44 @@ export class BrowserSession {
     },
   ): Promise<SearchPageData> {
     return searchPage(this.context(), pattern, opts);
+  }
+  // ── P4b 段 2：下拉族 + 上传族委托 ──
+  fetchSelectOptions(backendNodeId: number): Promise<DropdownOption[]> {
+    return fetchSelectOptions(this.context(), backendNodeId);
+  }
+  fetchDropdownOptions(backendNodeId: number): Promise<DropdownDispatchResult> {
+    return fetchDropdownOptions(this.context(), backendNodeId);
+  }
+  setSelectOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    return setSelectOption(this.context(), backendNodeId, value);
+  }
+  setSelectOptionMulti(backendNodeId: number, values: string[]): Promise<DropdownSetterResult> {
+    return setSelectOptionMulti(this.context(), backendNodeId, values);
+  }
+  setDropdownOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    return setDropdownOption(this.context(), backendNodeId, value);
+  }
+  setComboboxOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    return setComboboxOption(this.context(), backendNodeId, value);
+  }
+  setCustomDropdownOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    return setCustomDropdownOption(this.context(), backendNodeId, value);
+  }
+  expandAndFetchComboboxOptions(backendNodeId: number): Promise<DropdownOption[]> {
+    return expandAndFetchComboboxOptions(this.context(), backendNodeId);
+  }
+  expandAndFetchCustomOptions(backendNodeId: number): Promise<DropdownOption[]> {
+    return expandAndFetchCustomOptions(this.context(), backendNodeId);
+  }
+  setFileInput(
+    backendNodeId: number | null,
+    filePath: string,
+    fileInputBackendIds?: number[] | null,
+  ): Promise<void> {
+    return setFileInput(this.context(), backendNodeId, filePath, fileInputBackendIds ?? null);
+  }
+  discoverFileInputViaClick(backendNodeId: number, timeoutMs?: number): Promise<number | null> {
+    return discoverFileInputViaClick(this.context(), backendNodeId, timeoutMs);
   }
   getPageHtml(options?: { extractLinks?: boolean; extractImages?: boolean }): Promise<string> {
     return getPageHtml(this.context(), options);
