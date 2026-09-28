@@ -92,6 +92,25 @@ describe("findText（3 查询链 + 可见性 + nth + 高亮）", () => {
     expect(r).toEqual({ found: false, method: "none", tag: null });
   });
 
+  it("nth=0 负索引回绕 → 末元素（Python visible_ids[nth-1] 语义，session.py :3999）", async () => {
+    const h = makeInternals();
+    h.transport
+      .respondOnce("DOM.performSearch", { searchId: "s1", resultCount: 3 })
+      .respondOnce("DOM.getSearchResults", { nodeIds: [1, 2, 3] })
+      .respond("DOM.resolveNode", (p: { nodeId: number }) => ({
+        object: { objectId: `obj-${p.nodeId}` },
+      }))
+      .respondOnce("Runtime.callFunctionOn", { result: { value: [true, true, true] } })
+      .respondOnce("DOM.scrollIntoViewIfNeeded", {})
+      .respondOnce("DOM.describeNode", { node: { backendNodeId: 9, nodeName: "P" } });
+    const r = await findText(h.s, "x", { nth: 0 });
+    expect(r.found).toBe(true);
+    expect(r.match_index).toBe(0);
+    // idx = -1 → Python visible_ids[-1] = 末元素（nodeId 3）
+    const scroll = h.transport.sent.find((f) => f.method === "DOM.scrollIntoViewIfNeeded");
+    expect(scroll?.params).toEqual({ nodeId: 3 });
+  });
+
   it("可见性探测全隐 → 退首个（不失败）；describeNode 失败 → tag null", async () => {
     const h = makeInternals();
     h.transport

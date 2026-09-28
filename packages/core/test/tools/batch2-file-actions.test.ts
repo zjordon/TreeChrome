@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { ActionResult } from "../../src/agent/views.js";
+import { pythonTemplateToJs } from "../../src/tools/actions/file-actions.js";
 import type { Tools } from "../../src/tools/actions/index.js";
 import { makeTools } from "./fake-browser.js";
 import { type FakeFs, makeFakeFs } from "./fake-fs.js";
@@ -104,6 +105,46 @@ describe("write_file", () => {
       undefined as never,
     );
     expect(r.error).toContain("no filesystem provider injected");
+  });
+  it("append 走 appendTextFile：既有二进制零接触、缺失创建（open(path,'a') 语义）", async () => {
+    const { tools } = makeTools();
+    const fs = makeFakeFs({ [`${T}/bin.png`]: new Uint8Array([0x89, 0x50]) });
+    const r = await execFile(tools, fs, "write_file", {
+      path: `${T}/bin.png`,
+      content: "abc",
+      append: true,
+    });
+    expect(r.error).toBeNull();
+    // 字节级追加——不读旧解码重写（评审轮 1 [7]：读旧拼新会腐蚀既有字节）
+    expect(fs.files.get(`${T}/bin.png`)).toEqual(new Uint8Array([0x89, 0x50, 97, 98, 99, 10]));
+    expect(fs.appends).toEqual([[`${T}/bin.png`, "abc\n"]]);
+    await execFile(tools, fs, "write_file", { path: `${T}/new.txt`, content: "n", append: true });
+    expect(fs.files.get(`${T}/new.txt`)).toBe("n\n");
+  });
+  it("白名单穿越拒（resolve 归一化后比对——Python 裸 startswith 收严，评审轮 1 [6]）", async () => {
+    const { tools } = makeTools({ allowedWritePaths: ["/data/allowed"] });
+    const fs = makeFakeFs();
+    fs.resolve = (p) => {
+      const out: string[] = [];
+      for (const seg of p.split("/")) {
+        if (seg === "" || seg === ".") continue;
+        if (seg === "..") out.pop();
+        else out.push(seg);
+      }
+      return `/${out.join("/")}`;
+    };
+    const r = await execFile(tools, fs, "write_file", {
+      path: "/data/allowed/../../etc/cron.d/x",
+      content: "pwn",
+    });
+    expect(r.error).toBe("File path not in allowed write paths: /etc/cron.d/x");
+    expect(fs.files.has("/etc/cron.d/x")).toBe(false);
+    const ok = await execFile(tools, fs, "write_file", {
+      path: "/data/allowed/./sub/../f.txt",
+      content: "ok",
+    });
+    expect(ok.error).toBeNull();
+    expect(fs.files.get("/data/allowed/f.txt")).toBe("ok\n");
   });
 });
 
@@ -342,5 +383,150 @@ describe("replace_file", () => {
       count: -1,
     });
     expect(bad.error).toBe("replace_file 'count' must be a positive integer (got -1)");
+  });
+  it("count 单遍替换：new ⊇ old 不重扫产物（Python str.replace/subn 语义，venv 锚定；评审轮 1 [8]）", async () => {
+    const { tools } = makeTools();
+    // 'a\nb\n'.replace('\n','\n\n',2) → 'a\n\nb\n\n'（原文两个匹配都改，非重扫产物）
+    const fs = makeFakeFs({ [`${T}/rep.txt`]: "a\nb\n" });
+    const r = await execFile(tools, fs, "replace_file", {
+      path: `${T}/rep.txt`,
+      old: "\n",
+      new: "\n\n",
+      count: 2,
+    });
+    expect(fs.files.get(`${T}/rep.txt`)).toBe("a\n\nb\n\n");
+    expect(r.extracted_content).toBe(
+      "Replaced 2 occurrences of '\\n' with '\\n\\n' in /ANCHOR_TMP/rep.txt (6 bytes)",
+    );
+    // 'aaaa'.replace('aa','aab',3) → 非重叠仅 2 处 → 'aabaab'
+    const fs2 = makeFakeFs({ [`${T}/rep.txt`]: "aaaa" });
+    const r2 = await execFile(tools, fs2, "replace_file", {
+      path: `${T}/rep.txt`,
+      old: "aa",
+      new: "aab",
+      count: 3,
+    });
+    expect(fs2.files.get(`${T}/rep.txt`)).toBe("aabaab");
+    expect(r2.extracted_content).toContain("Replaced 2 occurrences");
+    // re.subn('a','aa','aaa',count=2) → 'aaaaa'（venv 实跑）
+    const fs3 = makeFakeFs({ [`${T}/rep.txt`]: "aaa" });
+    const r3 = await execFile(tools, fs3, "replace_file", {
+      path: `${T}/rep.txt`,
+      old: "a",
+      new: "aa",
+      regex: true,
+      count: 2,
+    });
+    expect(fs3.files.get(`${T}/rep.txt`)).toBe("aaaaa");
+    expect(r3.extracted_content).toContain("Replaced 2 of 3 occurrences");
+    // replaced < rawTotal 文案（count 1 of 3）
+    const fs4 = makeFakeFs({ [`${T}/rep.txt`]: "a\nb\nc\n" });
+    const r4 = await execFile(tools, fs4, "replace_file", {
+      path: `${T}/rep.txt`,
+      old: "\n",
+      new: "\n\n",
+      count: 1,
+    });
+    expect(r4.extracted_content).toContain("Replaced 1 of 3 occurrences");
+    expect(fs4.files.get(`${T}/rep.txt`)).toBe("a\n\nb\nc\n");
+  });
+  it("替换模板 = CPython parse_template 语义（venv 锚定；评审轮 1 [11]）", async () => {
+    const { tools } = makeTools();
+    // \1 但模式无捕获组 → re.error（前缀形态）+ 文件不动 + backup 同序先生成 .bak
+    const fs = makeFakeFs({ [`${T}/rep.txt`]: "v1 v2\n" });
+    const bad = await execFile(tools, fs, "replace_file", {
+      path: `${T}/rep.txt`,
+      old: "v\\d",
+      new: "w\\1",
+      regex: true,
+      backup: true,
+    });
+    expect(bad.error).toBe(
+      "Regex substitution failed for 'v\\\\d': invalid group reference 1 at position 2",
+    );
+    expect(fs.files.get(`${T}/rep.txt`)).toBe("v1 v2\n");
+    expect(fs.files.get(`${T}/rep.txt.bak`)).toBe("v1 v2\n");
+    // 未知组名 → IndexError 形态（Python 落通用 catch，error=str(e) 原样无前缀）
+    const fs2 = makeFakeFs({ [`${T}/rep.txt`]: "v1\n" });
+    const unk = await execFile(tools, fs2, "replace_file", {
+      path: `${T}/rep.txt`,
+      old: "v(\\d)",
+      new: "w\\g<y>",
+      regex: true,
+    });
+    expect(unk.error).toBe("unknown group name 'y'");
+    expect(fs2.files.get(`${T}/rep.txt`)).toBe("v1\n");
+    // \g<0> = 整匹配引用
+    const fs3 = makeFakeFs({ [`${T}/rep.txt`]: "v1 v2\n" });
+    await execFile(tools, fs3, "replace_file", {
+      path: `${T}/rep.txt`,
+      old: "v(\\d)",
+      new: "w\\g<0>",
+      regex: true,
+    });
+    expect(fs3.files.get(`${T}/rep.txt`)).toBe("wv1 wv2\n");
+    // \t 控制字符 / \\ 字面反斜杠（后随 1 不再当引用）/ bad escape
+    const fs4 = makeFakeFs({ [`${T}/a.txt`]: "a\n" });
+    await execFile(tools, fs4, "replace_file", {
+      path: `${T}/a.txt`,
+      old: "a",
+      new: "x\\ty",
+      regex: true,
+    });
+    expect(fs4.files.get(`${T}/a.txt`)).toBe("x\ty\n");
+    const fs5 = makeFakeFs({ [`${T}/a.txt`]: "ab" });
+    await execFile(tools, fs5, "replace_file", {
+      path: `${T}/a.txt`,
+      old: "(a)",
+      new: "x\\\\1y",
+      regex: true,
+    });
+    expect(fs5.files.get(`${T}/a.txt`)).toBe("x\\1yb");
+    const fs6 = makeFakeFs({ [`${T}/a.txt`]: "a\n" });
+    const badEsc = await execFile(tools, fs6, "replace_file", {
+      path: `${T}/a.txt`,
+      old: "a",
+      new: "w\\q",
+      regex: true,
+    });
+    expect(badEsc.error).toBe("Regex substitution failed for 'a': bad escape \\q at position 1");
+  });
+});
+
+describe("pythonTemplateToJs（CPython 3.12 parse_template 等价，venv 锚定）", () => {
+  const g = (count: number, names: string[] = []) => ({ count, names: new Set(names) });
+  it("组引用与转义形态", () => {
+    expect(pythonTemplateToJs("w\\1", g(1))).toBe("w$1");
+    expect(pythonTemplateToJs("\\g<0>", g(0))).toBe("$&"); // 整匹配
+    expect(pythonTemplateToJs("\\g<x>", g(1, ["x"]))).toBe("$<x>");
+    expect(pythonTemplateToJs("x$y", g(0))).toBe("x$$y"); // 字面 $ 转义
+    expect(pythonTemplateToJs("\\t-\\0", g(0))).toBe("\t-\x00"); // \0=NUL 非组引用
+    expect(pythonTemplateToJs("\\123", g(3))).toBe("S"); // 三连八进制 = chr(0o123)
+    expect(pythonTemplateToJs("\\10", g(10))).toBe("$10"); // \10=组 10（两位非全八进制）
+    expect(pythonTemplateToJs("\\-", g(0))).toBe("\\-"); // 非字母保留字面反斜杠
+  });
+  it("错误形态（消息+位置口径 venv 实跑锚定）", () => {
+    expect(() => pythonTemplateToJs("\\1", g(0))).toThrow(
+      "invalid group reference 1 at position 1",
+    );
+    expect(() => pythonTemplateToJs("\\10", g(1))).toThrow(
+      "invalid group reference 10 at position 1",
+    );
+    expect(() => pythonTemplateToJs("\\400", g(0))).toThrow(
+      "octal escape value \\400 outside of range 0-0o377 at position 0",
+    );
+    expect(() => pythonTemplateToJs("\\g", g(0))).toThrow("missing < at position 2");
+    expect(() => pythonTemplateToJs("\\g<ab", g(0))).toThrow(
+      "missing >, unterminated name at position 3",
+    );
+    expect(() => pythonTemplateToJs("\\g<>", g(0))).toThrow("missing group name at position 3");
+    expect(() => pythonTemplateToJs("\\g<1x>", g(0))).toThrow(
+      "bad character in group name '1x' at position 3",
+    );
+    expect(() => pythonTemplateToJs("\\q", g(0))).toThrow("bad escape \\q at position 0");
+    expect(() => pythonTemplateToJs("\\", g(0))).toThrow(
+      "bad escape (end of pattern) at position 0",
+    );
+    expect(() => pythonTemplateToJs("\\g<y>", g(0))).toThrow("unknown group name 'y'");
   });
 });

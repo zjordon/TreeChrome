@@ -16,7 +16,15 @@ const errText = (e: unknown): string => (e instanceof Error ? e.message : String
 
 export function createCloseTabHandler(ctx: ToolsContext): ActionHandler {
   return async (params: Record<string, unknown>, browser: ToolsBrowser) => {
-    const tabIdSuffix = typeof params.tab_id === "string" ? params.tab_id : "";
+    // Python params.get("tab_id", "")：非字符串真值（如数字形态的后缀）在
+    // target_id.endswith(int) 抛 TypeError → Tools.execute 通用 catch → error
+    // （:810-822）；null/undefined 是 falsy = 关当前页。此处同构：非字符串非
+    // nullish 显式 error（switch_tab 守卫同款文案），nullish 落当前页分支。
+    const rawTabId = params.tab_id;
+    if (rawTabId !== undefined && rawTabId !== null && typeof rawTabId !== "string") {
+      return new ActionResult({ error: "close_tab requires a string `tab_id` parameter." });
+    }
+    const tabIdSuffix = typeof rawTabId === "string" ? rawTabId : "";
     const tabs = await browser.getTabs();
     let targetId: string;
     let idEcho: string;

@@ -64,7 +64,43 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
 
 ## 6. 评审轮登记（§7）
 
-（各段 /review-loop 结果逐轮登记于此，格式同 p4/README.md）
+### feat/p4b-actions-a
+
+- **轮 1（2026-09-28，11 条：自评 high4 / medium4 / low3）**——采纳 7（均 P2）+ 顺手 3 + 驳回 1：
+  - [4] close_tab 非字符串 tab_id（数字后缀形态）被静默归空关当前页——Python 端
+    endswith(int) TypeError 落 Tools.execute 通用 catch（actions.py :810-822）= error；
+    补 string 守卫（switch_tab 同款文案），null/undefined 仍落当前页（Python falsy 同构）。
+  - [5] findText nth=0/负数——评审称「Python pydantic ge=1」**不成立**（Python 无任何
+    校验，session.py :3990-3999 `visible_ids[nth-1]` 负索引回绕是真实语义；非整数 nth
+    两边同样被逐查询 except 吞掉后落 JS 回退）。部分采纳：补 Python 负索引回绕
+    （nth=0→末元素），不加 ge=1 校验（加了反而偏离 Python）。
+  - [6] 文件三动作白名单裸 startsWith 可被 `../` 穿越绕过——Python 同病（:2361/:2417/
+    :2611 均裸 startswith，穿越形态会静默写出白名单外）；按本仓 fs.resolve 契约
+    （「白名单前缀比对前归一化」，done.ts 既有模式）收严为 resolve 后比对——
+    **登记偏离**：仅多拒 Python 会越狱写出的路径，合法路径行为不变（错误/回显显示
+    归一化路径）。
+  - [7] write append 读旧拼新会腐蚀既有非 utf-8/二进制字节（Python open(path,"a")
+    纯字节追加零接触）——FileSystemProvider 增 `appendTextFile`（open("a") 等价），
+    全部实现面同步（fake-fs 字节级拼接 / 三处测试内联假件 / smoke memoryFs）。
+  - [9] readTextFile 契约补两条：maxChars 省略=全读（宿主不得自带截断）；严格 utf-8
+    解码（非法字节 reject 映射 Python UnicodeDecodeError→error 文件不动，禁止
+    U+FFFD lenient 后静默写回）。核心无法强制宿主，契约级收严。
+  - [8] count 限量替换重扫替换产物（new ⊇ old 时漏改原文 + replaced 虚报）——重写为
+    原文单遍拼接（regex 段切片替换保引擎 $ 展开 + 零宽前进守卫；literal 段 indexOf
+    推进）；期望值 venv 实跑锚定（'a\nb\n'.replace、subn count 语义）。
+  - [11] 替换模板缺组静默写坏文件（Python re.error/IndexError 皆 error 不动文件）——
+    `pythonTemplateToJs` 全量移植 CPython 3.12 re._parser.parse_template（\g<0>=整匹配、
+    \1..\99 引用、\0/三连八进制字面量、控制字符、bad escape、位置口径=venv 实跑锚定；
+    未知名 IndexError 形态与 re.error 前缀形态均按 Python 包法）。轮内自测揪出三个
+    实现 bug（多位数字 off-by-one 把 \1 读成 11、字面 $ 转义差一档、八进制取值多切一位）。
+  - 顺手（P3 触内）：[2][3] gen-batch2-anchors.py 死导入/死常量删除；[10] write 回显
+    enc 死分支删除（encoding 收窄偏离下不可达）。
+  - 驳回 [1]：findElementsNodeIds offset ≥ total 时 fromIndex > toIndex 由 CDP 报错——
+    **Python session.py :4310-4314 逐行同构**（to_index=min(total, offset+max)、fromIndex
+    裸传、无钳制），错误同样经 action catch 包成 "Find elements failed"；JS 体变体
+    （searchPage/findElements）优雅空窗也是 Python 原样（JS 内切片）。移植保真，非缺陷。
+  - 测试 984→992（+8，另 2 例 pythonTemplateToJs 单测计入净增）；覆盖率 93.07% /
+    85.22%；门禁 exit 0；双向验证：8 个新用例对旧实现全红后恢复。
 
 ## 7. 完成记录（§8）
 

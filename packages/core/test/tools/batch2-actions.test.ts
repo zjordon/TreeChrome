@@ -373,4 +373,17 @@ describe("close_tab", () => {
     noCurrent.currentTargetId = null;
     expect((await exec(noCurrent, "close_tab", {})).error).toBe("No current tab to close");
   });
+  it("非字符串 tab_id 拒（数字形态）；null = 关当前页（Python falsy 同构）", async () => {
+    const browser = new FakeBrowser();
+    browser.tabs = [{ targetId: "ABCD1234", url: "https://a/", title: "A" }];
+    browser.currentTargetId = "ABCD1234";
+    // Python：endswith(int) TypeError → Tools.execute 通用 catch → error（:810-822）
+    const bad = await exec(browser, "close_tab", { tab_id: 1234 });
+    expect(bad.error).toBe("close_tab requires a string `tab_id` parameter.");
+    expect(browser.closeTabCalls).toHaveLength(0);
+    // params.get("tab_id", "")：显式 None 是 falsy → 关当前页
+    const none = await exec(browser, "close_tab", { tab_id: null });
+    expect(browser.closeTabCalls).toEqual(["ABCD1234"]);
+    expect(none.extractedContent).toBe("Closed tab [1234] A (https://a/)");
+  });
 });

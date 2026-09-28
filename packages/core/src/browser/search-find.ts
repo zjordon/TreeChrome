@@ -569,7 +569,12 @@ export async function findText(
           total,
         };
       }
-      const nodeId = visibleIds[nth - 1];
+      // Python visible_ids[nth - 1] 含负索引回绕（session.py :3999）：nth=0 → 末元素、
+      // nth=-1 → 倒数第二；越界负值在 Python 抛 IndexError 被逐查询 except 吞掉后落
+      // JS 回退——此处 undefined nodeId 走 scrollIntoViewIfNeeded 抛错 → catch → 回退，
+      // 行为同构（非整数 nth 两边同样落回退，不加 ge=1 校验——Python 无此校验）
+      const idx = nth - 1;
+      const nodeId = idx >= 0 ? visibleIds[idx] : visibleIds[visibleIds.length + idx];
       await s.send("DOM.scrollIntoViewIfNeeded", { nodeId });
       const tag = await highlightSearchNode(s, nodeId, text, nth, caseSensitive, highlight);
       return {

@@ -124,6 +124,7 @@ describe("saveOversizedResult", () => {
       ...base,
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {},
@@ -154,6 +155,7 @@ describe("saveOversizedResult", () => {
       nowMs: () => 123456,
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {},
@@ -169,6 +171,7 @@ describe("saveOversizedResult", () => {
       ...base,
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {

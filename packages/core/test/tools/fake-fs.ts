@@ -9,6 +9,8 @@ export interface FakeFs extends FileSystemProvider {
   dirs: string[];
   textWrites: Array<[string, string]>;
   byteWrites: Array<[string, Uint8Array]>;
+  /** appendTextFile 调用记录（每次记追加内容本身，非全量） */
+  appends: Array<[string, string]>;
 }
 
 export function makeFakeFs(initial: Record<string, string | Uint8Array> = {}): FakeFs {
@@ -18,6 +20,7 @@ export function makeFakeFs(initial: Record<string, string | Uint8Array> = {}): F
     dirs: [],
     textWrites: [],
     byteWrites: [],
+    appends: [],
     resolve: (p) => p,
     async isFile(p) {
       const v = files.get(p);
@@ -34,6 +37,22 @@ export function makeFakeFs(initial: Record<string, string | Uint8Array> = {}): F
     async writeTextFile(p, content) {
       files.set(p, content);
       this.textWrites.push([p, content]);
+    },
+    async appendTextFile(p, content) {
+      // 字节级追加（open(path,"a") 语义）：既有二进制按字节拼接，既有文本字符串拼接
+      const v = files.get(p);
+      if (v === undefined) {
+        files.set(p, content);
+      } else if (typeof v === "string") {
+        files.set(p, v + content);
+      } else {
+        const enc = new TextEncoder().encode(content);
+        const next = new Uint8Array(v.length + enc.length);
+        next.set(v);
+        next.set(enc, v.length);
+        files.set(p, next);
+      }
+      this.appends.push([p, content]);
     },
     async writeBytes(p, data) {
       files.set(p, data);

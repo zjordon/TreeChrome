@@ -151,8 +151,12 @@ export function createWriteFileHandler(ctx: ToolsContext): ActionHandler {
         error: `Unsupported encoding ${pyReprDeep(enc)}: only utf-8 is available in this build`,
       });
     }
-    if (!whitelistAllows(ctx.allowedWritePaths, path)) {
-      return new ActionResult({ error: `File path not in allowed write paths: ${path}` });
+    // 白名单比对前归一化（fs.resolve：.. 与分隔符归一）。Python 侧是裸 startswith
+    // （actions.py :2361），../ 穿越形态在 Python 会静默写出白名单外；此处收严为
+    // 拒绝（评审轮 1 [6]，已登记偏离）
+    const p = ctx.fs !== null ? ctx.fs.resolve(path) : path;
+    if (!whitelistAllows(ctx.allowedWritePaths, p)) {
+      return new ActionResult({ error: `File path not in allowed write paths: ${p}` });
     }
     let body = content;
     if (leadingNewline) body = `\n${body}`;
@@ -160,25 +164,24 @@ export function createWriteFileHandler(ctx: ToolsContext): ActionHandler {
 
     if (ctx.fs === null) {
       return new ActionResult({
-        error: `Failed to write file ${path}: no filesystem provider injected`,
+        error: `Failed to write file ${p}: no filesystem provider injected`,
       });
     }
     try {
       if (append) {
-        // append 直写（O(1) 非原子——Python 同款刻意选择）；读旧拼新（接口无 append 模式）
-        const existing = (await ctx.fs.isFile(path)) ? await ctx.fs.readTextFile(path) : "";
-        await ctx.fs.writeTextFile(path, existing + body);
+        // Python open(path,"a")：O(1) 非原子（刻意选择）；不读不重写既有内容——
+        // 既有二进制/非 utf-8 字节零接触（评审轮 1 [7]：读旧拼新会腐蚀既有字节）
+        await ctx.fs.appendTextFile(p, body);
       } else {
-        await ctx.fs.writeTextFile(path, body);
+        await ctx.fs.writeTextFile(p, body);
       }
     } catch (e) {
-      ctx.log(`write_file(${JSON.stringify(path)}) failed: ${errText(e)}`);
-      return new ActionResult({ error: `Failed to write file ${path}: ${errText(e)}` });
+      ctx.log(`write_file(${JSON.stringify(p)}) failed: ${errText(e)}`);
+      return new ActionResult({ error: `Failed to write file ${p}: ${errText(e)}` });
     }
     const written = utf8Len(body);
     const actionWord = append ? "Appended" : "Wrote";
-    let memory = `${actionWord} ${written} bytes to ${path}`;
-    if (enc !== "utf-8") memory += ` (encoding: ${enc})`;
+    const memory = `${actionWord} ${written} bytes to ${p}`;
     return new ActionResult({ extractedContent: memory, longTermMemory: memory });
   };
 }
@@ -189,47 +192,49 @@ export function createReadFileHandler(ctx: ToolsContext): ActionHandler {
     if (typeof path !== "string") {
       return new ActionResult({ error: "read_file requires a string `path` parameter." });
     }
-    if (!whitelistAllows(ctx.allowedReadPaths, path)) {
-      return new ActionResult({ error: `File path not in allowed read paths: ${path}` });
+    // 白名单比对前归一化（同 write_file；Python :2417 是裸 startswith，此处收严）
+    const p = ctx.fs !== null ? ctx.fs.resolve(path) : path;
+    if (!whitelistAllows(ctx.allowedReadPaths, p)) {
+      return new ActionResult({ error: `File path not in allowed read paths: ${p}` });
     }
     if (ctx.fs === null) {
       return new ActionResult({
-        error: `Failed to read file ${path}: no filesystem provider injected`,
+        error: `Failed to read file ${p}: no filesystem provider injected`,
       });
     }
     // 嗅探（magic 头优先 12 字节）：isFile 先行区分 not found 与读失败
     let head: Uint8Array | null;
-    if (!(await ctx.fs.isFile(path))) {
-      return new ActionResult({ error: `File not found: ${path}` });
+    if (!(await ctx.fs.isFile(p))) {
+      return new ActionResult({ error: `File not found: ${p}` });
     }
     try {
-      head = await ctx.fs.readHead(path, SNIFF_HEAD);
+      head = await ctx.fs.readHead(p, SNIFF_HEAD);
     } catch (e) {
-      ctx.log(`read_file(${JSON.stringify(path)}) sniff failed: ${errText(e)}`);
-      return new ActionResult({ error: `Failed to read file ${path}: ${errText(e)}` });
+      ctx.log(`read_file(${JSON.stringify(p)}) sniff failed: ${errText(e)}`);
+      return new ActionResult({ error: `Failed to read file ${p}: ${errText(e)}` });
     }
     if (head === null) {
-      return new ActionResult({ error: `Failed to read file ${path}: read head returned nothing` });
+      return new ActionResult({ error: `Failed to read file ${p}: read head returned nothing` });
     }
-    const kind = sniffFileKind(head, path);
+    const kind = sniffFileKind(head, p);
     if (kind === "binary") {
       return new ActionResult({
         error:
-          `${path} looks like a binary file; read_file reads UTF-8 text, ` +
+          `${p} looks like a binary file; read_file reads UTF-8 text, ` +
           "PDF, DOCX, or images (PNG/JPEG/GIF/WebP).",
       });
     }
     if (kind === "pdf" || kind === "docx" || kind === "image") {
-      return readRichDocument(ctx, path, kind);
+      return readRichDocument(ctx, p, kind);
     }
     let content: string;
     try {
-      content = await ctx.fs.readTextFile(path);
+      content = await ctx.fs.readTextFile(p);
     } catch (e) {
-      ctx.log(`read_file(${JSON.stringify(path)}) failed: ${errText(e)}`);
-      return new ActionResult({ error: `Failed to read file ${path}: ${errText(e)}` });
+      ctx.log(`read_file(${JSON.stringify(p)}) failed: ${errText(e)}`);
+      return new ActionResult({ error: `Failed to read file ${p}: ${errText(e)}` });
     }
-    return windowAndEcho(content, path, params, utf8Len(content), ctx.truncation);
+    return windowAndEcho(content, p, params, utf8Len(content), ctx.truncation);
   };
 }
 
@@ -239,15 +244,201 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * Python re 替换模板 → JS 替换模板：先转义 $（字面量化），再转换 \g<name>/\1 形态
- * 反向引用（模型按 Python 约定写 \1——JS String.replace 需要 $1）。非法 \g 形态
- * Python 会在 subn 抛 re.error，此处保持字面量（登记漂移）。
+ * CPython 3.12 re._parser.parse_template 等价（语义与错误文案经 venv 实跑锚定）：
+ * \g<name>/<num> 与 \1..\99 组引用（\0 起头是八进制字面量非组 0；三位八进制如
+ * \123 也是字面量）；\a\b\f\n\r\t\v 控制字符；\\ 单反斜杠；其余 ASCII 字母 =
+ * re.error bad escape；非字母保留字面反斜杠。产出 JS 替换模板（字面 $ 转义、
+ * 组引用 → $&/$n/$<name>）。错误位置口径（绝对下标，b=反斜杠位）：组引用越界
+ * =数字起始位；bad escape/八进制越界/尾部孤立反斜杠=b；missing <=g 后位；
+ * 名字类（missing >/missing group name/bad character）=名字起始位。
+ * 未知组名是 IndexError（Python 落 Tools.execute 通用 catch，error=str(e) 原样）。
  */
-function pythonReplToJs(repl: string): string {
-  return repl
-    .replace(/\$/g, "$$$$")
-    .replace(/\\g<(\w+)>/g, "$<$1>")
-    .replace(/\\(\d+)/g, "$$$1");
+export class PythonTemplateError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "reerror" | "indexerror",
+  ) {
+    super(message);
+  }
+}
+
+const TEMPLATE_CONTROL: Record<string, string> = {
+  a: "\x07",
+  b: "\x08",
+  f: "\x0c",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  v: "\x0b",
+  "\\": "\\", // CPython ESCAPES['\\\\'] = chr(0x5c)：转义反斜杠折叠为单个
+};
+const OCTDIGITS = "01234567";
+const MAXGROUPS = 0xffffffff; // re._constants.MAXGROUPS（\g<数字> 上界）
+
+/** 数 JS 正则源的捕获组（Python pattern.groups 等价）：未转义 "("（含字符类穿越），
+ *  (?:/(?=/!? 除外；命名组 (?<name> 同时收集名（\g<name> 引用校验用） */
+function scanGroups(source: string): { count: number; names: ReadonlySet<string> } {
+  let count = 0;
+  const names = new Set<string>();
+  let escaped = false;
+  let inClass = false;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (inClass) {
+      if (ch === "]") inClass = false;
+      continue;
+    }
+    if (ch === "[") {
+      inClass = true;
+      continue;
+    }
+    if (ch !== "(") continue;
+    if (source[i + 1] !== "?") {
+      count += 1;
+    } else if (source[i + 2] === "<" && source[i + 3] !== "=" && source[i + 3] !== "!") {
+      count += 1;
+      const m = /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(source.slice(i + 3));
+      if (m !== null) names.add(m[0]);
+    }
+  }
+  return { count, names };
+}
+
+export function pythonTemplateToJs(
+  repl: string,
+  groups: { count: number; names: ReadonlySet<string> },
+): string {
+  const out: string[] = [];
+  const literal = (s: string): void => {
+    // 字面 $ 转 $$（JS 替换串语义；"$$$$" 经引擎解析为 "$$"）
+    if (s !== "") out.push(s.replace(/\$/g, "$$$$"));
+  };
+  const groupRef = (index: number, digitStart: number): void => {
+    if (index > groups.count) {
+      throw new PythonTemplateError(
+        `invalid group reference ${index} at position ${digitStart}`,
+        "reerror",
+      );
+    }
+    out.push(index === 0 ? "$&" : `$${index}`);
+  };
+  let i = 0;
+  const n = repl.length;
+  while (i < n) {
+    const c = repl[i];
+    if (c !== "\\") {
+      literal(c);
+      i += 1;
+      continue;
+    }
+    const b = i; // 反斜杠位（错误位置基准）
+    if (i === n - 1) {
+      throw new PythonTemplateError(`bad escape (end of pattern) at position ${b}`, "reerror");
+    }
+    const d = repl[i + 1];
+    if (d === "g") {
+      if (repl[i + 2] !== "<") {
+        throw new PythonTemplateError(`missing < at position ${b + 2}`, "reerror");
+      }
+      const gt = repl.indexOf(">", i + 3);
+      if (gt < 0) {
+        throw new PythonTemplateError(
+          `missing >, unterminated name at position ${b + 3}`,
+          "reerror",
+        );
+      }
+      const name = repl.slice(i + 3, gt);
+      if (name === "") {
+        throw new PythonTemplateError(`missing group name at position ${b + 3}`, "reerror");
+      }
+      if (/^[0-9]+$/.test(name)) {
+        const index = Number(name);
+        if (index >= MAXGROUPS) {
+          throw new PythonTemplateError(
+            `invalid group reference ${index} at position ${b + 3}`,
+            "reerror",
+          );
+        }
+        groupRef(index, b + 3);
+      } else {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          throw new PythonTemplateError(
+            `bad character in group name '${name}' at position ${b + 3}`,
+            "reerror",
+          );
+        }
+        if (!groups.names.has(name)) {
+          throw new PythonTemplateError(`unknown group name '${name}'`, "indexerror");
+        }
+        out.push(`$<${name}>`);
+      }
+      i = gt + 1;
+      continue;
+    }
+    if (d === "0") {
+      // \0 + 至多两个八进制位 → 字面字符（\0 是 NUL，不是组 0 引用）
+      let val = 0;
+      let j = i + 1; // 从 '0' 自身起计入（对 val 无贡献）
+      while (j < n && j - i <= 3 && OCTDIGITS.includes(repl[j])) {
+        val = val * 8 + Number(repl[j]);
+        j += 1;
+      }
+      literal(String.fromCharCode(val & 0xff));
+      i = j;
+      continue;
+    }
+    if (d >= "1" && d <= "9") {
+      // 多位数字：三连八进制（如 \123）是字面字符，否则是组引用（\10=组 10）
+      let digits = d;
+      let j = i + 2; // d 在 i+1，第二位从 i+2 起
+      if (j < n && repl[j] >= "0" && repl[j] <= "9") {
+        digits += repl[j];
+        j += 1;
+        if (
+          OCTDIGITS.includes(digits[0]) &&
+          OCTDIGITS.includes(digits[1]) &&
+          j < n &&
+          OCTDIGITS.includes(repl[j])
+        ) {
+          digits += repl[j];
+          j += 1;
+          const val = Number.parseInt(digits, 8);
+          if (val > 0o377) {
+            throw new PythonTemplateError(
+              `octal escape value \\${digits} outside of range 0-0o377 at position ${b}`,
+              "reerror",
+            );
+          }
+          literal(String.fromCharCode(val));
+          i = j;
+          continue;
+        }
+      }
+      groupRef(Number(digits), b + 1);
+      i = j;
+      continue;
+    }
+    if (TEMPLATE_CONTROL[d] !== undefined) {
+      literal(TEMPLATE_CONTROL[d]);
+      i += 2;
+      continue;
+    }
+    if (/^[A-Za-z]$/.test(d)) {
+      throw new PythonTemplateError(`bad escape \\${d} at position ${b}`, "reerror");
+    }
+    // 非字母（\- \$ 等）：保留字面反斜杠
+    literal(`\\${d}`);
+    i += 2;
+  }
+  return out.join("");
 }
 
 export function createReplaceFileHandler(ctx: ToolsContext): ActionHandler {
@@ -296,12 +487,14 @@ export function createReplaceFileHandler(ctx: ToolsContext): ActionHandler {
     const caseSensitive = params.case_sensitive !== false; // 默认 True
     const backup = params.backup === true;
 
-    if (!whitelistAllows(ctx.allowedWritePaths, path)) {
-      return new ActionResult({ error: `File path not in allowed write paths: ${path}` });
+    // 白名单比对前归一化（同 write_file；Python :2611 是裸 startswith，此处收严）
+    const p = ctx.fs !== null ? ctx.fs.resolve(path) : path;
+    if (!whitelistAllows(ctx.allowedWritePaths, p)) {
+      return new ActionResult({ error: `File path not in allowed write paths: ${p}` });
     }
     if (ctx.fs === null) {
       return new ActionResult({
-        error: `Failed to replace text in ${path}: no filesystem provider injected`,
+        error: `Failed to replace text in ${p}: no filesystem provider injected`,
       });
     }
     const useRe = regex || !caseSensitive;
@@ -313,7 +506,7 @@ export function createReplaceFileHandler(ctx: ToolsContext): ActionHandler {
         pattern = new RegExp(source, caseSensitive ? "g" : "gi");
       } catch (e) {
         ctx.log(
-          `replace_file(${JSON.stringify(path)}) invalid regex ${JSON.stringify(oldStr)}: ${errText(e)}`,
+          `replace_file(${JSON.stringify(p)}) invalid regex ${JSON.stringify(oldStr)}: ${errText(e)}`,
         );
         return new ActionResult({
           error: `Invalid regex pattern ${pyReprDeep(oldStr)}: ${errText(e)}`,
@@ -323,13 +516,13 @@ export function createReplaceFileHandler(ctx: ToolsContext): ActionHandler {
 
     let content: string;
     try {
-      if (!(await ctx.fs.isFile(path))) {
-        return new ActionResult({ error: `File not found: ${path}` });
+      if (!(await ctx.fs.isFile(p))) {
+        return new ActionResult({ error: `File not found: ${p}` });
       }
-      content = await ctx.fs.readTextFile(path);
+      content = await ctx.fs.readTextFile(p);
     } catch (e) {
-      ctx.log(`replace_file(${JSON.stringify(path)}) failed: ${errText(e)}`);
-      return new ActionResult({ error: `Failed to replace text in ${path}: ${errText(e)}` });
+      ctx.log(`replace_file(${JSON.stringify(p)}) failed: ${errText(e)}`);
+      return new ActionResult({ error: `Failed to replace text in ${p}: ${errText(e)}` });
     }
 
     let rawTotal: number;
@@ -342,21 +535,21 @@ export function createReplaceFileHandler(ctx: ToolsContext): ActionHandler {
 
     if (expectedCount !== undefined && expectedCount !== null && rawTotal !== expectedCount) {
       const msg =
-        `replace_file expected ${expectedCount} match(es) for ${pyReprDeep(oldStr)} in ${path}, ` +
+        `replace_file expected ${expectedCount} match(es) for ${pyReprDeep(oldStr)} in ${p}, ` +
         `found ${rawTotal}; file unchanged`;
       return new ActionResult({ error: msg });
     }
     if (rawTotal === 0) {
       // 软失败：不写、成功语义（绝不假装改了）
-      const msg = `No occurrences of ${pyReprDeep(oldStr)} found in ${path}; file unchanged`;
+      const msg = `No occurrences of ${pyReprDeep(oldStr)} found in ${p}; file unchanged`;
       return new ActionResult({ extractedContent: msg, longTermMemory: msg });
     }
-    const bak = `${path}.bak`;
+    const bak = `${p}.bak`;
     if (backup) {
       try {
         await ctx.fs.writeTextFile(bak, content);
       } catch (e) {
-        ctx.log(`replace_file(${JSON.stringify(path)}) backup failed: ${errText(e)}`);
+        ctx.log(`replace_file(${JSON.stringify(p)}) backup failed: ${errText(e)}`);
         return new ActionResult({ error: `Failed to create backup ${bak}: ${errText(e)}` });
       }
     }
@@ -364,45 +557,79 @@ export function createReplaceFileHandler(ctx: ToolsContext): ActionHandler {
     let newContent: string;
     let replaced: number;
     if (pattern !== undefined) {
-      // regex=true：new 按 Python 替换模板语义（\1 反向引用，pythonReplToJs 转 $1）；
-      // 否则 new 是不透明字面量（$ 转义字面化）。注意：替换必须用**字符串形态**
-      // 传给 replace——replacer 函数返回值不做 $ 替换（JS 规范），$n 会变字面文本
-      const replacement = regex ? pythonReplToJs(newStr) : newStr.replace(/\$/g, "$$$$");
+      // regex=true：new 按 Python 替换模板语义（re._parser.parse_template 等价转换，
+      // 越界/未定义引用与非法转义在此抛错——Python 同序：backup 之后、subn 处，
+      // .bak 已生成、文件不动）；否则（大小写不敏感 literal）new 是不透明字面量
+      // （$ 转义字面化）。替换必须用**字符串形态**传 replace——replacer 函数
+      // 返回值不做 $ 替换（JS 规范），$n 会变字面文本
+      let replacement: string;
+      try {
+        replacement = regex
+          ? pythonTemplateToJs(newStr, scanGroups(pattern.source))
+          : newStr.replace(/\$/g, "$$$$");
+      } catch (e) {
+        if (e instanceof PythonTemplateError) {
+          ctx.log(`replace_file(${JSON.stringify(p)}) substitution failed: ${e.message}`);
+          return new ActionResult({
+            error:
+              e.kind === "reerror"
+                ? `Regex substitution failed for ${pyReprDeep(oldStr)}: ${e.message}`
+                : e.message,
+          });
+        }
+        throw e;
+      }
       if (count === undefined || count === null) {
         newContent = content.replace(pattern, replacement);
         replaced = rawTotal;
       } else {
+        // 单遍在原文上取前 count 个匹配后拼接，绝不重扫替换产物（Python subn 的
+        // count 语义——new ⊇ old 时重扫会漏改原文且 replaced 虚报，评审轮 1 [8]）。
+        // 每段用字符串形态替换让引擎展开 $ 模板
         const single = new RegExp(pattern.source, pattern.flags.replace("g", ""));
-        let cur = content;
-        let next = cur.replace(single, replacement);
+        let out = "";
+        let rest = content;
         let done = 0;
-        while (done < count && next !== cur) {
-          cur = next;
+        while (done < count) {
+          const m = single.exec(rest);
+          if (m === null) break;
+          out += rest.slice(0, m.index + m[0].length).replace(single, replacement);
+          if (m[0] === "") {
+            // 零宽匹配：吃一个后续字符前进防原地打转；串尾零宽替换一次即停
+            if (m.index >= rest.length) break;
+            out += rest.slice(m.index, m.index + 1);
+            rest = rest.slice(m.index + 1);
+          } else {
+            rest = rest.slice(m.index + m[0].length);
+          }
           done += 1;
-          next = cur.replace(single, replacement);
         }
-        newContent = cur;
-        replaced = Math.min(count, rawTotal);
+        newContent = out + rest;
+        replaced = done;
       }
     } else if (count === undefined || count === null) {
       newContent = content.split(oldStr).join(newStr);
       replaced = rawTotal;
     } else {
-      newContent = content;
+      // literal count：同样只扫原文（indexOf 推进，不重扫替换产物）
+      let out = "";
+      let rest = content;
       let done = 0;
       while (done < count) {
-        const idx = newContent.indexOf(oldStr);
+        const idx = rest.indexOf(oldStr);
         if (idx < 0) break;
-        newContent = newContent.slice(0, idx) + newStr + newContent.slice(idx + oldStr.length);
+        out += rest.slice(0, idx) + newStr;
+        rest = rest.slice(idx + oldStr.length);
         done += 1;
       }
-      replaced = Math.min(count, rawTotal);
+      newContent = out + rest;
+      replaced = done;
     }
     try {
-      await ctx.fs.writeTextFile(path, newContent);
+      await ctx.fs.writeTextFile(p, newContent);
     } catch (e) {
-      ctx.log(`replace_file(${JSON.stringify(path)}) failed: ${errText(e)}`);
-      return new ActionResult({ error: `Failed to replace text in ${path}: ${errText(e)}` });
+      ctx.log(`replace_file(${JSON.stringify(p)}) failed: ${errText(e)}`);
+      return new ActionResult({ error: `Failed to replace text in ${p}: ${errText(e)}` });
     }
 
     const finalBytes = utf8Len(newContent);
@@ -412,7 +639,7 @@ export function createReplaceFileHandler(ctx: ToolsContext): ActionHandler {
         : `${replaced} occurrence${replaced !== 1 ? "s" : ""}`;
     const memory =
       `Replaced ${matchClause} of ${pyReprDeep(oldStr)} with ${pyReprDeep(newStr)} ` +
-      `in ${path} (${finalBytes} bytes)`;
+      `in ${p} (${finalBytes} bytes)`;
     return new ActionResult({ extractedContent: memory, longTermMemory: memory });
   };
 }

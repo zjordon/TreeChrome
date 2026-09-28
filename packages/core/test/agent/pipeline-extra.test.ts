@@ -139,6 +139,7 @@ describe("视觉门与截图", () => {
       settings: { useVision: true },
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {},

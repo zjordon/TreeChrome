@@ -420,6 +420,7 @@ async function main() {
       readTextFile: async () => "",
       ensureDir: async () => {},
       writeTextFile: async () => {},
+      appendTextFile: async () => {},
       writeBytes: async (p, data) => {
         fsFiles.set(p, data);
       },

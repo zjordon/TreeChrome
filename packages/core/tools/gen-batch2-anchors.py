@@ -20,7 +20,6 @@ from tree_walker.browser.session import (
     _text_queries,
     _xpath_string_literal,
 )
-from tree_walker.config import TruncationSettings
 from tree_walker.tools.actions import (
     _SEARCH_ENGINE_URLS,
     Tools,
@@ -29,8 +28,6 @@ from tree_walker.tools.actions import (
     _format_search_results,
     _sniff_file_kind,
 )
-
-READ_FILE_FOOTER_RESERVE = 160  # actions.py :661
 
 
 def ar(result):
