@@ -106,14 +106,15 @@ describe("Act 守卫与投影补充", () => {
 });
 
 describe("obs 事件流", () => {
-  it("EventBus 全链事件（step_start→model_call→model_result→skill_active→tool_call→tool_result→step_end）", async () => {
+  it("EventBus 全链事件（step_start→model_call→model_result→skill_active→tool_call→tool_result→step_end→session_end）", async () => {
     const browser = new FakeAgentBrowser();
     const bus = new EventBus({ log: () => {} });
     const events: string[] = [];
     bus.subscribe("*", (e: TwEvent) => events.push(e.eventType));
     const { agent } = make([ok(doneOutput())], browser, { eventBus: bus });
     await agent.run();
-    // 事件序：Sense 的 skill_active 先于 Think 的 model_call
+    // 事件序：Sense 的 skill_active 先于 Think 的 model_call；session_end 由 run
+    // finally 收口（4.5 补齐，close 前最后一声）
     expect(events).toEqual([
       "step_start",
       "skill_active",
@@ -122,6 +123,7 @@ describe("obs 事件流", () => {
       "tool_call",
       "tool_result",
       "step_end",
+      "session_end",
     ]);
     bus.close();
   });

@@ -33,7 +33,12 @@ export function postProcess(ctx: StepCtx, results: ActionResult[], modelOutput: 
   if (ctx.state.infraFailures > 0) {
     ctx.state.infraFailures = 0;
   }
-  if (results.length === 1 && results[results.length - 1].error !== null) {
+  // denied 不计失败（04 §2）——落非失败面：不递增且与成功步同规则清零
+  if (
+    results.length === 1 &&
+    results[results.length - 1].error !== null &&
+    !results[results.length - 1].denied
+  ) {
     ctx.state.consecutiveFailures += 1;
     return;
   }

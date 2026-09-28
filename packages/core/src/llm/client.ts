@@ -262,11 +262,13 @@ export class LLMClient {
   private warnedInvalidDeadline = false;
   private readonly deps: Required<LLMDeps>;
 
-  constructor(config: ProviderConfig, deps?: LLMDeps) {
+  constructor(config: ProviderConfig, deps?: LLMDeps, provider?: LLMProvider) {
     this.config = config;
     this.deps = resolveDeps(deps);
     this.sensitiveObs = new SensitiveObservability(this.deps.log);
-    this.provider = createProvider(config, this.deps);
+    // provider 注入（构造注入优先）：宿主自建适配器/测试 ScriptedLLMProvider 直挂。
+    // fallback 切换仍按 fallbackConfig 走 createProvider 重建（注入面不承诺跨卡）
+    this.provider = provider ?? createProvider(config, this.deps);
     this.fallbackConfig = config.fallback ?? null;
   }
 

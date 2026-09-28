@@ -112,12 +112,10 @@ export {
   toolCallEvent,
   toolResultEvent,
 } from "./events/events.js";
-
 export type { GetActionOptions, GetActionResult } from "./llm/client.js";
 // resolveChatHttpTimeoutMs 为内部决策函数不进公共导出面（防签名调整成 breaking
 // change）；测试锚定直接从 ./llm/client.js 深层导入（同 config/types 测试惯例）
 export { createLLMClient, createProvider, LLMClient } from "./llm/client.js";
-
 export { DEFAULT_MAX_TOKENS, modelSupportsVision, resolveCapabilities } from "./llm/config.js";
 export type { LLMDeps } from "./llm/deps.js";
 export {
@@ -156,6 +154,8 @@ export type {
   UserMessage,
 } from "./llm/types.js";
 export { assertValidMessages } from "./llm/types.js";
+// —— P4.5 权限门（p4/04 §1.2 五模块）——
+export * from "./policy/index.js";
 export type { ExtractClientFace, ToolsContext } from "./tools/actions/context.js";
 // —— P4.3 tools 层（p4/02 §3 导出面）——
 export { Tools } from "./tools/actions/index.js";

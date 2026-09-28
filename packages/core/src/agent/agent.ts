@@ -5,7 +5,9 @@
 
 import type { BrowserSession } from "../browser/session.js";
 import type { EventBus } from "../events/event-bus.js";
+import { sessionEndEvent } from "../events/events.js";
 import type { LLMClient } from "../llm/client.js";
+import type { PolicyGate } from "../policy/policy.js";
 import { Tools } from "../tools/actions/index.js";
 import type { FileSystemProvider } from "../tools/fs.js";
 import { actionsOf, nameOf, paramsOf } from "./action-shape.js";
@@ -45,6 +47,8 @@ export interface AgentOptions {
   skillSource?: StepCtx["skillSource"] | null;
   /** 观测事件总线（null = 关观测——偏离 5：订阅装配在宿主） */
   eventBus?: EventBus | null;
+  /** 权限门（4.5；null = 宿主未装配，动作直通；回合结束自动清 once 授权） */
+  policy?: PolicyGate | null;
   /** judge 独立评审 LLM（对应 JudgeSettings.model 非空的独立模型卡；缺省复用主 llm
    *  ——Python AGENT_JUDGE_MODEL 装载独立卡的宿主侧等价注入口） */
   judgeLlm?: LLMClient | null;
@@ -89,6 +93,7 @@ export class Agent implements StepCtx {
   readonly planManager: PlanManager | null;
   readonly obsBus: EventBus | null;
   readonly obsSessionId: string;
+  readonly policy: PolicyGate | null;
   messages: StepCtx["messages"] = [];
   systemPrompt: string;
   toolSchema: Record<string, unknown>;
@@ -170,6 +175,7 @@ export class Agent implements StepCtx {
     this.planManager = s.enablePlanning ? new PlanManager() : null;
     this.obsBus = options.eventBus ?? null;
     this.obsSessionId = Math.random().toString(16).slice(2, 10);
+    this.policy = options.policy ?? null;
     this.skillSource = options.skillSource ?? null;
     this.sleep = (options.sleep as (ms: number) => Promise<void>) ?? defaultSleep;
     this.now = options.now ?? (() => Date.now() / 1000);
@@ -198,6 +204,7 @@ export class Agent implements StepCtx {
   // ── 公共 API ───────────────────────────────────────────────────────
 
   async run(keepAlive = false): Promise<AgentHistoryList> {
+    const runStartedAt = this.now();
     await this.browser.start({
       trackDownloads: this.settings.trackDownloads,
       enableRecentEvents: this.settings.enableRecentEvents,
@@ -270,8 +277,27 @@ export class Agent implements StepCtx {
       // 降级信息落到返回的 history（调用方可区分「正常完成」与「残缺完成」）
       this.history.finalizeDegradedSteps = this.state.finalizeDegradedSteps;
       if (this.obsBus !== null) {
+        // session_end 收口（04 §4 九类面补齐；judge 复核结果随末步 done 带出）
+        const lastStep =
+          this.history.history.length > 0
+            ? this.history.history[this.history.history.length - 1]
+            : null;
+        const judgement = lastStep?.result.find((r) => r.isDone)?.judgement ?? null;
+        this.obsBus.emit(
+          sessionEndEvent(this.state.nSteps, this.obsSessionId, {
+            totalSteps: this.history.history.length,
+            totalDurationSeconds: this.now() - runStartedAt,
+            summary: `done=${this.history.isDone()} successful=${this.history.isSuccessful()} degraded=${this.state.finalizeDegradedSteps}`,
+            evaluation:
+              typeof judgement === "object" && judgement !== null
+                ? (judgement as Record<string, unknown>)
+                : null,
+          }),
+        );
         this.obsBus.close();
       }
+      // 回合结束清 once 授权（04 §3；always 持久化不受影响）
+      this.policy?.clearOnce();
       if (!keepAlive) {
         await this.browser.stop();
       }
