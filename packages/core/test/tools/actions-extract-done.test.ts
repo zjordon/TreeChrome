@@ -140,6 +140,8 @@ describe("extract", () => {
         writes.push([p, content]);
       },
       writeBytes: async () => {},
+      stat: async () => null,
+      readHead: async () => null,
     };
     ctx.fs = fs;
     const r = await exec(tools, browser, "extract", { query: "q", start_from_char: 16_000 });
@@ -217,6 +219,8 @@ describe("done（变体 A）", () => {
       ensureDir: async () => {},
       writeTextFile: async () => {},
       writeBytes: async () => {},
+      stat: async () => null,
+      readHead: async () => null,
     };
     const { tools, ctx } = makeTools({ allowedReadPaths: ["C:/out"] });
     ctx.fs = fs;
@@ -237,6 +241,8 @@ describe("done（变体 A）", () => {
       ensureDir: async () => {},
       writeTextFile: async () => {},
       writeBytes: async () => {},
+      stat: async () => null,
+      readHead: async () => null,
     };
     const { tools } = makeTools({ fs, displayFilesInDoneText: true });
     const r = await exec(tools, new FakeBrowser(), "done", {

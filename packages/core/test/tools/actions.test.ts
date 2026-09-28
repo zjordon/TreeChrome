@@ -16,20 +16,31 @@ async function exec(
 }
 
 describe("Tools 编排器", () => {
-  it("batch1 十动作注册；batch2 模型不注册（25 模型已定义）", () => {
+  it("P4b 段 1 后注册面=20 动作（batch1 十 + 段 1 十）；剩余 5 模型不注册", () => {
     const { tools } = makeTools();
     expect([...tools.registry.actions.keys()].sort()).toEqual([
       "click",
+      "close_tab",
       "done",
       "extract",
+      "find_elements",
+      "find_text",
       "go_back",
       "input_text",
       "navigate",
+      "read_file",
+      "replace_file",
+      "save_as_pdf",
+      "screenshot",
       "scroll",
+      "search",
+      "search_page",
       "send_keys",
       "switch_tab",
       "wait",
+      "write_file",
     ]);
+    expect(tools.registry.actions.has("evaluate")).toBe(false);
   });
   it("未知名 → Unknown action error", async () => {
     const { tools } = makeTools();

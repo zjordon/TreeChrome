@@ -1,12 +1,14 @@
 // registry 层锚定测试：registryVersion / tool schema 矩阵（flash·standard·thinking ×
 // 单·多动作 × planning）逐字节对拍 fixture；descriptionsText 对拍；pagePatterns 可见性；
-// fnmatchLike / hideFieldsFromSchema 单元。Tools 构造即 batch1 注册面。
+// fnmatchLike / hideFieldsFromSchema 单元。batch1 断言用子集 registry（生成器同款），
+// segmentA（P4b 段 1 后 TS 默认 20 动作面）对拍默认 Tools 构造。
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Tools } from "../../src/tools/actions/index.js";
-import { fnmatchLike, hideFieldsFromSchema } from "../../src/tools/registry.js";
+import { ACTION_DEFINITIONS } from "../../src/tools/models.js";
+import { ActionRegistry, fnmatchLike, hideFieldsFromSchema } from "../../src/tools/registry.js";
 
 const FIXTURE = JSON.parse(
   readFileSync(
@@ -21,15 +23,43 @@ const FIXTURE = JSON.parse(
     descriptionsText: string;
     pageFiltered: Record<string, unknown>;
   };
+  segmentA: {
+    names: string[];
+    registryVersion: string;
+    toolSchema: Record<string, unknown>;
+    descriptionsText: string;
+  };
 };
 
 const S = JSON.stringify;
 
+/** 子集注册面（gen-tools-anchors.py 同款：仅注册 names，noop handler） */
+function subsetRegistry(names: string[]): ActionRegistry {
+  const registry = new ActionRegistry();
+  for (const name of names) {
+    const def = ACTION_DEFINITIONS[name];
+    registry.register({
+      name,
+      description: def.description,
+      params: def.params,
+      handler: async () => null,
+      terminatesSequence: def.terminatesSequence,
+    });
+  }
+  return registry;
+}
+
 const makeRegistry = () => new Tools({ log: () => {} }).registry;
 
 describe("registryVersion（动作名集合 sha256[:12]）", () => {
-  it("batch1 十动作指纹对拍", () => {
-    expect(makeRegistry().registryVersion).toBe(FIXTURE.batch1.registryVersion);
+  it("batch1 十动作指纹对拍（子集 registry——生成器同形态）", () => {
+    expect(subsetRegistry(FIXTURE.batch1.names).registryVersion).toBe(
+      FIXTURE.batch1.registryVersion,
+    );
+  });
+  it("segmentA 二十动作指纹对拍（P4b 段 1 后默认 Tools 面）", () => {
+    expect(makeRegistry().registryVersion).toBe(FIXTURE.segmentA.registryVersion);
+    expect(makeRegistry().actions.size).toBe(FIXTURE.segmentA.names.length);
   });
   it("动作集变化 → 指纹变化；参数细节变化不触发（按名集合）", () => {
     const r = makeRegistry();
@@ -51,8 +81,13 @@ describe("getToolSchema 矩阵（逐字节对拍）", () => {
     ["standard-multi-planning", { outputMode: "standard", maxActions: 3, enablePlanning: true }],
   ];
   for (const [key, opts] of cases) {
-    it(`${key}`, () => {
-      expect(S(makeRegistry().getToolSchema(opts))).toBe(S(FIXTURE.batch1.toolSchema[key]));
+    it(`batch1 ${key}`, () => {
+      expect(S(subsetRegistry(FIXTURE.batch1.names).getToolSchema(opts))).toBe(
+        S(FIXTURE.batch1.toolSchema[key]),
+      );
+    });
+    it(`segmentA ${key}`, () => {
+      expect(S(makeRegistry().getToolSchema(opts))).toBe(S(FIXTURE.segmentA.toolSchema[key]));
     });
   }
   it("action enum 按名字典序", () => {
@@ -66,20 +101,27 @@ describe("getToolSchema 矩阵（逐字节对拍）", () => {
 });
 
 describe("getActionDescriptionsText", () => {
-  it("batch1 全量文本逐字节对拍", () => {
-    expect(makeRegistry().getActionDescriptionsText()).toBe(FIXTURE.batch1.descriptionsText);
+  it("batch1 全量文本逐字节对拍（子集 registry）", () => {
+    expect(subsetRegistry(FIXTURE.batch1.names).getActionDescriptionsText()).toBe(
+      FIXTURE.batch1.descriptionsText,
+    );
   });
-  it("pagePatterns 命中页可见/他页隐藏；schema enum 同步", () => {
-    const tools = new Tools({ log: () => {} });
-    tools.applyPageFilters({ extract: ["https://example.com/*"] });
-    expect(tools.registry.getActionDescriptionsText("https://example.com/x")).toBe(
+  it("segmentA 二十动作文本逐字节对拍（默认 Tools 面）", () => {
+    expect(makeRegistry().getActionDescriptionsText()).toBe(FIXTURE.segmentA.descriptionsText);
+  });
+  it("pagePatterns 命中页可见/他页隐藏；schema enum 同步（batch1 子集 registry）", () => {
+    const registry = subsetRegistry(FIXTURE.batch1.names);
+    const extract = registry.actions.get("extract");
+    if (extract === undefined) throw new Error("extract 动作缺失——fixture 名单与注册面漂移");
+    extract.pagePatterns = ["https://example.com/*"];
+    expect(registry.getActionDescriptionsText("https://example.com/x")).toBe(
       FIXTURE.batch1.pageFiltered.descriptionsText,
     );
-    expect(tools.registry.getActionDescriptionsText("https://other.org/x")).toBe(
+    expect(registry.getActionDescriptionsText("https://other.org/x")).toBe(
       FIXTURE.batch1.pageFiltered.descriptionsTextOther,
     );
-    const schemaOn = tools.registry.getToolSchema({ pageUrl: "https://example.com/x" });
-    const schemaOff = tools.registry.getToolSchema({ pageUrl: "https://other.org/x" });
+    const schemaOn = registry.getToolSchema({ pageUrl: "https://example.com/x" });
+    const schemaOff = registry.getToolSchema({ pageUrl: "https://other.org/x" });
     const enumOf = (s: unknown) =>
       (
         (

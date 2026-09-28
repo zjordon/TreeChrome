@@ -1,0 +1,249 @@
+{
+  "engineUrls": {
+    "baidu": "https://www.baidu.com/s?wd={query}",
+    "google": "https://www.google.com/search?q={query}&udm=14",
+    "bing": "https://www.bing.com/search?q={query}",
+    "duckduckgo": "https://duckduckgo.com/?q={query}"
+  },
+  "formatFindResults": {
+    "basic": "Found 2 elements matching \"a.link\":\n\n[3] <a> \"About us\" {href=\"/about\"} (0 children)\n[7] <button> (2 children)",
+    "paginationGeometryOrigin": "Found 12 elements matching \"div.x\":\n\n[0] <div> \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...\" {id=\"a\", class=\"b c\"} (3 children) (visible, 50x7@1,3) (in shadow DOM)\n[1] <span> (0 children)\n\n... showing 11–12 of 12 total elements. Call again with offset=12 for the next batch (or raise max_results)."
+  },
+  "formatNodeIdResults": {
+    "basic": "Found 2 elements matching \"a.link\" (node ids):\n\n[1234] <a>  (pass as index= or element_id= to click/input_text)\n[5678] <button>  (pass as index= or element_id= to click/input_text)",
+    "pagination": "Found 5 elements matching \"input\" (node ids):\n\n[9] <input>  (pass as index= or element_id= to click/input_text)\n\n... showing 4–4 of 5 total elements. Call again with offset=4 for the next batch."
+  },
+  "formatSearchResults": {
+    "basic": "Found 1 match for \"hello\" on page:\n\n[1] ...hello world... (in div > p#intro)",
+    "pagination": "Found 9 matches for \"m\" on page:\n\n[1] m1\n\n... showing 5–5 of 9 total matches. Call again with offset=5 for the next batch (or raise max_results).",
+    "attributes": "Found 0 matches for \"hello\" on page:\n\n\nAttribute matches for \"hello\" (3):\n[1] @aria-label=Search hello (in input#q)\n[2] @alt=hello img (in img)\n... showing 2 of 3 attribute matches."
+  },
+  "textQueries": {
+    "plain": [
+      [
+        "xpath-text",
+        "//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), translate(\"hello\", 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))]"
+      ],
+      [
+        "xpath-content",
+        "//*[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), translate(\"hello\", 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))]"
+      ],
+      [
+        "xpath-attr",
+        "//*[@*[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), translate(\"hello\", 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))]]"
+      ]
+    ],
+    "plainSensitive": [
+      [
+        "xpath-text",
+        "//*[contains(text(), \"hello\")]"
+      ],
+      [
+        "xpath-content",
+        "//*[contains(., \"hello\")]"
+      ],
+      [
+        "xpath-attr",
+        "//*[@*[contains(., \"hello\")]]"
+      ]
+    ],
+    "doubleQuote": [
+      [
+        "xpath-text",
+        "//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), translate('say \"hi\"', 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))]"
+      ],
+      [
+        "xpath-content",
+        "//*[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), translate('say \"hi\"', 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))]"
+      ],
+      [
+        "xpath-attr",
+        "//*[@*[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), translate('say \"hi\"', 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))]]"
+      ]
+    ],
+    "bothQuotes": [
+      [
+        "xpath-text",
+        "//*[contains(text(), concat(\"'both' and \", '\"', \"kinds\", '\"', \"\"))]"
+      ],
+      [
+        "xpath-content",
+        "//*[contains(., concat(\"'both' and \", '\"', \"kinds\", '\"', \"\"))]"
+      ],
+      [
+        "xpath-attr",
+        "//*[@*[contains(., concat(\"'both' and \", '\"', \"kinds\", '\"', \"\"))]]"
+      ]
+    ]
+  },
+  "xpathStringLiteral": {
+    "plain": "\"abc\"",
+    "doubleQuote": "'a\"b'",
+    "singleQuote": "\"a'b\"",
+    "both": "concat(\"a\", '\"', \"b'c\")"
+  },
+  "searchPageJs": "(function() {\nvar PATTERN = \"hello + world\";\nvar IS_REGEX = true;\nvar CASE_SENSITIVE = false;\nvar CONTEXT_CHARS = 150;\nvar CSS_SCOPE = \"div#main\";\nvar MAX_RESULTS = 25;\nvar OFFSET = 0;\nvar SEARCH_ATTRIBUTES = true;\n\n    function _getPath(el) {\n        if (!el || el === document.body) return '';\n        var parts = [];\n        while (el && el !== document.body) {\n            var tag = (el.tagName || '').toLowerCase();\n            if (!tag) break;\n            var part = tag;\n            if (el.id) {\n                part += '#' + el.id;\n            } else if (el.className && typeof el.className === 'string') {\n                var cls = el.className.trim().split(/\\s+/).slice(0, 2).join('.');\n                if (cls) part += '.' + cls;\n            }\n            parts.unshift(part);\n            el = el.parentElement;\n        }\n        return parts.join(' > ');\n    }\n    function _origin(node) {\n        // 标记非顶层文档来源：ShadowRoot(nodeType=11) → shadow DOM；其它(getRootNode≠document) → iframe\n        try {\n            var r = node.getRootNode ? node.getRootNode() : null;\n            if (r && r !== document) {\n                return r.nodeType === 11 ? ' (in shadow DOM)' : ' (in iframe)';\n            }\n        } catch (_) {}\n        return '';\n    }\n    function _collectText(root) {\n        var wt = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);\n        var n;\n        while ((n = wt.nextNode())) {\n            var t = n.textContent;\n            if (t && t.trim()) {\n                nodeOffsets.push({offset: fullText.length, length: t.length, node: n});\n                fullText += t;\n            }\n        }\n        // 穿透：开放 shadow root + 同源 iframe contentDocument（TreeWalker 不跨 shadow / 文档边界，需手动递归）\n        var we = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\n        var el;\n        while ((el = we.nextNode())) {\n            if (el.shadowRoot) {\n                try { _collectText(el.shadowRoot); } catch (_) {}      // closed shadow: shadowRoot=null，自然跳过\n            }\n            if (el.tagName === 'IFRAME') {\n                try {\n                    var cd = el.contentDocument;                       // 同源可读；跨源抛 SecurityError → catch 跳过（阶段三）\n                    if (cd && cd.body) _collectText(cd.body);\n                } catch (_) {}\n            }\n        }\n    }\n    try {\n        var scope = CSS_SCOPE ? document.querySelector(CSS_SCOPE) : document.body;\n        if (!scope) {\n            return {error: 'CSS scope selector not found: ' + CSS_SCOPE, matches: [], total: 0};\n        }\n        var fullText = '';\n        var nodeOffsets = [];\n        _collectText(scope);\n        var flags = CASE_SENSITIVE ? 'g' : 'gi';\n        var re;\n        try {\n            if (IS_REGEX) {\n                re = new RegExp(PATTERN, flags);\n            } else {\n                re = new RegExp(PATTERN.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), flags);\n            }\n        } catch (e) {\n            return {error: 'Invalid regex pattern: ' + (e && e.message ? e.message : e), matches: [], total: 0};\n        }\n        var matches = [];\n        var total = 0;\n        var match;\n        while ((match = re.exec(fullText)) !== null) {\n            total++;\n            // offset 窗口：累计全部 total，只存 [OFFSET, OFFSET+MAX_RESULTS) 区间（保持 early-bail 性能）\n            if (total - 1 >= OFFSET && matches.length < MAX_RESULTS) {\n                var start = Math.max(0, match.index - CONTEXT_CHARS);\n                var end = Math.min(fullText.length, match.index + match[0].length + CONTEXT_CHARS);\n                var context = fullText.slice(start, end);\n                var elementPath = '';\n                for (var i = 0; i < nodeOffsets.length; i++) {\n                    var no = nodeOffsets[i];\n                    if (no.offset <= match.index && no.offset + no.length > match.index) {\n                        elementPath = _getPath(no.node.parentElement) + _origin(no.node);\n                        break;\n                    }\n                }\n                matches.push({\n                    match_text: match[0],\n                    context: (start > 0 ? '...' : '') + context + (end < fullText.length ? '...' : ''),\n                    element_path: elementPath,\n                    char_position: match.index\n                });\n            }\n            if (match[0].length === 0) re.lastIndex++;\n        }\n        var attribute_matches = [];\n        var attribute_total = 0;\n        if (SEARCH_ATTRIBUTES) {\n            // 非全局 RegExp 副本做 .test，规避全局正则 lastIndex 漂移\n            var reAttr = new RegExp(re.source, CASE_SENSITIVE ? '' : 'i');\n            var we = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);\n            var el;\n            while ((el = we.nextNode())) {\n                var attrs = el.attributes;\n                if (!attrs) continue;\n                for (var a = 0; a < attrs.length; a++) {\n                    var av = attrs[a].value;\n                    if (av && reAttr.test(av)) {\n                        attribute_total++;\n                        if (attribute_matches.length < MAX_RESULTS) {\n                            attribute_matches.push({\n                                attribute: attrs[a].name,\n                                value: av,\n                                element_path: _getPath(el) + _origin(el)\n                            });\n                        }\n                    }\n                }\n            }\n        }\n        return {\n            matches: matches,\n            total: total,\n            offset: OFFSET,\n            has_more: (OFFSET + matches.length) < total,\n            attribute_matches: attribute_matches,\n            attribute_total: attribute_total\n        };\n    } catch (e) {\n        return {error: String((e && e.message) || e), matches: [], total: 0};\n    }\n\n})()",
+  "findElementsJs": "(function() {\nvar SELECTOR = \"a.link\";\nvar ATTRIBUTES = [\"href\", \"id\"];\nvar MAX_RESULTS = 50;\nvar OFFSET = 10;\nvar INCLUDE_TEXT = true;\nvar FIRST_ONLY = false;\nvar INCLUDE_GEOMETRY = true;\n\n    function _origin(node) {\n        // 标记非顶层文档来源：ShadowRoot(nodeType=11) → shadow DOM；其它(getRootNode≠document) → iframe\n        try {\n            var r = node.getRootNode ? node.getRootNode() : null;\n            if (r && r !== document) {\n                return r.nodeType === 11 ? ' (in shadow DOM)' : ' (in iframe)';\n            }\n        } catch (_) {}\n        return '';\n    }\n    function _collectAll(root, out) {\n        // 穿透：开放 shadow root + 同源 iframe contentDocument\n        // （TreeWalker 不跨 shadow / 文档边界，需手动递归；镜像 _SEARCH_PAGE_JS_BODY._collectText）\n        var we = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\n        var el;\n        while ((el = we.nextNode())) {\n            out.push(el);\n            if (el.shadowRoot) {\n                try { _collectAll(el.shadowRoot, out); } catch (_) {}      // closed shadow: shadowRoot=null，自然跳过\n            }\n            if (el.tagName === 'IFRAME') {\n                try {\n                    var cd = el.contentDocument;                           // 同源可读；跨源抛 SecurityError → catch 跳过\n                    if (cd && cd.body) _collectAll(cd.body, out);\n                } catch (_) {}\n            }\n        }\n    }\n    function _isVisible(el) {\n        // 可信可见性：祖先链 display/visibility/opacity + 自身非零尺寸\n        // （修复阶段一 offsetParent !== null 的浅检测）\n        var node = el;\n        while (node && node.nodeType === 1) {\n            var cs = document.defaultView.getComputedStyle(node);\n            if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {\n                return false;\n            }\n            node = node.parentElement;\n        }\n        var r = el.getBoundingClientRect();\n        return r.width > 0 && r.height > 0;\n    }\n    try {\n        try {\n            // 选择器合法性先校验一次（invalid selector 会让下面的 matches() 抛 SyntaxError）\n            document.querySelector(SELECTOR);\n        } catch (e) {\n            return {error: 'Invalid CSS selector: ' + (e && e.message ? e.message : e), elements: [], total: 0};\n        }\n        // 收集顶层文档 + 所有开放 shadow / 同源 iframe 内的元素\n        var all = [];\n        _collectAll(document.documentElement, all);\n        var total = 0;\n        var limit = FIRST_ONLY ? 1 : MAX_RESULTS;\n        var results = [];\n        for (var k = 0; k < all.length; k++) {\n            if (all[k].matches(SELECTOR)) {\n                // offset 窗口：累计全部 total，只存 [OFFSET, OFFSET+limit) 区间（保持 early-bail 性能）\n                if (total >= OFFSET && results.length < limit) {\n                    var el = all[k];\n                    var item = {index: total, tag: el.tagName.toLowerCase(), origin: _origin(el)};\n                    if (INCLUDE_TEXT) {\n                        var text = (el.textContent || '').trim();\n                        item.text = text.length > 300 ? text.slice(0, 300) + '...' : text;\n                    }\n                    if (ATTRIBUTES && ATTRIBUTES.length > 0) {\n                        item.attrs = {};\n                        for (var j = 0; j < ATTRIBUTES.length; j++) {\n                            var attrName = ATTRIBUTES[j];\n                            var val;\n                            // src/href: use the resolved DOM property (absolute URL),\n                            // not getAttribute (raw authored value, often relative).\n                            if ((attrName === 'src' || attrName === 'href')\n                                && typeof el[attrName] === 'string' && el[attrName] !== '') {\n                                val = el[attrName];\n                            } else {\n                                val = el.getAttribute(attrName);\n                            }\n                            if (val !== null) {\n                                item.attrs[attrName] = val.length > 500 ? val.slice(0, 500) + '...' : val;\n                            }\n                        }\n                    }\n                    item.children_count = el.children.length;\n                    if (INCLUDE_GEOMETRY) {\n                        var rect = el.getBoundingClientRect();\n                        item.rect = {x: rect.left, y: rect.top, w: rect.width, h: rect.height};\n                        item.visible = _isVisible(el);\n                    }\n                    results.push(item);\n                }\n                total++;\n            }\n        }\n        return {\n            elements: results,\n            total: total,\n            showing: results.length,\n            offset: OFFSET,\n            has_more: (OFFSET + results.length) < total\n        };\n    } catch (e) {\n        return {error: 'find_elements error: ' + (e && e.message ? e.message : e), elements: [], total: 0};\n    }\n\n})()",
+  "sniff": {
+    "png": "image",
+    "jpeg": "image",
+    "gif87a": "image",
+    "gif89a": "image",
+    "webp": "image",
+    "avi": "binary",
+    "pdf": "pdf",
+    "docx": "docx",
+    "plainZip": "binary",
+    "elf": "binary",
+    "mz": "binary",
+    "gzip": "binary",
+    "bzip2": "binary",
+    "rar": "binary",
+    "7z": "binary",
+    "text": "text",
+    "emptyThenText": "text"
+  },
+  "fileActions": {
+    "writeOverwrite": {
+      "extracted_content": "Wrote 12 bytes to /ANCHOR_TMP/w1.txt",
+      "long_term_memory": "Wrote 12 bytes to /ANCHOR_TMP/w1.txt",
+      "error": null
+    },
+    "writeOverwriteFile": "line1\nline2\n",
+    "writeAppend": {
+      "extracted_content": "Appended 6 bytes to /ANCHOR_TMP/w1.txt",
+      "long_term_memory": "Appended 6 bytes to /ANCHOR_TMP/w1.txt",
+      "error": null
+    },
+    "writeAppendFile": "line1\nline2\nline3\n",
+    "writeNoTrailing": {
+      "extracted_content": "Wrote 2 bytes to /ANCHOR_TMP/w1.txt",
+      "long_term_memory": "Wrote 2 bytes to /ANCHOR_TMP/w1.txt",
+      "error": null
+    },
+    "writeNoTrailingFile": "\nx",
+    "writeUnknownEncoding": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "Unknown encoding 'no-such-codec': unknown encoding: no-such-codec"
+    },
+    "writeWhitelistReject": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "File path not in allowed write paths: /ANCHOR_TMP/elsewhere.txt"
+    },
+    "readWindow": {
+      "extracted_content": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n[...truncated: showing 3840 of 6000 chars from offset 0 (6000 bytes total); use offset=3840 to continue]",
+      "long_term_memory": "Read /ANCHOR_TMP/r.txt (3840 of 6000 chars from offset 0, 6000 bytes; truncated)",
+      "error": null
+    },
+    "readOffsetTail": {
+      "extracted_content": "AAAAAAAAAA",
+      "long_term_memory": "Read /ANCHOR_TMP/r.txt chars 5990-6000 of 6000 (6000 bytes; final page)",
+      "error": null
+    },
+    "readOffsetPastEnd": {
+      "extracted_content": "offset 9999 is at or past end of /ANCHOR_TMP/r.txt (6000 chars); nothing to read",
+      "long_term_memory": "offset 9999 is at or past end of /ANCHOR_TMP/r.txt (6000 chars); nothing to read",
+      "error": null
+    },
+    "readEmpty": {
+      "extracted_content": "/ANCHOR_TMP/empty.txt is empty (0 bytes)",
+      "long_term_memory": "/ANCHOR_TMP/empty.txt is empty (0 bytes)",
+      "error": null
+    },
+    "readBinaryReject": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "/ANCHOR_TMP/r.bin looks like a binary file; read_file reads UTF-8 text, PDF, DOCX, or images (PNG/JPEG/GIF/WebP)."
+    },
+    "readImageHint": {
+      "extracted_content": "/ANCHOR_TMP/r.png is an image (image/png, 16 bytes). read_file cannot inline images yet (vision channel not wired); re-save as text/PDF, or use a vision-capable flow.",
+      "long_term_memory": "/ANCHOR_TMP/r.png is an image (image/png, 16 bytes). read_file cannot inline images yet (vision channel not wired); re-save as text/PDF, or use a vision-capable flow.",
+      "error": null
+    },
+    "readPdfNoParser": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "/ANCHOR_TMP/r.pdf is a PDF; install the 'docs' extra to enable PDF reading: uv pip install -e .[docs]"
+    },
+    "readSniffDir": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "Failed to read file /ANCHOR_TMP: [Errno 13] Permission denied: 'C:\\\\Users\\\\ZhuanZ\\\\AppData\\\\Local\\\\Temp\\\\tmpmzgpx7e7'"
+    },
+    "readWhitelistReject": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "File path not in allowed read paths: /ANCHOR_TMP/r.txt"
+    },
+    "replaceLiteral": {
+      "extracted_content": "Replaced 2 occurrences of 'foo' with 'BAZ' in /ANCHOR_TMP/rep.txt (16 bytes)",
+      "long_term_memory": "Replaced 2 occurrences of 'foo' with 'BAZ' in /ANCHOR_TMP/rep.txt (16 bytes)",
+      "error": null
+    },
+    "replaceLiteralFile": "BAZ bar BAZ BAR\n",
+    "replaceCaseInsensitive": {
+      "extracted_content": "Replaced 2 occurrences of 'foo' with 'x' in /ANCHOR_TMP/rep.txt (12 bytes)",
+      "long_term_memory": "Replaced 2 occurrences of 'foo' with 'x' in /ANCHOR_TMP/rep.txt (12 bytes)",
+      "error": null
+    },
+    "replaceCaseInsensitiveFile": "x bar x BAR\n",
+    "replaceCount": {
+      "extracted_content": "Replaced 2 of 3 occurrences of 'aa' with 'z' in /ANCHOR_TMP/rep.txt (13 bytes)",
+      "long_term_memory": "Replaced 2 of 3 occurrences of 'aa' with 'z' in /ANCHOR_TMP/rep.txt (13 bytes)",
+      "error": null
+    },
+    "replaceCountFile": "z bb z bb aa\n",
+    "replaceExpectedMismatch": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "replace_file expected 99 match(es) for 'aa' in /ANCHOR_TMP/rep.txt, found 1; file unchanged"
+    },
+    "replaceSoftMiss": {
+      "extracted_content": "No occurrences of 'nope' found in /ANCHOR_TMP/rep.txt; file unchanged",
+      "long_term_memory": "No occurrences of 'nope' found in /ANCHOR_TMP/rep.txt; file unchanged",
+      "error": null
+    },
+    "replaceOldEmpty": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "replace_file 'old' must be a non-empty string"
+    },
+    "replaceInvalidRegex": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "Invalid regex pattern '([unclosed': unterminated character set at position 1"
+    },
+    "replaceRegex": {
+      "extracted_content": "Replaced 3 occurrences of 'v(\\\\d)' with 'w\\\\1' in /ANCHOR_TMP/rep.txt (9 bytes)",
+      "long_term_memory": "Replaced 3 occurrences of 'v(\\\\d)' with 'w\\\\1' in /ANCHOR_TMP/rep.txt (9 bytes)",
+      "error": null
+    },
+    "replaceRegexFile": "w1 w2 w3\n",
+    "replaceRegexLiteralNew": {
+      "extracted_content": "Replaced 1 occurrence of 'w1' with '\\\\1' in /ANCHOR_TMP/rep.txt (9 bytes)",
+      "long_term_memory": "Replaced 1 occurrence of 'w1' with '\\\\1' in /ANCHOR_TMP/rep.txt (9 bytes)",
+      "error": null
+    },
+    "replaceRegexLiteralNewFile": "\\1 w2 w3\n",
+    "replaceBackup": {
+      "extracted_content": "Replaced 1 occurrence of 'keep' with 'held' in /ANCHOR_TMP/rep2.txt (8 bytes)",
+      "long_term_memory": "Replaced 1 occurrence of 'keep' with 'held' in /ANCHOR_TMP/rep2.txt (8 bytes)",
+      "error": null
+    },
+    "replaceBackupFile": "keep me\n",
+    "replaceNotFound": {
+      "extracted_content": null,
+      "long_term_memory": null,
+      "error": "File not found: /ANCHOR_TMP/ghost.txt"
+    },
+    "readLimit": {
+      "extracted_content": "AAAAA\n[...truncated: showing 5 of 6000 chars from offset 10 (6000 bytes total); use offset=15 to continue]",
+      "long_term_memory": "Read /ANCHOR_TMP/r.txt (5 of 6000 chars from offset 10, 6000 bytes; truncated)",
+      "error": null
+    }
+  },
+  "anchorTmpPlaceholder": true,
+  "venvHasPypdf": false
+}

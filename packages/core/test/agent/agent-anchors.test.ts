@@ -29,7 +29,6 @@ import {
 import { buildTaskSkillText, matchTaskSkill } from "../../src/agent/skills/task-matcher.js";
 import { ActionResult, AgentHistory, AgentHistoryList } from "../../src/agent/views.js";
 import type { BrowserStateSummary } from "../../src/browser/views.js";
-import { Tools } from "../../src/tools/actions/index.js";
 import { ACTION_DEFINITIONS } from "../../src/tools/models.js";
 import { ActionRegistry } from "../../src/tools/registry.js";
 import { makeState } from "./fixtures.js";
@@ -55,9 +54,31 @@ const FIXTURE = JSON.parse(
   // biome-ignore lint/suspicious/noExplicitAny: fixture 是外部 JSON 的弱形态读取面
 ) as Record<string, any>;
 
-/** batch1 registry descriptions（Python fixture 同源） */
+/** batch1 registry descriptions（Python fixture 同源——子集注册，P4b 段 1 起默认面为 20 动作） */
 function batch1Descriptions(): string {
-  return new Tools({ log: () => {} }).registry.getActionDescriptionsText();
+  const registry = new ActionRegistry();
+  for (const name of [
+    "navigate",
+    "click",
+    "input_text",
+    "scroll",
+    "extract",
+    "wait",
+    "go_back",
+    "switch_tab",
+    "send_keys",
+    "done",
+  ]) {
+    const def = ACTION_DEFINITIONS[name];
+    registry.register({
+      name,
+      description: def.description,
+      params: def.params,
+      handler: async () => null,
+      terminatesSequence: def.terminatesSequence,
+    });
+  }
+  return registry.getActionDescriptionsText();
 }
 
 /** 全量 25 动作 descriptions（dummy handler 注册——Python fixture all 变体同源） */

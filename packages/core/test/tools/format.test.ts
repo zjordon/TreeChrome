@@ -131,6 +131,8 @@ describe("saveOversizedResult", () => {
           writes.push(c);
         },
         writeBytes: async () => {},
+        stat: async () => null,
+        readHead: async () => null,
       },
     });
     expect(out).toBeNull();
@@ -157,6 +159,8 @@ describe("saveOversizedResult", () => {
         ensureDir: async () => {},
         writeTextFile: async () => {},
         writeBytes: async () => {},
+        stat: async () => null,
+        readHead: async () => null,
       },
     });
     expect(ok).toBe("out/act_123456.txt");
@@ -172,6 +176,8 @@ describe("saveOversizedResult", () => {
         },
         writeTextFile: async () => {},
         writeBytes: async () => {},
+        stat: async () => null,
+        readHead: async () => null,
       },
       log: (m) => logs.push(m),
     });

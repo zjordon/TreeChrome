@@ -8,7 +8,6 @@ import type { AgentSettings } from "../../src/agent/settings.js";
 import { catalogLine, renderTaskCard } from "../../src/agent/skills/types.js";
 import { AgentHistoryList } from "../../src/agent/views.js";
 import type { BrowserSession } from "../../src/browser/session.js";
-import type { LLMClient } from "../../src/llm/client.js";
 import type { ToolDefinition } from "../../src/llm/types.js";
 import { FakeAgentBrowser, FakeAgentLLM, type LlmScriptEntry } from "./fixtures.js";
 

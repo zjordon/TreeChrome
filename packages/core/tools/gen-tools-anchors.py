@@ -86,6 +86,35 @@ def main() -> None:
             ["properties"]["name"]["enum"],
     }
 
+    # ── 2b. P4b 段 1 注册面（batch1 + 段 1 十动作 = 20 动作；TS 默认 Tools 面）──
+    SEGMENT_A = BATCH1 + [
+        "search", "find_elements", "find_text", "search_page", "screenshot",
+        "save_as_pdf", "close_tab", "write_file", "read_file", "replace_file",
+    ]
+    reg_a = ActionRegistry()
+    for name in SEGMENT_A:
+        param_model, description, terminates = ACTION_DEFINITIONS[name]
+        reg_a.action(
+            name=name, description=description, param_model=param_model,
+            terminates=terminates,
+        )(lambda *a, **k: None)
+    data["segmentA"] = {
+        "names": SEGMENT_A,
+        "registryVersion": reg_a.registry_version,
+        "toolSchema": {
+            "flash-single": reg_a.get_tool_schema(output_mode="flash"),
+            "flash-multi": reg_a.get_tool_schema(output_mode="flash", max_actions=3),
+            "standard-single": reg_a.get_tool_schema(output_mode="standard"),
+            "standard-multi": reg_a.get_tool_schema(output_mode="standard", max_actions=3),
+            "thinking-single": reg_a.get_tool_schema(output_mode="thinking"),
+            "thinking-single-planning": reg_a.get_tool_schema(
+                output_mode="thinking", enable_planning=True),
+            "standard-multi-planning": reg_a.get_tool_schema(
+                output_mode="standard", max_actions=3, enable_planning=True),
+        },
+        "descriptionsText": reg_a.get_action_descriptions_text(),
+    }
+
     # ── 3. 变体 B done：结构化输出参数模型 ──
     from pydantic import BaseModel, ConfigDict
 

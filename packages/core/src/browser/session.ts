@@ -39,6 +39,13 @@ import {
 import { NetworkIdleTracker } from "./network-idle.js";
 import type { PrintToPdfOptions, ScreenshotOptions } from "./screenshot.js";
 import { printToPdf, takeScreenshot } from "./screenshot.js";
+import type {
+  FindElementsData,
+  FindElementsNodeIdsData,
+  FindTextResult,
+  SearchPageData,
+} from "./search-find.js";
+import { findElements, findElementsNodeIds, findText, searchPage } from "./search-find.js";
 import { closeTab, createTab, getTabs, switchTab } from "./tabs.js";
 import { clearTextField, forceSetValue, readActiveText, typeText } from "./text-input.js";
 import type { BoundSend, CdpTransport, DownloadRecord, SessionInternals } from "./transport.js";
@@ -452,6 +459,46 @@ export class BrowserSession {
   }
   evalFunctionOnNode(backendNodeId: number, fn: string): Promise<unknown> {
     return evalFunctionOnNode(this.context(), backendNodeId, fn);
+  }
+  /** P4b 搜索/查找族（search-find.ts 四方法族） */
+  findText(
+    text: string,
+    opts?: { nth?: number; caseSensitive?: boolean; highlight?: "box" | "selection" | "none" },
+  ): Promise<FindTextResult> {
+    return findText(this.context(), text, opts);
+  }
+  findElements(
+    selector: string,
+    opts?: {
+      attributes?: string[] | null;
+      maxResults?: number;
+      offset?: number;
+      includeText?: boolean;
+      firstOnly?: boolean;
+      includeGeometry?: boolean;
+    },
+  ): Promise<FindElementsData> {
+    return findElements(this.context(), selector, opts);
+  }
+  findElementsNodeIds(
+    selector: string,
+    opts?: { maxResults?: number; offset?: number; includeUserAgentShadow?: boolean },
+  ): Promise<FindElementsNodeIdsData> {
+    return findElementsNodeIds(this.context(), selector, opts);
+  }
+  searchPage(
+    pattern: string,
+    opts?: {
+      regex?: boolean;
+      caseSensitive?: boolean;
+      contextChars?: number;
+      cssScope?: string | null;
+      maxResults?: number;
+      offset?: number;
+      searchAttributes?: boolean;
+    },
+  ): Promise<SearchPageData> {
+    return searchPage(this.context(), pattern, opts);
   }
   getPageHtml(options?: { extractLinks?: boolean; extractImages?: boolean }): Promise<string> {
     return getPageHtml(this.context(), options);
