@@ -28,6 +28,8 @@ export interface ActionResultInit {
   metadata?: Record<string, unknown> | null;
   /** done 附件路径列表；render() 不渲染（附件清单走 extractedContent） */
   attachments?: string[] | null;
+  /** 权限门拒绝标记（4.5 TreeChrome 扩展，Python 无此字段；不计 consecutiveFailures） */
+  denied?: boolean;
 }
 
 export class ActionResult {
@@ -41,6 +43,8 @@ export class ActionResult {
   judgement: unknown;
   readonly metadata: Record<string, unknown> | null;
   readonly attachments: string[] | null;
+  /** 权限门拒绝（render() 对齐 error 形态——error 已渲染，无需另出段） */
+  readonly denied: boolean;
 
   constructor(init: ActionResultInit = {}) {
     this.isDone = init.isDone ?? false;
@@ -51,6 +55,7 @@ export class ActionResult {
     this.judgement = init.judgement ?? null;
     this.metadata = init.metadata ?? null;
     this.attachments = init.attachments ?? null;
+    this.denied = init.denied ?? false;
     if (this.success === true && this.isDone !== true) {
       throw new Error(
         "success=True can only be set when is_done=True. " +

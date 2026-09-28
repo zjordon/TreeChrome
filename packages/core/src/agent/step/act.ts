@@ -1,10 +1,12 @@
 // Stage 3 Act：_execute_actions（:1357-1597）——严格串行 + 五守卫（done 中段截断/
 // is_done·error 截断/terminatesSequence/URL·target 漂移）+ per-action 超时与异常
 // 分诊（InterruptedError·连接类 re-raise）+ actionability 等待 + streak 记录 +
-// ToolCall/ToolResult 事件。权限门挂点（4.5 接线位）注释预留。
+// ToolCall/ToolResult 事件 + 权限门逐动作过门（4.5，架构 §5.3——denied 走 error
+// 通道不计 consecutiveFailures）。
 
 import type { BrowserStateSummary, EnhancedDOMTreeNode } from "../../browser/views.js";
 import { toolCallEvent, toolResultEvent } from "../../events/events.js";
+import { hostForAction, resolveCapability } from "../../policy/capability.js";
 import { actionsOf, isRecord, nameOf, paramsOf } from "../action-shape.js";
 import { ACTIONABILITY_ACTIONS, isFileInput, waitForActionability } from "../actionability.js";
 import { InterruptedError } from "../constants.js";
@@ -52,13 +54,11 @@ export async function executeActions(
     ctx.log(`  [${i + 1}/${total}] ${actionName}: ${JSON.stringify(safeParams)}`);
 
     const toolStart = ctx.now();
+    // 元素几何（ToolCallEvent 与权限门确认卡共用；无 index/拿不到 node → null 字段）
+    const geometry = actionElementGeometry(actionParams, browserState);
     let toolCallId = "";
     if (ctx.obsBus !== null) {
       toolCallId = Math.random().toString(16).slice(2, 10);
-      const { elementIndex, elementBbox, elementXpath } = actionElementGeometry(
-        actionParams,
-        browserState,
-      );
       ctx.obsBus.emit(
         toolCallEvent(ctx.state.nSteps, ctx.obsSessionId, {
           modelCallId: ctx.currentModelCallId,
@@ -67,9 +67,9 @@ export async function executeActions(
           params: actionParams,
           actionIndex: i,
           totalActions: total,
-          elementIndex,
-          elementBbox,
-          elementXpath,
+          elementIndex: geometry.elementIndex,
+          elementBbox: geometry.elementBbox,
+          elementXpath: geometry.elementXpath,
         }),
       );
     }
@@ -87,57 +87,91 @@ export async function executeActions(
     }
     const preTargetId = ctx.browser.currentTargetId;
 
-    // P0 探索 actionability：白名单动作等元素就绪（降级不抛——超时/漂移照常执行）
-    // 【权限门挂点（4.5 接线）：ToolCallEvent 之后、此处 actionability 之前，逐动作】
-    if (ctx.settings.explorationActionabilityCheck && ACTIONABILITY_ACTIONS.has(actionName)) {
-      const idx = actionParams.index;
-      const sm = browserState.domState ? browserState.domState.selectorMap : null;
-      const node = sm && typeof idx === "number" ? (sm.get(idx) ?? null) : null;
-      if (node !== null && !isFileInput(node) && typeof idx === "number") {
-        const [newState] = await waitForActionability(ctx.browser, browserState, idx, {
-          timeout: ctx.settings.explorationActionabilityTimeout,
-          poll: ctx.settings.explorationActionabilityPoll,
-          receivesEvents: ctx.settings.explorationActionabilityReceivesEvents,
-          runtimeOcclusion: ctx.settings.explorationActionabilityRuntimeOcclusion,
-          stable: ctx.settings.explorationActionabilityStable,
-          stableInterval: ctx.settings.explorationActionabilityStableInterval,
-          stableTolerance: ctx.settings.explorationActionabilityStableTolerance,
-          sleep: ctx.sleep,
-          now: ctx.now,
+    // 权限门（4.5，架构 §5.3）：ToolCallEvent 之后、actionability 之前，逐动作。
+    // 拒绝回流走 error 通道（Guard#2/#3 截断序列），不计 consecutiveFailures。
+    let deniedResult: ActionResult | null = null;
+    if (ctx.policy !== null) {
+      const capability = resolveCapability(actionName, actionParams);
+      if (capability !== "none") {
+        const host = hostForAction(actionName, actionParams, preActionUrl);
+        const outcome = await ctx.policy.check({
+          capability,
+          host,
+          actionName,
+          params: actionParams,
+          tabId: preTargetId,
+          elementIndex: geometry.elementIndex,
+          elementBbox: geometry.elementBbox,
+          elementXpath: geometry.elementXpath,
         });
-        browserState.domState = newState.domState;
+        if (!outcome.allowed) {
+          deniedResult = new ActionResult({
+            success: false,
+            denied: true,
+            error: outcome.reason,
+          });
+          ctx.log(`  [${i + 1}/${total}] ${actionName}: policy denied — ${outcome.reason}`);
+        }
       }
     }
 
-    // 单动作超时；InterruptedError/连接类 re-raise，其余包 error 停序列
     let result: ActionResult;
-    try {
-      result = await withActionTimeout(
-        ctx,
-        ctx.tools.execute(actionName, actionParams, ctx.browser, browserState),
-      );
-    } catch (e) {
-      if (e instanceof InterruptedError) throw e;
-      if (isConnectionErrorLike(e)) throw e;
-      ctx.log(
-        `Action '${actionName}' raised ${e instanceof Error ? e.constructor.name : String(e)}: ${e instanceof Error ? e.message : String(e)}`,
-      );
-      result = new ActionResult({
-        error: `${e instanceof Error ? e.constructor.name : String(e)}: ${e instanceof Error ? e.message : String(e)}`,
-      });
+    if (deniedResult !== null) {
+      result = deniedResult;
+    } else {
+      // P0 探索 actionability：白名单动作等元素就绪（降级不抛——超时/漂移照常执行）
+      if (ctx.settings.explorationActionabilityCheck && ACTIONABILITY_ACTIONS.has(actionName)) {
+        const idx = actionParams.index;
+        const sm = browserState.domState ? browserState.domState.selectorMap : null;
+        const node = sm && typeof idx === "number" ? (sm.get(idx) ?? null) : null;
+        if (node !== null && !isFileInput(node) && typeof idx === "number") {
+          const [newState] = await waitForActionability(ctx.browser, browserState, idx, {
+            timeout: ctx.settings.explorationActionabilityTimeout,
+            poll: ctx.settings.explorationActionabilityPoll,
+            receivesEvents: ctx.settings.explorationActionabilityReceivesEvents,
+            runtimeOcclusion: ctx.settings.explorationActionabilityRuntimeOcclusion,
+            stable: ctx.settings.explorationActionabilityStable,
+            stableInterval: ctx.settings.explorationActionabilityStableInterval,
+            stableTolerance: ctx.settings.explorationActionabilityStableTolerance,
+            sleep: ctx.sleep,
+            now: ctx.now,
+          });
+          browserState.domState = newState.domState;
+        }
+      }
+
+      // 单动作超时；InterruptedError/连接类 re-raise，其余包 error 停序列
+      try {
+        result = await withActionTimeout(
+          ctx,
+          ctx.tools.execute(actionName, actionParams, ctx.browser, browserState),
+        );
+      } catch (e) {
+        if (e instanceof InterruptedError) throw e;
+        if (isConnectionErrorLike(e)) throw e;
+        ctx.log(
+          `Action '${actionName}' raised ${e instanceof Error ? e.constructor.name : String(e)}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+        result = new ActionResult({
+          error: `${e instanceof Error ? e.constructor.name : String(e)}: ${e instanceof Error ? e.message : String(e)}`,
+        });
+      }
     }
 
     results.push(result);
 
-    // #186 现象①：失败感知连败（多动作步内失败也计；成功即清零；done 豁免）
-    ctx.failureStreak.record(actionName, result.error !== null);
-    // #186-c2 形态②：零结果降级（query_total 旁路；展平前查注册表与 execute 同源）
-    const known = ctx.tools.registry.actions.has(actionName);
-    ctx.zeroResultStreak.record(
-      actionName,
-      known ? ctx.tools.flattenParams(actionParams, actionName) : actionParams,
-      result,
-    );
+    if (deniedResult === null) {
+      // #186 现象①：失败感知连败（多动作步内失败也计；成功即清零；done 豁免）——
+      // 权限拒绝不在此列（04 §2：denied 不计 consecutiveFailures）
+      ctx.failureStreak.record(actionName, result.error !== null);
+      // #186-c2 形态②：零结果降级（query_total 旁路；展平前查注册表与 execute 同源）
+      const known = ctx.tools.registry.actions.has(actionName);
+      ctx.zeroResultStreak.record(
+        actionName,
+        known ? ctx.tools.flattenParams(actionParams, actionName) : actionParams,
+        result,
+      );
+    }
 
     if (ctx.obsBus !== null && toolCallId !== "") {
       ctx.obsBus.emit(

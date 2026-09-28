@@ -306,4 +306,78 @@ were selected`）——按空增量条款计为无 P1/P2 轮，不空跑评审�
 评审员建议的同域改动且 848 例全绿（三处行为级修复另有双向验证兜底）。分支 4 提交
 （dc1645b→84ec937）待合并。
 
-### feat/p4-policy-smoke（4.5+4.6，未开始）
+### feat/p4-policy-smoke（4.5+4.6，2026-09-28 实施完成，分支未评审未合并）
+
+- **4.5 权限门（04 §1-§3 全量）**：`src/policy/` 五模块——capability.ts（`resolveCapability`
+  消费 ACTION_DEFINITIONS.capability：READ/未注册/空→"none"；send_keys 键型分流与
+  keyboard.ts 三路由同源判型：含 '+' / normalizeKey 等值 "Enter"（别名 return 同归）→
+  CLICK，纯文本与其余命名键→TYPE；`normalizeHost`/`hostForAction` 照搬 webbrain 设计
+  （小写/去 www./非 IPv6 去端口；navigate 按目标 URL 相对解析计费，其余按当前页））/
+  grants.ts（Grant + GrantStore 接口 + InMemoryGrantStore；once 绑 tab、always 持久化——
+  扩展侧 chrome.storage M5）/ gate.ts（`decide` 纯函数：host 空→fail-closed deny、授权
+  命中→其决定、无命中→prompt）/ policy.ts（PolicyGate：判定顺序 once→always→决策表→
+  PolicyInteraction；prompt 超时 300s 兜底 + 交互异常一律 deny（race 后到结果不记账）；
+  store 读写失败按空授权/尽力持久化降级；拒绝文案逐字复刻架构 §5.1 模板）/ auto-allow.ts
+  （AutoAllowPolicy：无条件 allow-once + requests 全量记账）。**接线**：ActionResult 增
+  `denied` 字段（TreeChrome 扩展；render 对齐 error 形态）；act.ts 挂点（ToolCallEvent
+  之后、actionability 之前逐动作；denied 走 error 通道由 Guard#2/#3 截断、ToolResultEvent
+  正常发射、跳过 failureStreak/zeroResultStreak 记账）；post.ts 计数排除 denied（单动作
+  denied 步落非失败面：不递增且与成功步同规则清零）；StepCtx/AgentOptions 增 policy 注入，
+  run() finally 清 once + **session_end 事件补发射**（04 §4 九类面收口：totalSteps/
+  duration/summary/judgement 载荷，close 前最后一声）；LLMClient 构造器增第三参 provider
+  注入（宿主自建适配器/ScriptedLLM 直挂真梯子，fallback 切换仍走 createProvider）。
+- **canonical 不变量放宽（行为级修复，真机 smoke 发现）**：`assertValidMessages` 原「首条
+  消息必须 user」是 TS 侧无证据收紧——state 替换（保 1 旧删更老）在 step≥3 必然留下
+  assistant 开头的序列，Python 参考同款（消息列自 state1 起、无 task 首消息，生产实跑
+  端点接受），4.6 真机 smoke 实证后移除（孤儿 toolResult 检查保留）。单测同步改写
+  （首条 assistant+user 合法、首条 toolResult 仍违例）。
+- **4.6 真机 smoke（05 §4）**：`tools/agent-loop-smoke.mjs`（自拉 headless Chrome +
+  本地静态页 + esbuild 打包注入 core/cdp-ws/ScriptedLLMProvider）+ `test/helpers/
+  scripted-llm.ts`（ScriptedLLMProvider 实现 LLMProvider——驱动**真 LLMClient 梯子**，
+  decide 回调按 state 文本自适应解析编号；judge systemPrompt 等值识别回放 verdict=pass）。
+  两变体断言全绿：默认 deny-once（首问拒一次：denied 标记/文案逐字/不计失败/复试成功/
+  授权缓存免问）与 `--policy auto`（AutoAllow 记账=capability 各键一次）。全链断言：
+  isDone&&isSuccessful、步数=剧本、终态 URL、漂移截断（被截动作 tool_call 也不发）、
+  interactedElement 投影、judge verdict 落末步、EventBus 完整序列+session_end、零重连
+  （factory 单次）。**剧本首步必须 scroll**（设计事实：dom 采集按视口过滤，折叠线下
+  元素不进树——Python/TS 双侧一致，P1 对拍工具实证）。
+- **四个登记真机验证点全部闭合**：
+  - **#5 getBoxModel 坐标**：链接置于 1500px 垫层下，scroll 后点击导航成立（bbox
+    {left:8, top:475.875} 落视口内）——scrollIntoViewIfNeeded 后坐标直落视口、无需减
+    滚动偏移，评审驳回成立；
+  - **#6 组合键 char 事件**：真机证据 `KBDLOG:keydown:a+ctrl;keypress:a;` +
+    `SELLOG:1-1/1|v=a`——keyDown 携带 modifiers 到达页面且原生 select-all 生效；char
+    不带 modifiers 产生的 keypress 同样无 ctrl，且其 insertText **替换了全选选区**
+    （"hello world"→"a"）——Python/browser-use 逐字节同款行为在真机的实际后果已留档；
+  - **#3 截图 passthrough**：每步截图真机采集（5/4 张 PNG，签名+IHDR 可解析，
+    762x484，无降采样）；
+  - **#4 权限门挂点全链**：见上两变体。
+- **踩坑记录**：smoke 探针 div 不进元素树（非交互节点只渲染文本行）——证据探针改用
+  唯一前缀标记（KBDLOG:/SELLOG:）的文本行；userText 含新旧两份 state，标记提取必须取
+  最后匹配；树内 `value=` 是 HTML 特性非实时属性（打字后不更新，证据要走文本节点）；
+  agent_response 决策回调里的解析失败会以 step 失败形式回流（剧本错误=连败预算燃烧）。
+- 测试 848→892（+44：capability 决策表 17 / gate+policy 纯件与组合 16 / act 挂点集成 6 /
+  LLM provider 注入 2 / types 不变量改写等 3）；覆盖率 93.04%/分支 85.51%；门禁
+  pre-commit 全绿（exit 0）；两 smoke 变体真机 exitCode 0。
+
+#### 评审轮 1（review-p4-policy-smoke-1.json，2026-09-28）
+
+22 文件 19m51s，**1 条意见（自评 medium 1）**——裁决 P2 1，采纳 1、驳回 0、stale 0。
+
+**采纳（P2）**：
+- **#1** smoke 早退路径资源泄漏：launchChrome/waitVersion 原在 try 外，`--chrome` 路径
+  不存在时已 listen 的 HTTP server 句柄吊住事件循环（进程挂起不退出）；waitVersion 超时
+  时 Chrome 子进程与临时 profile 也不收口（残留实例占调试端口，后续运行会连到旧实例
+  污染结果）。修复：拉起与就绪等待纳入主 try（finally 统一空安全收口，launched 可为
+  null）。负路径实测：坏路径 10s 内 exitCode 1 且 server 已关；正路径 deny-once 变体
+  复验 exitCode 0。tools/ 脚本无单测面，以真机双路径行为验证代偿。
+
+#### 评审轮 2（review-p4-policy-smoke-2.json 未产生，2026-09-28，增量基线 2a8326c）
+
+轮 1 修复提交即分支 tip，增量恒空（与前四段同构：ocr 会产出 `skipped: no items were
+selected`）——按空增量条款计为无 P1/P2 轮，不空跑评审；分支此后无新实现提交则后续轮
+增量必然为空，「连续两轮无 P1/P2」判据必然满足——**循环收敛终止**。累计：2 轮（1 轮
+实评 + 1 轮空增量），1 条意见（P2 1），采纳 1、驳回 0、stale 0，无 backlog 遗留。
+与前四段同款设计行为：轮 1 修复提交本身未独立过 LLM 评审——修复面为评审员建议的
+同域改动且 892 例全绿 + 门禁 exit 0（负/正双路径另有真机行为验证）。分支 3 提交
+（75c7af8→da328da→2a8326c）待合并。

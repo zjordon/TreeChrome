@@ -6,6 +6,7 @@ import type { BrowserSession } from "../../browser/session.js";
 import type { EventBus } from "../../events/event-bus.js";
 import type { LLMClient } from "../../llm/client.js";
 import type { ChatMessage, TokenUsage, ToolCall } from "../../llm/types.js";
+import type { PolicyGate } from "../../policy/policy.js";
 import type { Tools } from "../../tools/actions/index.js";
 import type { FileSystemProvider } from "../../tools/fs.js";
 import type {
@@ -53,6 +54,8 @@ export interface StepCtx {
   readonly planManager: PlanManager | null;
   readonly obsBus: EventBus | null;
   readonly obsSessionId: string;
+  /** 权限门（4.5 挂点消费；null = 宿主未装配，动作直通） */
+  readonly policy: PolicyGate | null;
   /** 信封消息列（run 期对话） */
   messages: EnvelopedMessage[];
   systemPrompt: string;

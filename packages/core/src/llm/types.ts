@@ -113,7 +113,10 @@ export interface TokenUsage {
  * 一次性裁决，三适配器不再各自猜（Python 端无独立校验，靠 Anthropic 形状隐式成立）。
  *
  * 不变量：
- * - 首条消息必须 user（Anthropic 要求；统一最严约束简化适配器）；
+ * - 首条消息可为 assistant：state 替换（保 1 旧删更老）在 step≥3 会留下
+ *   assistant 开头的序列——Python 参考同款（消息列自 state1 起、无 task 首消息，
+ *   生产实跑端点接受；4.6 真机 smoke 证实）。原「首条必须 user」是 TS 侧无证据
+ *   收紧（2026-09-28 4.5 段移除）；
  * - toolResult 必须紧跟带 toolCalls 的 assistant，且每个 toolCall 恰有一条结果
  *   （顺序可乱，适配器按 id/name 配对）；
  * - user.blocks 非空；assistant 的 blocks 与 toolCalls 不同时为空；
@@ -149,9 +152,6 @@ export function assertValidMessages(messages: ChatMessage[], providerName = "can
 
   if (messages.length === 0) {
     throw violation("消息为空");
-  }
-  if (messages[0].role !== "user") {
-    throw violation(`首条消息必须 user，实际 ${messages[0].role}`);
   }
 
   let i = 0;

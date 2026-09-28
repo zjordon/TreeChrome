@@ -79,9 +79,11 @@ describe("assertValidMessages · 违例序列", () => {
     expectViolation([], "消息为空");
   });
 
-  it("首条非 user（assistant / toolResult）", () => {
-    expectViolation([assistant({ text: "a" })], "首条消息必须 user");
-    expectViolation([toolResult("t1")], "首条消息必须 user");
+  it("首条 assistant 合法（state 替换保 1 旧删更老 → step≥3 的真实序列形态；Python 参考同款，4.5 段放宽）", () => {
+    // 首条 assistant（带文本）+ 后续 user：合法
+    expect(() => assertValidMessages([assistant({ text: "a" }), user("state")])).not.toThrow();
+    // 首条 toolResult 仍违例（孤儿结果——无前置 assistant 的 toolCalls）
+    expectViolation([toolResult("t1")], "孤儿 toolResult");
   });
 
   it("user.blocks 为空", () => {
