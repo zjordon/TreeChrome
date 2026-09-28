@@ -276,9 +276,11 @@ export function createUploadFileHandler(ctx: ToolsContext): ActionHandler {
         const liveCandidates = fileInputsMeta
           .filter((fi) => fi.visible && fi.upload_ancestor)
           .map((fi) => fi.backend_node_id);
+        // Python f-string 直接 repr int 列表（[61, 62]）——JSON.stringify 是 [61,62]
+        // 无空格（评审轮 1 [1] 同族，venv 锚定 f"{[61, 62]}"）
         const candHint =
           liveCandidates.length > 0
-            ? ` Likely-live candidates (visible + upload container): ${JSON.stringify(liveCandidates)}.`
+            ? ` Likely-live candidates (visible + upload container): [${liveCandidates.join(", ")}].`
             : "";
         uploadNote =
           `  ⚠️ Page has ${fileInputIds.length} file inputs; uploaded to the one ` +
@@ -326,7 +328,7 @@ export function createUploadFileHandler(ctx: ToolsContext): ActionHandler {
     ctx.log(
       `upload_file: index=${index}, tag=${node.tagName}, type=${attrs.type ?? ""}, ` +
         `backend_node_id=${node.backendNodeId}, is_file_input=${isFileInput}, ` +
-        `resolved_backend_id=${backendId}, available_file_inputs=${JSON.stringify(fileInputIds)}`,
+        `resolved_backend_id=${backendId}, available_file_inputs=[${fileInputIds.join(", ")}]`,
     );
 
     // #151：为实际命中的 input 采集语义线索（best-effort，绝不阻塞）

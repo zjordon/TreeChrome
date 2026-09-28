@@ -5,6 +5,7 @@
 
 import { ActionResult } from "../../agent/views.js";
 import type { DropdownOption, DropdownSetterResult } from "../../browser/dropdown.js";
+import { pyJsonDumps } from "../py-json.js";
 import type { ActionHandler, ToolsBrowser } from "../types.js";
 import type { ToolsContext } from "./context.js";
 import {
@@ -24,7 +25,10 @@ export const EMPTY_OPTIONS_DIAGNOSTIC: Record<string, string> = {
     "Custom dropdown opened but no options found (may load on demand — retry after settle, or scroll).",
 };
 
-const jsonDumps = (s: unknown): string => JSON.stringify(s);
+// Python json.dumps 默认分隔符（", "/": "）——multi 路径序列化 values 数组时
+// JSON.stringify 的紧凑形态 ["a","b"] 会漂移（字符串路径两者等价，fixture 因此漏网；
+// 评审轮 1 [1]）。走 py-json.ts 标准通道。
+const jsonDumps = (s: unknown): string => pyJsonDumps(s);
 
 /**
  * :1278-1308 共享下拉回显（短/长拆）：json 编码 + 序号 + 用法提示；source 折进

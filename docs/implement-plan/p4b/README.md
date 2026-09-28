@@ -108,6 +108,18 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
   注记：修复提交本身未再过评审轮（协议设计——防「修复生产新意见」正反馈）；合并前
   如需可跑一轮定向评审（`--from c098b61`）。
 
+### feat/p4b-actions-b
+
+- **轮 1（2026-09-29，1 条 medium）**——采纳 1（P2，字节 parity）：dropdown.ts 的
+  `jsonDumps = JSON.stringify` 在 multi 路径序列化 values 数组输出紧凑分隔符
+  `["a","b"]`，Python `json.dumps` 默认分隔符是 `["a", "b"]`——仓库既有 pyJsonDumps
+  标准通道未接入；fixture 只锚了字符串路径（两者等价）所以漏网；测试 :207 手写期望
+  系复写实现。修复：jsonDumps 改走 py-json.ts + 同族自检两处——upload-file.ts 的
+  liveCandidates 注记与 available_file_inputs 日志行，Python 是 f-string/%s 直接 repr
+  int 列表（`[61, 62]` 带空格），JSON.stringify 无空格；期望值全部 venv 实跑锚定
+  （`json.dumps(['a','b'])`/`f"{[61, 62]}"`）。双向验证：旧实现下 multi 用例必红、
+  恢复后绿。1148 例全绿，覆盖率 93.52%/85.27%（不变），门禁 exit 0。stale 0 / 驳回 0。
+
 ## 7. 完成记录（§8）
 
 ### feat/p4b-actions-a（段 1，2026-09-28 实施完成，分支未评审未合并）

@@ -204,7 +204,8 @@ describe("select_dropdown（守卫 + 单/多选三态回显）", () => {
       values: ["a", "b"],
     });
     expect(ok.extractedContent).toBe("Set all");
-    expect(ok.longTermMemory).toBe('Selected ["a","b"] in [SELECT] at index 7');
+    // Python json.dumps 默认分隔符（评审轮 1 [1]）：["a", "b"] 非 ["a","b"]（venv 锚定）
+    expect(ok.longTermMemory).toBe('Selected ["a", "b"] in [SELECT] at index 7');
     const browser3 = new FakeBrowser();
     const { tools: t3 } = makeTools();
     const bare = await execWith(t3, browser3, state, "select_dropdown", {
@@ -391,7 +392,8 @@ describe("upload_file（五段链）", () => {
       "⚠️ Page has 2 file inputs; uploaded to the one you specified (index 61).",
     );
     expect(r.extractedContent).toContain(
-      "Likely-live candidates (visible + upload container): [61,62].",
+      // Python f-string repr 列表带空格（[61, 62]——venv 锚定）
+      "Likely-live candidates (visible + upload container): [61, 62].",
     );
 
     const browser2 = new FakeBrowser();
