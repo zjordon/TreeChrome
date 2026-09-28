@@ -64,8 +64,86 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
 
 ## 6. 评审轮登记（§7）
 
-（各段 /review-loop 结果逐轮登记于此，格式同 p4/README.md）
+### feat/p4b-actions-a
+
+- **轮 1（2026-09-28，11 条：自评 high4 / medium4 / low3）**——采纳 7（均 P2）+ 顺手 3 + 驳回 1：
+  - [4] close_tab 非字符串 tab_id（数字后缀形态）被静默归空关当前页——Python 端
+    endswith(int) TypeError 落 Tools.execute 通用 catch（actions.py :810-822）= error；
+    补 string 守卫（switch_tab 同款文案），null/undefined 仍落当前页（Python falsy 同构）。
+  - [5] findText nth=0/负数——评审称「Python pydantic ge=1」**不成立**（Python 无任何
+    校验，session.py :3990-3999 `visible_ids[nth-1]` 负索引回绕是真实语义；非整数 nth
+    两边同样被逐查询 except 吞掉后落 JS 回退）。部分采纳：补 Python 负索引回绕
+    （nth=0→末元素），不加 ge=1 校验（加了反而偏离 Python）。
+  - [6] 文件三动作白名单裸 startsWith 可被 `../` 穿越绕过——Python 同病（:2361/:2417/
+    :2611 均裸 startswith，穿越形态会静默写出白名单外）；按本仓 fs.resolve 契约
+    （「白名单前缀比对前归一化」，done.ts 既有模式）收严为 resolve 后比对——
+    **登记偏离**：仅多拒 Python 会越狱写出的路径，合法路径行为不变（错误/回显显示
+    归一化路径）。
+  - [7] write append 读旧拼新会腐蚀既有非 utf-8/二进制字节（Python open(path,"a")
+    纯字节追加零接触）——FileSystemProvider 增 `appendTextFile`（open("a") 等价），
+    全部实现面同步（fake-fs 字节级拼接 / 三处测试内联假件 / smoke memoryFs）。
+  - [9] readTextFile 契约补两条：maxChars 省略=全读（宿主不得自带截断）；严格 utf-8
+    解码（非法字节 reject 映射 Python UnicodeDecodeError→error 文件不动，禁止
+    U+FFFD lenient 后静默写回）。核心无法强制宿主，契约级收严。
+  - [8] count 限量替换重扫替换产物（new ⊇ old 时漏改原文 + replaced 虚报）——重写为
+    原文单遍拼接（regex 段切片替换保引擎 $ 展开 + 零宽前进守卫；literal 段 indexOf
+    推进）；期望值 venv 实跑锚定（'a\nb\n'.replace、subn count 语义）。
+  - [11] 替换模板缺组静默写坏文件（Python re.error/IndexError 皆 error 不动文件）——
+    `pythonTemplateToJs` 全量移植 CPython 3.12 re._parser.parse_template（\g<0>=整匹配、
+    \1..\99 引用、\0/三连八进制字面量、控制字符、bad escape、位置口径=venv 实跑锚定；
+    未知名 IndexError 形态与 re.error 前缀形态均按 Python 包法）。轮内自测揪出三个
+    实现 bug（多位数字 off-by-one 把 \1 读成 11、字面 $ 转义差一档、八进制取值多切一位）。
+  - 顺手（P3 触内）：[2][3] gen-batch2-anchors.py 死导入/死常量删除；[10] write 回显
+    enc 死分支删除（encoding 收窄偏离下不可达）。
+  - 驳回 [1]：findElementsNodeIds offset ≥ total 时 fromIndex > toIndex 由 CDP 报错——
+    **Python session.py :4310-4314 逐行同构**（to_index=min(total, offset+max)、fromIndex
+    裸传、无钳制），错误同样经 action catch 包成 "Find elements failed"；JS 体变体
+    （searchPage/findElements）优雅空窗也是 Python 原样（JS 内切片）。移植保真，非缺陷。
+  - 测试 984→992（+8，另 2 例 pythonTemplateToJs 单测计入净增）；覆盖率 93.07% /
+    85.22%；门禁 exit 0；双向验证：8 个新用例对旧实现全红后恢复。
+- **循环收敛（2026-09-28，轮 2 起）**：轮 1 修复提交 `55db23c` 后增量恒空
+  （diffBase=lastCommit=tip）——按空增量条款与 p4-policy-smoke 先例（「必然满足」）
+  宣布收敛，不空跑评审。累计：1 实跑轮 / 11 意见（P2×7 实施 + P3×3 顺手 + 驳回×1）/
+  测试 984→992 / 覆盖率 93.07%·85.22% / 分支 2 提交（c098b61 + 55db23c）待合并。
+  注记：修复提交本身未再过评审轮（协议设计——防「修复生产新意见」正反馈）；合并前
+  如需可跑一轮定向评审（`--from c098b61`）。
 
 ## 7. 完成记录（§8）
 
-（各段完成后登记）
+### feat/p4b-actions-a（段 1，2026-09-28 实施完成，分支未评审未合并）
+
+- **十动作 handler 全量**（`tools/actions/` 新七文件）：search（引擎 URL 表 :360-365
+  逐字节含 udm=14；quote_plus 等价含 !'()* 编码与空格→+）/ find_elements + find_text +
+  search_page（三个 formatter :147-268 逐字节锚定；query_total 结构化旁路；大结果分级
+  落盘复用 saveOversizedResult）/ screenshot + save_as_pdf（参数透传 + fs 落盘；**保真
+  注记**：Python 两动作的 save_path/path 均不经白名单——01 计划初稿的「白名单落盘」
+  有误，实施按 Python 直写并在此更正）/ close_tab（后缀匹配 + 撞车检测 + 未命中列举 +
+  软降级）/ 文件三动作（write：newline 守卫式簿记 + append 直写；read：magic 嗅探 :114-144
+  全分支 + 窗口分页 :2466-2527 含 footer 预算 160；replace：regex/count/expected_count/
+  backup 全参数 + Python 替换模板 \1 反向引用转换）。
+- **session 侧**：`browser/search-find.ts`（:60-105 XPath 工具 + 两个 JS 常量体逐字节
+  ——_SEARCH_PAGE_JS_BODY/_FIND_ELEMENTS_JS_BODY 经 venv dump 对拍 + findText 三查询链
+  （G8 nth/G9 可见性优先探测/G10 大小写/G11 高亮三模式 + finally discard 防泄漏）+
+  searchPage/findElements/findElementsNodeIds）；BrowserSession 增四方法委托；ToolsBrowser
+  扩面七方法（closeTab/takeScreenshot/printToPdf/find 族）。
+- **FileSystemProvider 增 stat/readHead** 两成员（窗口计量 + 12 字节 magic 头）；全部
+  实现体同步（三处测试内联假件 + smoke memoryFs + 新公共 makeFakeFs）。
+- **注册面 10→20**：gen-tools-anchors.py 增 segmentA 面（version/schema 矩阵/descriptions
+  全新生成）；registry/agent-anchors/actions 三处既有测试改「batch1 子集 registry + segmentA
+  默认面」双锚定（subsetRegistry 复刻生成器注册形态）。
+- **新锚点生成器 gen-batch2-anchors.py**：venv 实跑 Python Tools 裸实例产出 batch2.json
+  ——三个 formatter / sniff 全 magic 分支 / textQueries / xpath 字面量 / 两 JS builder
+  逐字节 / 文件三动作全输出（tmp 路径稳定化 /ANCHOR_TMP；**坑**：稳定化不得全局替换
+  反斜杠——正则 fixture 内容会被腐蚀，只替换路径本身+占位段后分隔符归一）。
+- **实施要点**：JS 字面量注入用 pyJsonDumps（Python json.dumps 默认分隔符带空格——
+  JSON.stringify 不带，容器参数会漂移）；正则替换必须**字符串形态**传 replace（replacer
+  函数返回值不做 $ 替换——JS 规范，$n 会变字面文本）；case-insensitive literal 的 new
+  按字面量（$ 转义）不展开引用（Python _literal_replacer 同款）；write append 经
+  读旧拼新（接口无 append 模式）。
+- 偏离落地（01 §6）：富文档降级（image 提示逐字节；pdf/docx 指向 M5 hook 的可操作
+  error——Python pip install 提示留档 fixture）；encoding 收窄 utf-8（已知非 utf-8
+  Python 会成功、TS 拒并给可操作 error）；tmp+rename 原子性归宿主 fs；正则引擎错误
+  文案差异（re.error vs V8——前缀逐字节+包含断言）。
+- 测试 892→984（+92：锚定 43 / 文件族 19 / handler 集成 21 / search-find session 13 +
+  printToPdf 补面 3（既有缺口）/ 既有面改写若干）；覆盖率 93.12%/分支 85.09%；门禁
+  exit 0；真机 smoke deny-once 变体回归 exitCode 0（20 动作面）。

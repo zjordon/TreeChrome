@@ -139,6 +139,7 @@ describe("视觉门与截图", () => {
       settings: { useVision: true },
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {},
@@ -146,6 +147,8 @@ describe("视觉门与截图", () => {
         writeBytes: async (p) => {
           writes.push(p);
         },
+        stat: async () => null,
+        readHead: async () => null,
       },
       rerunHistoryDir: "rh",
     });

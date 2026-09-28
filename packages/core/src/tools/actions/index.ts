@@ -1,7 +1,7 @@
 // Tools 编排器：注册表持有 + execute 分发（查名 → _flatten_params → handler →
 // 异常包 ActionResult{error}）。移植自 TreeWalker tools/actions.py 的 Tools 类
-// @640d52a（:723-830）。batch1 注册 10 动作（_registerAll 对无 handler 的动作跳过，
-// P4b 增补 batch2 handler 后注册面自动扩维）。
+// @640d52a（:723-830）。batch1 十动作 + P4b 段 1 十动作（_registerAll 对无 handler
+// 的动作跳过——段 2/3 增补后注册面继续扩维）。
 
 import { ActionResult } from "../../agent/views.js";
 import type { BrowserStateSummary } from "../../browser/views.js";
@@ -11,16 +11,27 @@ import type { ToolsOptions } from "../settings.js";
 import { DEFAULT_TRUNCATION_SETTINGS } from "../settings.js";
 import type { ActionHandler, ToolsBrowser } from "../types.js";
 import { createClickHandler } from "./click.js";
+import { createCloseTabHandler } from "./close-tab.js";
 import type { ToolsContext } from "./context.js";
 import { createDoneHandler } from "./done.js";
 import { createExtractHandler } from "./extract.js";
+import {
+  createReadFileHandler,
+  createReplaceFileHandler,
+  createWriteFileHandler,
+} from "./file-actions.js";
+import { createFindElementsHandler } from "./find-elements.js";
+import { createFindTextHandler } from "./find-text.js";
 import { createGoBackHandler } from "./go-back.js";
 import { createInputTextHandler } from "./input-text.js";
 import { createNavigateHandler } from "./navigate.js";
+import { createSaveAsPdfHandler, createScreenshotHandler } from "./screenshot.js";
 import { createScrollHandler, createSendKeysHandler, createWaitHandler } from "./scroll.js";
+import { createSearchHandler } from "./search.js";
+import { createSearchPageHandler } from "./search-page.js";
 import { createSwitchTabHandler } from "./switch-tab.js";
 
-/** batch1 十动作 handler 工厂（P4b：batch2 族在此扩维） */
+/** batch1 十动作 + P4b 段 1 十动作 handler 工厂（段 2/3 族在此扩维） */
 const HANDLER_FACTORIES: Record<string, (ctx: ToolsContext) => ActionHandler> = {
   navigate: createNavigateHandler,
   click: createClickHandler,
@@ -32,6 +43,17 @@ const HANDLER_FACTORIES: Record<string, (ctx: ToolsContext) => ActionHandler> = 
   switch_tab: createSwitchTabHandler,
   send_keys: createSendKeysHandler,
   done: createDoneHandler,
+  // ── P4b 段 1（p4b/01）──
+  search: createSearchHandler,
+  find_elements: createFindElementsHandler,
+  find_text: createFindTextHandler,
+  search_page: createSearchPageHandler,
+  screenshot: createScreenshotHandler,
+  save_as_pdf: createSaveAsPdfHandler,
+  close_tab: createCloseTabHandler,
+  write_file: createWriteFileHandler,
+  read_file: createReadFileHandler,
+  replace_file: createReplaceFileHandler,
 };
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

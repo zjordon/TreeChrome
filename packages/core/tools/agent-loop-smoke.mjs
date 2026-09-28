@@ -412,7 +412,7 @@ async function main() {
     const gate =
       opts.policy === "auto" ? new PolicyGate(autoAllow, null) : new PolicyGate(scriptPolicy, null);
 
-    // 内存 FS：截图落盘观察（PNG 头 + 尺寸）
+    // 内存 FS：截图落盘观察（PNG 头 + 尺寸）；stat/readHead 为 P4b 文件动作接口面
     const fsFiles = new Map();
     const memoryFs = {
       resolve: (p) => p,
@@ -420,9 +420,12 @@ async function main() {
       readTextFile: async () => "",
       ensureDir: async () => {},
       writeTextFile: async () => {},
+      appendTextFile: async () => {},
       writeBytes: async (p, data) => {
         fsFiles.set(p, data);
       },
+      stat: async () => null,
+      readHead: async () => null,
     };
 
     bus = new EventBus({ log: () => {} });

@@ -131,6 +131,7 @@ describe("extract", () => {
     const dirs: string[] = [];
     const fs: FileSystemProvider = {
       resolve: (p) => p,
+      appendTextFile: async () => {},
       isFile: async () => false,
       readTextFile: async () => "",
       ensureDir: async (p) => {
@@ -140,6 +141,8 @@ describe("extract", () => {
         writes.push([p, content]);
       },
       writeBytes: async () => {},
+      stat: async () => null,
+      readHead: async () => null,
     };
     ctx.fs = fs;
     const r = await exec(tools, browser, "extract", { query: "q", start_from_char: 16_000 });
@@ -212,11 +215,14 @@ describe("done（变体 A）", () => {
     const files: Record<string, string> = { "C:/out/report.md": "R" };
     const fs: FileSystemProvider = {
       resolve: (p) => p,
+      appendTextFile: async () => {},
       isFile: async (p) => Object.hasOwn(files, p),
       readTextFile: async (p) => files[p] ?? "",
       ensureDir: async () => {},
       writeTextFile: async () => {},
       writeBytes: async () => {},
+      stat: async () => null,
+      readHead: async () => null,
     };
     const { tools, ctx } = makeTools({ allowedReadPaths: ["C:/out"] });
     ctx.fs = fs;
@@ -231,12 +237,15 @@ describe("done（变体 A）", () => {
     const files: Record<string, string> = { "C:/out/a.txt": "AAA".repeat(1000) };
     const fs: FileSystemProvider = {
       resolve: (p) => p,
+      appendTextFile: async () => {},
       isFile: async (p) => Object.hasOwn(files, p),
       readTextFile: async (p, maxChars) =>
         (files[p] ?? "").slice(0, maxChars ?? Number.POSITIVE_INFINITY),
       ensureDir: async () => {},
       writeTextFile: async () => {},
       writeBytes: async () => {},
+      stat: async () => null,
+      readHead: async () => null,
     };
     const { tools } = makeTools({ fs, displayFilesInDoneText: true });
     const r = await exec(tools, new FakeBrowser(), "done", {

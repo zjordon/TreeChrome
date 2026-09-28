@@ -4,9 +4,16 @@
 
 import type { ActionResult } from "../agent/views.js";
 import type { PageSettleResult, ScrollResult } from "../browser/navigation.js";
+import type { PrintToPdfOptions, ScreenshotOptions } from "../browser/screenshot.js";
+import type {
+  FindElementsData,
+  FindElementsNodeIdsData,
+  FindTextResult,
+  SearchPageData,
+} from "../browser/search-find.js";
 import type { BrowserStateSummary, TabInfo } from "../browser/views.js";
 
-/** batch1 十动作用到的 BrowserSession 面（batch2 增补时在此扩维） */
+/** batch1 十动作 + P4b 段 1 十动作用到的 BrowserSession 面（段 2/3 增补时在此扩维） */
 export interface ToolsBrowser {
   navigate(url: string, options?: { newTab?: boolean }): Promise<string | null>;
   goBack(): Promise<string | null>;
@@ -25,9 +32,43 @@ export interface ToolsBrowser {
   sendKeys(keys: string): Promise<void>;
   getTabs(): Promise<TabInfo[]>;
   switchTab(targetId: string): Promise<void>;
+  closeTab(targetId: string): Promise<void>;
   executeJs(code: string): Promise<unknown>;
   getPageHtml(options?: { extractLinks?: boolean; extractImages?: boolean }): Promise<string>;
   getState(options?: { includeScreenshot?: boolean }): Promise<BrowserStateSummary>;
+  takeScreenshot(options?: ScreenshotOptions): Promise<Uint8Array>;
+  printToPdf(options?: PrintToPdfOptions): Promise<Uint8Array>;
+  findText(
+    text: string,
+    opts?: { nth?: number; caseSensitive?: boolean; highlight?: "box" | "selection" | "none" },
+  ): Promise<FindTextResult>;
+  findElements(
+    selector: string,
+    opts?: {
+      attributes?: string[] | null;
+      maxResults?: number;
+      offset?: number;
+      includeText?: boolean;
+      firstOnly?: boolean;
+      includeGeometry?: boolean;
+    },
+  ): Promise<FindElementsData>;
+  findElementsNodeIds(
+    selector: string,
+    opts?: { maxResults?: number; offset?: number; includeUserAgentShadow?: boolean },
+  ): Promise<FindElementsNodeIdsData>;
+  searchPage(
+    pattern: string,
+    opts?: {
+      regex?: boolean;
+      caseSensitive?: boolean;
+      contextChars?: number;
+      cssScope?: string | null;
+      maxResults?: number;
+      offset?: number;
+      searchAttributes?: boolean;
+    },
+  ): Promise<SearchPageData>;
   readonly currentTargetId: string | null;
 }
 

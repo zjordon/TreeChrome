@@ -2,6 +2,13 @@
 // （selector_map 条目构造）+ makeTools（睡眠记录 + 日志静默）。
 import { EMPTY_DOM_STATE, EnhancedDOMTreeNode, SerializedDOMState } from "@tw/dom-snapshot";
 import type { PageSettleResult, ScrollResult } from "../../src/browser/navigation.js";
+import type { PrintToPdfOptions, ScreenshotOptions } from "../../src/browser/screenshot.js";
+import type {
+  FindElementsData,
+  FindElementsNodeIdsData,
+  FindTextResult,
+  SearchPageData,
+} from "../../src/browser/search-find.js";
 import type { BrowserStateSummary, TabInfo } from "../../src/browser/views.js";
 import type { ToolsContext } from "../../src/tools/actions/context.js";
 import { Tools } from "../../src/tools/actions/index.js";
@@ -60,7 +67,7 @@ export class FakeBrowser implements ToolsBrowser {
   /** 健康检查/元素查找走 getState：domState 挂 selectorMap */
   selectorMapEntries: Map<number, EnhancedDOMTreeNode> = new Map();
   domStateEmpty = false;
-  currentTargetId = "ABCD1234";
+  currentTargetId: string | null = "ABCD1234";
 
   navigate(url: string, options?: { newTab?: boolean }): Promise<string | null> {
     if (this.navigateError !== null) throw this.navigateError;
@@ -114,6 +121,105 @@ export class FakeBrowser implements ToolsBrowser {
   switchTab(targetId: string): Promise<void> {
     this.switchTabCalls.push(targetId);
     return Promise.resolve();
+  }
+  closeTabCalls: string[] = [];
+  closeTabError: Error | null = null;
+  closeTab(targetId: string): Promise<void> {
+    if (this.closeTabError !== null) throw this.closeTabError;
+    this.closeTabCalls.push(targetId);
+    this.tabs = this.tabs.filter((t) => t.targetId !== targetId);
+    return Promise.resolve();
+  }
+  screenshotCalls: ScreenshotOptions[] = [];
+  screenshotBytes: Uint8Array = new Uint8Array([1, 2, 3]);
+  screenshotError: Error | null = null;
+  takeScreenshot(options?: ScreenshotOptions): Promise<Uint8Array> {
+    if (this.screenshotError !== null) throw this.screenshotError;
+    this.screenshotCalls.push(options ?? {});
+    return Promise.resolve(this.screenshotBytes);
+  }
+  pdfCalls: PrintToPdfOptions[] = [];
+  pdfBytes: Uint8Array = new Uint8Array([4, 5, 6]);
+  pdfError: Error | null = null;
+  printToPdf(options?: PrintToPdfOptions): Promise<Uint8Array> {
+    if (this.pdfError !== null) throw this.pdfError;
+    this.pdfCalls.push(options ?? {});
+    return Promise.resolve(this.pdfBytes);
+  }
+  findTextCalls: Array<{ text: string; opts?: Record<string, unknown> }> = [];
+  findTextResult: FindTextResult = { found: false, method: "none", tag: null };
+  findTextError: Error | null = null;
+  findText(
+    text: string,
+    opts?: { nth?: number; caseSensitive?: boolean; highlight?: "box" | "selection" | "none" },
+  ): Promise<FindTextResult> {
+    if (this.findTextError !== null) throw this.findTextError;
+    this.findTextCalls.push({ text, opts });
+    return Promise.resolve(this.findTextResult);
+  }
+  findElementsCalls: Array<{ selector: string; opts?: Record<string, unknown> }> = [];
+  findElementsResult: FindElementsData = {
+    elements: [],
+    total: 0,
+    showing: 0,
+    offset: 0,
+    has_more: false,
+  };
+  findElementsError: Error | null = null;
+  findElements(
+    selector: string,
+    opts?: {
+      attributes?: string[] | null;
+      maxResults?: number;
+      offset?: number;
+      includeText?: boolean;
+      firstOnly?: boolean;
+      includeGeometry?: boolean;
+    },
+  ): Promise<FindElementsData> {
+    if (this.findElementsError !== null) throw this.findElementsError;
+    this.findElementsCalls.push({ selector, opts });
+    return Promise.resolve(this.findElementsResult);
+  }
+  findNodeIdsResult: FindElementsNodeIdsData = {
+    node_ids: [],
+    total: 0,
+    showing: 0,
+    offset: 0,
+    has_more: false,
+  };
+  findElementsNodeIds(
+    selector: string,
+    opts?: { maxResults?: number; offset?: number; includeUserAgentShadow?: boolean },
+  ): Promise<FindElementsNodeIdsData> {
+    this.findElementsCalls.push({ selector, opts });
+    return Promise.resolve(this.findNodeIdsResult);
+  }
+  searchPageCalls: Array<{ pattern: string; opts?: Record<string, unknown> }> = [];
+  searchPageResult: SearchPageData = {
+    matches: [],
+    total: 0,
+    offset: 0,
+    has_more: false,
+    attribute_matches: [],
+    attribute_total: 0,
+  };
+  searchPageError: Error | null = null;
+  searchPage(
+    pattern: string,
+    opts?: {
+      regex?: boolean;
+      caseSensitive?: boolean;
+      contextChars?: number;
+      cssScope?: string | null;
+      maxResults?: number;
+      offset?: number;
+      searchAttributes?: boolean;
+    },
+  ): Promise<SearchPageData> {
+    if (this.searchPageError !== null) throw this.searchPageError;
+    this.searchPageCalls.push({ pattern, opts });
+    return Promise.resolve(this.searchPageResult);
   }
   executeJs(code: string): Promise<unknown> {
     for (const entry of this.js) {

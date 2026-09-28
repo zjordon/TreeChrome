@@ -124,6 +124,7 @@ describe("saveOversizedResult", () => {
       ...base,
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {},
@@ -131,6 +132,8 @@ describe("saveOversizedResult", () => {
           writes.push(c);
         },
         writeBytes: async () => {},
+        stat: async () => null,
+        readHead: async () => null,
       },
     });
     expect(out).toBeNull();
@@ -152,11 +155,14 @@ describe("saveOversizedResult", () => {
       nowMs: () => 123456,
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {},
         writeTextFile: async () => {},
         writeBytes: async () => {},
+        stat: async () => null,
+        readHead: async () => null,
       },
     });
     expect(ok).toBe("out/act_123456.txt");
@@ -165,6 +171,7 @@ describe("saveOversizedResult", () => {
       ...base,
       fs: {
         resolve: (p) => p,
+        appendTextFile: async () => {},
         isFile: async () => true,
         readTextFile: async () => "",
         ensureDir: async () => {
@@ -172,6 +179,8 @@ describe("saveOversizedResult", () => {
         },
         writeTextFile: async () => {},
         writeBytes: async () => {},
+        stat: async () => null,
+        readHead: async () => null,
       },
       log: (m) => logs.push(m),
     });

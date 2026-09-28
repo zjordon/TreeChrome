@@ -1713,6 +1713,509 @@
       ]
     }
   },
+  "segmentA": {
+    "names": [
+      "navigate",
+      "click",
+      "input_text",
+      "scroll",
+      "extract",
+      "wait",
+      "go_back",
+      "switch_tab",
+      "send_keys",
+      "done",
+      "search",
+      "find_elements",
+      "find_text",
+      "search_page",
+      "screenshot",
+      "save_as_pdf",
+      "close_tab",
+      "write_file",
+      "read_file",
+      "replace_file"
+    ],
+    "registryVersion": "v1-12fd560ac8a3",
+    "toolSchema": {
+      "flash-single": {
+        "name": "agent_response",
+        "description": "Respond with the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "close_tab",
+                    "done",
+                    "extract",
+                    "find_elements",
+                    "find_text",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "read_file",
+                    "replace_file",
+                    "save_as_pdf",
+                    "screenshot",
+                    "scroll",
+                    "search",
+                    "search_page",
+                    "send_keys",
+                    "switch_tab",
+                    "wait",
+                    "write_file"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            }
+          }
+        }
+      },
+      "flash-multi": {
+        "name": "agent_response",
+        "description": "Respond with the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "description": "One or more actions to execute in order (up to 3). Chain when targeting the same stable DOM: form filling, clearing multiple items, sequential scrolls, multi-field extraction. The runtime stops the sequence automatically if the page changes.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "enum": [
+                      "click",
+                      "close_tab",
+                      "done",
+                      "extract",
+                      "find_elements",
+                      "find_text",
+                      "go_back",
+                      "input_text",
+                      "navigate",
+                      "read_file",
+                      "replace_file",
+                      "save_as_pdf",
+                      "screenshot",
+                      "scroll",
+                      "search",
+                      "search_page",
+                      "send_keys",
+                      "switch_tab",
+                      "wait",
+                      "write_file"
+                    ],
+                    "description": "The action to execute"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "standard-single": {
+        "name": "agent_response",
+        "description": "Respond with your evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "close_tab",
+                    "done",
+                    "extract",
+                    "find_elements",
+                    "find_text",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "read_file",
+                    "replace_file",
+                    "save_as_pdf",
+                    "screenshot",
+                    "scroll",
+                    "search",
+                    "search_page",
+                    "send_keys",
+                    "switch_tab",
+                    "wait",
+                    "write_file"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            }
+          }
+        }
+      },
+      "standard-multi": {
+        "name": "agent_response",
+        "description": "Respond with your evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "description": "One or more actions to execute in order (up to 3). Chain when targeting the same stable DOM: form filling, clearing multiple items, sequential scrolls, multi-field extraction. The runtime stops the sequence automatically if the page changes.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "enum": [
+                      "click",
+                      "close_tab",
+                      "done",
+                      "extract",
+                      "find_elements",
+                      "find_text",
+                      "go_back",
+                      "input_text",
+                      "navigate",
+                      "read_file",
+                      "replace_file",
+                      "save_as_pdf",
+                      "screenshot",
+                      "scroll",
+                      "search",
+                      "search_page",
+                      "send_keys",
+                      "switch_tab",
+                      "wait",
+                      "write_file"
+                    ],
+                    "description": "The action to execute"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "thinking-single": {
+        "name": "agent_response",
+        "description": "Respond with your thinking process, evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action",
+            "thinking"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "close_tab",
+                    "done",
+                    "extract",
+                    "find_elements",
+                    "find_text",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "read_file",
+                    "replace_file",
+                    "save_as_pdf",
+                    "screenshot",
+                    "scroll",
+                    "search",
+                    "search_page",
+                    "send_keys",
+                    "switch_tab",
+                    "wait",
+                    "write_file"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            },
+            "thinking": {
+              "type": "string",
+              "description": "Your step-by-step reasoning process. Think through the current state, evaluate options, and explain your decision."
+            }
+          }
+        }
+      },
+      "thinking-single-planning": {
+        "name": "agent_response",
+        "description": "Respond with your thinking process, evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action",
+            "thinking"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "close_tab",
+                    "done",
+                    "extract",
+                    "find_elements",
+                    "find_text",
+                    "go_back",
+                    "input_text",
+                    "navigate",
+                    "read_file",
+                    "replace_file",
+                    "save_as_pdf",
+                    "screenshot",
+                    "scroll",
+                    "search",
+                    "search_page",
+                    "send_keys",
+                    "switch_tab",
+                    "wait",
+                    "write_file"
+                  ],
+                  "description": "The action to execute"
+                },
+                "params": {
+                  "type": "object",
+                  "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                }
+              }
+            },
+            "thinking": {
+              "type": "string",
+              "description": "Your step-by-step reasoning process. Think through the current state, evaluate options, and explain your decision."
+            },
+            "plan_update": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Replace the entire plan with these steps. Use when creating a new plan or revising the current plan. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            },
+            "current_plan_item": {
+              "type": "integer",
+              "description": "Index of the current plan step to advance to. Steps between current and this index will be marked as done. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            }
+          }
+        }
+      },
+      "standard-multi-planning": {
+        "name": "agent_response",
+        "description": "Respond with your evaluation, memory, next goal, and the action to take.",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "evaluation_previous_goal",
+            "memory",
+            "next_goal",
+            "action"
+          ],
+          "properties": {
+            "evaluation_previous_goal": {
+              "type": "string",
+              "description": "Evaluate whether the previous goal was achieved. On the first step, say 'Starting task.'"
+            },
+            "memory": {
+              "type": "string",
+              "description": "Key facts and progress to remember across steps. Keep concise."
+            },
+            "next_goal": {
+              "type": "string",
+              "description": "What you plan to do in this step."
+            },
+            "action": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "description": "One or more actions to execute in order (up to 3). Chain when targeting the same stable DOM: form filling, clearing multiple items, sequential scrolls, multi-field extraction. The runtime stops the sequence automatically if the page changes.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "enum": [
+                      "click",
+                      "close_tab",
+                      "done",
+                      "extract",
+                      "find_elements",
+                      "find_text",
+                      "go_back",
+                      "input_text",
+                      "navigate",
+                      "read_file",
+                      "replace_file",
+                      "save_as_pdf",
+                      "screenshot",
+                      "scroll",
+                      "search",
+                      "search_page",
+                      "send_keys",
+                      "switch_tab",
+                      "wait",
+                      "write_file"
+                    ],
+                    "description": "The action to execute"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Action-specific parameters as flat key-value pairs. For example: click -> {\"index\": 42}, input_text -> {\"index\": 187, \"text\": \"hello\", \"clear\": true}, navigate -> {\"url\": \"https://...\"}. See Available Actions above for each action's expected params."
+                  }
+                }
+              }
+            },
+            "plan_update": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Replace the entire plan with these steps. Use when creating a new plan or revising the current plan. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            },
+            "current_plan_item": {
+              "type": "integer",
+              "description": "Index of the current plan step to advance to. Steps between current and this index will be marked as done. This is a RESPONSE FIELD — never use it as an action name in action/actions."
+            }
+          }
+        }
+      }
+    },
+    "descriptionsText": "- **click**(index: ID of the element to click, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id.): Click an element by its ID from the DOM state. Use index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **close_tab**(tab_id: Tab ID (last 4 characters) to close. Empty string closes the current tab.): Close a browser tab\n- **done**(text: Final message to the user. ONLY report data you directly observed in page state, tool outputs, or screenshots during this session. Do NOT use training knowledge to fill gaps — if information was not found on the page, say so explicitly. Do NOT claim completion of steps from compacted_memory or prior session summaries unless you explicitly verified them yourself. If uncertain whether a prior step completed, say so explicitly. Must be non-empty., success: Whether the task was completed successfully. Set to False if any stated requirement was unmet, the page did not contain the expected data, or a step could not be verified. Leave True only when every requirement was directly confirmed this session. If any part of your data is incomplete or still marked uncertain — a value with `?`, an unread gap, a partial tally — verify it first or set success=False., files_to_display: Absolute file paths to attach to the final result (downloads, saved reports, screenshots). Each must exist and be under an allowed read path; invalid paths are skipped with a warning. Shown as a short manifest in the summary.): Signal that the task is complete and stop the agent. Must be the only action in the step. Provide a final summary of what was accomplished; set success=False if any requirement was unmet or could not be verified.\n- **extract**(query: What information to extract from the current page. Be specific: name the fields/items and any filtering criteria. (Equivalent to browser-use `query`.), extract_links: If True, preserve <a href> URLs in the source markdown. Set False for text-only extraction., extract_images: If True, preserve <img src> URLs in the source markdown., start_from_char: Character offset to resume extraction from (for paginating large pages). Default 0 = start at the beginning. Use the offset reported by a previous truncated extract call to continue., already_collected: Items already extracted (dedupe across pages/chunks). Pass prior results (as text) and the model will skip exact duplicates. Optional.): Extract specific information from the current page as clean markdown (via an LLM). Paginate large pages with start_from_char; dedupe across calls with already_collected.\n- **find_elements**(selector: CSS selector to query elements (e.g. \"table tr\", \"a.link\", \"div.product\"), attributes: Specific attributes to extract (e.g. [\"href\", \"src\", \"class\"]). If not set, returns tag and text only. src/href are resolved to absolute URLs., max_results: Maximum elements to return (total count is always reported even when truncated)., offset: 0-based index of the first element to return (for paginating large result sets; total is always the full count across all roots including shadow DOM / same-origin iframes)., include_text: Include text content of each element, first_only: Return only the first matching element; total still reports the full count so you know there are more., include_geometry: Add per-element getBoundingClientRect() {x,y,w,h} and a stable visibility flag (checks ancestor display/visibility/opacity + non-zero size). Default off to avoid overhead., return_node_ids: Return stable backend node ids usable directly as click/input_text `index` (uses DOM.performSearch — heavier, one CDP round-trip per element; no text). Offset applies to the document-order match list.): Query DOM elements by CSS selector (zero LLM cost, instant). Returns matching elements with tag, text, and attributes. Use attributes=['href','src'] to extract specific attributes (src/href resolve to absolute URLs). max_results caps the returned list; the total count is always reported. Use to explore page structure, count items, get links/attributes.\n- **find_text**(text: Text to search for on the page, nth: Which match to scroll to, 1-based (default: 1st). The echo reports total/visible counts so the caller can increment to navigate matches., case_sensitive: Case-sensitive match (default: case-insensitive, like Ctrl+F). Aligns with search_page., highlight: Highlight style: box=element outline (default), selection=native blue text selection (best-effort, Chromium-only), none=off.): Scroll to and highlight the nth visible match of text on the page\n- **go_back**() [terminates sequence]: Navigate back to the previous page in history\n- **input_text**(index: ID of the element to type into, shown in brackets in the DOM tree. Provide exactly one of index / element_id., element_id: Stable backend node id from find_elements(return_node_ids=True); an alternative to index (same resolution path). Provide exactly one of index / element_id., text: Text to type into the element, clear: Whether to clear existing text first): Type text into an input element identified by index (from the DOM tree) or element_id (a backend node id from find_elements with return_node_ids=True).\n- **navigate**(url: The URL to navigate to, new_tab: If True, open the URL in a new tab instead of navigating the current tab) [terminates sequence]: Navigate to a URL in the current tab, or open it in a new tab with new_tab=True\n- **read_file**(path: Path to a local file to read: UTF-8 text by default (see encoding), or PDF/DOCX for text extraction., encoding: Text encoding to decode with (default UTF-8). Set e.g. 'latin-1' or 'cp936' for legacy files., newline: Python open() newline mode (default '' = no translation, preserves \\r\\n byte-for-byte). Set None for universal-newline (collapses \\r\\n / \\r to \\n); other values do not translate on a full-file read., offset: 0-based character offset to start reading at (for paginating files larger than the effective read window; pair with the truncation footer's 'use offset=N to continue')., limit: Max characters to return from this read (default: the effective read window = min(read_file_max_chars, LLM display cap) minus a footer reserve). Use with offset to page through very large files.): Read content from a local text (UTF-8) or PDF/DOCX file; paginate large files with offset/limit.\n- **replace_file**(path: Path to an existing local file to edit in place., old: Text to find. A literal substring by default (case-sensitive); set regex=True to treat it as a Python regular expression. Must be non-empty., new: Replacement text (literal; may be empty to delete matches). In regex mode this is an re.sub replacement template and supports backreferences (\\1, \\g<name>); escape backslashes for literal paths., encoding: Text encoding to read/write with (default UTF-8). Set e.g. 'latin-1' or 'cp936' for legacy files., newline: Python open() newline mode (default '' = no translation, preserves original line endings byte-for-byte). Set None for universal-newline translation on read., regex: When True, treat 'old' as a Python regular expression (re.sub semantics, including backreference expansion \\1 / \\g<name> in 'new'; escape backslashes for literal paths). When False (default), 'old' is a literal substring., case_sensitive: When True (default), match case-sensitively. When False, match case-insensitively regardless of regex mode. Note: defaults to True (unlike search_page's False) to preserve replace_file's historical case-sensitive behavior., count: Maximum number of occurrences to replace, from the top of the file. None (default) replaces all; a positive integer replaces only the first N (or fewer if the file has fewer matches)., expected_count: If set, the file must contain exactly this many matches for the operation to proceed; on mismatch the file is left UNCHANGED and an error is returned (typo-guard against 0 or unexpectedly-many replacements). Compared against the TOTAL match count, before the 'count' limit is applied., backup: When True, copy the original (pre-edit) file to <path>.bak before replacing (shutil.copy2 metadata retained). Default False; .bak is overwritten if it exists.): Replace occurrences of text inside an existing local file, in place. By default performs a case-sensitive literal substring replace of every non-overlapping occurrence (phase-1 behavior preserved). Set regex=True to treat 'old' as a Python regex (then 'new' supports backreferences), or case_sensitive=False for case-insensitive matching. count limits replacements to the first N (default: all). expected_count guards against typos: if the file does not contain exactly that many matches it is left unchanged and an error is returned. backup=True first copies the original to <path>.bak. old must be non-empty; zero matches returns 'no occurrences' rather than silently succeeding. Prefer this over write_file for small edits to a large file you have already read.\n- **save_as_pdf**(path: File path to save the PDF (parent dirs auto-created)., paper_format: Paper size., landscape: Landscape orientation., print_background: Include background graphics/colors., scale: Render scale (0.1-2.0).): Save the current page as a PDF. Supports paper_format (letter/legal/a4/a3/tabloid), landscape, scale (0.1-2.0), print_background.\n- **screenshot**(format: Image format. 'jpeg' supports quality; 'png' is lossless., quality: 0-100, only effective when format='jpeg'., clip: Optional viewport rect {x,y,width,height} (CSS px)., full_page: Capture the full scrollable page instead of the viewport., save_path: Optional file path to save the screenshot bytes to disk.): Take a screenshot with optional format, quality (jpeg), clip region, or full page. Saves to save_path if given.\n- **scroll**(amount: Number of viewport-heights to scroll (1-10). Check the scroll info on scrollable elements in the DOM tree (e.g. '3.4 pages below') to judge how much remains before scrolling., direction: Scroll direction: 'down' (default) or 'up'.): Scroll the page up or down by a number of increments\n- **search**(query: Search query to type into the search engine, engine: Search engine: baidu (default, works in China), google, bing, or duckduckgo) [terminates sequence]: Search the web via a search engine (baidu/google/bing/duckduckgo; default baidu). Navigates to the results page\n- **search_page**(query: Text or regex pattern to search for within the current page, regex: Treat query as a regex (default: literal text match)., case_sensitive: Case-sensitive match (default: case-insensitive)., context_chars: Characters of surrounding context per match., css_scope: CSS selector to limit search scope (e.g. 'div#main'). Selector not matching anything is an error., max_results: Maximum matches to return (total count is always reported even when truncated)., offset: 0-based index of the first match to return (for paginating large result sets; total is always the full count)., search_attributes: Also search element attribute values (href / value / data-* etc). Returns a separate attribute_matches list; offset applies to text matches only.): Search page text for a pattern (like grep). Zero LLM cost, instant. Returns matches with surrounding context, element path, and a total count; paginate large result sets with offset. Traverses same-origin iframes and open shadow roots. Set regex=True for regex patterns; use css_scope to search within a section; search_attributes=True to also match href/value/etc. Read-only — does not scroll or highlight (use find_text for that).\n- **send_keys**(keys: Key combination or text to send. Combos use '+': 'Control+a', 'Shift+T', 'Alt+F4'. Named keys: 'Enter', 'Tab', 'Escape', 'ArrowUp', 'F5', etc. Plain text (e.g. 'hello') is typed character by character.): Send keyboard shortcuts or key combinations\n- **switch_tab**(tab_id: Tab ID (last 4 characters) to switch to) [terminates sequence]: Switch to a different browser tab by tab ID\n- **wait**(seconds: Seconds to wait): Wait for a specified number of seconds\n- **write_file**(path: File path to write to (parent directories are auto-created)., content: Text content to write (UTF-8 by default; see encoding)., append: If True, append to the end of an existing file instead of overwriting it. Default False overwrites the entire file., trailing_newline: If True (default), ensure the written content ends with exactly one newline (no-op if it already does)., leading_newline: If True, prepend a newline before the content (useful when appending to a file that lacks a trailing newline)., encoding: Text encoding to write with (default UTF-8). Set e.g. 'latin-1' or 'cp936' for legacy files; the byte-count echo reflects this encoding., newline: Python open() newline translation mode (default '' = no translation; \\n/\\r\\n written as-is). Set '\\r\\n' to force CRLF output, None to translate \\n to the OS native line ending (\\r\\n on Windows). Distinct from trailing_newline/leading_newline, which only add/remove a \\n in the content.): Write UTF-8 text to a local file (parent directories are auto-created). Default is overwrite: the file's previous content is fully replaced. Set append=True to add to the end of an existing file instead (it is created if missing). trailing_newline (default True) ensures the content ends with exactly one newline — no-op if it already does; set leading_newline=True only when appending to a file you know lacks a trailing newline, to separate the new content. Prefer replace_file for in-place edits to a small region of a large file you have already read."
+  },
   "structuredDone": {
     "className": "StructuredDoneParams",
     "schema": {
