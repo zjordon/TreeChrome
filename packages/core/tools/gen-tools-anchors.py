@@ -115,6 +115,32 @@ def main() -> None:
         "descriptionsText": reg_a.get_action_descriptions_text(),
     }
 
+    # ── 2c. P4b 段 2 注册面（batch1 + 段 1 十 + 段 2 三动作 = 23 动作；TS 默认 Tools 面）──
+    SEGMENT_B = SEGMENT_A + ["dropdown_options", "select_dropdown", "upload_file"]
+    reg_b = ActionRegistry()
+    for name in SEGMENT_B:
+        param_model, description, terminates = ACTION_DEFINITIONS[name]
+        reg_b.action(
+            name=name, description=description, param_model=param_model,
+            terminates=terminates,
+        )(lambda *a, **k: None)
+    data["segmentB"] = {
+        "names": SEGMENT_B,
+        "registryVersion": reg_b.registry_version,
+        "toolSchema": {
+            "flash-single": reg_b.get_tool_schema(output_mode="flash"),
+            "flash-multi": reg_b.get_tool_schema(output_mode="flash", max_actions=3),
+            "standard-single": reg_b.get_tool_schema(output_mode="standard"),
+            "standard-multi": reg_b.get_tool_schema(output_mode="standard", max_actions=3),
+            "thinking-single": reg_b.get_tool_schema(output_mode="thinking"),
+            "thinking-single-planning": reg_b.get_tool_schema(
+                output_mode="thinking", enable_planning=True),
+            "standard-multi-planning": reg_b.get_tool_schema(
+                output_mode="standard", max_actions=3, enable_planning=True),
+        },
+        "descriptionsText": reg_b.get_action_descriptions_text(),
+    }
+
     # ── 3. 变体 B done：结构化输出参数模型 ──
     from pydantic import BaseModel, ConfigDict
 

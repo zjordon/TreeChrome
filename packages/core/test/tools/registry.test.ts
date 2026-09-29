@@ -1,7 +1,7 @@
 // registry 层锚定测试：registryVersion / tool schema 矩阵（flash·standard·thinking ×
 // 单·多动作 × planning）逐字节对拍 fixture；descriptionsText 对拍；pagePatterns 可见性；
-// fnmatchLike / hideFieldsFromSchema 单元。batch1 断言用子集 registry（生成器同款），
-// segmentA（P4b 段 1 后 TS 默认 20 动作面）对拍默认 Tools 构造。
+// fnmatchLike / hideFieldsFromSchema 单元。batch1/segmentA 断言用子集 registry（生成器
+// 同款），segmentB（P4b 段 2 后 TS 默认 23 动作面）对拍默认 Tools 构造。
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,6 +24,12 @@ const FIXTURE = JSON.parse(
     pageFiltered: Record<string, unknown>;
   };
   segmentA: {
+    names: string[];
+    registryVersion: string;
+    toolSchema: Record<string, unknown>;
+    descriptionsText: string;
+  };
+  segmentB: {
     names: string[];
     registryVersion: string;
     toolSchema: Record<string, unknown>;
@@ -57,9 +63,14 @@ describe("registryVersion（动作名集合 sha256[:12]）", () => {
       FIXTURE.batch1.registryVersion,
     );
   });
-  it("segmentA 二十动作指纹对拍（P4b 段 1 后默认 Tools 面）", () => {
-    expect(makeRegistry().registryVersion).toBe(FIXTURE.segmentA.registryVersion);
-    expect(makeRegistry().actions.size).toBe(FIXTURE.segmentA.names.length);
+  it("segmentA 二十动作指纹对拍（子集 registry）", () => {
+    expect(subsetRegistry(FIXTURE.segmentA.names).registryVersion).toBe(
+      FIXTURE.segmentA.registryVersion,
+    );
+  });
+  it("segmentB 二十三动作指纹对拍（P4b 段 2 后默认 Tools 面）", () => {
+    expect(makeRegistry().registryVersion).toBe(FIXTURE.segmentB.registryVersion);
+    expect(makeRegistry().actions.size).toBe(FIXTURE.segmentB.names.length);
   });
   it("动作集变化 → 指纹变化；参数细节变化不触发（按名集合）", () => {
     const r = makeRegistry();
@@ -87,7 +98,12 @@ describe("getToolSchema 矩阵（逐字节对拍）", () => {
       );
     });
     it(`segmentA ${key}`, () => {
-      expect(S(makeRegistry().getToolSchema(opts))).toBe(S(FIXTURE.segmentA.toolSchema[key]));
+      expect(S(subsetRegistry(FIXTURE.segmentA.names).getToolSchema(opts))).toBe(
+        S(FIXTURE.segmentA.toolSchema[key]),
+      );
+    });
+    it(`segmentB ${key}`, () => {
+      expect(S(makeRegistry().getToolSchema(opts))).toBe(S(FIXTURE.segmentB.toolSchema[key]));
     });
   }
   it("action enum 按名字典序", () => {
@@ -106,8 +122,13 @@ describe("getActionDescriptionsText", () => {
       FIXTURE.batch1.descriptionsText,
     );
   });
-  it("segmentA 二十动作文本逐字节对拍（默认 Tools 面）", () => {
-    expect(makeRegistry().getActionDescriptionsText()).toBe(FIXTURE.segmentA.descriptionsText);
+  it("segmentA 二十动作文本逐字节对拍（子集 registry）", () => {
+    expect(subsetRegistry(FIXTURE.segmentA.names).getActionDescriptionsText()).toBe(
+      FIXTURE.segmentA.descriptionsText,
+    );
+  });
+  it("segmentB 二十三动作文本逐字节对拍（默认 Tools 面）", () => {
+    expect(makeRegistry().getActionDescriptionsText()).toBe(FIXTURE.segmentB.descriptionsText);
   });
   it("pagePatterns 命中页可见/他页隐藏；schema enum 同步（batch1 子集 registry）", () => {
     const registry = subsetRegistry(FIXTURE.batch1.names);

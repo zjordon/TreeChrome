@@ -3,6 +3,11 @@
 // fake；BrowserSession 结构满足本接口，4.4 agent 传真实会话）。
 
 import type { ActionResult } from "../agent/views.js";
+import type {
+  DropdownDispatchResult,
+  DropdownOption,
+  DropdownSetterResult,
+} from "../browser/dropdown.js";
 import type { PageSettleResult, ScrollResult } from "../browser/navigation.js";
 import type { PrintToPdfOptions, ScreenshotOptions } from "../browser/screenshot.js";
 import type {
@@ -13,7 +18,7 @@ import type {
 } from "../browser/search-find.js";
 import type { BrowserStateSummary, TabInfo } from "../browser/views.js";
 
-/** batch1 十动作 + P4b 段 1 十动作用到的 BrowserSession 面（段 2/3 增补时在此扩维） */
+/** batch1 十 + P4b 段 1 十 + 段 2 三动作用到的 BrowserSession 面（段 3 增补时扩维） */
 export interface ToolsBrowser {
   navigate(url: string, options?: { newTab?: boolean }): Promise<string | null>;
   goBack(): Promise<string | null>;
@@ -69,6 +74,23 @@ export interface ToolsBrowser {
       searchAttributes?: boolean;
     },
   ): Promise<SearchPageData>;
+  // ── P4b 段 2（p4b/02）：下拉族 + 上传族 ──
+  fetchSelectOptions(backendNodeId: number): Promise<DropdownOption[]>;
+  fetchDropdownOptions(backendNodeId: number): Promise<DropdownDispatchResult>;
+  setSelectOption(backendNodeId: number, value: string): Promise<DropdownSetterResult>;
+  setSelectOptionMulti(backendNodeId: number, values: string[]): Promise<DropdownSetterResult>;
+  setDropdownOption(backendNodeId: number, value: string): Promise<DropdownSetterResult>;
+  setComboboxOption(backendNodeId: number, value: string): Promise<DropdownSetterResult>;
+  setCustomDropdownOption(backendNodeId: number, value: string): Promise<DropdownSetterResult>;
+  expandAndFetchComboboxOptions(backendNodeId: number): Promise<DropdownOption[]>;
+  expandAndFetchCustomOptions(backendNodeId: number): Promise<DropdownOption[]>;
+  setFileInput(
+    backendNodeId: number | null,
+    filePath: string,
+    fileInputBackendIds?: number[] | null,
+  ): Promise<void>;
+  discoverFileInputViaClick(backendNodeId: number, timeoutMs?: number): Promise<number | null>;
+  evalFunctionOnNode(backendNodeId: number, functionDeclaration: string): Promise<unknown>;
   readonly currentTargetId: string | null;
 }
 

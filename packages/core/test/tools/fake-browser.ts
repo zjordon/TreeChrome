@@ -1,6 +1,11 @@
 // tools 层测试夹具：FakeBrowser（ToolsBrowser 的可编程轻量实现）+ makeNode
 // （selector_map 条目构造）+ makeTools（睡眠记录 + 日志静默）。
 import { EMPTY_DOM_STATE, EnhancedDOMTreeNode, SerializedDOMState } from "@tw/dom-snapshot";
+import type {
+  DropdownDispatchResult,
+  DropdownOption,
+  DropdownSetterResult,
+} from "../../src/browser/dropdown.js";
 import type { PageSettleResult, ScrollResult } from "../../src/browser/navigation.js";
 import type { PrintToPdfOptions, ScreenshotOptions } from "../../src/browser/screenshot.js";
 import type {
@@ -226,6 +231,80 @@ export class FakeBrowser implements ToolsBrowser {
       if (code.includes(entry.code.slice(0, 24))) return Promise.resolve(entry.result);
     }
     return Promise.resolve(undefined);
+  }
+  // ── P4b 段 2：下拉/上传可编程面 ──
+  fetchSelectOptionsResult: DropdownOption[] = [];
+  fetchDropdownOptionsResult: DropdownDispatchResult = { options: [], source: null };
+  setterResults: Record<string, DropdownSetterResult> = {};
+  expandComboboxResult: DropdownOption[] = [];
+  expandCustomResult: DropdownOption[] = [];
+  expandCustomError: Error | null = null;
+  setFileInputCalls: Array<{
+    backendNodeId: number | null;
+    filePath: string;
+    ids: number[] | null;
+  }> = [];
+  setFileInputError: Error | null = null;
+  discoverResult: number | null = null;
+  discoverCalls: number[] = [];
+  evalFunctionResults: Record<number, unknown> = {};
+  fetchSelectOptions(backendNodeId: number): Promise<DropdownOption[]> {
+    void backendNodeId;
+    return Promise.resolve(this.fetchSelectOptionsResult);
+  }
+  fetchDropdownOptions(backendNodeId: number): Promise<DropdownDispatchResult> {
+    void backendNodeId;
+    return Promise.resolve(this.fetchDropdownOptionsResult);
+  }
+  setSelectOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    void backendNodeId;
+    return Promise.resolve(this.setterResults[value] ?? { success: false });
+  }
+  setSelectOptionMulti(backendNodeId: number, values: string[]): Promise<DropdownSetterResult> {
+    void backendNodeId;
+    void values;
+    return Promise.resolve(this.setterResults.multi ?? { success: false });
+  }
+  setDropdownOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    void backendNodeId;
+    return Promise.resolve(this.setterResults[value] ?? { success: false, source: null });
+  }
+  setComboboxOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    void backendNodeId;
+    return Promise.resolve(this.setterResults[value] ?? { success: false });
+  }
+  setCustomDropdownOption(backendNodeId: number, value: string): Promise<DropdownSetterResult> {
+    void backendNodeId;
+    return Promise.resolve(this.setterResults[value] ?? { success: false });
+  }
+  expandAndFetchComboboxOptions(backendNodeId: number): Promise<DropdownOption[]> {
+    void backendNodeId;
+    return Promise.resolve(this.expandComboboxResult);
+  }
+  expandAndFetchCustomOptions(backendNodeId: number): Promise<DropdownOption[]> {
+    if (this.expandCustomError !== null) return Promise.reject(this.expandCustomError);
+    void backendNodeId;
+    return Promise.resolve(this.expandCustomResult);
+  }
+  setFileInput(
+    backendNodeId: number | null,
+    filePath: string,
+    fileInputBackendIds?: number[] | null,
+  ): Promise<void> {
+    if (this.setFileInputError !== null) return Promise.reject(this.setFileInputError);
+    this.setFileInputCalls.push({
+      backendNodeId,
+      filePath,
+      ids: fileInputBackendIds ?? null,
+    });
+    return Promise.resolve();
+  }
+  discoverFileInputViaClick(backendNodeId: number, _timeoutMs?: number): Promise<number | null> {
+    this.discoverCalls.push(backendNodeId);
+    return Promise.resolve(this.discoverResult);
+  }
+  evalFunctionOnNode(backendNodeId: number, _functionDeclaration: string): Promise<unknown> {
+    return Promise.resolve(this.evalFunctionResults[backendNodeId]);
   }
   getPageHtml(): Promise<string> {
     if (this.htmlError !== null) throw this.htmlError;

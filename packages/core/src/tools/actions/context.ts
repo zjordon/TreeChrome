@@ -40,6 +40,10 @@ export interface ToolsContext {
   extractClient: ExtractClientFace | null;
   /** extract 结构化输出 schema（Python _extraction_schema） */
   extractionSchema: Record<string, unknown> | null;
+  /** 上传后页面级验证（canvas/img/bg 预览 delta 轮询；Tools :765-767 缺省照搬） */
+  uploadVerifyEnabled: boolean;
+  uploadVerifyWaitMs: number;
+  uploadVerifyIntervalMs: number;
   /** execute() 帧内缓存（Python _cached_browser_state） */
   cachedBrowserState: BrowserStateSummary | null;
 }

@@ -139,6 +139,25 @@ export function describeDropdown(entry: EnhancedDOMTreeNode, index: number): str
   return `[${tag}] at index ${index}`;
 }
 
+/** :1224-1254 upload 回显：文件 basename + aria-label/title/name/placeholder 链 →
+ *  node_value → 裸 tag（跳过 value/alt——file input 的 value 是浏览器伪造成径） */
+export function describeUpload(
+  entry: EnhancedDOMTreeNode,
+  index: number,
+  filePath: string,
+): string {
+  let shown = filePath.replaceAll("\\", "/").split("/").pop() ?? "";
+  if (shown.length > 60) shown = `${shown.slice(0, 60)}...`;
+  const tag = entry.tagName.toUpperCase();
+  for (const key of ["aria-label", "title", "name", "placeholder"]) {
+    const v = attrValue(entry, key);
+    if (v !== null) return `Uploaded ${pyRepr(shown)} to [${tag}] ${pyRepr(v)} at index ${index}`;
+  }
+  const nv = nodeValue(entry);
+  if (nv !== null) return `Uploaded ${pyRepr(shown)} to [${tag}] ${pyRepr(nv)} at index ${index}`;
+  return `Uploaded ${pyRepr(shown)} to [${tag}] at index ${index}`;
+}
+
 /** tab 摘要串（switch_tab/close_tab 的 error/回显复用，:1647-1655） */
 export function summarizeTabs(
   tabs: ReadonlyArray<{ targetId: string; url: string; title: string }>,
