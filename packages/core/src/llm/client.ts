@@ -235,6 +235,30 @@ const noToolsConstraint = (tool: ToolDefinition, onDegraded?: () => void): strin
 };
 
 /**
+ * agent_response 的 action→actions 物化（Python client.py :559-605 的移植，位于
+ * okResult 还原之前——与 Python「先物化后还原」同序）。wire 形态 action 为 list
+ * （multi_act schema 的标准形态）时整个列表即 actions；非列表（legacy 单 dict/
+ * 标量/缺省 {}）包裹为单元素列表；action 镜像取首元素，空列表 → {}。仅当
+ * toolInput 含 action 键时执行——judge/extract 等其他工具响应不注入杂键。
+ *
+ * 缺口史：漏移植此步时，真实端点按 schema 只回 `action` 数组（不带 actions 键），
+ * think 层 normalizeModelOutput 把整个数组当单条目处理（Object.keys 数组只得被
+ * 追加的 params 键）→ `<dict:params>` 假畸形 → 两轮澄清无效 → fallback done 猝死；
+ * smoke 剧本手工双填 action+actions 两字段掩盖了缺口（真实模型从不双填）。
+ * normalize 调用仍在 think 层（幂等设计），与 Python 在 client 内调
+ * normalize_actions_list 的最终状态等价——此函数只补物化，不做归一化。
+ */
+function materializeActionsMirror(toolInput: Record<string, unknown>): void {
+  if (!("action" in toolInput)) return;
+  // Python get("action", {})：缺省只在键缺失时生效（上方早退）——action: null
+  // 保持 null 原样入列，归一化交 think 层
+  const raw = toolInput["action"];
+  const list = Array.isArray(raw) ? raw : [raw];
+  toolInput["actions"] = list;
+  toolInput["action"] = list.length > 0 ? list[0] : {};
+}
+
+/**
  * 使用约束：实例按**串行 agent loop** 设计，不支持并发 getAction——fallback 单向
  * 切换会变异 config/provider/usingFallback；windowDeadline/windowBudgetCapMs 是
  * 跨 getAction 的步级登记，跨步复用实例时每步 setCallWindow 重登记（或显式传
@@ -762,6 +786,7 @@ export class LLMClient {
     sensitive: Record<string, string> | undefined,
     usage: TokenUsage | null,
   ): GetActionResult {
+    materializeActionsMirror(toolInput);
     // 还原顺序与请求侧**同序**（先 URL 后敏感值）——对齐 Python get_action（:612-617），
     // 刻意不取严格互逆：若占位符恰为某已映射长 URL 的子串，同序会把 URL 内的占位符
     // 片段二次替换（URL 污染），但该碰撞极罕见且 Python 同款行为是 P5 parity 基准

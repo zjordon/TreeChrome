@@ -204,13 +204,23 @@ describe("解析优先级与公共面", () => {
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r).toEqual({
       kind: "ok",
-      toolInput: { evaluation_previous_goal: "e", action: { name: "done" } },
+      // actions 镜像由 okResult 物化（Python client.py :559-605）——action 单 dict
+      // 包裹为单元素列表
+      toolInput: {
+        evaluation_previous_goal: "e",
+        action: { name: "done" },
+        actions: [{ name: "done" }],
+      },
       // toolCall 携带（轮 36 #6）：真实调用路径回传 id/name 供宿主回放历史
       //（args 与 toolInput 同源；gemini signature 经此跨回合回传，见姊妹用例）
       toolCall: {
         id: "t",
         name: TOOL.name,
-        args: { evaluation_previous_goal: "e", action: { name: "done" } },
+        args: {
+          evaluation_previous_goal: "e",
+          action: { name: "done" },
+          actions: [{ name: "done" }],
+        },
       },
       usage: { inputTokens: 5, outputTokens: 7 },
     });
@@ -226,7 +236,12 @@ describe("解析优先级与公共面", () => {
     const r = await client.getAction("sys", msgs(), TOOL);
     expect(r).toEqual({
       kind: "ok",
-      toolInput: { action: { name: "done" }, next_goal: "g" },
+      // text-JSON 兜底路径同款物化（actions 镜像）
+      toolInput: {
+        action: { name: "done" },
+        actions: [{ name: "done" }],
+        next_goal: "g",
+      },
       usage: null, // 结果契约：无 usage → null（轮 46 #18 清扫只改 mock 响应体）
     });
   });
@@ -334,6 +349,8 @@ describe("变换往返（URL 缩写 + 敏感值）", () => {
     expect(ok.toolInput).toEqual({
       next_goal: `open ${U0} with sk-secret`,
       action: { url: U0 },
+      // 物化镜像（action 含杂键 dict——非标准形态同包裹单元素列表，归一化交 think 层）
+      actions: [{ url: U0 }],
     });
   });
 
@@ -1527,5 +1544,83 @@ describe("FakeClock 收敛守卫（轮 38 #18：末轮 resolve 续体注册的�
     // 无人捕获，本用例需同步调整（catch churn 再断言）
     void churn();
     await expect(clock.advance(0)).rejects.toThrow("FakeClock.advance");
+  });
+});
+
+describe("getAction action→actions 物化（Python client.py :559-605 移植；真机缺口回归）", () => {
+  // 缺口史：真实端点按 schema 只回 action 数组（不带 actions 键），think 层
+  // normalizeModelOutput 曾把数组当单条目 → <dict:params> 假畸形 → fallback done
+  //（2026-09-29 basic-agent 真机首跑实锤；smoke 剧本双填两键掩盖过缺口）
+  it("action 数组（multi_act wire 形态）：解包为 actions + 首元素镜像", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(
+      toolOk({
+        action: [
+          { name: "click", params: { index: 1 } },
+          { name: "send_keys", params: { keys: "Enter" } },
+        ],
+        next_goal: "go",
+      }),
+    );
+    const ok = assertOk(
+      await client.getAction("s", [{ role: "user", blocks: [{ kind: "text", text: "q" }] }], TOOL),
+    );
+    expect(ok.toolInput.action).toEqual({ name: "click", params: { index: 1 } });
+    expect(ok.toolInput.actions).toEqual([
+      { name: "click", params: { index: 1 } },
+      { name: "send_keys", params: { keys: "Enter" } },
+    ]);
+  });
+
+  it("action 单 dict（legacy）：包裹为单元素列表", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ action: { name: "done", params: { text: "ok" } } }));
+    const ok = assertOk(
+      await client.getAction("s", [{ role: "user", blocks: [{ kind: "text", text: "q" }] }], TOOL),
+    );
+    expect(ok.toolInput.action).toEqual({ name: "done", params: { text: "ok" } });
+    expect(ok.toolInput.actions).toEqual([{ name: "done", params: { text: "ok" } }]);
+  });
+
+  it("缺 action 键：不注入 actions（judge/extract 等其他工具响应零污染）", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ reasoning: "verified", verdict: true }));
+    const ok = assertOk(
+      await client.getAction("s", [{ role: "user", blocks: [{ kind: "text", text: "q" }] }], TOOL),
+    );
+    expect("actions" in ok.toolInput).toBe(false);
+    expect("action" in ok.toolInput).toBe(false);
+  });
+
+  it("action 空数组：镜像为空对象（Python actions_list[0] if actions_list else {}）", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ action: [] }));
+    const ok = assertOk(
+      await client.getAction("s", [{ role: "user", blocks: [{ kind: "text", text: "q" }] }], TOOL),
+    );
+    expect(ok.toolInput.action).toEqual({});
+    expect(ok.toolInput.actions).toEqual([]);
+  });
+
+  it("action 标量（null/字符串）：原样入列表——归一化交 think 层（Python [raw] 包裹）", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(toolOk({ action: null }));
+    const ok = assertOk(
+      await client.getAction("s", [{ role: "user", blocks: [{ kind: "text", text: "q" }] }], TOOL),
+    );
+    expect(ok.toolInput.action).toBeNull();
+    expect(ok.toolInput.actions).toEqual([null]);
+  });
+
+  it("text-JSON 兜底路径同款物化", async () => {
+    const { mock, client } = setup();
+    mock.queueMany(
+      text('{"action": [{"name": "scroll", "params": {"direction": "down"}}], "next_goal": "g"}'),
+    );
+    const ok = assertOk(
+      await client.getAction("s", [{ role: "user", blocks: [{ kind: "text", text: "q" }] }], TOOL),
+    );
+    expect(ok.toolInput.action).toEqual({ name: "scroll", params: { direction: "down" } });
+    expect(ok.toolInput.actions).toEqual([{ name: "scroll", params: { direction: "down" } }]);
   });
 });

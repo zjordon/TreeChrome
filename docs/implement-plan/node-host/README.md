@@ -173,3 +173,9 @@ try {
 - 分支提交：79921a7（实现）+ 本登记提交。
 - 验证快照：node-host 44 例（99.38/91.78/89.28）；core 1153 例（93.62/85.35）；门禁 exit 0；example 三路径真机 + agent-loop-smoke 两变体全过。
 
+### 评审后修复登记（2026-09-29，用户手动测试发现）
+
+- **core llm client 移植缺口**：用户真机首跑 basic-agent（glm-5.3 真回路）首步即 `<dict:params>` 假畸形三连 → fallback done，浏览器零操作。全真调试定位（真 Chrome + 真 key + 打点 fetch 抓 wire）：模型按 schema 返回 `action` 数组（multi_act 标准形态、name 完好，仅条目多一个顶层杂键），但 **Python client.py :559-605 的 action→actions 物化未移植**——think 层 `normalizeModelOutput` 把整个数组当单条目（`Object.keys` 数组只得被追加的 params 键）→ 假 `<dict:params>`。smoke 剧本手工双填 action+actions 两字段掩盖了缺口（真实模型从不双填）；core 管线测试全走接口级假 client，也不经过真 LLMClient。
+- 修复：`materializeActionsMirror` 进 `okResult`（Python 语义：action 数组解包为 actions、非列表包裹单元素、镜像首元素、空列表→{}、`action: null` 保持 null 原样——`get` 缺省只在键缺失时生效；缺 action 键不注入，judge/extract 响应零污染）；smoke 剧本改 wire 形态（只填 action 数组）；新增 6 例回归测试 + 4 处旧断言补 actions 镜像。core 1153→1159 例全绿（93.63/85.38）。
+- 真机复验：全真闭环（真 key + headless Chrome）5 步完整跑通——google 三连超时后模型自主改道 Bing 取前三条标题、诚实降级 done（沙箱网络限制，用户网络可达 google）；agent-loop-smoke 两变体回归全过。
+
