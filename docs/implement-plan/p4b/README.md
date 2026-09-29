@@ -255,3 +255,9 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
 - 测试 1148→1265（+117：锚定 87 / evaluate-enhanced session 16 / grid-read session
   5 + 既有面改写 actions/registry 双面 → 三面 segmentB/C）；覆盖率 93.83%/分支
   85.22%；门禁 exit 0；真机 smoke deny-once 变体回归 exitCode 0（**25 动作全量面**）。
+
+### feat/p4b-grid-eval
+
+- **轮 1（2026-09-29，0 条意见——首轮即收敛）**：状态 complete / 16 文件 /
+  13m21s，零发现零驳回零 stale。测试 1265 例 / 覆盖率 93.83%·85.22% / 分支
+  1 提交（9118160）待合并。P4b 三段至此全部过审。
