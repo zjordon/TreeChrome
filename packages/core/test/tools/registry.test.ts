@@ -35,6 +35,12 @@ const FIXTURE = JSON.parse(
     toolSchema: Record<string, unknown>;
     descriptionsText: string;
   };
+  segmentC: {
+    names: string[];
+    registryVersion: string;
+    toolSchema: Record<string, unknown>;
+    descriptionsText: string;
+  };
 };
 
 const S = JSON.stringify;
@@ -68,9 +74,15 @@ describe("registryVersion（动作名集合 sha256[:12]）", () => {
       FIXTURE.segmentA.registryVersion,
     );
   });
-  it("segmentB 二十三动作指纹对拍（P4b 段 2 后默认 Tools 面）", () => {
-    expect(makeRegistry().registryVersion).toBe(FIXTURE.segmentB.registryVersion);
-    expect(makeRegistry().actions.size).toBe(FIXTURE.segmentB.names.length);
+  it("segmentB 二十三动作指纹对拍（子集 registry）", () => {
+    expect(subsetRegistry(FIXTURE.segmentB.names).registryVersion).toBe(
+      FIXTURE.segmentB.registryVersion,
+    );
+  });
+  it("segmentC 二十五动作指纹对拍（P4b 段 3 后默认 Tools 面——全 25 收齐）", () => {
+    expect(makeRegistry().registryVersion).toBe(FIXTURE.segmentC.registryVersion);
+    expect(makeRegistry().actions.size).toBe(FIXTURE.segmentC.names.length);
+    expect(makeRegistry().actions.size).toBe(25);
   });
   it("动作集变化 → 指纹变化；参数细节变化不触发（按名集合）", () => {
     const r = makeRegistry();
@@ -103,7 +115,12 @@ describe("getToolSchema 矩阵（逐字节对拍）", () => {
       );
     });
     it(`segmentB ${key}`, () => {
-      expect(S(makeRegistry().getToolSchema(opts))).toBe(S(FIXTURE.segmentB.toolSchema[key]));
+      expect(S(subsetRegistry(FIXTURE.segmentB.names).getToolSchema(opts))).toBe(
+        S(FIXTURE.segmentB.toolSchema[key]),
+      );
+    });
+    it(`segmentC ${key}`, () => {
+      expect(S(makeRegistry().getToolSchema(opts))).toBe(S(FIXTURE.segmentC.toolSchema[key]));
     });
   }
   it("action enum 按名字典序", () => {
@@ -127,8 +144,13 @@ describe("getActionDescriptionsText", () => {
       FIXTURE.segmentA.descriptionsText,
     );
   });
-  it("segmentB 二十三动作文本逐字节对拍（默认 Tools 面）", () => {
-    expect(makeRegistry().getActionDescriptionsText()).toBe(FIXTURE.segmentB.descriptionsText);
+  it("segmentB 二十三动作文本逐字节对拍（子集 registry）", () => {
+    expect(subsetRegistry(FIXTURE.segmentB.names).getActionDescriptionsText()).toBe(
+      FIXTURE.segmentB.descriptionsText,
+    );
+  });
+  it("segmentC 二十五动作文本逐字节对拍（默认 Tools 面）", () => {
+    expect(makeRegistry().getActionDescriptionsText()).toBe(FIXTURE.segmentC.descriptionsText);
   });
   it("pagePatterns 命中页可见/他页隐藏；schema enum 同步（batch1 子集 registry）", () => {
     const registry = subsetRegistry(FIXTURE.batch1.names);

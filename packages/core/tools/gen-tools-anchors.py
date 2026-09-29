@@ -141,6 +141,32 @@ def main() -> None:
         "descriptionsText": reg_b.get_action_descriptions_text(),
     }
 
+    # ── 2d. P4b 段 3 注册面（+ evaluate/read_grid = 全 25 动作；TS 默认 Tools 面）──
+    SEGMENT_C = SEGMENT_B + ["evaluate", "read_grid"]
+    reg_c = ActionRegistry()
+    for name in SEGMENT_C:
+        param_model, description, terminates = ACTION_DEFINITIONS[name]
+        reg_c.action(
+            name=name, description=description, param_model=param_model,
+            terminates=terminates,
+        )(lambda *a, **k: None)
+    data["segmentC"] = {
+        "names": SEGMENT_C,
+        "registryVersion": reg_c.registry_version,
+        "toolSchema": {
+            "flash-single": reg_c.get_tool_schema(output_mode="flash"),
+            "flash-multi": reg_c.get_tool_schema(output_mode="flash", max_actions=3),
+            "standard-single": reg_c.get_tool_schema(output_mode="standard"),
+            "standard-multi": reg_c.get_tool_schema(output_mode="standard", max_actions=3),
+            "thinking-single": reg_c.get_tool_schema(output_mode="thinking"),
+            "thinking-single-planning": reg_c.get_tool_schema(
+                output_mode="thinking", enable_planning=True),
+            "standard-multi-planning": reg_c.get_tool_schema(
+                output_mode="standard", max_actions=3, enable_planning=True),
+        },
+        "descriptionsText": reg_c.get_action_descriptions_text(),
+    }
+
     # ── 3. 变体 B done：结构化输出参数模型 ──
     from pydantic import BaseModel, ConfigDict
 

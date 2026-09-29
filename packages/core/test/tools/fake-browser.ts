@@ -6,6 +6,7 @@ import type {
   DropdownOption,
   DropdownSetterResult,
 } from "../../src/browser/dropdown.js";
+import type { EvaluateRequest } from "../../src/browser/evaluate-enhanced.js";
 import type { PageSettleResult, ScrollResult } from "../../src/browser/navigation.js";
 import type { PrintToPdfOptions, ScreenshotOptions } from "../../src/browser/screenshot.js";
 import type {
@@ -305,6 +306,40 @@ export class FakeBrowser implements ToolsBrowser {
   }
   evalFunctionOnNode(backendNodeId: number, _functionDeclaration: string): Promise<unknown> {
     return Promise.resolve(this.evalFunctionResults[backendNodeId]);
+  }
+  // ── P4b 段 3：evaluate 增强 + 网格读取可编程面 ──
+  evaluateQueue: Array<string | Error> = [];
+  evaluateEnhancedCalls: Array<EvaluateRequest> = [];
+  readUiGridResult: Record<string, unknown> = {};
+  readUiGridError: Error | null = null;
+  evaluateEnhanced(req: EvaluateRequest): Promise<string> {
+    this.evaluateEnhancedCalls.push(req);
+    const v = this.evaluateQueue.shift() ?? "";
+    if (v instanceof Error) return Promise.reject(v);
+    return Promise.resolve(v);
+  }
+  readUiGrid(_payload: unknown, _timeoutMs?: number | null): Promise<Record<string, unknown>> {
+    if (this.readUiGridError !== null) return Promise.reject(this.readUiGridError);
+    return Promise.resolve(this.readUiGridResult);
+  }
+  /** 队列项：dict 直返 / JSON 串解析（坏串 null）/ null 显式（镜像解析契约） */
+  gridChannelQueue: Array<string | Record<string, unknown> | null> = [];
+  gridChannelCalls: Array<string> = [];
+  evalGridChannel(js: string, _payload: unknown): Promise<Record<string, unknown> | null> {
+    this.gridChannelCalls.push(js.slice(0, 24));
+    const v = this.gridChannelQueue.shift();
+    if (typeof v === "string") {
+      try {
+        const parsed: unknown = JSON.parse(v);
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          return Promise.resolve(parsed as Record<string, unknown>);
+        }
+        return Promise.resolve(null);
+      } catch {
+        return Promise.resolve(null);
+      }
+    }
+    return Promise.resolve(v ?? null);
   }
   getPageHtml(): Promise<string> {
     if (this.htmlError !== null) throw this.htmlError;
