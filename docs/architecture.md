@@ -24,6 +24,8 @@ packages/
   @tw/core              Agent loop / step pipeline / actions / registry / prompts
                         / skills 匹配与蒸馏 / 权限门逻辑 / Judge / EventBus
   @tw/cdp-ws            WebSocket CDP transport（Node 宿主；等价 Python 的 cdp-use）
+  @tw/node-host         Node 宿主共享件（NodeFs / env→配置 / 控制台观测 / Agent 装配 /
+                        散脚本 esbuild 引导 boot.mjs）——examples 与未来 cli/web-console 共享
   @tw/cdp-chrome        chrome.debugger transport（扩展宿主）
   @tw/protocol          事件协议类型（EventBus schema），宿主转发、UI 消费
   @tw/console-ui        React 控制台组件包（RunView/步骤流/控制条/技能编辑器/历史）
@@ -105,7 +107,7 @@ interface PolicyInteraction {                  // 实现：扩展侧边栏交互
 }
 interface StorageProvider { /* KV + 结构化存储：chrome.storage/IndexedDB vs 本地文件 */ }
 interface SecretProvider { /* 占位符→真值，按 URL 限定 */ }
-interface FileSystemProvider { /* 扩展：downloads/OPFS；Node：fs */ }
+interface FileSystemProvider { /* 扩展：downloads/OPFS；Node：fs（实现：@tw/node-host NodeFs） */ }
 ```
 
 权限门的评测策略是 `AutoAllowPolicy`（无人值守放行并记入口径标注）——这保证了评测对权限层零阻塞，也强制权限逻辑与 UI 解耦。
@@ -217,6 +219,7 @@ run 结束 → 门槛：done(success) 且 Judge 复核通过
 | tree_walker/tools/extract_markdown.py | `@tw/core/src/tools/extract-markdown.ts` | markdownify→turndown（分块算法保真，转换器偏离登记） |
 | tree_walker/agent/upload_identity.py | `@tw/core/src/`（P4b） | upload file input 身份 JS（#151） |
 | tree_walker/tools/{models,registry,actions}.py | `@tw/core/src/tools/` | 四元组（加 capability） |
+| tree_walker/config.py（load_settings/_load_dotenv/_fetch_ws_url） | `@tw/node-host/src/settings.ts` | 宿主侧 env→配置映射（铁律 2 的宿主半边）；核心默认值口径 = load_settings 无 env 产出（对拍 fixture：`packages/core/test/fixtures/python-anchors/settings-defaults.json`） |
 | tree_walker/llm/client.py | `@tw/core/src/llm/` | fetch 直连多协议（§3.4：openai-completions / anthropic-messages / gemini 三适配器；webbrain providers 为参考） |
 | tree_walker/prompts/system_prompt.py | `@tw/core/src/prompts/` | state 消息分段保持一致 |
 | tree_walker/skills/{loader,task_loader,task_matcher}.py | `@tw/core/src/skills/` | §6 |

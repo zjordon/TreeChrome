@@ -1,6 +1,10 @@
 // AgentSettings/JudgeSettings/MessageCompactionSettings（config.py 字段面；
 // 偏离 7：不读 env，rerun_*/record_upload_dir/save_conversation_path 重放与
-// 审计族不入 P4）。默认值逐一对照 @640d52a。
+// 审计族不入 P4）。默认值口径 = load_settings() 无 env 时的产出（运营默认——
+// examples/runner 实跑口径），不等于 dataclass 裸默认；对拍 fixture 见
+// test/fixtures/python-anchors/settings-defaults.json（node-host 方案 §5.1）。
+// 已知运营≠dataclass 的分歧键：enable_planning（dataclass :163 False / env 缺省
+// "true" :501）——按运营默认取 true。
 
 import type { ParamModel } from "../tools/models.js";
 import type { ToolsTruncationSettings } from "../tools/settings.js";
@@ -145,7 +149,9 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
     evalOutputDir: "evaluate_output",
     doneAttachmentMaxChars: 2000,
   },
-  enablePlanning: false,
+  // 运营默认 true（config.py:501 env 缺省 "true"；dataclass :163 为 False——Python
+  // examples/runner 实跑即开着 PlanManager，初始规划 + replan nudge）
+  enablePlanning: true,
   explorationThreshold: 5,
   replanFailureThreshold: 3,
   enableDecisionAttribution: false,
@@ -158,9 +164,13 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   extractionSchema: null,
   enableTaskSkillInjection: false,
   explorationActionabilityCheck: true,
-  explorationActionabilityTimeout: 2.0,
+  // 运营默认 1.5（config.py:538 env 缺省与 dataclass :239 同为 1.5；此前误取 rerun
+  // 家族的 rerun_actionability_timeout=2.0——node-host 方案 §5.1 对账修正）
+  explorationActionabilityTimeout: 1.5,
   explorationActionabilityPoll: 0.3,
-  explorationActionabilityReceivesEvents: false,
+  // 运营默认 true（config.py:540 env 缺省 "true"，dataclass :241 同 true；此前误为
+  // false = 探索端 L1/L2 receives-events 检查默认跳过——对账修正）
+  explorationActionabilityReceivesEvents: true,
   explorationActionabilityRuntimeOcclusion: false,
   explorationActionabilityStable: false,
   explorationActionabilityStableInterval: 0.1,
