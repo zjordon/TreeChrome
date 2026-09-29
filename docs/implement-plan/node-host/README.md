@@ -167,4 +167,9 @@ try {
 
 ## 11. 评审与合并记录
 
-（评审循环收敛后在此登记。）
+### feat/node-host（2026-09-29）
+
+- **轮 1（diffBase=main，全量 79921a7）零意见即收敛**：状态 complete、19 文件、耗时 10m43s、模型 glm-5.3——零发现零驳回，无 P3 backlog。与 p4-foundation、p4b-grid-eval 同为最干净一轮。
+- 分支提交：79921a7（实现）+ 本登记提交。
+- 验证快照：node-host 44 例（99.38/91.78/89.28）；core 1153 例（93.62/85.35）；门禁 exit 0；example 三路径真机 + agent-loop-smoke 两变体全过。
+
