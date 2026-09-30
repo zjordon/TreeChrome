@@ -211,3 +211,53 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
 - 测试 992→1148（+156：锚定 86 / handler 26 / dropdown session 27 / upload session 8 +
   既有面改写）；覆盖率 93.52%/分支 85.27%；门禁 exit 0；真机 smoke deny-once 变体回归
   exitCode 0（23 动作面）。
+
+### feat/p4b-grid-eval（段 3，2026-09-29 实施完成，分支未评审未合并）
+
+- **evaluate 增强**（`browser/evaluate-enhanced.ts` + `tools/actions/evaluate.ts`）：
+  session.evaluate 全参数面——args 走 Runtime.callFunctionOn（this=document，CDP 编组
+  参数零拼接零注入；function(...a){...} 包装）/ elements 句柄后置（...a, ...e 签名）/
+  frame 跨源 iframe 会话切换（resolveNode→frameId→Target.getTargets iframe 表→
+  attachToTarget flatten，Python build_frame_target_map/attach_to_iframe_target 同源）/
+  return_element_ids 节点回投 backendNodeId / **语法自愈重试接线**（evaluate-basic 的
+  syntaxRepairCandidates/delimiterScan 在此消费——P4「留 P4b」欠账还清；编译期
+  SyntaxError 判定（text=="Uncaught" && description 前缀）防运行期异常误触发；单行
+  ASCII 载荷位置交叉验证；失衡盖然性提示逐字节）；单发子集 evaluateScript 零回归。
+  handler：守卫六例 + backendNodeId 回显 + data:image 抽取占位（metadata 携带）+
+  大结果分级落盘（saveOversizedResult 复用，evaluate_<ms>.txt）+ 长短期记忆 200 字
+  回显界。**pyFormatG**（%g 六位有效数字、舍入后判指数、尾零剥除、指数两位——venv
+  实跑锚定 1.2345e-05/1.23457e+06/1e+06）。
+- **read_grid 三通道**（`browser/grid-read.ts` + `grid-read-js.ts` +
+  `tools/actions/grid.ts`）：uiRegistry 主通道（GRID_READ_JS）→ legacy ExtJS
+  （LEGACY_GRID_READ_JS + filters/search 未应用注记）→ DOM 表格（DOM_TABLE_READ_JS）
+  降级链（channel_error 逐级回落，异常/坏 JSON 返 null）；**4 个 JS 体逐字节**
+  （batch2c.json，行数组 join 形态）；grid-meta/kick 复用 P4 既有面不重写。
+  handler 全量：参数守卫六例（namespace/filters/search/sorting"field desc"解析/
+  page_size 1-2000 钳制/fields/group_count strip 归一）+ group_count 确定性聚合
+  （排序 -count,name；missing 归并；未读全/page-local/字段缺失三警示）+ 合计行交叉
+  校验（footer 非空才算；行级角色过滤 skip 优先；单行无标签退化基准；非可加列跳过；
+  容差 0.005×(n+1)；legacy 截断提示）+ 三类零行诊断 + query_total 结构化旁路
+  （legacy/dom 不发射——非「查询零命中」）。**f-string 列表 repr 形态**（['a', 'b']
+  单引号——pyReprOf；JSON.stringify 会漂移）+ pyJsonDumps 全程。
+- **parseGridNumber**（:688-728）：千分位整体形态校验/±/货币百分全角剥除/下划线拒/
+  非有限拒；**Python float() 的 Unicode Nd 数字语义**（"٣"→3——Nd 块回扫段内偏移
+  取值，JS Number 不认）。gridFooterRowRole（base/skip/None，skip 优先）。
+- **注册面 23→25——全 25 动作收齐**（gen-tools-anchors.py 增 segmentC 面，旧面纯
+  增量稳定）；ToolsBrowser 扩 evaluateEnhanced/readUiGrid/evalGridChannel + 委托。
+- **新锚点生成器 gen-batch2c-anchors.py**：StubBrowser（ui_result/eval 队列）全
+  handler 输出锚定（evaluate 14 例 / read_grid 24 例：三通道/group/校验/诊断/落盘），
+  tmp 路径 /ANCHOR_TMP + 时间戳 _TS + 分隔符归一（仅 save 节，防腐蚀正则内容）。
+- 偏离落地（03 §6）：归一化截断层级无 Python 对照面（数据来自 JSON）；语法自愈
+  沿用 evaluate-basic 单源；legacy JS 体逐字节不做站点适配。执行期微偏离：args 可
+  序列化预检用 assertJsonable 等价拦截（Python json.dumps TypeError）；elements
+  的 bool 按 number 严格拒（Python int 子类可过）；default=str 不可达；page_size
+  bool 拒。
+- 测试 1148→1265（+117：锚定 87 / evaluate-enhanced session 16 / grid-read session
+  5 + 既有面改写 actions/registry 双面 → 三面 segmentB/C）；覆盖率 93.83%/分支
+  85.22%；门禁 exit 0；真机 smoke deny-once 变体回归 exitCode 0（**25 动作全量面**）。
+
+### feat/p4b-grid-eval
+
+- **轮 1（2026-09-29，0 条意见——首轮即收敛）**：状态 complete / 16 文件 /
+  13m21s，零发现零驳回零 stale。测试 1265 例 / 覆盖率 93.83%·85.22% / 分支
+  1 提交（9118160）待合并。P4b 三段至此全部过审。

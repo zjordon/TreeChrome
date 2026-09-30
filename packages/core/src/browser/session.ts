@@ -39,7 +39,9 @@ import {
 } from "./dropdown.js";
 import { clickElement, getElementCoordinates, isElementOccluded } from "./element-pointer.js";
 import { evalFunctionOnNode, executeJs } from "./evaluate-basic.js";
+import { type EvaluateRequest, evaluateEnhanced } from "./evaluate-enhanced.js";
 import { readGridMeta } from "./grid-meta.js";
+import { evalGridChannel, type GridReadPayload, readUiGrid } from "./grid-read.js";
 import { HighlightManager } from "./highlight.js";
 import { sendKeys } from "./keyboard.js";
 import type { PageSettleResult, ScrollResult } from "./navigation.js";
@@ -552,6 +554,19 @@ export class BrowserSession {
   }
   discoverFileInputViaClick(backendNodeId: number, timeoutMs?: number): Promise<number | null> {
     return discoverFileInputViaClick(this.context(), backendNodeId, timeoutMs);
+  }
+  // ── P4b 段 3：evaluate 增强 + 网格读取 ──
+  evaluateEnhanced(req: EvaluateRequest): Promise<string> {
+    return evaluateEnhanced(this.context(), req);
+  }
+  readUiGrid(
+    payload: GridReadPayload,
+    timeoutMs?: number | null,
+  ): Promise<Record<string, unknown>> {
+    return readUiGrid(this.context(), payload, timeoutMs);
+  }
+  evalGridChannel(js: string, payload: GridReadPayload): Promise<Record<string, unknown> | null> {
+    return evalGridChannel(this.context(), js, payload);
   }
   getPageHtml(options?: { extractLinks?: boolean; extractImages?: boolean }): Promise<string> {
     return getPageHtml(this.context(), options);

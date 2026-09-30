@@ -8,6 +8,8 @@ import type {
   DropdownOption,
   DropdownSetterResult,
 } from "../browser/dropdown.js";
+import type { EvaluateRequest } from "../browser/evaluate-enhanced.js";
+import type { GridReadPayload } from "../browser/grid-read.js";
 import type { PageSettleResult, ScrollResult } from "../browser/navigation.js";
 import type { PrintToPdfOptions, ScreenshotOptions } from "../browser/screenshot.js";
 import type {
@@ -18,7 +20,7 @@ import type {
 } from "../browser/search-find.js";
 import type { BrowserStateSummary, TabInfo } from "../browser/views.js";
 
-/** batch1 十 + P4b 段 1 十 + 段 2 三动作用到的 BrowserSession 面（段 3 增补时扩维） */
+/** batch1 十 + P4b 段 1/2 二十三 + 段 3 两动作用到的 BrowserSession 面 */
 export interface ToolsBrowser {
   navigate(url: string, options?: { newTab?: boolean }): Promise<string | null>;
   goBack(): Promise<string | null>;
@@ -91,6 +93,10 @@ export interface ToolsBrowser {
   ): Promise<void>;
   discoverFileInputViaClick(backendNodeId: number, timeoutMs?: number): Promise<number | null>;
   evalFunctionOnNode(backendNodeId: number, functionDeclaration: string): Promise<unknown>;
+  // ── P4b 段 3（p4b/03）：evaluate 增强 + 网格读取 ──
+  evaluateEnhanced(req: EvaluateRequest): Promise<string>;
+  readUiGrid(payload: GridReadPayload, timeoutMs?: number | null): Promise<Record<string, unknown>>;
+  evalGridChannel(js: string, payload: GridReadPayload): Promise<Record<string, unknown> | null>;
   readonly currentTargetId: string | null;
 }
 

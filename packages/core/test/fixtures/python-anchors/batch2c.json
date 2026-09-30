@@ -1,0 +1,520 @@
+{
+  "js": {
+    "TABLE_ROWS_CORE_JS": "\nfunction _gridIsTotalLabel(s) {\n    var t = s.toLowerCase().trim();\n    // review2#1：'subtotal' 必须与 '小计' 对称——英文小计行不挪出 rows 会被\n    // column_sums 双计（Python 侧 _GRID_FOOTER_SKIP_LABELS 挪进 footer 后\n    // 按 'subtotal' 跳过比对）。\n    return t === 'total' || t === 'totals' || t === 'grand total'\n        || t === 'subtotal' || t === '合计' || t === '总计' || t === '小计';\n}\nfunction _gridReadRow(tr, heads, p) {\n    var cells = tr.querySelectorAll('td,th');\n    var row = {}, col = 0;\n    for (var c = 0; c < cells.length; c++) {\n        var key = (col < heads.length && heads[col]) ? heads[col] : ('col' + col);\n        // 注意：fields 过滤只跳过取值，列游标照常推进（被过滤的列仍占位）。\n        if (!(p.fields && p.fields.length && p.fields.indexOf(key) < 0)) {\n            row[key] = (cells[c].innerText || cells[c].textContent || '').trim();\n        }\n        // review#2：colspan 折算——合计行常见 <th colspan=N> 形态，按格索引\n        // 配对会把数值格绑到错误表头（假 ✗ 或相邻列合计恰等时假 ✓）。\n        col += (cells[c].colSpan || 1);\n    }\n    return row;\n}\nfunction _gridReadTable(root, heads, p) {\n    var rows = [], footer = [];\n    var trs = root.querySelectorAll('tbody tr');\n    for (var k = 0; k < trs.length; k++) {\n        if (!trs[k].querySelectorAll('td').length) { continue; }\n        // review#3：判定取首格（td,th）——合计标签写在 <th> 时首 td 是数值，\n        // 漏检会让 Total 行留在 rows 里被双计。\n        var cell0 = trs[k].querySelector('td,th');\n        var first = (cell0.innerText || cell0.textContent || '').trim();\n        if (_gridIsTotalLabel(first)) { footer.push(_gridReadRow(trs[k], heads, p)); continue; }\n        rows.push(_gridReadRow(trs[k], heads, p));\n    }\n    var ftrs = root.querySelectorAll('tfoot tr');\n    for (var f = 0; f < ftrs.length; f++) {\n        var fr = _gridReadRow(ftrs[f], heads, p);\n        if (Object.keys(fr).length) { footer.push(fr); }\n    }\n    return { rows: rows, footer: footer };\n}\n",
+    "LEGACY_GRID_READ_JS": "\nfunction _gridIsTotalLabel(s) {\n    var t = s.toLowerCase().trim();\n    // review2#1：'subtotal' 必须与 '小计' 对称——英文小计行不挪出 rows 会被\n    // column_sums 双计（Python 侧 _GRID_FOOTER_SKIP_LABELS 挪进 footer 后\n    // 按 'subtotal' 跳过比对）。\n    return t === 'total' || t === 'totals' || t === 'grand total'\n        || t === 'subtotal' || t === '合计' || t === '总计' || t === '小计';\n}\nfunction _gridReadRow(tr, heads, p) {\n    var cells = tr.querySelectorAll('td,th');\n    var row = {}, col = 0;\n    for (var c = 0; c < cells.length; c++) {\n        var key = (col < heads.length && heads[col]) ? heads[col] : ('col' + col);\n        // 注意：fields 过滤只跳过取值，列游标照常推进（被过滤的列仍占位）。\n        if (!(p.fields && p.fields.length && p.fields.indexOf(key) < 0)) {\n            row[key] = (cells[c].innerText || cells[c].textContent || '').trim();\n        }\n        // review#2：colspan 折算——合计行常见 <th colspan=N> 形态，按格索引\n        // 配对会把数值格绑到错误表头（假 ✗ 或相邻列合计恰等时假 ✓）。\n        col += (cells[c].colSpan || 1);\n    }\n    return row;\n}\nfunction _gridReadTable(root, heads, p) {\n    var rows = [], footer = [];\n    var trs = root.querySelectorAll('tbody tr');\n    for (var k = 0; k < trs.length; k++) {\n        if (!trs[k].querySelectorAll('td').length) { continue; }\n        // review#3：判定取首格（td,th）——合计标签写在 <th> 时首 td 是数值，\n        // 漏检会让 Total 行留在 rows 里被双计。\n        var cell0 = trs[k].querySelector('td,th');\n        var first = (cell0.innerText || cell0.textContent || '').trim();\n        if (_gridIsTotalLabel(first)) { footer.push(_gridReadRow(trs[k], heads, p)); continue; }\n        rows.push(_gridReadRow(trs[k], heads, p));\n    }\n    var ftrs = root.querySelectorAll('tfoot tr');\n    for (var f = 0; f < ftrs.length; f++) {\n        var fr = _gridReadRow(ftrs[f], heads, p);\n        if (Object.keys(fr).length) { footer.push(fr); }\n    }\n    return { rows: rows, footer: footer };\n}\n\nreturn (async function(){\n    var p = a[0];\n    try {\n        var objs = [];\n        for (var k in window) {\n            var v;\n            try { v = window[k]; } catch (e) { continue; }\n            if (/GridJsObject$/.test(k) && v && typeof v === 'object' && v.url) { objs.push(v); }\n        }\n        if (!objs.length) { return JSON.stringify({channel_error: 'no-legacy-grid'}); }\n        var g = objs[0];\n        var fk = '';\n        var fkEl = document.querySelector('input[name=form_key]');\n        if (fkEl) { fk = fkEl.value; }\n        else if (typeof window.FORM_KEY === 'string') { fk = window.FORM_KEY; }\n        var parts = ['isAjax=1', 'limit=' + (p.paging ? p.paging.pageSize : 200),\n            (g.pageVar || 'page') + '=' + (p.paging ? p.paging.current : 1)];\n        if (fk) { parts.push('form_key=' + encodeURIComponent(fk)); }\n        if (p.sorting && p.sorting.field) {\n            parts.push((g.sortVar || 'sort') + '=' + encodeURIComponent(p.sorting.field));\n            parts.push((g.dirVar || 'dir') + '=' + (p.sorting.direction || 'asc'));\n        }\n        var r = await fetch(g.url + '?' + parts.join('&'), {\n            headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'\n        });\n        var t = await r.text();\n        var doc = new DOMParser().parseFromString(t, 'text/html');\n        var heads = [];\n        var ths = doc.querySelectorAll('thead tr th');\n        for (var i = 0; i < ths.length; i++) { heads.push((ths[i].innerText || ths[i].textContent || '').trim()); }\n        var out = _gridReadTable(doc, heads, p);\n        var info = doc.querySelector('.admin__data-grid-info');\n        return JSON.stringify({\n            channel: 'legacy_ajax', namespace: (g.containerId || ''),\n            rows: out.rows, rows_returned: out.rows.length,\n            headers: heads, footer: out.footer,\n            info: info ? info.textContent.trim().slice(0, 80) : null,\n            applied: { sorting: p.sorting || null,\n                page_size: p.paging ? p.paging.pageSize : 200,\n                page: p.paging ? p.paging.current : 1 },\n            active_before: null, partial: false\n        });\n    } catch (e) { return JSON.stringify({channel_error: 'js-error: ' + e.message}); }\n})()\n",
+    "DOM_TABLE_READ_JS": "\nfunction _gridIsTotalLabel(s) {\n    var t = s.toLowerCase().trim();\n    // review2#1：'subtotal' 必须与 '小计' 对称——英文小计行不挪出 rows 会被\n    // column_sums 双计（Python 侧 _GRID_FOOTER_SKIP_LABELS 挪进 footer 后\n    // 按 'subtotal' 跳过比对）。\n    return t === 'total' || t === 'totals' || t === 'grand total'\n        || t === 'subtotal' || t === '合计' || t === '总计' || t === '小计';\n}\nfunction _gridReadRow(tr, heads, p) {\n    var cells = tr.querySelectorAll('td,th');\n    var row = {}, col = 0;\n    for (var c = 0; c < cells.length; c++) {\n        var key = (col < heads.length && heads[col]) ? heads[col] : ('col' + col);\n        // 注意：fields 过滤只跳过取值，列游标照常推进（被过滤的列仍占位）。\n        if (!(p.fields && p.fields.length && p.fields.indexOf(key) < 0)) {\n            row[key] = (cells[c].innerText || cells[c].textContent || '').trim();\n        }\n        // review#2：colspan 折算——合计行常见 <th colspan=N> 形态，按格索引\n        // 配对会把数值格绑到错误表头（假 ✗ 或相邻列合计恰等时假 ✓）。\n        col += (cells[c].colSpan || 1);\n    }\n    return row;\n}\nfunction _gridReadTable(root, heads, p) {\n    var rows = [], footer = [];\n    var trs = root.querySelectorAll('tbody tr');\n    for (var k = 0; k < trs.length; k++) {\n        if (!trs[k].querySelectorAll('td').length) { continue; }\n        // review#3：判定取首格（td,th）——合计标签写在 <th> 时首 td 是数值，\n        // 漏检会让 Total 行留在 rows 里被双计。\n        var cell0 = trs[k].querySelector('td,th');\n        var first = (cell0.innerText || cell0.textContent || '').trim();\n        if (_gridIsTotalLabel(first)) { footer.push(_gridReadRow(trs[k], heads, p)); continue; }\n        rows.push(_gridReadRow(trs[k], heads, p));\n    }\n    var ftrs = root.querySelectorAll('tfoot tr');\n    for (var f = 0; f < ftrs.length; f++) {\n        var fr = _gridReadRow(ftrs[f], heads, p);\n        if (Object.keys(fr).length) { footer.push(fr); }\n    }\n    return { rows: rows, footer: footer };\n}\n\nreturn (async function(){\n    var p = a[0];\n    try {\n        var tables = document.querySelectorAll('table');\n        var best = null, bestRows = 0;\n        for (var i = 0; i < tables.length; i++) {\n            var n = tables[i].querySelectorAll('tbody tr').length;\n            if (n > bestRows) { bestRows = n; best = tables[i]; }\n        }\n        if (!best || !bestRows) { return JSON.stringify({channel_error: 'no-table'}); }\n        var heads = [];\n        var ths = best.querySelectorAll('thead th');\n        for (var j = 0; j < ths.length; j++) { heads.push((ths[j].innerText || ths[j].textContent || '').trim()); }\n        var out = _gridReadTable(best, heads, p);\n        return JSON.stringify({\n            channel: 'dom_table', namespace: null, rows: out.rows, rows_returned: out.rows.length,\n            headers: heads, footer: out.footer,\n            applied: null, active_before: null, partial: false,\n            note: 'DOM channel: current-page visible rows only; no server-side sorting/paging'\n        });\n    } catch (e) { return JSON.stringify({channel_error: 'js-error: ' + e.message}); }\n})()\n",
+    "GRID_READ_JS": "\nreturn (async function(){\n    var p = a[0];\n    try {\n        if (typeof require !== 'function') { return JSON.stringify({channel_error: 'no-requirejs'}); }\n        var reg = await new Promise(function(r){ require(['uiRegistry'], r); });\n        var names = await new Promise(function(resolve){\n            var acc = [];\n            try { reg.get(function(c){ if (c && c.name) { acc.push(c.name); } return false; }); }\n            catch (e) {}\n            setTimeout(function(){ resolve(acc); }, 300);\n        });\n        var real = names.filter(function(n){ return n.indexOf('notification_area') !== 0; });\n        var ns = p.namespace || null;\n        if (!ns) {\n            for (var i = 0; i < real.length; i++) {\n                var n = real[i];\n                if (n.slice(-12) === '_data_source' && n.indexOf('.') === n.lastIndexOf('.')) {\n                    ns = n.split('.')[0]; break;\n                }\n            }\n        }\n        if (!ns) { return JSON.stringify({channel_error: 'no-grid', candidates: real.slice(0, 10)}); }\n        var ds = await new Promise(function(resolve){\n            var done = false;\n            reg.get(ns + '.' + ns + '_data_source', function(c){ done = true; resolve(c); });\n            setTimeout(function(){ if (!done) { resolve(null); } }, 1500);\n        });\n        if (!ds || !ds.data) { return JSON.stringify({channel_error: 'no-grid', namespace: ns}); }\n        function realFilters(f) {\n            var out = {};\n            f = f || {};\n            for (var k in f) {\n                if (k !== 'placeholder' && Object.prototype.hasOwnProperty.call(f, k)) { out[k] = f[k]; }\n            }\n            return out;\n        }\n        var activeBefore = {\n            filters: realFilters(ds.params && ds.params.filters),\n            search: (ds.params && ds.params.search) || '',\n            sorting: (ds.params && ds.params.sorting)\n                ? JSON.parse(JSON.stringify(ds.params.sorting)) : null\n        };\n        if (p.fresh) {\n            ds.set('params.filters', {placeholder: false});\n            ds.set('params.search', '');\n        }\n        if (p.filters) { ds.set('params.filters', Object.assign({placeholder: false}, p.filters)); }\n        if (typeof p.search === 'string' && p.search) { ds.set('params.search', p.search); }\n        if (p.sorting) { ds.set('params.sorting', p.sorting); }\n        if (p.paging) { ds.set('params.paging', p.paging); }\n        var reloaded = false;\n        try { if (typeof ds.reload === 'function') { ds.reload(); reloaded = true; } } catch (e) {}\n        try { ds.set('params.t', Date.now()); reloaded = true; } catch (e) {}\n        var stable = !reloaded;\n        if (reloaded) {\n            var last = '', stableCount = 0, t0 = Date.now();\n            while (Date.now() - t0 < (p.waitMs || 8000)) {\n                await new Promise(function(r){ setTimeout(r, 250); });\n                var d0 = ds.data || {};\n                var it0 = (d0.items instanceof Array) ? d0.items : [];\n                var cur = [d0.totalRecords || 0, it0.length,\n                    it0.length ? JSON.stringify(it0[0].entity_id || it0[0].id || '') : ''].join(':');\n                if (cur === last) { stableCount++; if (stableCount >= 2) { stable = true; break; } }\n                else { stableCount = 0; last = cur; }\n            }\n        }\n        var d = ds.data || {};\n        var items = (d.items instanceof Array) ? d.items : [];\n        var rows = items;\n        if (p.fields && p.fields.length) {\n            rows = items.map(function(it){\n                var r2 = {};\n                for (var j = 0; j < p.fields.length; j++) {\n                    var k = p.fields[j];\n                    if (it && Object.prototype.hasOwnProperty.call(it, k)) { r2[k] = it[k]; }\n                }\n                return r2;\n            });\n        }\n        return JSON.stringify({\n            channel: 'uiregistry', namespace: ns, rows: rows,\n            total_records: d.totalRecords,\n            applied: {\n                filters: realFilters(ds.params && ds.params.filters),\n                search: (ds.params && ds.params.search) || '',\n                sorting: (ds.params && ds.params.sorting) || null,\n                paging: (ds.params && ds.params.paging) || null\n            },\n            active_before: activeBefore, partial: !stable\n        });\n    } catch (e) { return JSON.stringify({channel_error: 'js-error: ' + e.message}); }\n})()\n"
+  },
+  "parseGridNumber": {
+    "c0": null,
+    "c1": null,
+    "c2": null,
+    "c3": 42.0,
+    "c4": 3.5,
+    "c5": 42.0,
+    "c6": 42.0,
+    "c7": 1234.0,
+    "c8": 1234.5,
+    "c9": null,
+    "c10": null,
+    "c11": 1234.5678,
+    "c12": 1234.5,
+    "c13": 99.0,
+    "c14": 45.0,
+    "c15": 50.0,
+    "c16": -42.0,
+    "c17": 42.0,
+    "c18": -1234.5,
+    "c19": null,
+    "c20": null,
+    "c21": null,
+    "c22": null,
+    "c23": null,
+    "c24": null,
+    "c25": null,
+    "c26": null,
+    "c27": 1000.0,
+    "c28": null,
+    "c29": 3.0,
+    "c30": 1234.0,
+    "c31": 1234.0,
+    "c32": null,
+    "c33": 12345.67,
+    "c34": 12345678.0,
+    "c35": 1234567.0,
+    "c36": 0.005,
+    "c37": -0.5,
+    "c38": 42.0
+  },
+  "footerRowRole": {
+    "c0": "base",
+    "c1": "base",
+    "c2": "base",
+    "c3": "base",
+    "c4": "base",
+    "c5": "skip",
+    "c6": "skip",
+    "c7": "skip",
+    "c8": "skip",
+    "c9": "skip",
+    "c10": "skip",
+    "c11": "skip",
+    "c12": null,
+    "c13": null,
+    "c14": null,
+    "c15": "base",
+    "c16": null
+  },
+  "evalLongTermMemory": {
+    "short": "hello",
+    "boundary200": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "over201": "JavaScript executed successfully, result length: 201 characters.",
+    "number": "42"
+  },
+  "extractDataImages": {
+    "mixed": [
+      "before [image 1] middle [image 2] after",
+      [
+        "data:image/png;base64,AAAA",
+        "data:image/jpeg;base64,BBBB="
+      ]
+    ],
+    "none": [
+      "plain text",
+      []
+    ]
+  },
+  "evaluate": {
+    "missingCode": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "Evaluate failed: missing required param `code`."
+      },
+      "evalCalls": 0
+    },
+    "timeoutZero": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "Evaluate failed: timeout_ms must be in [1, 300000], got 0"
+      },
+      "evalCalls": 0
+    },
+    "timeoutOver": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "Evaluate failed: timeout_ms must be in [1, 300000], got 300001"
+      },
+      "evalCalls": 0
+    },
+    "timeoutOk": {
+      "out": {
+        "extracted_content": "ok",
+        "long_term_memory": "ok",
+        "error": null
+      },
+      "evalCalls": 1
+    },
+    "argsUnserializable": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "Evaluate failed: args not JSON-serializable: Object of type set is not JSON serializable"
+      },
+      "evalCalls": 0
+    },
+    "elementsBadType": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "Evaluate failed: elements must be a list of ints (backend node ids)"
+      },
+      "evalCalls": 0
+    },
+    "elementsBadShape": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "Evaluate failed: elements must be a list of ints (backend node ids)"
+      },
+      "evalCalls": 0
+    },
+    "raiseCdp": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "Evaluate failed: node detached"
+      },
+      "evalCalls": 1
+    },
+    "short": {
+      "out": {
+        "extracted_content": "My Page",
+        "long_term_memory": "My Page",
+        "error": null
+      },
+      "evalCalls": 1
+    },
+    "num": {
+      "out": {
+        "extracted_content": "42",
+        "long_term_memory": "42",
+        "error": null
+      },
+      "evalCalls": 1
+    },
+    "boundaryEcho": {
+      "out": {
+        "extracted_content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "long_term_memory": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "error": null
+      },
+      "evalCalls": 1
+    },
+    "overEcho": {
+      "out": {
+        "extracted_content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "long_term_memory": "JavaScript executed successfully, result length: 201 characters.",
+        "error": null
+      },
+      "evalCalls": 1
+    },
+    "nodeIdEcho": {
+      "out": {
+        "extracted_content": "Returned element backend node id: 55 (usable as index/element_id for click/input_text; if not in current selector_map, call get_state to refresh)",
+        "long_term_memory": "evaluate returned element index 55",
+        "error": null
+      },
+      "evalCalls": 1
+    },
+    "extractImages": {
+      "out": {
+        "extracted_content": "a [image 1] b",
+        "long_term_memory": "a [image 1] b",
+        "error": null,
+        "metadata": {
+          "images": [
+            "data:image/png;base64,QUJD"
+          ]
+        }
+      },
+      "evalCalls": 1
+    }
+  },
+  "readGrid": {
+    "badNamespace": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "read_grid failed: namespace must be a string."
+      },
+      "uiCalls": 0,
+      "evalCalls": 0
+    },
+    "badFilters": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "read_grid failed: filters must be an object, e.g. {'status': 'complete'}."
+      },
+      "uiCalls": 0,
+      "evalCalls": 0
+    },
+    "badSearch": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "read_grid failed: search must be a string."
+      },
+      "uiCalls": 0,
+      "evalCalls": 0
+    },
+    "badPageSize": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "read_grid failed: page_size/page must be integers."
+      },
+      "uiCalls": 0,
+      "evalCalls": 0
+    },
+    "badFields": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "read_grid failed: fields must be a list of strings."
+      },
+      "uiCalls": 0,
+      "evalCalls": 0
+    },
+    "blankGroup": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "read_grid failed: group_count must be a non-empty string field name."
+      },
+      "uiCalls": 0,
+      "evalCalls": 0
+    },
+    "ch1Success": {
+      "out": {
+        "extracted_content": "read_grid [ns=sales_order_grid | rows=2 | total=42 | sorted=entity_id asc] {\"channel\": \"uiregistry\", \"namespace\": \"sales_order_grid\", \"rows\": [{\"entity_id\": \"1\", \"status\": \"complete\", \"grand_total\": \"100.50\"}, {\"entity_id\": \"2\", \"status\": \"pending\", \"grand_total\": \"49.50\"}], \"rows_returned\": 2, \"total_records\": 42, \"applied\": {\"sorting\": {\"field\": \"entity_id\", \"direction\": \"asc\"}}, \"active_before\": {\"filters\": {\"status\": \"pending\"}, \"search\": \"foo\"}, \"partial\": true}  ⚠️ cleared leftover grid state before read: {\"filters\": {\"status\": \"pending\"}, \"search\": \"foo\"}  ⚠️ partial: data was still loading when the read returned — totals may be stale; retry if counts look short",
+        "long_term_memory": "read_grid: ns=sales_order_grid, rows=2, total=42, sorted=entity_id asc",
+        "error": null,
+        "metadata": {
+          "query_total": 42
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "ch1SortingParse": {
+      "out": {
+        "extracted_content": "read_grid [rows=0 | total=0] {\"channel\": \"uiregistry\", \"rows\": [], \"rows_returned\": 0, \"total_records\": 0}",
+        "long_term_memory": "read_grid: rows=0, total=0",
+        "error": null,
+        "metadata": {
+          "query_total": 0
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "ch2Legacy": {
+      "out": {
+        "extracted_content": "read_grid [rows=2] {\"channel\": \"legacy_ajax\", \"rows\": [{\"ID\": \"1\", \"Status\": \"complete\"}, {\"ID\": \"2\", \"Status\": \"pending\"}], \"headers\": [\"ID\", \"Status\"], \"rows_returned\": 2, \"note\": \" legacy channel: filters/search not applied (paging/sorting only)\"}",
+        "long_term_memory": "read_grid: rows=2",
+        "error": null
+      },
+      "uiCalls": 1,
+      "evalCalls": 1
+    },
+    "ch3Dom": {
+      "out": {
+        "extracted_content": "read_grid [rows=1] {\"channel\": \"dom_table\", \"rows\": [{\"Name\": \"A\"}], \"headers\": [\"Name\"], \"rows_returned\": 1}",
+        "long_term_memory": "read_grid: rows=1",
+        "error": null,
+        "metadata": {
+          "query_total": 1
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 2
+    },
+    "allFail": {
+      "out": {
+        "extracted_content": null,
+        "long_term_memory": null,
+        "error": "read_grid failed: no-grid (no UI-component grid, legacy grid, or table found on this page)"
+      },
+      "uiCalls": 1,
+      "evalCalls": 2
+    },
+    "ch2EvalRaise": {
+      "out": {
+        "extracted_content": "read_grid [rows=1] {\"channel\": \"dom_table\", \"rows\": [{\"Name\": \"A\"}], \"headers\": [\"Name\"], \"rows_returned\": 1}",
+        "long_term_memory": "read_grid: rows=1",
+        "error": null,
+        "metadata": {
+          "query_total": 1
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 2
+    },
+    "ch2Unparseable": {
+      "out": {
+        "extracted_content": "read_grid [rows=1] {\"channel\": \"dom_table\", \"rows\": [{\"Name\": \"A\"}], \"headers\": [\"Name\"], \"rows_returned\": 1}",
+        "long_term_memory": "read_grid: rows=1",
+        "error": null,
+        "metadata": {
+          "query_total": 1
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 2
+    },
+    "groupCount": {
+      "out": {
+        "extracted_content": "group_count[billing_name] over 5 rows: {\"(missing)\": 2, \"Emma Davis\": 2, \"Bob Li\": 1} — ⚠️ counted 5 of total 40 rows; read remaining pages for exact counts | read_grid [rows=5 | total=40] {\"channel\": \"uiregistry\", \"rows\": [{\"billing_name\": \"Emma Davis\", \"entity_id\": \"1\"}, {\"billing_name\": \"Emma Davis\", \"entity_id\": \"2\"}, {\"billing_name\": \"Bob Li\", \"entity_id\": \"3\"}, {\"billing_name\": \"  \", \"entity_id\": \"4\"}, {\"entity_id\": \"5\"}], \"rows_returned\": 5, \"total_records\": 40}",
+        "long_term_memory": "read_grid: rows=5, total=40, group_count(billing_name)=3 values",
+        "error": null,
+        "metadata": {
+          "query_total": 40
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "groupCountMissing": {
+      "out": {
+        "extracted_content": "group_count[nope] over 5 rows: {\"(missing)\": 5} — ⚠️ field not present in returned rows; check the field name (legacy/DOM channels use display-name headers) | read_grid [rows=5 | total=5] {\"channel\": \"uiregistry\", \"rows\": [{\"billing_name\": \"Emma Davis\", \"entity_id\": \"1\"}, {\"billing_name\": \"Emma Davis\", \"entity_id\": \"2\"}, {\"billing_name\": \"Bob Li\", \"entity_id\": \"3\"}, {\"billing_name\": \"  \", \"entity_id\": \"4\"}, {\"entity_id\": \"5\"}], \"rows_returned\": 5, \"total_records\": 5}",
+        "long_term_memory": "read_grid: rows=5, total=5, group_count(nope)=1 values",
+        "error": null,
+        "metadata": {
+          "query_total": 5
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "groupCountPageLocal": {
+      "out": {
+        "extracted_content": "group_count[billing_name] over 5 rows: {\"(missing)\": 2, \"Emma Davis\": 2, \"Bob Li\": 1} — ⚠️ page-local counts: this channel returns only the current page/pageSize rows and reports no total; page through or filter per-candidate for exact counts | read_grid [rows=5] {\"channel\": \"dom_table\", \"rows\": [{\"billing_name\": \"Emma Davis\", \"entity_id\": \"1\"}, {\"billing_name\": \"Emma Davis\", \"entity_id\": \"2\"}, {\"billing_name\": \"Bob Li\", \"entity_id\": \"3\"}, {\"billing_name\": \"  \", \"entity_id\": \"4\"}, {\"entity_id\": \"5\"}], \"rows_returned\": 5}",
+        "long_term_memory": "read_grid: rows=5, group_count(billing_name)=3 values",
+        "error": null,
+        "metadata": {
+          "query_total": 5
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "totalsMatch": {
+      "out": {
+        "extracted_content": "totals-check: amount: sum 150 == footer 150 | read_grid [rows=3] {\"channel\": \"dom_table\", \"rows\": [{\"Item\": \"A\", \"amount\": \"100.50\"}, {\"Item\": \"B\", \"amount\": \"49.50\"}, {\"Item\": \"C\", \"amount\": \"\"}], \"rows_returned\": 3, \"footer\": [{\"label\": \"Total\", \"amount\": \"150.00\"}]}",
+        "long_term_memory": "read_grid: rows=3, totals-ok",
+        "error": null,
+        "metadata": {
+          "query_total": 3
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "totalsMismatch": {
+      "out": {
+        "extracted_content": "totals-check: amount: sum 150 ≠ footer 999 ✗ — a column sum that ≠ its Total-row cell means wrong column or missing rows, OR a paginated table (this read is page-local): page through all rows before concluding; if it still mismatches, re-check the column binding | read_grid [rows=2] {\"channel\": \"dom_table\", \"rows\": [{\"Item\": \"A\", \"amount\": \"100.50\"}, {\"Item\": \"B\", \"amount\": \"49.50\"}], \"rows_returned\": 2, \"footer\": [{\"label\": \"Total\", \"amount\": \"999.00\"}]}",
+        "long_term_memory": "read_grid: rows=2, totals-mismatch",
+        "error": null,
+        "metadata": {
+          "query_total": 2
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "totalsSkipSubtotal": {
+      "out": {
+        "extracted_content": "totals-check: amount: sum 10 == footer 10 | read_grid [rows=1] {\"channel\": \"dom_table\", \"rows\": [{\"amount\": \"10.00\"}], \"rows_returned\": 1, \"footer\": [{\"label\": \"Subtotal\", \"amount\": \"555.00\"}, {\"label\": \"Total\", \"amount\": \"10.00\"}]}",
+        "long_term_memory": "read_grid: rows=1, totals-ok",
+        "error": null,
+        "metadata": {
+          "query_total": 1
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "totalsNonAdditive": {
+      "out": {
+        "extracted_content": "totals-check: amount: sum 10 == footer 10 (non-additive columns skipped — Total cell is a mean/ratio, not a sum: Avg. Price) | read_grid [rows=1] {\"channel\": \"dom_table\", \"rows\": [{\"Avg. Price\": \"5\", \"amount\": \"10\"}], \"rows_returned\": 1, \"footer\": [{\"label\": \"Total\", \"Avg. Price\": \"5\", \"amount\": \"10\"}]}",
+        "long_term_memory": "read_grid: rows=1, totals-ok",
+        "error": null,
+        "metadata": {
+          "query_total": 1
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "totalsSingleRowNoLabel": {
+      "out": {
+        "extracted_content": "totals-check: amount: sum 7.5 == footer 7.5 | read_grid [rows=1] {\"channel\": \"dom_table\", \"rows\": [{\"amount\": \"7.5\"}], \"rows_returned\": 1, \"footer\": [{\"amount\": \"7.5\"}]}",
+        "long_term_memory": "read_grid: rows=1, totals-ok",
+        "error": null,
+        "metadata": {
+          "query_total": 1
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "legacyTruncatedHint": {
+      "out": {
+        "extracted_content": "totals-check: amount: sum 150 ≠ footer 999 ✗ — a column sum that ≠ its Total-row cell means wrong column or missing rows, OR a paginated table (this read is page-local): page through all rows before concluding; if it still mismatches, re-check the column binding (rows hit the page_size cap — the read is likely truncated; raise page_size and re-read) | read_grid [rows=2] {\"channel\": \"legacy_ajax\", \"rows\": [{\"amount\": \"100.50\"}, {\"amount\": \"49.50\"}], \"rows_returned\": 2, \"footer\": [{\"label\": \"Total\", \"amount\": \"999.00\"}]}",
+        "long_term_memory": "read_grid: rows=2, totals-mismatch",
+        "error": null,
+        "metadata": {
+          "query_total": 2
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 1
+    },
+    "domZeroRowsWithFilters": {
+      "out": {
+        "extracted_content": "read_grid [rows=0] {\"channel\": \"dom_table\", \"rows\": [], \"headers\": [\"X\"], \"rows_returned\": 0}  ⚠️ 0 rows returned; note the requested filters/search were NOT applied on this channel, so they are not the cause — verify the grid shows rows on this page or use the UI Filters panel",
+        "long_term_memory": "read_grid: rows=0",
+        "error": null
+      },
+      "uiCalls": 1,
+      "evalCalls": 2
+    },
+    "domZeroRowsPlain": {
+      "out": {
+        "extracted_content": "read_grid [rows=0] {\"channel\": \"dom_table\", \"rows\": [], \"headers\": [\"X\"], \"rows_returned\": 0}  ⚠️ 0 rows returned; if the grid visibly shows rows, the channel may have parsed a stale/empty response — retry or read via evaluate",
+        "long_term_memory": "read_grid: rows=0",
+        "error": null,
+        "metadata": {
+          "query_total": 0
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 2
+    },
+    "legacyAllEmptyRows": {
+      "out": {
+        "extracted_content": "read_grid [rows=2] {\"channel\": \"legacy_ajax\", \"rows\": [{}, {}], \"headers\": [\"ID\", \"Status\"], \"rows_returned\": 2}  ⚠️ all 2 rows came back EMPTY: requested fields ['a', 'b'] match none of this channel's headers ['ID', 'Status'] — legacy/DOM channels key rows by display-name headers; retry without fields or with the listed header names",
+        "long_term_memory": "read_grid: rows=2",
+        "error": null,
+        "metadata": {
+          "query_total": 2
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 1
+    },
+    "uiregistryAllEmptyRows": {
+      "out": {
+        "extracted_content": "read_grid [rows=2 | total=2] {\"channel\": \"uiregistry\", \"rows\": [{}, {}], \"rows_returned\": 2, \"total_records\": 2}  ⚠️ all 2 rows came back EMPTY: requested fields ['zz'] match none of this grid's data-source field names — retry without fields to see the available keys",
+        "long_term_memory": "read_grid: rows=2, total=2",
+        "error": null,
+        "metadata": {
+          "query_total": 2
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    },
+    "queryTotalUiregistry": {
+      "out": {
+        "extracted_content": "read_grid [rows=1 | total=7] {\"channel\": \"uiregistry\", \"rows\": [{}], \"rows_returned\": 1, \"total_records\": 7}  ⚠️ all 1 rows came back EMPTY: requested fields None match none of this grid's data-source field names — retry without fields to see the available keys",
+        "long_term_memory": "read_grid: rows=1, total=7",
+        "error": null,
+        "metadata": {
+          "query_total": 7
+        }
+      },
+      "uiCalls": 1,
+      "evalCalls": 0
+    }
+  },
+  "save": {
+    "evaluateSave": {
+      "extracted_content": "Evaluate result (30 chars) saved to /ANCHOR_TMP/out/evaluate_TS.txt. Preview: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...",
+      "long_term_memory": "JavaScript executed successfully, result saved: /ANCHOR_TMP/out/evaluate_TS.txt",
+      "error": null
+    },
+    "gridSave": {
+      "extracted_content": "read_grid [rows=3] full result (102 chars) saved to /ANCHOR_TMP/out/grid_TS.json. Preview: {\"channel\": \"dom_table\", \"rows\": [{\"c\": \"vvvvv\"}, {\"c\": \"vvvvv\"}, {\"c\": \"vvvvv\"}], \"rows_returned\": 3}...",
+      "long_term_memory": "read_grid: rows=3, saved=/ANCHOR_TMP/out/grid_TS.json",
+      "error": null,
+      "metadata": {
+        "query_total": 3
+      }
+    }
+  }
+}
