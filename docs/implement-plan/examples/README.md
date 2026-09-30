@@ -69,6 +69,22 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 1. core 两注入口 + 单测 → 2. node-host 三缺口 + 单测 → 3. 9 个示例 → 4. 全绿 + 门禁 → 5. 真机冒烟 → 6. /review-loop 增量轮。
 
+## F8. 实施结果（2026-09-30，提交 7a515ea）
+
+**计划外扩展（实施中发现）**：structured_output 的 `Posts.posts: list[Post]` 暴露 models.ts 表达局限——`paramJsonSchema` 的 `$defs` 收集只走直接 ref 字段，array 字段的 items `$ref` 会悬空、validateParams 对对象项不深校验。补齐 list[Model] 嵌套支持（branchSchema items 直 `$ref` + $defs 收集 array.refModel + 逐项深校验 `i.字段` 错误 loc）——pydantic 原生能力的 TS 等价，不是行为偏离。
+
+**实施细节偏离登记**：
+- fallback 缺省链双层应用：原设计只在 env 装载层解析 key/baseUrl 复用主卡——overrides 只传 model 时会绕过链（空串覆盖主卡 key）。改为 env 层与 buildProviderCard 双层幂等应用，HostSettings.llm.fallback 的 apiKey/baseUrl 转可选。
+- csv-generation 的 Python 版 `input()` 交互清理工作区改为提示路径不自动删（脚本无 stdin 交互惯例）。
+- save-as-pdf 输出路径 `C:/tmp` 硬编码改 `os.tmpdir()`。
+- extraction-small-model 的 maxTokens 4096（Python AGENT_EXTRACT_MAX_TOKENS 缺省 config.py:570，非主卡 16384）。
+
+**测试与验收**：core 1284→1288（injections.test.ts：extractLlm 落点/downloadsPath 入参/list[Model] schema+校验）；node-host 49→56（fallback env 三键链/DOWNLOADS_PATH/buildProviderCard 完整与部分覆盖/sensitiveData+extractLlm+downloadsPath 透传/trackDownloads ensureDir）；全仓 1562 绿 + 门禁 exit 0（顺带修 client.ts 三处方括号字面量键 lint）。真机冒烟（沙箱可达三例）：download-file 4 步 190s（`DOWNLOADS_PATH` 精确落盘 13264B dummy.pdf——env 链+ensureDir+注入口全链验证）；sensitive-data 2 步 64s（模型全程只见占位符，结果文本的真实值是还原机制产物属设计内；httpbin 回显确认提交）；csv-generation 8 步 258s（CSV top 10 城市数据正确，allowed_write_paths 白名单链生效）。HN/google 系五例（scrolling/structured/extraction/fallback/multi-tab）沙箱不可达，留用户网络复验。
+
+## F9. 评审与合并记录
+
+（实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）
+
 # ── 第一批：getting_started（2026-09-30 已实施+评审收敛） ─────────────
 
 ## 1. 背景与范围
