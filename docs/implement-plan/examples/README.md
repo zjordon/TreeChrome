@@ -121,4 +121,4 @@ node-host（缺口 C）：
 
 ## 10. 评审与合并记录
 
-（实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）
+**轮 1（2026-09-30，全量 main..feat/examples = 1939909+269a96a）**：实跑零意见即收敛（complete / 23 文件 / 5m8s，模型 glm-5.3）。零采纳零驳回零 stale；P3 backlog 空。dump：docs/code-review/_r_examples_1.md（不入库）。
