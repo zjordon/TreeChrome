@@ -12,13 +12,16 @@ import {
   type BrowserSession,
   BrowserSession as BrowserSessionClass,
   type CdpTransport,
+  DEFAULT_MAX_TOKENS,
   EventBus,
   type EventBus as EventBusType,
   type FileSystemProvider,
   LLMClient,
   PolicyGate,
   type PolicyGate as PolicyGateType,
+  type ProviderConfig,
   resolveAgentSettings,
+  type SensitiveDataSpec,
 } from "@tw/core";
 import { attachConsole } from "./console.js";
 import { NodeFs } from "./node-fs.js";
@@ -52,6 +55,10 @@ export interface AssembleAgentOptions {
   llm?: LLMClient | null;
   /** transport 工厂（缺省 wsUrl→CdpWsClient；测试/自定义宿主注入） */
   transportFactory?: TransportFactory | null;
+  /** extract 工具专用 LLM（缺省复用主 llm——Python extract_llm=None 同语义） */
+  extractLlm?: LLMClient | null;
+  /** 敏感数据 {占位符: 真值|{value,urls}}（sensitive_data.py 形态；直传 Agent） */
+  sensitiveData?: Record<string, SensitiveDataSpec> | null;
   log?: (message: string) => void;
 }
 
@@ -63,6 +70,36 @@ export interface AssembledAgent {
   autoAllow: AutoAllowPolicy | null;
 }
 
+/**
+ * 主卡组装（独立导出便于单测）：settings.llm → ProviderConfig。fallback 存在时组
+ * 完整独立卡（config.py FallbackLLMSettings；maxTokens 恒 DEFAULT_MAX_TOKENS——
+ * FALLBACK_LLM_MAX_TOKENS 缺省 16384 同值，宿主面不再暴露该键）。fallback 的
+ * key/baseUrl 未设（含空串）时复用主卡——env 装载层同款缺省链，overrides 只传
+ * model 也能得到完整卡（两层幂等）。
+ */
+export function buildProviderCard(llm: HostSettings["llm"]): ProviderConfig {
+  return {
+    name: "zhipu-anthropic",
+    protocol: "anthropic-messages",
+    baseUrl: llm.baseUrl,
+    apiKey: llm.apiKey,
+    model: llm.model,
+    maxTokens: llm.maxTokens,
+    outputMode: llm.outputMode,
+    fallback:
+      llm.fallback === null
+        ? null
+        : {
+            name: "zhipu-anthropic-fallback",
+            protocol: "anthropic-messages",
+            baseUrl: llm.fallback.baseUrl || llm.baseUrl,
+            apiKey: llm.fallback.apiKey || llm.apiKey,
+            model: llm.fallback.model,
+            maxTokens: DEFAULT_MAX_TOKENS,
+          },
+  };
+}
+
 export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
   const useConsole = options.console !== false;
   const log = options.log ?? ((m: string) => console.log(m));
@@ -70,18 +107,9 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
 
   const llm =
     options.llm ??
-    new LLMClient(
-      {
-        name: "zhipu-anthropic",
-        protocol: "anthropic-messages",
-        baseUrl: options.settings.llm.baseUrl,
-        apiKey: options.settings.llm.apiKey,
-        model: options.settings.llm.model,
-        maxTokens: options.settings.llm.maxTokens,
-        outputMode: options.settings.llm.outputMode,
-      },
-      { log: (m) => sink(`[llm] ${m}`) },
-    );
+    new LLMClient(buildProviderCard(options.settings.llm), {
+      log: (m) => sink(`[llm] ${m}`),
+    });
 
   const transportFactory =
     options.transportFactory ??
@@ -121,6 +149,9 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     policy,
     eventBus: bus,
     fs,
+    extractLlm: options.extractLlm ?? null,
+    sensitiveData: options.sensitiveData ?? null,
+    downloadsPath: options.settings.browser.downloadsPath,
     // Partial 覆盖先合成全量（AgentOptions 的类型面是全量；运行时同为 resolve 合并）
     settings: resolveAgentSettings(options.settings.agent),
     log: (m) => sink(`[agent] ${m}`),
@@ -181,6 +212,8 @@ export async function finalizeAssembled(
  * one-shot：装载配置 → checkReady → 解析 ws_url → 装配 → agent.run() → finally 收口
  * （AutoAllow 记账汇总 / bus.close / browser.stop）。缺 key / 连不上 Chrome 时抛的即
  * Python 示例原文案（basic_agent.py:26-32），由调用方 catch 打印后 exit 1。
+ * trackDownloads 开启时先 ensureDir(settings.browser.downloadsPath)（核心要求宿主
+ * 保证目录存在；fs 注入 null = 跳过——自定义宿主自管）。
  */
 export async function runAgent(options: RunAgentOptions): Promise<AgentHistoryList> {
   let settings = options.settings;
@@ -190,6 +223,9 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentHistoryLi
   }
   if (options.overrides !== undefined) {
     settings = mergeHostSettings(settings, options.overrides);
+  }
+  if (settings.agent.trackDownloads === true && options.fs !== null) {
+    await (options.fs ?? new NodeFs()).ensureDir(settings.browser.downloadsPath);
   }
 
   const ready = checkReady(settings);

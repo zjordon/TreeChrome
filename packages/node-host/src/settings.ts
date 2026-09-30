@@ -10,10 +10,13 @@
 //
 // 首批 env 面（名字逐字对齐 config.py）：ZHIPU_API_KEY / LLM_MODEL / LLM_BASE_URL /
 // LLM_MAX_TOKENS / LLM_OUTPUT_MODE / CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_MAX_STEPS /
-// AGENT_USE_VISION。扩展点（随对应 example 移植进入）：FALLBACK_LLM_* / AGENT_JUDGE_MODEL /
-// AGENT_LLM_SCREENSHOT_SIZE / SENSITIVE_DATA 等。
+// AGENT_USE_VISION。第二批（features）追加：FALLBACK_LLM_MODEL / FALLBACK_LLM_API_KEY /
+// FALLBACK_LLM_BASE_URL（config.py:588-600）与 DOWNLOADS_PATH（session.py:1882 解析序
+// 的 env 半边）。扩展点（随对应 example 移植进入）：AGENT_JUDGE_MODEL /
+// AGENT_LLM_SCREENSHOT_SIZE / AGENT_EXTRACT_* / SENSITIVE_DATA 等。
 
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { discoverWebSocketUrl } from "@tw/cdp-ws";
 import { type AgentSettings, DEFAULT_MAX_TOKENS } from "@tw/core";
@@ -34,6 +37,10 @@ export interface HostSettings {
     maxTokens: number;
     /** 输出模式（LLM_OUTPUT_MODE；缺省 "standard"）——LLM 卡片透传，Agent 侧消费 */
     outputMode: string;
+    /** fallback 卡（FALLBACK_LLM_MODEL 空 = 无 fallback）：key/baseUrl 可缺省——
+     *  env 装载层与 buildProviderCard 双层应用「未设复用主卡」链（config.py:588-600
+     *  同款；overrides 只传 model 时同样生效）；maxTokens 恒 DEFAULT_MAX_TOKENS */
+    fallback: { model: string; apiKey?: string; baseUrl?: string } | null;
   };
   browser: {
     cdpHost: string;
@@ -46,6 +53,10 @@ export interface HostSettings {
     pageSettleTimeout?: number;
     /** 动作间隔秒（同上；未设 = 核心默认 0.0） */
     waitBetweenActions?: number;
+    /** 下载落盘目录（DOWNLOADS_PATH；缺省用户 Downloads——Python session.py:1882 解析序
+     *  「参数 > env > OS Downloads」的 env/home 半边，host 层合法）。trackDownloads
+     *  开启时 runAgent ensureDir 后传 AgentOptions.downloadsPath */
+    downloadsPath: string;
   };
   /** AgentSettings 部分覆盖——只含 env 显式设置的键（未设键不出现，核心默认生效） */
   agent: Partial<AgentSettings>;
@@ -127,18 +138,33 @@ export function loadHostSettings(
     agent.useVision = useVision;
   }
 
+  // fallback 卡（config.py:588-600：FALLBACK_LLM_MODEL 空 = 无；key/baseUrl 缺省链）
+  const apiKey = env.ZHIPU_API_KEY ?? "";
+  const baseUrl = envStr(env, "LLM_BASE_URL") ?? DEFAULT_LLM_BASE_URL;
+  const fallbackModel = envStr(env, "FALLBACK_LLM_MODEL");
+  const fallback =
+    fallbackModel === undefined
+      ? null
+      : {
+          model: fallbackModel,
+          apiKey: envStr(env, "FALLBACK_LLM_API_KEY") ?? apiKey,
+          baseUrl: envStr(env, "FALLBACK_LLM_BASE_URL") ?? baseUrl,
+        };
+
   return {
     llm: {
-      apiKey: env.ZHIPU_API_KEY ?? "",
+      apiKey,
       model: envStr(env, "LLM_MODEL") ?? DEFAULT_LLM_MODEL,
-      baseUrl: envStr(env, "LLM_BASE_URL") ?? DEFAULT_LLM_BASE_URL,
+      baseUrl,
       maxTokens: envInt(env, "LLM_MAX_TOKENS", warn) ?? DEFAULT_MAX_TOKENS,
       outputMode: envOutputMode(env, warn),
+      fallback,
     },
     browser: {
       cdpHost: envStr(env, "CDP_HOST") ?? "localhost",
       cdpPort: envInt(env, "CDP_PORT", warn) ?? 9222,
       wsUrl: envStr(env, "CDP_WS_URL") ?? null,
+      downloadsPath: envStr(env, "DOWNLOADS_PATH") ?? join(homedir(), "Downloads"),
     },
     agent,
   };

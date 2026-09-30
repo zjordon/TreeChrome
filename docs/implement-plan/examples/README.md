@@ -1,7 +1,75 @@
-# examples 移植（第一批：getting_started）
+# examples 移植（第一批：getting_started；第二批：features）
 
 > 分支 `feat/examples`（自 main 97733c5）。基准：TreeWalker @640d52a。
 > 前置：@tw/node-host 已合并（merge 4bf404f），薄壳模式（`loadKit` → `runAgent`）就位。
+
+# ── 第二批：features（2026-09-30 追加） ──────────────────────────────
+
+## F1. 范围与分类
+
+`TreeWalker/examples/features/` 全部 12 个文件，逐个依赖核对：
+
+| Python 示例 | 依赖核对 | 结论 |
+|---|---|---|
+| multi_tab.py | 纯任务（navigate/switch_tab/close_tab 均在 25 动作册） | 直接薄壳 |
+| scrolling_page.py | 纯任务（scroll 在册） | 直接薄壳 |
+| save_as_pdf.py | 纯任务（save_as_pdf 在册；输出路径 C:/tmp 硬编码改 os.tmpdir 可移植化） | 直接薄壳 |
+| structured_output.py | outputModel 变体 B 已移植（P4b）；示例内定义 ParamModel + finalResult 解析打印 | 薄壳 + ~20 行 |
+| csv_generation.py | allowedWritePaths 覆盖走 overrides.agent；工作区 mkdir/读回/清理在示例内 | 薄壳 + ~15 行 |
+| sensitive_data.py | core AgentOptions.sensitiveData 已有；**node-host 无透传口** | 缺口 F3 后薄壳 |
+| download_file.py | trackDownloads+displayFilesInDoneText 覆盖；**core 缺口：Agent.run 不传 downloadsPath，trackDownloads=true 时 browser.start 直接抛** | 缺口 F2-a 后薄壳 |
+| extraction_small_model.py | **core 缺口：tools.ctx.extractClient 硬编码主 llm，无注入口**（Python config.py:562-570 extract_llm） | 缺口 F2-b 后薄壳 |
+| fallback_model.py | core ProviderConfig.fallback 已有（P2）；**node-host 卡面无 fallback 字段** | 缺口 F3 后薄壳 |
+| rerun_history.py | save_history/detect_variables/load_and_rerun 全未移植（偏离 3） | 跳过（F5） |
+| douyin_upload_rerun.py | rerun 族 + 真实抖音登录态/本地视频文件（无法自动验证） | 跳过（F5） |
+| _debug_selectors.py | rerun 族调试脚本，`_` 前缀惯例不入库 | 跳过（F5） |
+
+## F2. core 缺口（两个注入口，judgeLlm 先例同款）
+
+### F2-a：AgentOptions.downloadsPath
+
+现状：`Agent.run()` 调 `browser.start({trackDownloads, enableRecentEvents})` 不带路径；`BrowserSession.start` 在 trackDownloads=true 且无 downloadsPath 时抛「宿主解析并确保目录存在——核心包不读 env/home」（session.ts:250-252 有意设计）。缺的是 Agent 层注入口。
+
+- `AgentOptions.downloadsPath?: string`；`agent.run()` 的 `browser.start` 增传。
+- Python 解析序（session.py:1882：参数 > DOWNLOADS_PATH env > 用户 Downloads）的 env/home 半边归 node-host（F3）。
+
+### F2-b：AgentOptions.extractLlm
+
+现状：`agent.ts` 构造里 `this.tools.ctx.extractClient = this.llm` 硬编码。Python `AgentSettings.extract_llm`（config.py:562-570，None=复用主 llm）。
+
+- `AgentOptions.extractLlm?: LLMClient | null`，构造改 `options.extractLlm ?? this.llm`——与既有 judgeLlm 完全同款（config.py 的 env 面 AGENT_EXTRACT_* 归 host 层，本批不扩——示例硬编码卡片）。
+
+## F3. node-host 缺口
+
+1. **sensitiveData 透传**：AssembleAgentOptions/RunAgentOptions 增 `sensitiveData?: Record<string, SensitiveDataSpec>`，直传 Agent。
+2. **downloadsPath**：HostSettings.browser 增 `downloadsPath`（env `DOWNLOADS_PATH`；缺省 `join(homedir(), "Downloads")`——host 层合法读 env/home）；runAgent 在 trackDownloads 开启时 ensureDir 后传 AgentOptions.downloadsPath；overrides.browser 可覆盖。
+3. **fallback 卡面**：HostSettings.llm 增 `fallback?: {model; apiKey?; baseUrl?} | null`（env `FALLBACK_LLM_MODEL` 空=无 fallback / `FALLBACK_LLM_API_KEY` 缺省复用主 key / `FALLBACK_LLM_BASE_URL` 缺省主端点——config.py:588-600 同款；maxTokens 缺省 DEFAULT_MAX_TOKENS 16384）；assembleAgent 组 ProviderConfig.fallback 完整卡（name "zhipu-anthropic-fallback"、protocol anthropic-messages）。overrides.llm 可覆盖。
+
+## F4. 示例形态（9 个，examples/features/ kebab-case）
+
+- 纯薄壳 ×3：multi-tab / scrolling-page / save-as-pdf（路径 `join(tmpdir(), "browser_automation.pdf"`）。
+- structured-output.mjs：ParamModel 定义 Posts/Post（FieldSpec）+ overrides.agent.outputModel + finalResult JSON.parse 逐条打印（解析失败打印原文，Python :64-70 同款兜底）。
+- csv-generation.mjs：workspace=examples/features/csv_workspace（mkdir）→ overrides.agent.allowedWritePaths=[workspace] → 结束读回打印 → 交互清理改「提示路径不自动删」（脚本无 stdin 交互惯例；Python input()+rmtree 登记偏离）。
+- sensitive-data.mjs：runAgent({task, sensitiveData})。
+- download-file.mjs：overrides.agent={trackDownloads, displayFilesInDoneText}。
+- extraction-small-model.mjs：`extractLlm: new LLMClient({glm-4-flash 卡})`（boot-entry 已导出 LLMClient）。
+- fallback-model.mjs：overrides.llm.fallback={model:"glm-4-flash"}。
+
+## F5. 跳过登记（rerun 族）
+
+`rerun_history.py` / `douyin_upload_rerun.py` / `_debug_selectors.py`：save_history/detect_variables/load_and_rerun 按既定偏离 3 整体未移植；douyin 另需真实登录态与本地媒体文件（Python 原文自认「无法自动跑通验证」）；`_debug_selectors` 是排查抖音重放 bug 的临时脚本（`_` 前缀不入库惯例）。rerun 族立项后一并补。
+
+## F6. 测试矩阵
+
+core：AgentOptions.downloadsPath（fake browser.start 记录入参断言）；AgentOptions.extractLlm（注入实例落到 tools.ctx.extractClient / 缺省主 llm）。
+node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 homedir/ensureDir/overrides 覆盖）；fallback（env 三键缺省链 + assembleAgent 落 ProviderConfig.fallback + overrides 覆盖 + 无 fallback 时卡片不挂）。
+真机：沙箱可达者自验（download-file@w3.org、sensitive-data@httpbin、csv-generation@wikipedia）；HN/google 系（scrolling/structured/extraction/fallback/multi-tab）留用户网络复验（沙箱此前对 HN 不可达、google 超时）。
+
+## F7. 实施步骤
+
+1. core 两注入口 + 单测 → 2. node-host 三缺口 + 单测 → 3. 9 个示例 → 4. 全绿 + 门禁 → 5. 真机冒烟 → 6. /review-loop 增量轮。
+
+# ── 第一批：getting_started（2026-09-30 已实施+评审收敛） ─────────────
 
 ## 1. 背景与范围
 

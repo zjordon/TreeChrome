@@ -6,6 +6,7 @@ export {
   type AssembledAgent,
   assembleAgent,
   autoAllowSummaryLine,
+  buildProviderCard,
   finalizeAssembled,
   type RunAgentOptions,
   runAgent,

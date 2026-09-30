@@ -252,10 +252,10 @@ function materializeActionsMirror(toolInput: Record<string, unknown>): void {
   if (!("action" in toolInput)) return;
   // Python get("action", {})：缺省只在键缺失时生效（上方早退）——action: null
   // 保持 null 原样入列，归一化交 think 层
-  const raw = toolInput["action"];
+  const raw = toolInput.action;
   const list = Array.isArray(raw) ? raw : [raw];
-  toolInput["actions"] = list;
-  toolInput["action"] = list.length > 0 ? list[0] : {};
+  toolInput.actions = list;
+  toolInput.action = list.length > 0 ? list[0] : {};
 }
 
 /**

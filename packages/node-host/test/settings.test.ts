@@ -1,7 +1,7 @@
 // loadHostSettings / applyDotEnv / checkReady / resolveWsUrl（env 注入假对象，不触网）。
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_MAX_TOKENS } from "@tw/core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -24,9 +24,15 @@ describe("loadHostSettings", () => {
       baseUrl: DEFAULT_LLM_BASE_URL,
       maxTokens: DEFAULT_MAX_TOKENS,
       outputMode: "standard",
+      fallback: null,
     });
     expect(s.llm.model).toBe("glm-5.3"); // 偏离登记：Python glm-5.1
-    expect(s.browser).toEqual({ cdpHost: "localhost", cdpPort: 9222, wsUrl: null });
+    expect(s.browser).toEqual({
+      cdpHost: "localhost",
+      cdpPort: 9222,
+      wsUrl: null,
+      downloadsPath: join(homedir(), "Downloads"),
+    });
     expect(s.agent).toEqual({}); // 未设键不出现——核心默认生效（§5.1 单源纪律）
   });
 
@@ -50,6 +56,7 @@ describe("loadHostSettings", () => {
       cdpHost: "127.0.0.1",
       cdpPort: 9333,
       wsUrl: "ws://localhost:9333/devtools/browser/x",
+      downloadsPath: join(homedir(), "Downloads"),
     });
     expect(s.agent).toEqual({ maxSteps: 7, useVision: true });
   });
@@ -86,6 +93,34 @@ describe("loadHostSettings", () => {
     expect(warns[0]).toContain('LLM_OUTPUT_MODE="turbo"');
     expect(loadHostSettings({ LLM_OUTPUT_MODE: "" }).llm.outputMode).toBe("standard");
   });
+
+  test("FALLBACK_LLM 缺省链（config.py:588-600）：无 model=无 fallback；key/baseUrl 缺省复用主卡", () => {
+    expect(loadHostSettings({ ZHIPU_API_KEY: "k" }).llm.fallback).toBeNull();
+    expect(loadHostSettings({ FALLBACK_LLM_MODEL: "" }).llm.fallback).toBeNull();
+    // 只给 model：key/baseUrl 复用主卡（含 env 覆盖后的主卡值）
+    expect(
+      loadHostSettings({
+        ZHIPU_API_KEY: "k",
+        LLM_BASE_URL: "https://gw.example/api/anthropic",
+        FALLBACK_LLM_MODEL: "glm-4-flash",
+      }).llm.fallback,
+    ).toEqual({ model: "glm-4-flash", apiKey: "k", baseUrl: "https://gw.example/api/anthropic" });
+    // 三键齐全
+    expect(
+      loadHostSettings({
+        FALLBACK_LLM_MODEL: "m2",
+        FALLBACK_LLM_API_KEY: "k2",
+        FALLBACK_LLM_BASE_URL: "https://fb.example",
+      }).llm.fallback,
+    ).toEqual({ model: "m2", apiKey: "k2", baseUrl: "https://fb.example" });
+  });
+
+  test("DOWNLOADS_PATH：env 命中 / 空串=未设置回落用户 Downloads（session.py:1882 解析序）", () => {
+    expect(loadHostSettings({ DOWNLOADS_PATH: "D:/dl" }).browser.downloadsPath).toBe("D:/dl");
+    expect(loadHostSettings({ DOWNLOADS_PATH: "" }).browser.downloadsPath).toBe(
+      join(homedir(), "Downloads"),
+    );
+  });
 });
 
 describe("mergeHostSettings（Python replace 形态等价）", () => {
@@ -106,6 +141,7 @@ describe("mergeHostSettings（Python replace 形态等价）", () => {
       wsUrl: null,
       waitBetweenActions: 0.1,
       pageSettleTimeout: 0.5,
+      downloadsPath: join(homedir(), "Downloads"),
     });
     expect(merged.agent).toEqual({ maxSteps: 3 });
   });
@@ -208,14 +244,22 @@ describe("checkReady", () => {
 
 describe("resolveWsUrl", () => {
   test("CDP_WS_URL 直连优先（不触网）", async () => {
-    const ws = await resolveWsUrl({ cdpHost: "h", cdpPort: 1, wsUrl: "ws://direct" });
+    const ws = await resolveWsUrl({
+      cdpHost: "h",
+      cdpPort: 1,
+      wsUrl: "ws://direct",
+      downloadsPath: "D:/tmp/dl",
+    });
     expect(ws).toBe("ws://direct");
   });
 
   test("无直连走发现（注入 discover）", async () => {
     const discover = async (host: string, port: number) => `ws://${host}:${port}/found`;
     await expect(
-      resolveWsUrl({ cdpHost: "127.0.0.1", cdpPort: 9333, wsUrl: null }, { discover }),
+      resolveWsUrl(
+        { cdpHost: "127.0.0.1", cdpPort: 9333, wsUrl: null, downloadsPath: "D:/tmp/dl" },
+        { discover },
+      ),
     ).resolves.toBe("ws://127.0.0.1:9333/found");
   });
 
@@ -224,7 +268,10 @@ describe("resolveWsUrl", () => {
       throw new Error("boom");
     };
     await expect(
-      resolveWsUrl({ cdpHost: "h", cdpPort: 1, wsUrl: null }, { discover }),
+      resolveWsUrl(
+        { cdpHost: "h", cdpPort: 1, wsUrl: null, downloadsPath: "D:/tmp/dl" },
+        { discover },
+      ),
     ).rejects.toThrow("boom");
   });
 });

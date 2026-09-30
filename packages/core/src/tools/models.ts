@@ -192,9 +192,24 @@ function validateField(field: FieldSpec, raw: unknown): FieldOk | FieldErrors {
     case "array": {
       if (!Array.isArray(raw)) return { ok: false, errors: [MSG_LIST_TYPE] };
       const items = field.items;
+      const refItems = field.refModel;
       const out: unknown[] = [];
       const errs: string[] = [];
       for (const [i, item] of raw.entries()) {
+        // list[Model] 逐项深校验（pydantic model_validate 语义；错误 loc `i.字段`）
+        if (refItems !== undefined) {
+          if (!isPlainObject(item)) {
+            errs.push(`${i}: ${MSG_DICT_TYPE}`);
+            continue;
+          }
+          const r = validateParams(refItems, item);
+          if (!r.ok) {
+            for (const e of r.errors) errs.push(`${i}.${e}`);
+            continue;
+          }
+          out.push(r.value);
+          continue;
+        }
         if (items !== undefined && Object.keys(items).length > 0) {
           if (items.type === "string" && typeof item !== "string") {
             errs.push(`${i}: ${MSG_STRING_TYPE}`);
@@ -312,7 +327,13 @@ function branchSchema(field: FieldSpec): Record<string, unknown> {
     b.push(["enum", [...field.enumValues]]);
   if (field.gt !== undefined) b.push(["exclusiveMinimum", field.gt]);
   if (field.lt !== undefined) b.push(["exclusiveMaximum", field.lt]);
-  if (field.items !== undefined) b.push(["items", field.items]);
+  // list[Model] 形态（pydantic list[Post] 的等价表达）：items 直接 $ref 嵌套模型，
+  // $defs 由 paramJsonSchema 按同一 refModel 收集
+  if (field.type === "array" && field.refModel !== undefined) {
+    b.push(["items", { $ref: refPath(field.refModel) }]);
+  } else if (field.items !== undefined) {
+    b.push(["items", field.items]);
+  }
   if (field.le !== undefined) b.push(["maximum", field.le]);
   if (field.ge !== undefined) b.push(["minimum", field.ge]);
   if (field.minLength !== undefined) b.push(["minLength", field.minLength]);
@@ -357,7 +378,7 @@ export function paramJsonSchema(model: ParamModel): Record<string, unknown> {
   const required: string[] = [];
   for (const f of model.fields) {
     props[f.name] = propSchema(f);
-    if (f.type === "ref" && f.refModel !== undefined) {
+    if ((f.type === "ref" || f.type === "array") && f.refModel !== undefined) {
       defs[f.refModel.name] = paramJsonSchema(f.refModel);
     }
     if (f.required) required.push(f.name);
