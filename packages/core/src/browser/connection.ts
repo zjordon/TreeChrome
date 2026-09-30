@@ -3,6 +3,10 @@
 // （@640d52a）。有意偏离（p4/01 §6）：连接经 transportFactory（自愈=重试工厂一次，
 // 无 url 比较——discover 在宿主工厂内）；下载目录由宿主显式传入（核心包禁 ambient，
 // Python 的 env/~/Downloads 回退属宿主职责）；多播事件下先解订再注册的单例纪律。
+// 有意偏离（examples 批，2026-09-30）：连接序列补 Overlay.enable——Python 从不启用
+// Overlay 域却直接发 Overlay.highlightNode，Chrome 拒绝（"Overlay must be enabled"），
+// Python 侧同款失败被 logger.debug 吞掉不可见；TS 修复使交互高亮真正生效（switchTab
+// 侧随 file-chooser 拦截的 per-session 重发先例一并重发）。
 
 import type { SessionInternals } from "./transport.js";
 import { bindSend, type CdpTransport } from "./transport.js";
@@ -43,9 +47,9 @@ export async function acquireTransport(
 
 /**
  * _connect 序列（session.py:1642-1721，顺序保真）：tracker reset → 握手 →
- * target 发现/attach → Page.enable → DOM.enable → dialog 回调（降级）→
- * Network.enable + tracker 注册（降级）→ setAutoAttach（best-effort）→
- * file-chooser 拦截 → highlight 接线。
+ * target 发现/attach → Page.enable → DOM.enable → Overlay.enable（偏离修复）→
+ * dialog 回调（降级）→ Network.enable + tracker 注册（降级）→ setAutoAttach
+ * （best-effort）→ file-chooser 拦截 → highlight 接线。
  */
 export async function connectSession(s: SessionInternals): Promise<void> {
   s.networkIdle.reset();
@@ -70,6 +74,7 @@ export async function connectSession(s: SessionInternals): Promise<void> {
 
   await s.send("Page.enable", {});
   await s.send("DOM.enable", {});
+  await enableOverlay(s);
   // dialog 回调 always-on（挂起的 alert/confirm 冻结 Runtime.evaluate——493 教训）；
   // 失败降级为不处理
   try {
@@ -104,6 +109,19 @@ export function unsubscribeAllEvents(s: SessionInternals): void {
   for (const dispose of s.eventDisposers) dispose();
   s.eventDisposers.length = 0;
   s.fileChooserListenerDispose = null;
+}
+
+/**
+ * Overlay 域启用（交互高亮的 CDP 前置——偏离修复，见文件头）：best-effort，失败
+ * 降级为无高亮（highlight 自身即 non-critical 设计）。per-session——switchTab 换
+ * target 后必须重发（与 file-chooser 拦截同款先例）。
+ */
+export async function enableOverlay(s: SessionInternals): Promise<void> {
+  try {
+    await s.send("Overlay.enable", {});
+  } catch (e) {
+    s.log(`Overlay.enable failed (degrading, no highlight): ${String(e)}`);
+  }
 }
 
 /**

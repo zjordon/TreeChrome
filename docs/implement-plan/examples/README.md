@@ -109,6 +109,16 @@ node-host（缺口 C）：
 - data-extraction.mjs：3 步 46s done=true successful=true（5 条名言+作者全对）；标准模式「目标」字段有值——与 flash 空目标形成正对照，模式差异线上真实生效。
 - 单测锚定 wire 证据：output-mode.test.ts 断言 LLM 每步收到的 tool.parameters.required——flash 普通步与 LAST STEP done-only 步均 `["action"]`，standard 对照组四必填字段。
 
-## 9. 评审与合并记录
+## 9. 实施后修复：交互高亮 Overlay 域未启用（用户真机日志暴露，2026-09-30）
+
+用户跑 form-filling.mjs 的日志出现 5 条 `Highlight failed (non-critical): Overlay must be enabled before a tool can be shown`。归因：CDP 要求先 `Overlay.enable` 才能发 `Overlay.highlightNode`，而 **Python TreeWalker 同样从不启用 Overlay 域**（session.py:1682-1694 只 enable Page/DOM/Network）——Python 侧同款失败被 `logger.debug` 吞掉不可见，TS 的 `[browser]` 日志通道把它暴露了出来。移植保真层面行为逐字节一致，非本批移植引入。
+
+**修复（登记偏离——修 Python 的 bug，超出移植范围）**：
+- `connection.ts`：connectSession 序列在 DOM.enable 后补 `Overlay.enable`（best-effort，失败降级为无高亮不阻断连接）；偏离登记进文件头注释。
+- `tabs.ts`：switchTab 随 file-chooser 拦截的 per-session 重发先例一并重发 `Overlay.enable`（否则新 tab 上高亮回到未启用态——tabs.ts 头注释的「不重发域 enable」现状对该命令开例外）。
+- 测试：connect 顺序断言插入 Overlay.enable + 降级容错测试 + switchTab/closeTab/createTab 假件补脚本化与重发断言；core 1283→1284。
+- 真机验证：form-filling.mjs 重跑——`Highlight failed` 5→0，任务 2 步 `successful=true`，高亮成功即静默（无降级日志）。
+
+## 10. 评审与合并记录
 
 （实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）

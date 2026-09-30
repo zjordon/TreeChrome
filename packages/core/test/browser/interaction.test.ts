@@ -338,7 +338,7 @@ describe("keyboard", () => {
 });
 
 describe("tabs", () => {
-  it("switchTab：清缓存 + activate/attach + 重挂拦截 + settle", async () => {
+  it("switchTab：清缓存 + activate/attach + 重挂拦截与 Overlay + settle", async () => {
     const h = makeInternals();
     scriptConnect(h.transport);
     h.transport
@@ -347,8 +347,9 @@ describe("tabs", () => {
     await switchTab(h.s, "T2");
     expect(h.transport.framesOf("Target.activateTarget")[0].params).toEqual({ targetId: "T2" });
     expect(h.s.currentSessionId).toBe("S1");
-    // 拦截重发（per-session）
+    // 拦截重发（per-session）；Overlay.enable 同款重发（偏离修复——新 tab 高亮不落空）
     expect(h.transport.framesOf("Page.setInterceptFileChooserDialog")).toHaveLength(1);
+    expect(h.transport.framesOf("Overlay.enable")).toHaveLength(1);
     expect(h.transport.sent[h.transport.sent.length - 1].method).toBe("Runtime.evaluate");
   });
   it("closeTab 当前页：切剩余；全无则开 about:blank", async () => {
@@ -360,6 +361,7 @@ describe("tabs", () => {
       .respond("Target.activateTarget", {})
       .respond("Target.attachToTarget", { sessionId: "S9" })
       .respond("Page.setInterceptFileChooserDialog", {})
+      .respond("Overlay.enable", {})
       .respond("Runtime.evaluate", evalValue("complete"));
     await closeTab(h.s, "T1");
     expect(h.s.currentTargetId).toBe("T9");
@@ -372,6 +374,7 @@ describe("tabs", () => {
       .respond("Target.activateTarget", {})
       .respond("Target.attachToTarget", { sessionId: "S2" })
       .respond("Page.setInterceptFileChooserDialog", {})
+      .respond("Overlay.enable", {})
       .respond("Runtime.evaluate", evalValue("complete"));
     await closeTab(h2.s, "T1");
     expect(h2.s.currentTargetId).toBe("TNEW");
@@ -384,6 +387,7 @@ describe("tabs", () => {
       .respond("Target.activateTarget", {})
       .respond("Target.attachToTarget", { sessionId: "SN" })
       .respond("Page.setInterceptFileChooserDialog", {})
+      .respond("Overlay.enable", {})
       .respond("Runtime.evaluate", evalValue("complete"));
     expect(await createTab(h.s, "https://x/")).toBe("TN");
   });

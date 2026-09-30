@@ -15,7 +15,7 @@ import {
 import { makeInternals, scriptConnect } from "./fake-transport.js";
 
 describe("connectSession（enable 序列顺序保真）", () => {
-  it("顺序：getTargets → attach → Page.enable → DOM.enable → dialog → Network+register → setAutoAttach → fileChooser", async () => {
+  it("顺序：getTargets → attach → Page.enable → DOM.enable → Overlay.enable → dialog → Network+register → setAutoAttach → fileChooser", async () => {
     const h = makeInternals();
     scriptConnect(h.transport);
     h.s.currentTargetId = null;
@@ -27,6 +27,7 @@ describe("connectSession（enable 序列顺序保真）", () => {
       "Target.attachToTarget",
       "Page.enable",
       "DOM.enable",
+      "Overlay.enable",
       "Network.enable",
       "Target.setAutoAttach",
       "Page.setInterceptFileChooserDialog",
@@ -50,6 +51,16 @@ describe("connectSession（enable 序列顺序保真）", () => {
     await connectSession(h.s);
     expect(h.s.networkIdle.isEnabled).toBe(false);
     expect(h.logs.some((m) => m.includes("degrading"))).toBe(true);
+  });
+  it("Overlay.enable 失败降级（无高亮，不阻断连接——偏离修复的容错面）", async () => {
+    const h = makeInternals();
+    scriptConnect(h.transport);
+    h.transport.failOn("Overlay.enable", new Error("no overlay"));
+    h.s.currentTargetId = null;
+    h.s.currentSessionId = null;
+    await connectSession(h.s); // 不抛
+    expect(h.s.currentSessionId).toBe("S1");
+    expect(h.logs.some((m) => m.includes("Overlay.enable failed"))).toBe(true);
   });
   it("dialog 注册失败降级；setAutoAttach 失败吞掉", async () => {
     const h = makeInternals();

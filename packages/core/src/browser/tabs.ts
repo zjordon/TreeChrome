@@ -1,10 +1,11 @@
 // Tab 管理：getTabs/switchTab/closeTab/createTab。移植自 TreeWalker session.py
 // :3617-3670 @640d52a。switchTab 清缓存 + 重挂 file-chooser 拦截（per-session，
-// Bug-1 回归源）+ settle；不重发域 enable（Python 现状，p4/01 §3.2 登记复核项）。
+// Bug-1 回归源）+ settle；不重发域 enable（Python 现状，p4/01 §3.2 登记复核项）——
+// 例外：Overlay.enable 随拦截一并重发（偏离修复，见 connection.ts 头注释）。
 // Target.* 浏览器级命令一律不绑 sessionId 发送（Python 同款；评审轮 1 #8——关闭当前
 // tab 后旧 session 已销毁，绑定发送会命中 "Session with given id not found"）。
 
-import { enableFileChooserIntercept } from "./connection.js";
+import { enableFileChooserIntercept, enableOverlay } from "./connection.js";
 import { waitForReadyStateSettle } from "./navigation.js";
 import type { SessionInternals } from "./transport.js";
 import type { TabInfo } from "./views.js";
@@ -49,8 +50,10 @@ export async function switchTab(s: SessionInternals, targetId: string): Promise<
   });
   s.currentTargetId = targetId;
   s.currentSessionId = String(result.sessionId);
-  // file-chooser 拦截是 per-session 的：新 tab 必须重发，否则原生对话框回归
+  // file-chooser 拦截是 per-session 的：新 tab 必须重发，否则原生对话框回归；
+  // Overlay.enable 同理（偏离修复——否则新 tab 上交互高亮回到未启用态）
   await enableFileChooserIntercept(s);
+  await enableOverlay(s);
   s.log(`Switched to tab: ${targetId}`);
   await waitForReadyStateSettle(s);
 }
