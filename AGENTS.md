@@ -88,6 +88,10 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
 - `.zcode/commands/` —— 项目斜杠命令；`.zcode/config.json` —— workspace hooks；`scripts/gate.mjs` —— 门禁；`.githooks/` —— git hook。
 - 参照仓库（只读）：TreeWalker、webbrain、evals/webarena、treeforge、dom-snapshot，路径见 `docs/architecture.md` 头部。
 
+## 新功能与重构工作流
+
+新功能开发或大规模重构必须按序推进：**写方案存 `docs/implement-plan/<功能名或里程碑名>/` → 人工确认方案 → 自 main 开独立功能分支实施（测试全绿 + 提交门过）→ code review（`/review-loop`）→ 用户授权后合并**。方案未确认不开分支、不写实现代码；未过评审不申请合并。
+
 ## 代码评审工作流
 
 - open-code-review 的结果（`docs/code-review/<n>-review.json`，含大体积 thinking，勿直接 Read）用 `node scripts/review-dump.mjs <file> --out docs/code-review/_<name>.md` 读取——dump 文件统一放 `docs/code-review/`，不放仓库根目录。

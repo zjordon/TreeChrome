@@ -1,0 +1,35 @@
+{
+  "name": "@tw/node-host",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "Node 宿主共享件：NodeFs / env→配置（config.py load_settings 的宿主侧移植）/ 控制台观测 / 散脚本 esbuild 引导（boot.mjs 全仓唯一一份）——examples 与未来 cli/web-console 共享。src 合法使用 node:* 与 process.env（env→配置映射的归宿，架构铁律 2 的宿主半边）",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./boot.mjs": "./boot.mjs"
+  },
+  "scripts": {
+    "test": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tw/cdp-ws": "workspace:*",
+    "@tw/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  }
+}

@@ -289,6 +289,8 @@ async function main() {
 
     // 剧本（decide 按最新 state 文本自适应；共享 evidence 在导航离页前采集）
     const evidence = { fieldIdx: null, aboutIdx: null, kbd: null, sel: null, fieldLine: null };
+    // 剧本条目用 wire 形态（只有 action 数组键——真实模型从不双填 action+actions；
+    // actions 由 LLMClient.okResult 的物化派生，此前双填剧本掩盖过该物化缺口）
     const focusAndCombo = (stateText) => {
       const idx = elementIndex(stateText, "id=field");
       if (idx === null)
@@ -299,8 +301,7 @@ async function main() {
         evaluation_previous_goal: "",
         memory: "focus field then select-all via ctrl+a",
         next_goal: "focus input and send Control+a then x",
-        action: { name: "click", params: { index: idx } },
-        actions: [
+        action: [
           { name: "click", params: { index: idx } },
           { name: "send_keys", params: { keys: "Control+a" } },
           { name: "send_keys", params: { keys: "x" } },
@@ -311,8 +312,7 @@ async function main() {
       evaluation_previous_goal: "",
       memory: "controls below fold; dom capture is viewport-filtered",
       next_goal: "scroll down to bring controls into view",
-      action: { name: "scroll", params: { direction: "down", amount: 4 } },
-      actions: [{ name: "scroll", params: { direction: "down", amount: 4 } }],
+      action: [{ name: "scroll", params: { direction: "down", amount: 4 } }],
     });
     const clickAbout = (stateText) => {
       // 键盘证据在 index 页——离开前采进 evidence（about 页不再有探针节点）
@@ -327,8 +327,7 @@ async function main() {
         evaluation_previous_goal: "combo sent",
         memory: "drift-cut observation step",
         next_goal: "click About (drift cuts trailing wait)",
-        action: { name: "click", params: { index: idx } },
-        actions: [
+        action: [
           { name: "click", params: { index: idx } },
           { name: "wait", params: { seconds: 1 } },
         ],
@@ -342,22 +341,14 @@ async function main() {
         evaluation_previous_goal: "",
         memory: "first gated request will be denied",
         next_goal: "click input field",
-        action: { name: "click", params: { index: idx } },
-        actions: [{ name: "click", params: { index: idx } }],
+        action: [{ name: "click", params: { index: idx } }],
       };
     };
     const doneWithEvidence = () => ({
       evaluation_previous_goal: "on about page",
       memory: "evidence collected",
       next_goal: "finish",
-      action: {
-        name: "done",
-        params: {
-          text: `SMOKE done | kbd=${evidence.kbd} | sel=${evidence.sel} | field=${evidence.fieldLine}`,
-          success: true,
-        },
-      },
-      actions: [
+      action: [
         {
           name: "done",
           params: {
