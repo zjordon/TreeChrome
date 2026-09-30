@@ -179,3 +179,8 @@ try {
 - 修复：`materializeActionsMirror` 进 `okResult`（Python 语义：action 数组解包为 actions、非列表包裹单元素、镜像首元素、空列表→{}、`action: null` 保持 null 原样——`get` 缺省只在键缺失时生效；缺 action 键不注入，judge/extract 响应零污染）；smoke 剧本改 wire 形态（只填 action 数组）；新增 6 例回归测试 + 4 处旧断言补 actions 镜像。core 1153→1159 例全绿（93.63/85.38）。
 - 真机复验：全真闭环（真 key + headless Chrome）5 步完整跑通——google 三连超时后模型自主改道 Bing 取前三条标题、诚实降级 done（沙箱网络限制，用户网络可达 google）；agent-loop-smoke 两变体回归全过。
 
+### feat/node-host 增量轮（2026-09-30，用户发起）
+
+- **轮 2（diffBase=1996408，增量=34dc677 修复单提交）零意见即收敛**：状态 complete、3 文件、6m39s——物化语义/别名影响/smoke 断言迁移三个关注方向均无发现。循环收官。
+- 分支最终提交链：79921a7（实现）→ 1996408（轮 1 登记）→ 34dc677（真机暴露的物化修复）→ 本登记提交。
+
