@@ -25,6 +25,7 @@ const settings = (over: Partial<HostSettings> = {}): HostSettings => ({
     model: "glm-test",
     baseUrl: "http://127.0.0.1:1",
     maxTokens: 64,
+    outputMode: "standard",
   },
   browser: { cdpHost: "localhost", cdpPort: 9222, wsUrl: "ws://stub" },
   agent: {},
@@ -120,6 +121,42 @@ describe("assembleAgent", () => {
       console: false,
     });
     expect(assembled.agent.systemPrompt.length).toBeGreaterThan(0);
+    // 未覆盖时浏览器/Agent 走核心默认（fast_agent.py 对照组）
+    expect(assembled.browser.waitBetweenActionsS).toBe(0);
+    expect(assembled.agent.waitBetweenActionsS).toBe(0);
+    expect(assembled.agent.outputMode).toBe("standard");
+  });
+
+  test("browser 时延覆盖落 BrowserSession、llm.outputMode 落卡片（fast_agent 接线）", () => {
+    const assembled = assembleAgent({
+      task: "t",
+      settings: settings({
+        llm: {
+          apiKey: "k",
+          model: "glm-test",
+          baseUrl: "http://127.0.0.1:1",
+          maxTokens: 64,
+          outputMode: "flash",
+        },
+        browser: {
+          cdpHost: "localhost",
+          cdpPort: 9222,
+          wsUrl: "ws://stub",
+          waitBetweenActions: 0.1,
+          pageSettleTimeout: 0.5,
+        },
+      }),
+      wsUrl: "ws://stub",
+      console: false,
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(assembled.browser.waitBetweenActionsS).toBe(0.1);
+    expect(assembled.agent.waitBetweenActionsS).toBe(0.1); // Agent 构造快照（agent.py:93）
+    expect(assembled.agent.outputMode).toBe("flash"); // 卡片 → LLMClient → Agent 快照
+    const schema = assembled.agent.toolSchema as {
+      input_schema: { required: string[] };
+    };
+    expect(schema.input_schema.required).toEqual(["action"]); // flash schema 形态
   });
 });
 
@@ -130,6 +167,32 @@ describe("runAgent", () => {
     await expect(runAgent({ task: "t", settings: noKey, console: false })).rejects.toThrow(
       "Error: Set ZHIPU_API_KEY environment variable",
     );
+  });
+
+  test("overrides 在 checkReady 前合并生效（双向证据：补 key 放行 / 清 key 拦截）", async () => {
+    const noKey = settings();
+    noKey.llm.apiKey = "";
+    // 正向：overrides 补回 key → 通过前置检查，推进到 transport（wsUrl 直连跳过发现）
+    await expect(
+      runAgent({
+        task: "t",
+        settings: noKey,
+        overrides: { llm: { apiKey: "k" } },
+        console: false,
+        transportFactory: async () => {
+          throw new Error("reached-transport");
+        },
+      }),
+    ).rejects.toThrow("reached-transport");
+    // 反向：overrides 清空 key → 被前置检查拦截
+    await expect(
+      runAgent({
+        task: "t",
+        settings: settings(),
+        overrides: { llm: { apiKey: "" } },
+        console: false,
+      }),
+    ).rejects.toThrow("Error: Set ZHIPU_API_KEY environment variable");
   });
 
   test("Chrome 发现失败：抛 Python 同款文案 + 详情", async () => {

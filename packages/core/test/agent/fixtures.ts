@@ -18,8 +18,12 @@ export class FakeAgentLLM {
     systemPrompt: string;
     messages: ChatMessage[];
     sensitiveMap?: Record<string, string>;
+    /** 本步实际收到的 agent_response schema（outputMode 形态断言用） */
+    tool?: ToolDefinition;
   }> = [];
   model = "glm-test";
+  /** Agent 构造快照读取（agent.py:218 getattr 面）；undefined = registry 缺省 standard */
+  outputMode?: string;
   /** 每次 getAction 入口回调（stop/pause 时序模拟） */
   onCall: (() => void) | null = null;
 
@@ -34,7 +38,7 @@ export class FakeAgentLLM {
     opts: GetActionOptions = {},
   ): Promise<GetActionResult> {
     this.onCall?.();
-    this.calls.push({ systemPrompt, messages, sensitiveMap: opts.sensitiveMap });
+    this.calls.push({ systemPrompt, messages, sensitiveMap: opts.sensitiveMap, tool: _tool });
     const entry =
       this.script.length > 1
         ? this.script.shift()!

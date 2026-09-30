@@ -285,9 +285,13 @@ export class LLMClient {
   /** opts.timeoutMs 非法值一次性告警的去重（轮 38 #3：误配每步都在发生，一次即可） */
   private warnedInvalidDeadline = false;
   private readonly deps: Required<LLMDeps>;
+  /** 输出模式（Python client.py:147 self.output_mode）：LLM 层不消费，Agent 侧
+   *  读取（agent.py:218 getattr 等价）传给 getToolSchema 决定 schema 形态 */
+  readonly outputMode: string;
 
   constructor(config: ProviderConfig, deps?: LLMDeps, provider?: LLMProvider) {
     this.config = config;
+    this.outputMode = config.outputMode ?? "standard";
     this.deps = resolveDeps(deps);
     this.sensitiveObs = new SensitiveObservability(this.deps.log);
     // provider 注入（构造注入优先）：宿主自建适配器/测试 ScriptedLLMProvider 直挂。

@@ -30,6 +30,10 @@ export interface ProviderConfig {
   capabilities?: Partial<ProviderCapabilities>;
   /** 观测用（P4 消息裁剪消费），本阶段透传 */
   contextWindow?: number;
+  /** 输出模式 "standard" | "flash" | "thinking"（Python LLMSettings.output_mode
+   *  :285）：LLM 层自身不消费，Agent 读实例字段（agent.py:218）决定 tool schema
+   *  形态。缺省 "standard"；非法值校验在宿主设置装载层（config.py:601-604 同款） */
+  outputMode?: string;
   /** openai 专属：输出上限字段名。缺省 "max_tokens"；
    *  OpenAI 新契约模型（gpt-5/4.1/o 系）须声明 "max_completion_tokens" */
   maxTokensField?: "max_tokens" | "max_completion_tokens";

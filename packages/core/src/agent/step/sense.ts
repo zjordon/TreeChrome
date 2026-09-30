@@ -210,6 +210,7 @@ export function updateActionModelsForPage(ctx: StepCtx, pageUrl: string): void {
     pageUrl,
     enablePlanning: ctx.settings.enablePlanning,
     maxActions: ctx.settings.maxActionsPerStep,
+    outputMode: ctx.outputMode,
   }) as unknown as Record<string, unknown>;
   ctx.systemPrompt = buildSystemPrompt(
     ctx.tools.registry.getActionDescriptionsText(pageUrl),
@@ -244,6 +245,7 @@ function forceDoneOnLastStep(ctx: StepCtx): void {
     ctx.toolSchema = ctx.tools.registry.getToolSchema({
       includeActions: ["done"],
       maxActions: 1,
+      outputMode: ctx.outputMode,
     }) as unknown as Record<string, unknown>;
   }
 }
@@ -252,12 +254,13 @@ function forceDoneAfterFailure(ctx: StepCtx): void {
   if (ctx.state.consecutiveFailures >= ctx.settings.maxFailures) {
     const msg =
       `FAILURE LIMIT: You have failed ${ctx.state.consecutiveFailures} consecutive times. ` +
-      `The agent will terminate after this step. ` +
+      "The agent will terminate after this step. " +
       'You must call the "done" action now with whatever results you have.';
     addContextMessage(ctx, msg);
     ctx.toolSchema = ctx.tools.registry.getToolSchema({
       includeActions: ["done"],
       maxActions: 1,
+      outputMode: ctx.outputMode,
     }) as unknown as Record<string, unknown>;
   }
 }

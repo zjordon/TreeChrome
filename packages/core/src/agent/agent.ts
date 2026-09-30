@@ -111,6 +111,7 @@ export class Agent implements StepCtx {
   readonly fs: FileSystemProvider | null;
   readonly rerunHistoryDir: string;
   readonly waitBetweenActionsS: number;
+  readonly outputMode: string;
   private readonly judge: JudgeEvaluator | null;
   private resumeGate: Promise<void> = Promise.resolve();
   private resumeRelease: (() => void) | null = null;
@@ -182,7 +183,11 @@ export class Agent implements StepCtx {
     this.log = options.log ?? ((m) => console.info(m));
     this.fs = options.fs ?? null;
     this.rerunHistoryDir = options.rerunHistoryDir ?? "rerun-history";
-    this.waitBetweenActionsS = 0; // Python 读 BrowserSettings.waitBetweenActions——宿主经 browser 设置传入
+    // Python agent.py:93 从 browser._settings 快照；BrowserSession 公开只读面承载
+    this.waitBetweenActionsS = options.browser.waitBetweenActionsS;
+    // Python agent.py:218 getattr(llm, 'output_mode', 'standard')——registry 侧
+    // destructuring 缺省即 getattr 兜底（fake client 无字段 → undefined → standard）
+    this.outputMode = options.llm.outputMode;
     this.judge = s.judge.enabled ? new JudgeEvaluator(options.judgeLlm ?? this.llm, s.judge) : null;
     this.historyMessageProvider = () => this.buildAgentHistoryDescription();
 
@@ -195,6 +200,7 @@ export class Agent implements StepCtx {
     this.toolSchema = this.tools.registry.getToolSchema({
       enablePlanning: s.enablePlanning,
       maxActions: s.maxActionsPerStep,
+      outputMode: this.outputMode,
     }) as unknown as Record<string, unknown>;
   }
 

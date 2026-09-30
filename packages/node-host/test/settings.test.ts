@@ -11,6 +11,7 @@ import {
   DEFAULT_LLM_BASE_URL,
   DEFAULT_LLM_MODEL,
   loadHostSettings,
+  mergeHostSettings,
   resolveWsUrl,
 } from "../src/settings.js";
 
@@ -22,6 +23,7 @@ describe("loadHostSettings", () => {
       model: DEFAULT_LLM_MODEL,
       baseUrl: DEFAULT_LLM_BASE_URL,
       maxTokens: DEFAULT_MAX_TOKENS,
+      outputMode: "standard",
     });
     expect(s.llm.model).toBe("glm-5.3"); // 偏离登记：Python glm-5.1
     expect(s.browser).toEqual({ cdpHost: "localhost", cdpPort: 9222, wsUrl: null });
@@ -73,6 +75,49 @@ describe("loadHostSettings", () => {
     expect(s.llm.maxTokens).toBe(DEFAULT_MAX_TOKENS);
     expect(s.browser.cdpPort).toBe(9222);
     expect(s.agent).toEqual({});
+  });
+
+  test("LLM_OUTPUT_MODE：合法直传 / 非法告警回退 standard / 空串=未设置（config.py:601-604）", () => {
+    expect(loadHostSettings({ LLM_OUTPUT_MODE: "flash" }).llm.outputMode).toBe("flash");
+    expect(loadHostSettings({ LLM_OUTPUT_MODE: "thinking" }).llm.outputMode).toBe("thinking");
+    const warns: string[] = [];
+    const s = loadHostSettings({ LLM_OUTPUT_MODE: "turbo" }, { log: (m) => warns.push(m) });
+    expect(s.llm.outputMode).toBe("standard");
+    expect(warns[0]).toContain('LLM_OUTPUT_MODE="turbo"');
+    expect(loadHostSettings({ LLM_OUTPUT_MODE: "" }).llm.outputMode).toBe("standard");
+  });
+});
+
+describe("mergeHostSettings（Python replace 形态等价）", () => {
+  const base = loadHostSettings({ ZHIPU_API_KEY: "k", LLM_MODEL: "glm-test" });
+
+  test("三面各自覆盖显式键，其余保留 base", () => {
+    const merged = mergeHostSettings(base, {
+      llm: { outputMode: "flash" },
+      browser: { waitBetweenActions: 0.1, pageSettleTimeout: 0.5 },
+      agent: { maxSteps: 3 },
+    });
+    expect(merged.llm.outputMode).toBe("flash");
+    expect(merged.llm.model).toBe("glm-test"); // 未覆盖键保留
+    expect(merged.llm.apiKey).toBe("k");
+    expect(merged.browser).toEqual({
+      cdpHost: "localhost",
+      cdpPort: 9222,
+      wsUrl: null,
+      waitBetweenActions: 0.1,
+      pageSettleTimeout: 0.5,
+    });
+    expect(merged.agent).toEqual({ maxSteps: 3 });
+  });
+
+  test("显式 undefined 不清 base 值（definedOnly 语义）；空 overrides 原样", () => {
+    const merged = mergeHostSettings(base, {
+      llm: { model: undefined },
+      browser: { waitBetweenActions: undefined },
+    });
+    expect(merged.llm.model).toBe("glm-test");
+    expect(merged.browser.waitBetweenActions).toBeUndefined();
+    expect(mergeHostSettings(base)).toEqual(base);
   });
 });
 

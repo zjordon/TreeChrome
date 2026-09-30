@@ -26,7 +26,9 @@ import {
   applyDotEnv,
   checkReady,
   type HostSettings,
+  type HostSettingsOverrides,
   loadHostSettings,
+  mergeHostSettings,
   resolveWsUrl,
 } from "./settings.js";
 
@@ -76,6 +78,7 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
         apiKey: options.settings.llm.apiKey,
         model: options.settings.llm.model,
         maxTokens: options.settings.llm.maxTokens,
+        outputMode: options.settings.llm.outputMode,
       },
       { log: (m) => sink(`[llm] ${m}`) },
     );
@@ -83,13 +86,18 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
   const transportFactory =
     options.transportFactory ??
     (() => CdpWsClient.connect({ wsUrl: options.wsUrl, logger: (m) => sink(`[cdp-ws] ${m}`) }));
-  const browser = new BrowserSessionClass(
-    transportFactory,
-    {},
-    {
-      log: (m) => sink(`[browser] ${m}`),
-    },
-  );
+  // 浏览器覆盖透传（fast_agent.py:37-41 的 replace 形态）：未设键不传——
+  // BrowserSession 构造按缺省合并（pageSettleTimeout 2.0 / waitBetweenActions 0.0）
+  const browserOverrides: { pageSettleTimeout?: number; waitBetweenActions?: number } = {};
+  if (options.settings.browser.pageSettleTimeout !== undefined) {
+    browserOverrides.pageSettleTimeout = options.settings.browser.pageSettleTimeout;
+  }
+  if (options.settings.browser.waitBetweenActions !== undefined) {
+    browserOverrides.waitBetweenActions = options.settings.browser.waitBetweenActions;
+  }
+  const browser = new BrowserSessionClass(transportFactory, browserOverrides, {
+    log: (m) => sink(`[browser] ${m}`),
+  });
 
   let policy: PolicyGateType;
   let autoAllow: AutoAllowPolicy | null = null;
@@ -137,6 +145,9 @@ export interface RunAgentOptions extends Omit<AssembleAgentOptions, "settings" |
   settings?: HostSettings | null;
   /** 缺省 resolveWsUrl（CDP_WS_URL ‖ 发现）；解析失败抛 Python 同款文案 */
   wsUrl?: string;
+  /** env 装载后在 settings 上做程序化覆盖（Python replace(settings.x, ...) 形态；
+   *  fast_agent 的 flash/时延收紧走此口） */
+  overrides?: HostSettingsOverrides;
 }
 
 /**
@@ -176,6 +187,9 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentHistoryLi
   if (settings === undefined || settings === null) {
     applyDotEnv();
     settings = loadHostSettings();
+  }
+  if (options.overrides !== undefined) {
+    settings = mergeHostSettings(settings, options.overrides);
   }
 
   const ready = checkReady(settings);

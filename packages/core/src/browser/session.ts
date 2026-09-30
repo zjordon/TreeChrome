@@ -93,6 +93,9 @@ export interface GetStateOptions {
 
 export class BrowserSession {
   private readonly settings: BrowserSessionSettings;
+  /** 动作间反检测等待·秒的公开只读面（Agent 构造快照消费——Python agent.py:93
+   *  读 browser._settings.wait_between_actions 的私有访问公开化） */
+  readonly waitBetweenActionsS: number;
   private readonly transportFactory: TransportFactory;
   private readonly log: Logger;
   private readonly sleepImpl: (ms: number) => Promise<void>;
@@ -126,6 +129,7 @@ export class BrowserSession {
   ) {
     this.transportFactory = transportFactory;
     this.settings = { ...DEFAULT_BROWSER_SESSION_SETTINGS, ...settings };
+    this.waitBetweenActionsS = this.settings.waitBetweenActions;
     this.log = options.log ?? (() => {});
     this.sleepImpl = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.nowImpl = options.now ?? (() => performance.now() / 1000);

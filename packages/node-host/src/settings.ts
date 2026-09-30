@@ -9,8 +9,8 @@
 //   已验证卡片，LLM_MODEL 可覆盖）与 baseUrl（智谱 Anthropic 兼容端点，Python 同款）。
 //
 // 首批 env 面（名字逐字对齐 config.py）：ZHIPU_API_KEY / LLM_MODEL / LLM_BASE_URL /
-// LLM_MAX_TOKENS / CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_MAX_STEPS / AGENT_USE_VISION。
-// 扩展点（随对应 example 移植进入）：FALLBACK_LLM_* / AGENT_JUDGE_MODEL /
+// LLM_MAX_TOKENS / LLM_OUTPUT_MODE / CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_MAX_STEPS /
+// AGENT_USE_VISION。扩展点（随对应 example 移植进入）：FALLBACK_LLM_* / AGENT_JUDGE_MODEL /
 // AGENT_LLM_SCREENSHOT_SIZE / SENSITIVE_DATA 等。
 
 import { existsSync, readFileSync } from "node:fs";
@@ -23,21 +23,39 @@ export const DEFAULT_LLM_MODEL = "glm-5.3";
 /** 缺省端点（智谱 Anthropic 兼容端点，与 Python LLMSettings.base_url 同款） */
 export const DEFAULT_LLM_BASE_URL = "https://open.bigmodel.cn/api/anthropic";
 
+/** output_mode 合法值集（config.py:602 同款三值） */
+const OUTPUT_MODES = new Set(["standard", "flash", "thinking"]);
+
 export interface HostSettings {
   llm: {
     apiKey: string;
     model: string;
     baseUrl: string;
     maxTokens: number;
+    /** 输出模式（LLM_OUTPUT_MODE；缺省 "standard"）——LLM 卡片透传，Agent 侧消费 */
+    outputMode: string;
   };
   browser: {
     cdpHost: string;
     cdpPort: number;
     /** CDP_WS_URL 直连覆盖；null = 待 resolveWsUrl 发现 */
     wsUrl: string | null;
+    /** 页面稳定等待秒（BrowserSessionSettings.pageSettleTimeout 覆盖；未设 = 核心默认 2.0）。
+     *  Python 此两字段无 env——示例经 replace() 程序化设置（fast_agent.py:37-41），
+     *  对应形态是 runAgent 的 overrides 而非 env */
+    pageSettleTimeout?: number;
+    /** 动作间隔秒（同上；未设 = 核心默认 0.0） */
+    waitBetweenActions?: number;
   };
   /** AgentSettings 部分覆盖——只含 env 显式设置的键（未设键不出现，核心默认生效） */
   agent: Partial<AgentSettings>;
+}
+
+/** runAgent/mergeHostSettings 的覆盖面（对应 Python replace(settings.x, ...) 形态） */
+export interface HostSettingsOverrides {
+  llm?: Partial<HostSettings["llm"]>;
+  browser?: Partial<HostSettings["browser"]>;
+  agent?: Partial<AgentSettings>;
 }
 
 export interface LoadSettingsOptions {
@@ -74,6 +92,22 @@ const envBool = (env: Record<string, string | undefined>, name: string): boolean
   return raw.toLowerCase() === "true";
 };
 
+/** LLM_OUTPUT_MODE（config.py:601-604 同款）：非法值告警后回退 standard */
+const envOutputMode = (
+  env: Record<string, string | undefined>,
+  warn: (m: string) => void,
+): string => {
+  const raw = envStr(env, "LLM_OUTPUT_MODE");
+  if (raw === undefined) {
+    return "standard";
+  }
+  if (!OUTPUT_MODES.has(raw)) {
+    warn(`LLM_OUTPUT_MODE="${raw}" 非法（需 standard|flash|thinking），已回退 standard`);
+    return "standard";
+  }
+  return raw;
+};
+
 /**
  * env → HostSettings（同步，不 fetch、不触网）。缺省 applyDotEnv 先行（runAgent 侧调用）。
  */
@@ -99,6 +133,7 @@ export function loadHostSettings(
       model: envStr(env, "LLM_MODEL") ?? DEFAULT_LLM_MODEL,
       baseUrl: envStr(env, "LLM_BASE_URL") ?? DEFAULT_LLM_BASE_URL,
       maxTokens: envInt(env, "LLM_MAX_TOKENS", warn) ?? DEFAULT_MAX_TOKENS,
+      outputMode: envOutputMode(env, warn),
     },
     browser: {
       cdpHost: envStr(env, "CDP_HOST") ?? "localhost",
@@ -106,6 +141,33 @@ export function loadHostSettings(
       wsUrl: envStr(env, "CDP_WS_URL") ?? null,
     },
     agent,
+  };
+}
+
+/** 值为 undefined 的键丢弃（显式 undefined 不得清掉 base 值） */
+function definedOnly<T extends Record<string, unknown>>(partial: T | undefined): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [k, v] of Object.entries(partial ?? {})) {
+    if (v !== undefined) {
+      (out as Record<string, unknown>)[k] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * 覆盖合并（Python replace(settings.llm, output_mode="flash") 的形态等价）：
+ * overrides 只覆盖显式给出且非 undefined 的键，其余保留 base。browser 的
+ * pageSettleTimeout/waitBetweenActions 未设时保持缺省（undefined = 核心默认）。
+ */
+export function mergeHostSettings(
+  base: HostSettings,
+  overrides: HostSettingsOverrides = {},
+): HostSettings {
+  return {
+    llm: { ...base.llm, ...definedOnly(overrides.llm) },
+    browser: { ...base.browser, ...definedOnly(overrides.browser) },
+    agent: { ...base.agent, ...definedOnly(overrides.agent) },
   };
 }
 
