@@ -5,7 +5,7 @@
 // 自带小超时，步级到点穿透（取消语义不吞——review4 #1）。
 
 import { modelCallEvent, modelResultEvent } from "../../events/events.js";
-import type { ChatMessage, ToolDefinition } from "../../llm/types.js";
+import type { ChatMessage, TokenUsage, ToolDefinition } from "../../llm/types.js";
 import { validateParams } from "../../tools/models.js";
 import {
   describeActionEntry,
@@ -43,17 +43,32 @@ function toolDef(ctx: StepCtx): ToolDefinition {
 /** 步级超时（Python asyncio.TimeoutError 文案）；到点先于任何 catch 穿透 */
 class GateTimeoutError extends Error {}
 
+/**
+ * 梯子输出的「响应 + 用量」对（Python response dict 自带 usage 键的等价形态）：
+ * 每次重试整体覆盖（最终那次调用的用量——Python 每轮覆盖 response 的同语义）；
+ * fallback done 是合成产物无用量（null，Python fallback dict 无 usage 键同款）。
+ */
+interface LlmOutput {
+  output: ModelOutput;
+  usage: TokenUsage | null;
+}
+
 async function callLlm(
   ctx: StepCtx,
   messages: ChatMessage[],
   signal: AbortSignal,
-): Promise<ModelOutput> {
+): Promise<LlmOutput> {
   const result = await ctx.llm.getAction(ctx.systemPrompt, messages, toolDef(ctx), {
     signal,
     sensitiveMap: ctx.sensitiveMapForGetAction ?? undefined,
   });
   const raw = result.kind === "ok" ? (result.toolInput as unknown) : {};
-  return normalizeLLMResponse(ctx, raw);
+  return {
+    output: normalizeLLMResponse(ctx, raw),
+    // empty 形态的用量在 lastUsage（若梯子全程 empty，事件显示 ?+? 与 Python
+    // usage None 同款）；ok 直取
+    usage: result.kind === "ok" ? result.usage : (result.lastUsage ?? null),
+  };
 }
 
 export async function getNextAction(ctx: StepCtx): Promise<ThinkResult | null> {
@@ -77,8 +92,9 @@ export async function getNextAction(ctx: StepCtx): Promise<ThinkResult | null> {
     controller.abort(new StepTimeoutError("step-timer")),
   );
   let output: ModelOutput;
+  let usage: TokenUsage | null;
   try {
-    output = await getActionWithRetry(ctx, trimmed, controller.signal);
+    ({ output, usage } = await getActionWithRetry(ctx, trimmed, controller.signal));
   } catch (e) {
     if (controller.signal.aborted) {
       throw new StepTimeoutError(
@@ -104,7 +120,7 @@ export async function getNextAction(ctx: StepCtx): Promise<ThinkResult | null> {
     `Goal: ${typeof output.next_goal === "string" ? output.next_goal : ""} | ` +
     `Action: ${nameOf(output.action) ?? "unknown"}`;
   if (ctx.state.stopped || ctx.state.paused) {
-    return { output, usage: null };
+    return { output, usage };
   }
   ctx.messages.push({
     kind: "plain",
@@ -117,6 +133,9 @@ export async function getNextAction(ctx: StepCtx): Promise<ThinkResult | null> {
         modelCallId,
         actionName: String(nameOf(output.action) ?? ""),
         nextGoal: typeof output.next_goal === "string" ? output.next_goal : "",
+        // P6 后续 I2 等价接线（Python step.py:864-876）：最终那次调用的用量
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
       }),
     );
   }
@@ -128,7 +147,7 @@ export async function getNextAction(ctx: StepCtx): Promise<ThinkResult | null> {
   ctx.log(`  ↳ decision: ${actionName} ${JSON.stringify(safeParams)}`);
 
   ctx.currentModelCallId = modelCallId;
-  return { output, usage: null };
+  return { output, usage };
 }
 
 function randomId(): string {
@@ -179,12 +198,12 @@ export async function getActionWithRetry(
   ctx: StepCtx,
   messages: ChatMessage[],
   signal: AbortSignal,
-): Promise<ModelOutput> {
-  let response = await callLlm(ctx, messages, signal);
-  if (isValidAction(response)) {
+): Promise<LlmOutput> {
+  let wrapped = await callLlm(ctx, messages, signal);
+  if (isValidAction(wrapped.output)) {
     return gateUncertainSuccessDone(
       ctx,
-      await validateParamsOrRetry(ctx, response, messages, signal),
+      await validateParamsOrRetry(ctx, wrapped, messages, signal),
       messages,
       signal,
     );
@@ -194,19 +213,19 @@ export async function getActionWithRetry(
     const degrade = attempt >= 1;
     const base = degrade ? copyMessagesWithoutImages(messages) : messages;
     ctx.log(
-      `LLM returned empty action (${describeResponseAction(response)}), ` +
+      `LLM returned empty action (${describeResponseAction(wrapped.output)}), ` +
         `retrying with clarification (${attempt + 1}/${INVALID_ACTION_MAX_RETRIES})` +
         (degrade ? " — text-only (screenshot dropped)" : ""),
     );
     const retryMessages: ChatMessage[] = [
       ...base,
-      { role: "user", blocks: [{ kind: "text", text: invalidActionFeedback(response) }] },
+      { role: "user", blocks: [{ kind: "text", text: invalidActionFeedback(wrapped.output) }] },
     ];
-    response = await callLlm(ctx, retryMessages, signal);
-    if (isValidAction(response)) {
+    wrapped = await callLlm(ctx, retryMessages, signal);
+    if (isValidAction(wrapped.output)) {
       return gateUncertainSuccessDone(
         ctx,
-        await validateParamsOrRetry(ctx, response, messages, signal),
+        await validateParamsOrRetry(ctx, wrapped, messages, signal),
         messages,
         signal,
       );
@@ -215,28 +234,29 @@ export async function getActionWithRetry(
   ctx.log(
     `LLM still returned empty action after ${INVALID_ACTION_MAX_RETRIES} retries, using fallback done`,
   );
-  return fallbackDoneOutput();
+  return { output: fallbackDoneOutput(), usage: null };
 }
 
 /** done(success=True) 携带未消解不确定标记 → 一次验证重试（每 run 封顶） */
 export async function gateUncertainSuccessDone(
   ctx: StepCtx,
-  response: ModelOutput,
+  wrapped: LlmOutput,
   messages: ChatMessage[],
   stepSignal: AbortSignal,
-): Promise<ModelOutput> {
+): Promise<LlmOutput> {
+  const response = wrapped.output;
   const action = isRecord(response.action) ? response.action : null;
-  if (action === null || nameOf(action) !== "done") return response;
-  if (isHonestFailureAction(action)) return response;
+  if (action === null || nameOf(action) !== "done") return wrapped;
+  if (isHonestFailureAction(action)) return wrapped;
   const params = paramsOf(action);
   // review2 #2：镜像 pydantic lax 强转语义再判定（"success": "true" 字符串）
   let rawSuccess: unknown = params.success !== undefined ? params.success : true;
   if (typeof rawSuccess === "string") {
     rawSuccess = ["true", "t", "yes", "y", "on", "1"].includes(rawSuccess.trim().toLowerCase());
   }
-  if (!rawSuccess) return response;
-  if (!ctx.settings.doneUncertaintyGate) return response;
-  if (ctx.state.doneGateUses >= DONE_GATE_MAX_PER_RUN) return response;
+  if (!rawSuccess) return wrapped;
+  if (!ctx.settings.doneUncertaintyGate) return wrapped;
+  if (ctx.state.doneGateUses >= DONE_GATE_MAX_PER_RUN) return wrapped;
   // review4 #3：text 只扫关键词；词尾 ? 仅对自评字段（evaluation/memory）生效
   const evalText =
     typeof response.evaluation_previous_goal === "string" ? response.evaluation_previous_goal : "";
@@ -246,7 +266,7 @@ export async function gateUncertainSuccessDone(
   // `||` 会让右侧永不执行（done.text 的 not sure 等关键词漏检）
   const markerHits = scanUncertaintyMarkers(evalText, memText);
   const hits = markerHits.length > 0 ? markerHits : scanUncertaintyKeywords(textParam);
-  if (hits.length === 0) return response;
+  if (hits.length === 0) return wrapped;
   ctx.state.doneGateUses += 1;
   ctx.log(
     `done(success=True) with unresolved uncertainty markers ${hits.join(", ")} — ` +
@@ -264,7 +284,7 @@ export async function gateUncertainSuccessDone(
     ...messages,
     { role: "user", blocks: [{ kind: "text", text: feedback }] },
   ];
-  let retried: ModelOutput;
+  let retried: LlmOutput;
   try {
     // review5 #1：内层按剩余额度取小（绝对 60s 会让外层先到期，合法 done 变失败步）
     const elapsed = (ctx.now() - ctx.stepStartTime) / 1000;
@@ -294,22 +314,24 @@ export async function gateUncertainSuccessDone(
     ctx.log(
       `done-gate verification retry failed (${e instanceof Error ? e.constructor.name : String(e)}) — passing through original response (budget rolled back)`,
     );
-    return response;
+    return wrapped;
   }
-  if (!isValidAction(retried)) return response;
-  if (validateActionParams(ctx, retried) !== null) return response;
+  if (!isValidAction(retried.output)) return wrapped;
+  if (validateActionParams(ctx, retried.output) !== null) return wrapped;
   return retried;
 }
 
 /** 内梯：参数校验 3 次（无效动作与参数错共用预算；形状澄清第二次起去图） */
 export async function validateParamsOrRetry(
   ctx: StepCtx,
-  response: ModelOutput,
+  wrapped: LlmOutput,
   originalMessages: ChatMessage[],
   signal: AbortSignal,
-): Promise<ModelOutput> {
+): Promise<LlmOutput> {
+  let response = wrapped.output;
+  let usage = wrapped.usage;
   let paramError = validateActionParams(ctx, response);
-  if (paramError === null) return response;
+  if (paramError === null) return wrapped;
 
   let invalidActionSeen = 0;
   for (let attempt = 0; attempt < PARAM_VALIDATION_MAX_RETRIES; attempt++) {
@@ -341,11 +363,13 @@ export async function validateParamsOrRetry(
       ...base,
       { role: "user", blocks: [{ kind: "text", text: feedback }] },
     ];
-    response = await callLlm(ctx, retryMessages, signal);
+    const retried = await callLlm(ctx, retryMessages, signal);
+    response = retried.output;
+    usage = retried.usage;
 
     if (isValidAction(response)) {
       paramError = validateActionParams(ctx, response);
-      if (paramError === null) return response;
+      if (paramError === null) return { output: response, usage };
     }
   }
 
@@ -354,12 +378,12 @@ export async function validateParamsOrRetry(
       `LLM still returned invalid action after ${PARAM_VALIDATION_MAX_RETRIES} ` +
         "param-validation retries — fallback done",
     );
-    return fallbackDoneOutput();
+    return { output: fallbackDoneOutput(), usage: null };
   }
   ctx.log(
     `Params still invalid after ${PARAM_VALIDATION_MAX_RETRIES} retries: ${paramError} — proceeding anyway`,
   );
-  return response;
+  return { output: response, usage };
 }
 
 /** registry paramModel + _flattenParams 同源校验；返回 null=有效或错误串 */

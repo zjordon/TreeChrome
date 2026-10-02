@@ -196,6 +196,14 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **验证**：core 1295（switchTab 全序列顺序断言 + 单域失败降级不阻断两条）。真机双 tab 来回切 + 切换后 DOM 查询（quotes.toscrape.com，5 步 67.6s successful=true）：**0 条** Overlay/DOM 错误。
 
+### F9.5 修复：model_result 事件 token 用量透传（用户日志暴露，2026-10-02）
+
+用户问及日志里每条模型事件行的 `tokens ?+?`。归因：**Python P6 后续 I2 的 usage 透传漏移植**——事件 schema（inputTokens/outputTokens 可空）与渲染层（`?? "?"`）都移植了，但数据线没接：`callLlm` 丢弃 `getAction` 返回的 usage、归一化层硬编码 `usage: null`、事件发射点不传 token 字段，三层叠加导致用量观测系统性缺失（Python step.py:864-876 是通的：`response["usage"]` → 事件字段）。纯观测面损失，agent 行为零影响。
+
+**修复（Python parity 接线，非偏离）**：`LlmOutput { output, usage }` 对贯穿 callLlm → validateParamsOrRetry → gateUncertainSuccessDone → getActionWithRetry → getNextAction；每次重试整体覆盖（最终那次调用的用量——Python 每轮覆盖 response 同语义）；fallback done 为合成产物无用量（null，Python fallback dict 无 usage 键同款）；empty 形态取 `lastUsage`；事件发射填 `inputTokens/outputTokens`。
+
+**验证**：core 1296（FakeAgentLLM script 条目增 usage 通道；model_result 事件带值/缺省 null 双形态断言）。真机 custom-action：`tokens 6937+141` / `tokens 264+173`，`?+?` 0 条。
+
 ## F10. 评审与合并记录
 
 （实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）

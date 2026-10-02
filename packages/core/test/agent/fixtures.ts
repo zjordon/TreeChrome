@@ -7,7 +7,12 @@ import type { GetActionOptions, GetActionResult, LLMClient } from "../../src/llm
 import type { ChatMessage, ChatResponse, ToolDefinition } from "../../src/llm/types.js";
 
 export type LlmScriptEntry =
-  | { kind: "ok"; toolInput: Record<string, unknown>; usage?: never }
+  | {
+      kind: "ok";
+      toolInput: Record<string, unknown>;
+      /** 该次调用的 token 用量（model_result 事件断言用；缺省 null=?+?） */
+      usage?: import("../../src/llm/types.js").TokenUsage | null;
+    }
   | { kind: "empty"; reason: "text-exhausted" | "no-parseable-response" }
   | { throw: Error };
 
@@ -46,7 +51,7 @@ export class FakeAgentLLM {
     if ("throw" in entry) return Promise.reject(entry.throw);
     return Promise.resolve(
       entry.kind === "ok"
-        ? { kind: "ok", toolInput: entry.toolInput, usage: null }
+        ? { kind: "ok", toolInput: entry.toolInput, usage: entry.usage ?? null }
         : { kind: "empty", reason: entry.reason, lastUsage: null },
     );
   }
