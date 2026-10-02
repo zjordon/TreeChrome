@@ -730,26 +730,33 @@ export class LLMClient {
     maxTokens: number | undefined,
     callTimeoutMs: number | null,
   ): Promise<ChatResponse> {
-    const caps = this.provider.capabilities;
-    let sys = systemPrompt;
-    let tools: ToolDefinition[] | null = null;
-    let toolChoice: ToolChoice | undefined;
-    if (tool !== null && caps.supportsTools) {
-      tools = [tool];
-      if (caps.supportsForcedTool) {
-        toolChoice = { kind: "forced", name: tool.name };
-      } else {
-        sys = (sys ?? "") + forcedToolConstraint(tool.name);
+    // 能力派生字段（tools/toolChoice/prompt 约束）须每轮按 this.provider 现值重算：
+    // callWithBackoff 内部的 fallback 切换会 continue 重发——闭包外一次性构建会把
+    // 旧卡的 forced toolChoice/tools 发给能力不同的新卡（端点 400，切换名额已耗尽；
+    // 轮 2 #1 回归——getAction 的 buildChatRequest 每轮重读 caps，此处同构）
+    const buildReq = (signal?: AbortSignal): ChatRequest => {
+      const caps = this.provider.capabilities;
+      let sys = systemPrompt;
+      let tools: ToolDefinition[] | null = null;
+      let toolChoice: ToolChoice | undefined;
+      if (tool !== null && caps.supportsTools) {
+        tools = [tool];
+        if (caps.supportsForcedTool) {
+          toolChoice = { kind: "forced", name: tool.name };
+        } else {
+          sys = (sys ?? "") + forcedToolConstraint(tool.name);
+        }
+      } else if (tool !== null) {
+        sys = (sys ?? "") + noToolsConstraint(tool);
       }
-    } else if (tool !== null) {
-      sys = (sys ?? "") + noToolsConstraint(tool);
-    }
-    const req: ChatRequest = {
-      systemPrompt: sys,
-      messages: [{ role: "user", blocks: [{ kind: "text", text: userPrompt }] }],
-      tools,
-      toolChoice,
-      maxTokens,
+      return {
+        systemPrompt: sys,
+        messages: [{ role: "user", blocks: [{ kind: "text", text: userPrompt }] }],
+        tools,
+        toolChoice,
+        maxTokens,
+        ...(signal !== undefined ? { signal } : {}),
+      };
     };
     try {
       if (callTimeoutMs !== null && callTimeoutMs > 0) {
@@ -762,7 +769,7 @@ export class LLMClient {
           },
         );
         try {
-          return await this.callWithBackoff(() => ({ ...req, signal: controller.signal }));
+          return await this.callWithBackoff(() => buildReq(controller.signal));
         } catch (e) {
           if (controller.signal.aborted && isAbortError(e)) {
             throw new LLMCallTimeoutError(
@@ -775,10 +782,11 @@ export class LLMClient {
           cancel.abort(); // 取消计时（真实时钟下不留悬挂定时器）
         }
       }
-      return await this.callWithBackoff(() => req);
+      return await this.callWithBackoff(() => buildReq());
     } catch (e) {
-      // fallback 切换不占重试名额：切换成功重入自身（新卡重发）；否则原样上抛。
-      // ProtocolViolation 不切换（trySwitchToFallback 内部拒绝）
+      // 防御位（轮 2 #1 核验后事实不可达：callWithBackoff 对任意可切换 LLMError 已
+      // 先行切换并重发，单向锁使此处 trySwitchToFallback 恒 false）：原样上抛。
+      // ProtocolViolation 本就不切换（trySwitchToFallback 内部拒绝）
       if (e instanceof LLMError && this.trySwitchToFallback(e)) {
         return this.extractCall(systemPrompt, userPrompt, tool, maxTokens, callTimeoutMs);
       }

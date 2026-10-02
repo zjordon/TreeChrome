@@ -10,6 +10,7 @@ import {
   checkReady,
   DEFAULT_LLM_BASE_URL,
   DEFAULT_LLM_MODEL,
+  type HostSettings,
   loadHostSettings,
   mergeHostSettings,
   resolveWsUrl,
@@ -154,6 +155,28 @@ describe("mergeHostSettings（Python replace 形态等价）", () => {
     expect(merged.llm.model).toBe("glm-test");
     expect(merged.browser.waitBetweenActions).toBeUndefined();
     expect(mergeHostSettings(base)).toEqual(base);
+  });
+
+  test("fallback 二级合并（轮 2 #2）：部分覆盖保留 base 子键；null 显式关闭；base null 时纯增", () => {
+    const withFb: HostSettings = {
+      ...base,
+      llm: {
+        ...base.llm,
+        fallback: { model: "env-model", apiKey: "fb-key", baseUrl: "https://fb.example" },
+      },
+    };
+    // 只传 model（fallback-model.mjs 的形态）：env 层 apiKey/baseUrl 保留
+    const merged = mergeHostSettings(withFb, { llm: { fallback: { model: "glm-4-flash" } } });
+    expect(merged.llm.fallback).toEqual({
+      model: "glm-4-flash",
+      apiKey: "fb-key",
+      baseUrl: "https://fb.example",
+    });
+    // 显式 null = 关闭（不与 base 合并）
+    expect(mergeHostSettings(withFb, { llm: { fallback: null } }).llm.fallback).toBeNull();
+    // base 无 fallback、override 提供：纯增
+    const added = mergeHostSettings(base, { llm: { fallback: { model: "m2" } } });
+    expect(added.llm.fallback).toEqual({ model: "m2" });
   });
 });
 

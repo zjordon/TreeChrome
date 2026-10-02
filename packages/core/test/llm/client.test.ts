@@ -1648,3 +1648,35 @@ describe("getAction action→actions 物化（Python client.py :559-605 移植�
     expect(ok.toolInput.actions).toEqual([{ name: "scroll", params: { direction: "down" } }]);
   });
 });
+
+describe("轮 2 #1：extractCall 切 fallback 后按新卡能力重建请求（闭包内重算 caps）", () => {
+  it("主卡 forced tool_choice → fallback 声明 supportsForcedTool=false：切换重发无 tool_choice、落 prompt 约束", async () => {
+    const noForced: ProviderConfig = {
+      ...FALLBACK,
+      capabilities: { supportsTools: true, supportsForcedTool: false },
+    };
+    const { mock, clock, client } = setup({ fallback: noForced });
+    const SCHEMA = { type: "object", properties: { answer: { type: "string" } } };
+    const extractOk = (): MockResponseSpec => ({
+      status: 200,
+      body: {
+        content: [{ type: "tool_use", id: "t", name: "extract_result", input: { answer: "x" } }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 5, output_tokens: 7 },
+      },
+    });
+    // extract 带 outputSchema → 走 tool/forced 分支；首呼 429 切换
+    mock.queueMany(r429(), extractOk());
+    const p = client.extract("query", "content", { outputSchema: SCHEMA });
+    await clock.advance(0);
+    const r = await p;
+    expect(typeof r).toBe("string");
+    expect(mock.calls.length).toBe(2);
+    expect(mock.calls[1].url).toContain("fallback.example");
+    const fb = mock.bodyAt(1);
+    // 主卡形态：tool_choice 强制 extract_result；新卡：无 tool_choice、system 带约束
+    expect(mock.bodyAt(0).tool_choice).toEqual({ type: "tool", name: "extract_result" });
+    expect(fb.tool_choice).toBeUndefined();
+    expect(String(fb.system)).toContain("extract_result");
+  });
+});

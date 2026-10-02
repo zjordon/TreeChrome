@@ -185,13 +185,22 @@ function definedOnly<T extends Record<string, unknown>>(partial: T | undefined):
  * 覆盖合并（Python replace(settings.llm, output_mode="flash") 的形态等价）：
  * overrides 只覆盖显式给出且非 undefined 的键，其余保留 base。browser 的
  * pageSettleTimeout/waitBetweenActions 未设时保持缺省（undefined = 核心默认）。
+ * llm.fallback **二级合并**（轮 2 #2）：overrides 只传 model 时保留 base（env 层
+ * FALLBACK_LLM_* 装载）的 apiKey/baseUrl——整对象替换会静默丢专用网关凭证；
+ * 显式 null = 关闭 fallback（不与 base 合并）。
  */
 export function mergeHostSettings(
   base: HostSettings,
   overrides: HostSettingsOverrides = {},
 ): HostSettings {
+  const llm = { ...base.llm, ...definedOnly(overrides.llm) };
+  if (overrides.llm?.fallback != null) {
+    const fbOver = definedOnly(overrides.llm.fallback);
+    llm.fallback =
+      base.llm.fallback === null ? { model: "", ...fbOver } : { ...base.llm.fallback, ...fbOver };
+  }
   return {
-    llm: { ...base.llm, ...definedOnly(overrides.llm) },
+    llm,
     browser: { ...base.browser, ...definedOnly(overrides.browser) },
     agent: { ...base.agent, ...definedOnly(overrides.agent) },
   };

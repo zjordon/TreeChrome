@@ -206,7 +206,12 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 ## F10. 评审与合并记录
 
-（实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）
+**轮 1（2026-09-30，全量 main..feat/examples = 1939909+269a96a）**：实跑零意见即收敛（complete / 23 文件 / 5m8s，模型 glm-5.3）。零采纳零驳回零 stale；P3 backlog 空。dump：docs/code-review/_r_examples_1.md（不入库）。
+
+**轮 2（2026-10-02，增量 a4c67a2..feat/examples = 11 提交：F9 系列六修复/偏离 + 第三/四批移植）**：2 条意见（自评 high×1 + medium×1），**P2×2 全采纳**，零驳回零 stale；P3 backlog 空。
+- **#1（P2，high）extractCall 切 fallback 后陈旧 req**：F9.2 把裸 provider.chat 改走 callWithBackoff 时，req 的能力派生字段（tools/forced toolChoice/prompt 约束）仍在闭包外按旧卡 caps 一次性构建——内层 fallback 切换 `continue` 重发的是陈旧 req（getAction 的闭包每轮重读 this.provider，extractCall 的不满足此前提），混合能力 fallback 卡（FALLBACK_LLM_* 使之成为一等配置面）会收到不支持的 tool_choice → 400；外层重入因单向锁不可达，属 F9.2 引入的回归。修复：派生逻辑移入 `buildReq(signal)` 闭包每轮按 `this.provider` 现值重算；外层 catch 保留为防御位（注释核验其不可达性）。回归测试：主卡 forced → fallback 声明 supportsForcedTool=false，断言切换重发无 tool_choice、system 落 prompt 约束（双向验证旧实现必红：`expected {type, name} to be undefined`）。
+- **#2（P2，medium）mergeHostSettings 浅合并丢 env 层 fallback 子键**：overrides 只传 `{fallback: {model}}` 时整对象替换，静默丢 FALLBACK_LLM_API_KEY/BASE_URL（fallback-model.mjs 正是此形态且注释引导「也可全用 env」），违背「只覆盖显式给出键」自述契约。修复：fallback 二级合并（显式 null = 关闭；base null 时纯增）。回归测试三形态（双向验证旧实现必红：`expected {model} to deeply equal {model, apiKey, baseUrl}`）。
+- 测试：core 1296→1297、node-host 57→58，全仓 1573 绿 + 门禁 exit 0。dump：_r_examples_2.md（不入库）。
 
 # ── 第一批：getting_started（2026-09-30 已实施+评审收敛） ─────────────
 
