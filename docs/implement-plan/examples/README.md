@@ -1,7 +1,44 @@
-# examples 移植（第一批：getting_started；第二批：features）
+# examples 移植（第一批：getting_started；第二批：features；第三批：custom-functions）
 
 > 分支 `feat/examples`（自 main 97733c5）。基准：TreeWalker @640d52a。
 > 前置：@tw/node-host 已合并（merge 4bf404f），薄壳模式（`loadKit` → `runAgent`）就位。
+
+# ── 第三批：custom-functions（2026-10-02 追加） ──────────────────────
+
+## C1. 范围与依赖核对
+
+`TreeWalker/examples/custom-functions/` 全部 2 个示例：
+
+| Python 示例 | 依赖核对 | 结论 |
+|---|---|---|
+| custom_action.py | core 全就绪：`Tools`/`ActionResult` 导出 ✓、`registry.register({name, description, params, handler, terminatesSequence})`（Python `@registry.action(...)` 装饰器的直传形态）、handler 签名 `(params, browser)` 位置注入同款、`AgentOptions.tools` 注入口 ✓、applyPageFilters ✓；**缺口：node-host 无 tools 透传 + boot-entry 名单缺 Tools/ActionResult** | 缺口 C2 后薄壳 |
+| parallel_agents.py | 零新缺口：runAgent 每调用自建 LLMClient/bus/browser（LLMClient 串行约束 → 每 agent 独立实例 ✓）；共享 Chrome 的互干扰警告为 Python 原注释保留（形态 A 同款） | 直接薄壳 |
+
+## C2. 缺口（node-host 两处小扩面）
+
+1. `AssembleAgentOptions` 增 `tools?: Tools | null` 透传——`AgentOptions.tools` 已有；注入时 Agent 不自建（构造器主体的 extractClient 接线/applyPageFilters 对注入实例同样执行，Python 注入 `Tools()` 裸构造不携带 agent settings 同款保真）。
+2. boot-entry 名单扩 `Tools`、`ActionResult`（example 经 kit 消费）。
+
+## C3. 示例形态（examples/custom-functions/ kebab-case）
+
+- **custom-action.mjs**（~45 行）：`new kit.Tools()` → `tools.registry.register({name:"count_words", description, params: CountParams 字面量（ParamModel 同构）, handler: async (params) => new kit.ActionResult({extractedContent: ...}), terminatesSequence: false})` → `runAgent({task, tools})`。头部注释保留 Python 的范式说明（位置注入非按名注入、无 per-decorator domains=、applyPageFilters 替代）。
+- **parallel-agents.mjs**（~35 行）：`Promise.all(TASKS.map(t => kit.runAgent({task: t, settings})))`，逐条打印 `[i] done=... -> result`；形态 B（独立 Chrome 端口隔离）说明保留 Python 原注释。
+
+## C4. 测试与真机
+
+node-host 单测：tools 透传（注入实例落 `agent.tools` 身份、缺省自建默认 25 动作面）。
+真机：custom-action（count_words 纯本地动作，任务不需外网站点——沙箱可验）；parallel-agents 沙箱只 quotes.toscrape.com 可达（HN/github trending 留用户网络），以 quotes 单任务并发形态冒烟并发管道、示例任务原文保留。
+
+## C5. 实施步骤
+
+1. node-host 两处扩面 + 单测 → 2. 两个示例 → 3. 全绿 + 门禁 → 4. 真机 → 5. /review-loop 增量轮。
+
+## C6. 实施结果（2026-10-02）
+
+- node-host：`AssembleAgentOptions.tools?: Tools | null` 透传（注入实例落 `agent.tools` 身份、缺省自建 25 动作面——单测覆盖）；boot-entry 名单扩 `Tools`/`ActionResult`（导出面契约锁同步）。
+- 示例：custom-action.mjs（~52 行，register 直传形态 + 位置注入签名注释保留）/ parallel-agents.mjs（~47 行，Promise.all + 形态 A 干扰警告与形态 B 独立端口建议保留 Python 原注释）。
+- 测试：node-host 57（+1）；全仓 1569 绿 + 门禁 exit 0。
+- 真机：custom-action 2 步 20.4s（模型调 count_words 返回 5、done 报告正确——纯本地动作无需外网）；并发管道冒烟（quotes.toscrape.com 三任务变体）3/3 done、3 session 各自收口、39.0s——共享 Chrome 干扰在 maxSteps=6 内未成瓶颈。HN/github trending 任务留用户网络复验。
 
 # ── 第二批：features（2026-09-30 追加） ──────────────────────────────
 

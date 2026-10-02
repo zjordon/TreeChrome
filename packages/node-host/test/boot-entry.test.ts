@@ -11,6 +11,9 @@ describe("boot-entry 导出面", () => {
     expect(typeof kit.EventBus).toBe("function");
     expect(typeof kit.PolicyGate).toBe("function");
     expect(typeof kit.AutoAllowPolicy).toBe("function");
+    // custom_action.py 消费面（第三批 C2-2）
+    expect(typeof kit.Tools).toBe("function");
+    expect(typeof kit.ActionResult).toBe("function");
     expect(kit.DEFAULT_MAX_TOKENS).toBe(16384);
   });
 

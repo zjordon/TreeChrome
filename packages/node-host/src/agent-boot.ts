@@ -22,6 +22,7 @@ import {
   type ProviderConfig,
   resolveAgentSettings,
   type SensitiveDataSpec,
+  type Tools,
 } from "@tw/core";
 import { attachConsole } from "./console.js";
 import { NodeFs } from "./node-fs.js";
@@ -59,6 +60,9 @@ export interface AssembleAgentOptions {
   extractLlm?: LLMClient | null;
   /** 敏感数据 {占位符: 真值|{value,urls}}（sensitive_data.py 形态；直传 Agent） */
   sensitiveData?: Record<string, SensitiveDataSpec> | null;
+  /** 自定义动作注册表载体（custom_action.py 形态）：缺省自建默认 25 动作面 Tools；
+   *  注入时 Agent 不自建（extractClient 接线/applyPageFilters 对注入实例照常执行） */
+  tools?: Tools | null;
   log?: (message: string) => void;
 }
 
@@ -151,6 +155,7 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     fs,
     extractLlm: options.extractLlm ?? null,
     sensitiveData: options.sensitiveData ?? null,
+    tools: options.tools ?? null,
     downloadsPath: options.settings.browser.downloadsPath,
     // Partial 覆盖先合成全量（AgentOptions 的类型面是全量；运行时同为 resolve 合并）
     settings: resolveAgentSettings(options.settings.agent),

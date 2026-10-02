@@ -197,6 +197,42 @@ describe("assembleAgent", () => {
     expect(plain.agent.tools.ctx.extractClient).toBe(plain.agent.llm);
     expect(plain.agent.sensitiveDataRaw).toBeNull();
   });
+
+  test("tools 透传（第三批 C2-1）：注入实例落 agent.tools 身份；缺省自建 25 动作面", async () => {
+    const { Tools } = await import("@tw/core");
+    const custom = new Tools({ log: () => {} });
+    custom.registry.register({
+      name: "count_words",
+      description: "Count words (test).",
+      params: {
+        name: "CountParams",
+        fields: [{ name: "text", type: "string", required: true }],
+      },
+      handler: async () => null,
+      terminatesSequence: false,
+    });
+    const assembled = assembleAgent({
+      task: "t",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      tools: custom,
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(assembled.agent.tools).toBe(custom); // 身份——Agent 不自建
+    expect(assembled.agent.tools.registry.actions.has("count_words")).toBe(true);
+    expect(assembled.agent.tools.registry.actions.size).toBe(26); // 默认 25 + 自定义 1
+
+    const plain = assembleAgent({
+      task: "t",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(plain.agent.tools).not.toBe(custom);
+    expect(plain.agent.tools.registry.actions.size).toBe(25);
+  });
 });
 
 describe("buildProviderCard（fallback 卡面）", () => {
