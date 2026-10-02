@@ -187,6 +187,14 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **验证**：core 1294（+2 compactModelSchema 单测：Posts 嵌套形态 / 修饰符全集）。真机 E2E（quotes.toscrape.com + 同构 Quotes 模型，HN 沙箱不可达）：**2 步 56.9s successful=true，首次 done 即合法 JSON**（残留 2 条容器级小错——漏 data/多 success——梯子步内自愈）；对照用户日志 3 步 165.3s successful=false。
 
+### F9.4 授权偏离：switchTab 全套域重发（2026-10-02，用户授权）
+
+用户跑 alphabet-earnings 暴露：任务成功但日志两处 `Overlay.enable failed: DOM should be enabled first`——出现在 `navigate new_tab` 与 `switch_tab` 后。根因：269a96a 给 switchTab 加了 Overlay.enable 重发例外，但 Overlay 域依赖该 session 先开过 DOM.enable，而 switchTab 按 p4/01 §3.2 的既定现状不重发域 enable（该「复核项」自 P4 移植起标记在 tabs.ts 头注释，本次以具体失败形态浮出）。功能影响：换过的 tab 上交互高亮不工作（降级正确不阻断）。
+
+**偏离（Python switch_tab 只重挂 file-chooser 拦截）**：新增 `enableSessionDomains(s)`——connect 序列的 per-session 子集：`Page.enable → DOM.enable → Network.enable(+tracker 重注册，幂等先解订) → Target.setAutoAttach`，随后既有的 file-chooser 拦截与 `Overlay.enable`（依赖同批的 DOM.enable，缺口闭合）。域命令**逐条降级**（switchTab 是会话中操作，单域失败只降级不硬失败——PDF viewer 类页面可能拒绝个别域）；dialog 监听**不重注册**（transport 级单例，Page.enable 重发即恢复事件流，重复注册会累积）。closeTab/createTab 经 switchTab 自动获得同款重发。p4/01 §3.2 复核项就此了结。
+
+**验证**：core 1295（switchTab 全序列顺序断言 + 单域失败降级不阻断两条）。真机双 tab 来回切 + 切换后 DOM 查询（quotes.toscrape.com，5 步 67.6s successful=true）：**0 条** Overlay/DOM 错误。
+
 ## F10. 评审与合并记录
 
 （实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）

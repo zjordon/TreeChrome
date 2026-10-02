@@ -114,13 +114,54 @@ export function unsubscribeAllEvents(s: SessionInternals): void {
 /**
  * Overlay 域启用（交互高亮的 CDP 前置——偏离修复，见文件头）：best-effort，失败
  * 降级为无高亮（highlight 自身即 non-critical 设计）。per-session——switchTab 换
- * target 后必须重发（与 file-chooser 拦截同款先例）。
+ * target 后由 enableSessionDomains 全套重发（Overlay 依赖同批的 DOM.enable——
+ * 用户日志暴露的 "DOM should be enabled first" 缺口）。
  */
 export async function enableOverlay(s: SessionInternals): Promise<void> {
   try {
     await s.send("Overlay.enable", {});
   } catch (e) {
     s.log(`Overlay.enable failed (degrading, no highlight): ${String(e)}`);
+  }
+}
+
+/**
+ * switchTab 的全套域重发（授权偏离 2026-10-02，方案 F9.4）：connect 序列的
+ * per-session 子集——Page/DOM/Network(+tracker 重注册，幂等先解订)/setAutoAttach，
+ * 域命令逐条降级（switchTab 是会话中操作，单域失败只降级不硬失败——PDF viewer 等
+ * 特殊页可能拒绝个别域）。dialog 监听**不重注册**（transport 级单例，
+ * Page.enable 重发即恢复事件流，重复注册会随切页次数累积）。Overlay.enable 由
+ * 调用方（tabs.ts）在本批之后发送（依赖 DOM 先启用）。Python switch_tab 不重发
+ * 任何域（其 Overlay 从不启用故无此依赖暴露）——p4/01 §3.2 复核项就此了结。
+ */
+export async function enableSessionDomains(s: SessionInternals): Promise<void> {
+  try {
+    await s.send("Page.enable", {});
+  } catch (e) {
+    s.log(`Page.enable re-send failed (degrading): ${String(e)}`);
+  }
+  try {
+    await s.send("DOM.enable", {});
+  } catch (e) {
+    s.log(`DOM.enable re-send failed (degrading): ${String(e)}`);
+  }
+  const transport = s.transport;
+  if (transport !== null) {
+    try {
+      await s.send("Network.enable", {});
+      s.networkIdle.register(transport);
+    } catch (e) {
+      s.log(`Network.enable re-send failed (degrading): ${String(e)}`);
+    }
+  }
+  try {
+    await s.send("Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
+  } catch {
+    // 与 connect 同款：best-effort 吞掉
   }
 }
 

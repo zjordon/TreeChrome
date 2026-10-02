@@ -338,19 +338,51 @@ describe("keyboard", () => {
 });
 
 describe("tabs", () => {
-  it("switchTab：清缓存 + activate/attach + 重挂拦截与 Overlay + settle", async () => {
+  it("switchTab：清缓存 + activate/attach + 全套域重发（F9.4）+ settle", async () => {
     const h = makeInternals();
     scriptConnect(h.transport);
     h.transport
       .respond("Target.activateTarget", {})
+      .respond("Page.enable", {})
+      .respond("DOM.enable", {})
+      .respond("Network.enable", {})
+      .respond("Target.setAutoAttach", {})
+      .respond("Page.setInterceptFileChooserDialog", {})
+      .respond("Overlay.enable", {})
       .respond("Runtime.evaluate", evalValue("complete"));
     await switchTab(h.s, "T2");
     expect(h.transport.framesOf("Target.activateTarget")[0].params).toEqual({ targetId: "T2" });
     expect(h.s.currentSessionId).toBe("S1");
-    // 拦截重发（per-session）；Overlay.enable 同款重发（偏离修复——新 tab 高亮不落空）
-    expect(h.transport.framesOf("Page.setInterceptFileChooserDialog")).toHaveLength(1);
-    expect(h.transport.framesOf("Overlay.enable")).toHaveLength(1);
-    expect(h.transport.sent[h.transport.sent.length - 1].method).toBe("Runtime.evaluate");
+    // 全套域重发顺序：attach 后 Page → DOM → Network → setAutoAttach → 拦截 →
+    // Overlay（Overlay 依赖同批的 DOM.enable——用户日志暴露的缺口）→ settle
+    const tail = h.transport.sent
+      .slice(h.transport.sent.findIndex((f) => f.method === "Target.activateTarget") + 2)
+      .map((f) => f.method);
+    expect(tail).toEqual([
+      "Page.enable",
+      "DOM.enable",
+      "Network.enable",
+      "Target.setAutoAttach",
+      "Page.setInterceptFileChooserDialog",
+      "Overlay.enable",
+      "Runtime.evaluate",
+    ]);
+  });
+  it("switchTab 域重发逐条降级：Page.enable 失败不阻断（PDF viewer 类页面）", async () => {
+    const h = makeInternals();
+    scriptConnect(h.transport);
+    h.transport
+      .respond("Target.activateTarget", {})
+      .failOn("Page.enable", new Error("not allowed"))
+      .respond("DOM.enable", {})
+      .respond("Network.enable", {})
+      .respond("Target.setAutoAttach", {})
+      .respond("Page.setInterceptFileChooserDialog", {})
+      .respond("Overlay.enable", {})
+      .respond("Runtime.evaluate", evalValue("complete"));
+    await switchTab(h.s, "T2"); // 不抛
+    expect(h.logs.some((m) => m.includes("Page.enable re-send failed"))).toBe(true);
+    expect(h.transport.framesOf("DOM.enable")).toHaveLength(1); // 后续域照发
   });
   it("closeTab 当前页：切剩余；全无则开 about:blank", async () => {
     const h = makeInternals();
@@ -360,6 +392,10 @@ describe("tabs", () => {
       .respond("Target.getTargets", { targetInfos: [{ type: "page", targetId: "T9" }] })
       .respond("Target.activateTarget", {})
       .respond("Target.attachToTarget", { sessionId: "S9" })
+      .respond("Page.enable", {})
+      .respond("DOM.enable", {})
+      .respond("Network.enable", {})
+      .respond("Target.setAutoAttach", {})
       .respond("Page.setInterceptFileChooserDialog", {})
       .respond("Overlay.enable", {})
       .respond("Runtime.evaluate", evalValue("complete"));
@@ -373,6 +409,10 @@ describe("tabs", () => {
       .respond("Target.createTarget", { targetId: "TNEW" })
       .respond("Target.activateTarget", {})
       .respond("Target.attachToTarget", { sessionId: "S2" })
+      .respond("Page.enable", {})
+      .respond("DOM.enable", {})
+      .respond("Network.enable", {})
+      .respond("Target.setAutoAttach", {})
       .respond("Page.setInterceptFileChooserDialog", {})
       .respond("Overlay.enable", {})
       .respond("Runtime.evaluate", evalValue("complete"));
@@ -380,16 +420,21 @@ describe("tabs", () => {
     expect(h2.s.currentTargetId).toBe("TNEW");
     expect(h2.transport.framesOf("Target.createTarget")[0].params).toEqual({ url: "about:blank" });
   });
-  it("createTab：createTarget + switch", async () => {
+  it("createTab：createTarget + switch（全套域重发随 switch 走）", async () => {
     const h = makeInternals();
     h.transport
       .respond("Target.createTarget", { targetId: "TN" })
       .respond("Target.activateTarget", {})
       .respond("Target.attachToTarget", { sessionId: "SN" })
+      .respond("Page.enable", {})
+      .respond("DOM.enable", {})
+      .respond("Network.enable", {})
+      .respond("Target.setAutoAttach", {})
       .respond("Page.setInterceptFileChooserDialog", {})
       .respond("Overlay.enable", {})
       .respond("Runtime.evaluate", evalValue("complete"));
     expect(await createTab(h.s, "https://x/")).toBe("TN");
+    expect(h.transport.framesOf("DOM.enable")).toHaveLength(1);
   });
 });
 
