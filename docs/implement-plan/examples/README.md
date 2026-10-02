@@ -213,6 +213,10 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 - **#2（P2，medium）mergeHostSettings 浅合并丢 env 层 fallback 子键**：overrides 只传 `{fallback: {model}}` 时整对象替换，静默丢 FALLBACK_LLM_API_KEY/BASE_URL（fallback-model.mjs 正是此形态且注释引导「也可全用 env」），违背「只覆盖显式给出键」自述契约。修复：fallback 二级合并（显式 null = 关闭；base null 时纯增）。回归测试三形态（双向验证旧实现必红：`expected {model} to deeply equal {model, apiKey, baseUrl}`）。
 - 测试：core 1296→1297、node-host 57→58，全仓 1573 绿 + 门禁 exit 0。dump：_r_examples_2.md（不入库）。
 
+**轮 3（2026-10-02，增量 = 轮 2 修复提交 ea39f8f 自身）**：实跑零意见（complete / 4 文件 / 4m37s）——循环收敛。零采纳零驳回零 stale。dump：_r_examples_3.md（不入库）。
+
+**累计（轮 1-3）**：意见 2 / 采纳 2（P2×2）/ 驳回 0 / stale 0；P3 backlog 空。
+
 # ── 第一批：getting_started（2026-09-30 已实施+评审收敛） ─────────────
 
 ## 1. 背景与范围
