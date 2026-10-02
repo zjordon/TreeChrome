@@ -81,7 +81,15 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **测试与验收**：core 1284→1288（injections.test.ts：extractLlm 落点/downloadsPath 入参/list[Model] schema+校验）；node-host 49→56（fallback env 三键链/DOWNLOADS_PATH/buildProviderCard 完整与部分覆盖/sensitiveData+extractLlm+downloadsPath 透传/trackDownloads ensureDir）；全仓 1562 绿 + 门禁 exit 0（顺带修 client.ts 三处方括号字面量键 lint）。真机冒烟（沙箱可达三例）：download-file 4 步 190s（`DOWNLOADS_PATH` 精确落盘 13264B dummy.pdf——env 链+ensureDir+注入口全链验证）；sensitive-data 2 步 64s（模型全程只见占位符，结果文本的真实值是还原机制产物属设计内；httpbin 回显确认提交）；csv-generation 8 步 258s（CSV top 10 城市数据正确，allowed_write_paths 白名单链生效）。HN/google 系五例（scrolling/structured/extraction/fallback/multi-tab）沙箱不可达，留用户网络复验。
 
-## F9. 评审与合并记录
+## F9. 实施后修复：downloadProgress.filePath 断链（用户真机日志暴露，2026-10-02）
+
+用户对照跑 TS 与 Python 的 download-file：Python 3 步干净收尾、附件自动挂真实下载文件全路径；TS 7 步、模型瞎猜下载目录三连落空、附件只能挂 save_as_pdf 重渲染副本。归因：**TS connection.ts 把 completed 下载记录的 path 硬编码 null**（P4b 按协议文档推断「downloadProgress 无 filePath」——协议文档确实未列该字段，但 Chrome 实发；Python 同位置 `event.get("filePath")`，用户 Python 日志附件拿到真实路径即铁证）。下游「二.C 下载自动并入 done 附件」其实已移植（post.ts），但「跳过无 path」使全部下载被跳过——与 F2-a 修复前 trackDownloads 全链是死的同源，此环从未被真机检验。
+
+**修复**：connection.ts 读 `e.filePath`（Python :1914 等价，缺席 null）；begin 处理器的过时注释同步更正（url 只在 begin；filePath 只在 progress completed 实发）。次因（模型方差非代码）：两侧默认模型不同（glm-5.1 vs glm-5.3），TS 模型首步选 save_as_pdf 重渲染而非直接 blob-anchor——不修。
+
+**验证**：core 1290（+2：completed 带/不带 filePath 两形态 + 二.C 附件链纯函数测试——含 Python 同款「只对既有附件去重、不对传入列表内部去重」语义锚定）。真机重跑 download-file：4 步 158.7s successful=true，`👉 Attachment C:\...\tw-dl-verify\dummy.pdf` 即 DOWNLOADS_PATH 真实落盘的 13264B 原始文件（对照修复前 7 步 381s 挂 40906B 副本）。
+
+## F10. 评审与合并记录
 
 （实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）
 

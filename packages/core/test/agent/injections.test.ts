@@ -137,3 +137,27 @@ describe("list[Model] 嵌套模型（structured_output 的 Posts 形态）", () 
     }
   });
 });
+
+describe("下载→done 附件链（二.C，downloadProgress.filePath 修复的下游验证）", () => {
+  it("非空 path 并入 done attachments（对既有附件去重）；null path 跳过；非 done 不动", async () => {
+    const { attachDownloadsToDoneResults } = await import("../../src/agent/step/post.js");
+    const { ActionResult } = await import("../../src/agent/views.js");
+    const done = new ActionResult({
+      isDone: true,
+      extractedContent: "ok",
+      attachments: ["D:/tmp/model-given.pdf"], // 模型 files_to_display 已解析出的附件
+    });
+    const notDone = new ActionResult({ extractedContent: "mid" });
+    attachDownloadsToDoneResults(
+      [notDone, done],
+      [
+        { path: "C:/Users/u/Downloads/dummy.pdf" },
+        { path: null }, // 无 filePath 的 completed（协议文档形态）——跳过
+        { path: "D:/tmp/model-given.pdf" }, // 与既有附件重复——去重（Python :139-141 同语义：
+        // 只对 attachments 既有集去重，不对传入列表内部去重）
+      ],
+    );
+    expect(notDone.attachments).toBeNull(); // 非 done 结果不动
+    expect(done.attachments).toEqual(["D:/tmp/model-given.pdf", "C:/Users/u/Downloads/dummy.pdf"]);
+  });
+});

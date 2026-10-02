@@ -233,8 +233,8 @@ export async function setupDownloadTracking(
       const e = isRecord(event) ? event : {};
       const guid = typeof e.guid === "string" ? e.guid : "";
       const filename = typeof e.suggestedFilename === "string" ? e.suggestedFilename : "unknown";
-      // url 只在 begin 事件携带（评审轮 1 #3：downloadProgress 协议无 url/filePath——
-      // Python :1907-1915 同款缺口，在此捕获）
+      // url 只在 begin 事件携带（评审轮 1 #3：progress 事件无 url——Python :1907-1915
+      // 同款缺口，在此捕获；filePath 则相反，只在 progress 的 completed 实发）
       const url = typeof e.url === "string" ? e.url : "";
       s.pendingDownloads.set(guid, { filename, url });
       s.log(`Download started: ${filename}`);
@@ -250,7 +250,10 @@ export async function setupDownloadTracking(
       s.completedDownloads.push({
         filename: entry.filename,
         url: entry.url,
-        path: null, // downloadProgress 无 filePath；实际路径属宿主/文件族（P4b）
+        // Python :1914 event.get("filePath") 等价——协议文档未列该字段，但 Chrome
+        // 实发（真机日志证实：completed 事件携带 filePath）。path 是「二.C 下载自动
+        // 并入 done 附件」的供氧面：null 会让该下载被跳过（用户日志暴露的断链点）
+        path: typeof e.filePath === "string" ? e.filePath : null,
       });
       s.log(`Download completed: ${entry.filename}`);
     }),
