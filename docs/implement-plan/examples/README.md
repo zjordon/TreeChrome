@@ -89,6 +89,14 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **验证**：core 1290（+2：completed 带/不带 filePath 两形态 + 二.C 附件链纯函数测试——含 Python 同款「只对既有附件去重、不对传入列表内部去重」语义锚定）。真机重跑 download-file：4 步 158.7s successful=true，`👉 Attachment C:\...\tw-dl-verify\dummy.pdf` 即 DOWNLOADS_PATH 真实落盘的 13264B 原始文件（对照修复前 7 步 381s 挂 40906B 副本）。
 
+### F9.1 授权偏离：[Downloads] 通知带完整路径（2026-10-02，用户授权）
+
+用户手工复跑 download-file（F9 修复后）暴露残留模式：附件已自动挂真实文件，但模型仍不知道下载目录——`[Downloads]` 通知按 Python（step.py:403）只报文件名，模型为「亲眼看磁盘文件」瞎猜 `~/Downloads`、`cwd\downloads`、`chrome://downloads`（后者被 Python 同款的补 https:// 前缀逻辑拼坏），白烧 3-4 步。
+
+**偏离**：sense.ts 的下载通知项在 `downloadProgress.filePath` 可得时附带完整路径——`New files available: dummy.pdf (C:\...\dummy.pdf)`；无 path（老 Chrome）保持纯文件名。模型可直接 `read_file` 真实路径一步验证。
+
+**验证**：core 1290 全绿（通知带路径/无 path 退纯文件名双形态断言）。真机重跑：4 步 151.9s successful=true（对照用户手工 7 步 422.5s）；模型首次仍习惯性猜 `~/Downloads`（落空 1 次）后**精确使用通知路径**（随机临时目录名不可能靠猜）read_file 验证真实文件成功；done 的 files_to_display 模型手打路径有笔误被存在性检查跳过，二.C 照样自动挂上运行时正确路径——双保险按设计工作。
+
 ## F10. 评审与合并记录
 
 （实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）
