@@ -837,11 +837,35 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠
     expect(mock.calls.length).toBe(1);
   });
 
-  it("非 infra（500）不退避：无 fallback 直接抛 LLMServerError，1 次请求", async () => {
-    const { mock, client } = setup();
-    mock.queueMany(r500());
-    await expect(client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(LLMServerError);
-    expect(mock.calls.length).toBe(1);
+  it("500 退避（授权偏离 2026-10-02，SDK 等效）：恒败 6 次请求耗尽名额后抛 LLMServerError", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r500(), r500(), r500(), r500(), r500(), r500());
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0);
+    await drainBackoffLadder(clock);
+    await expect(p).rejects.toBeInstanceOf(LLMServerError);
+    expect(mock.calls.length).toBe(6);
+  });
+
+  it("500 一次后成功（网关瞬时抖动自愈——用户实测 extract 被打死的那类 500）", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r500(), toolOk({ done: 1 }));
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0);
+    await drainBackoffLadder(clock);
+    const r = await p;
+    expect(r.kind).toBe("ok");
+    expect(mock.calls.length).toBe(2);
+  });
+
+  it("extract 路径同样退避：500×2 后文本响应成功（偏离落地在 extractCall→callWithBackoff）", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r500(), r500(), text("extraction result"));
+    const p = client.extract("query", "page content");
+    await clock.advance(0);
+    await drainBackoffLadder(clock);
+    await expect(p).resolves.toBe("extraction result");
+    expect(mock.calls.length).toBe(3);
   });
 
   it("网络层失败同样走退避（ConnectionError 是 infra 谓词成员）", async () => {

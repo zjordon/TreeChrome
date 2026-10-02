@@ -142,8 +142,9 @@ function statusToError(
   }
   if (status >= 500) {
     // 5xx 同款解析挂载（轮 38 #8；轮 40 #11 口径修正）：503 常携带 Retry-After
-    //（OpenAI/Google 均有）。注意 5xx 不在 isInfraError 谓词内（client 不退避）——
-    // retryAfterMs 仅为宿主侧重试决策的信息挂载，无退避消费方（errors.ts 注释同口径）
+    //（OpenAI/Google 均有）。5xx 不在 isInfraError 分罪谓词内（step 仍计能力失败），
+    // 但 callWithBackoff 对其单独放行退避（授权偏离 2026-10-02，SDK 等效）——
+    // retryAfterMs 有退避消费方（覆盖指数值，同 429 语义）
     const retryAfterMs = parseRetryAfterMs(retryAfter);
     return new LLMServerError(message, {
       provider,

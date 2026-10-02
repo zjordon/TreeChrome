@@ -19,6 +19,7 @@ import {
   LLMCallTimeoutError,
   LLMError,
   LLMProtocolViolationError,
+  LLMServerError,
   LLMTimeoutError,
 } from "./errors.js";
 import type { LLMProvider } from "./provider.js";
@@ -714,11 +715,13 @@ export class LLMClient {
   }
 
   /**
-   * 单次直发调用（Python _extract_call :621-633 等价）：**不走 getAction 的解析梯子
-   * 与退避**——RateLimit/APIError 仅触发 fallback 单向切换（切换成功重入自身一次）；
-   * callTimeoutMs 内层超时抛 LLMCallTimeoutError（不被 fallback 捕获，Python
-   * asyncio.TimeoutError 同款）。承重墙复用：supportsForcedTool=false 落 prompt
-   * 约束，无 tools 能力落 schema 进 system。
+   * 单次直发调用（Python _extract_call :621-633 等价）：不走 getAction 的解析梯子；
+   * **退避经 callWithBackoff**（授权偏离 2026-10-02：Python 此层代码无退避，但其
+   * anthropic SDK 隐式重试 408/409/429/5xx/连接错——TS 无 SDK，补齐等效韧性）；
+   * APIError 仍触发 fallback 单向切换（切换成功重入自身一次）；callTimeoutMs 内层
+   * 超时抛 LLMCallTimeoutError（不被退避/fallback 捕获，Python asyncio.TimeoutError
+   * 同款）。承重墙复用：supportsForcedTool=false 落 prompt 约束，无 tools 能力落
+   * schema 进 system。
    */
   private async extractCall(
     systemPrompt: string | null,
@@ -759,7 +762,7 @@ export class LLMClient {
           },
         );
         try {
-          return await this.provider.chat({ ...req, signal: controller.signal });
+          return await this.callWithBackoff(() => ({ ...req, signal: controller.signal }));
         } catch (e) {
           if (controller.signal.aborted && isAbortError(e)) {
             throw new LLMCallTimeoutError(
@@ -772,7 +775,7 @@ export class LLMClient {
           cancel.abort(); // 取消计时（真实时钟下不留悬挂定时器）
         }
       }
-      return await this.provider.chat(req);
+      return await this.callWithBackoff(() => req);
     } catch (e) {
       // fallback 切换不占重试名额：切换成功重入自身（新卡重发）；否则原样上抛。
       // ProtocolViolation 不切换（trySwitchToFallback 内部拒绝）
@@ -926,7 +929,12 @@ export class LLMClient {
         if (this.trySwitchToFallback(e)) {
           continue; // buildReq 每轮重建：切换后取新 model/maxTokens/capabilities
         }
-        if (!isInfraError(e)) {
+        // 5xx 退避（授权偏离 2026-10-02）：Python 经 anthropic SDK 隐式重试 5xx
+        //（默认 ×2），TreeWalker 代码层的退避元组不含它——TS 无 SDK，显式补齐等效
+        // 韧性（用户实测网关瞬时 500 打死 extract）。step 分罪的 isInfraError 谓词
+        // **不变**：持续 5xx 仍计能力失败（Python is_llm_infra_error 同款）
+        const backoffRetryable = e instanceof LLMServerError || isInfraError(e);
+        if (!backoffRetryable) {
           throw e;
         }
         if (retries >= INFRA_RETRY_MAX) {

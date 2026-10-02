@@ -97,6 +97,19 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **验证**：core 1290 全绿（通知带路径/无 path 退纯文件名双形态断言）。真机重跑：4 步 151.9s successful=true（对照用户手工 7 步 422.5s）；模型首次仍习惯性猜 `~/Downloads`（落空 1 次）后**精确使用通知路径**（随机临时目录名不可能靠猜）read_file 验证真实文件成功；done 的 files_to_display 模型手打路径有笔误被存在性检查跳过，二.C 照样自动挂上运行时正确路径——双保险按设计工作。
 
+### F9.2 授权偏离：5xx 有界退避（2026-10-02，用户授权）
+
+用户对照跑 extraction-small-model（TS vs Python）暴露：同一个智谱网关瞬时 `HTTP 500 "Internal Network Failure"`，Python 被 **anthropic SDK 的内建 5xx 重试**（默认 ×2）无声扛过（Python 日志 `anthropic._base_client:Retrying ...` 即此层），TS 手写 fetch 客户端（架构铁律禁 LLM SDK）没有这层——extract 两次被打死，模型改道 evaluate 兜底（任务仍成功但示例演示目的落空）。
+
+**核对结论**：TreeWalker 代码层的 `_create_with_backoff` except 元组只有 `(RateLimitError, APIConnectionError)`，5xx 不在其内——TS 原实现对此逐字保真；差异全在 SDK 隐式层。**TS 忠实于 TreeWalker 的代码，但丢掉了其运行时栈的实际韧性。**
+
+**偏离**（对齐 Python 的实际运行行为而非其代码）：
+- `callWithBackoff`：退避资格单独放行 `LLMServerError`（内联谓词，先于 infra 检查仍走 fallback 切换优先）。**step 分罪的 `isInfraError` 谓词不动**——持续 5xx 仍计能力失败（Python `is_llm_infra_error` 同款；直接扩员会连带改变 #194 分罪语义）。
+- `extractCall`（extract/structuredCall/singleShot 的公共底座，judge/messageCompactor 同享）：两处裸 `provider.chat` 改走 `callWithBackoff`——Python 此层代码无退避但 SDK 重试 408/409/429/5xx/连接错，TS 补齐等效；内层 callTimeoutMs 超时仍直抛 LLMCallTimeoutError（Python asyncio.TimeoutError 同款）。
+- 注释三处同步（errors.ts 谓词文档 / http.ts 5xx 分支 / extractCall 头注）。
+
+**验证**：core 1292（改写「500 不退避」锚定为「恒败 6 次耗尽」+ 新增 500 自愈 / extract 路径 500×2 后成功两条）。真实 wire：glm-4-flash 卡 extract 成功返回（extractCall 重构 E2E）。retryAfterMs（503 的 Retry-After）自此有退避消费方。
+
 ## F10. 评审与合并记录
 
 （实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）
