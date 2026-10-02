@@ -34,6 +34,7 @@ file-system.mjs / alphabet-earnings.mjs / excel-sheet.mjs + README.md。TASK 逐
 
 - 3 示例 + README 落 `examples/file-system/`（kebab-case；TASK 逐字保留含 NOTE）；零 core/node-host 改动，全仓 1569 绿 + 门禁 exit 0（纯新增示例无回归）。
 - 真机：**file-system 全通**（3 步 139.6s successful=true；data.md 标题+追加首句两段链路正确——write/append/read 全验证）；**alphabet-earnings 沙箱受阻**——abc.xyz 站点不可达（模型转 corsproxy 凑字节磨到 33 步后人工终止），环境网络限制非移植问题，Python README 自带同款预警，留用户网络复验；excel-sheet（google 搜索数据源）同留用户。
+- **用户网络复验全闭环（2026-10-02）**：alphabet-earnings 19 步 425.4s successful=true（abc.xyz 直链服务端重定向 site-map——模型 fetch 验 magic bytes 后转 **SEC EDGAR 8-K Exhibit 99.1 HTML** 取数，两轮独立来源数字一致；顺带暴露并修复 F9.4 switchTab 域重发缺口）；excel-sheet 5 步 96.7s successful=true（模型选 stockanalysis.com 直查避开搜索，CSV 精确；step 1 三次 LLMConnectionError 指数退避 2/4/8s 后第 4 次成功——基建退避按设计工作）。
 
 # ── 第三批：custom-functions（2026-10-02 追加） ──────────────────────
 
