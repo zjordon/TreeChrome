@@ -1,7 +1,39 @@
-# examples 移植（第一批：getting_started；第二批：features；第三批：custom-functions）
+# examples 移植（第一批：getting_started；第二批：features；第三批：custom-functions；第四批：file-system）
 
 > 分支 `feat/examples`（自 main 97733c5）。基准：TreeWalker @640d52a。
 > 前置：@tw/node-host 已合并（merge 4bf404f），薄壳模式（`loadKit` → `runAgent`）就位。
+
+# ── 第四批：file-system（2026-10-02 追加） ──────────────────────────
+
+## D1. 范围与依赖核对
+
+`TreeWalker/examples/file_system/` 全部 3 示例 + README.md：
+
+| Python 文件 | 场景 | 依赖核对 |
+|---|---|---|
+| file_system.py | 博客标题→写文件→append 首句→读回校验 | write_file(write+append)/read_file 均在 25 动作册；allowedWritePaths 走 overrides.agent（csv-generation 同款模式）——零缺口 |
+| alphabet_earnings.py | Chrome PDF 阅读器读财报→取 3 数据点→写 md→读回 | 同上零缺口；PDF 文本是否进 DOM 属运行时变量（Python README 自带同款警告） |
+| excel_sheet.py | 查股价→CSV→读回 | 同上零缺口；数据源靠搜索（google）留用户网络 |
+| README.md | 目录说明（browser-use 差异表 + 运行指引） | 适配移植（node 命令/TreeChrome 工具名） |
+
+**零 core/node-host 改动**——全部为薄壳（~40 行/个：workspace mkdir + overrides.agent.allowedWritePaths + 结束读回打印）。Python 的 `input()` 交互清理改提示路径不自动删（F4 批 csv-generation 已登记的同款偏离，沿用）。
+
+## D2. 示例形态（examples/file-system/ kebab-case）
+
+file-system.mjs / alphabet-earnings.mjs / excel-sheet.mjs + README.md。TASK 逐字保留 Python 原文（含 NOTE「do NOT use the extract tool」）。
+
+## D3. 测试与真机
+
+无新单测（纯示例薄壳，模式已由 csv-generation 批次覆盖）。真机：file-system（mertunsall.github.io）与 alphabet-earnings（abc.xyz PDF）沙箱尝试；excel-sheet（google 搜索）留用户网络复验。
+
+## D4. 实施步骤
+
+1. 3 示例 + README → 2. 全绿 + 门禁（无代码改动，确认不回归）→ 3. 真机 → 4. /review-loop 增量轮。
+
+## D5. 实施结果（2026-10-02）
+
+- 3 示例 + README 落 `examples/file-system/`（kebab-case；TASK 逐字保留含 NOTE）；零 core/node-host 改动，全仓 1569 绿 + 门禁 exit 0（纯新增示例无回归）。
+- 真机：**file-system 全通**（3 步 139.6s successful=true；data.md 标题+追加首句两段链路正确——write/append/read 全验证）；**alphabet-earnings 沙箱受阻**——abc.xyz 站点不可达（模型转 corsproxy 凑字节磨到 33 步后人工终止），环境网络限制非移植问题，Python README 自带同款预警，留用户网络复验；excel-sheet（google 搜索数据源）同留用户。
 
 # ── 第三批：custom-functions（2026-10-02 追加） ──────────────────────
 
