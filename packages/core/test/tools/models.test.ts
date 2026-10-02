@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ACTION_DEFINITIONS,
+  compactModelSchema,
   makeStructuredDoneParams,
   type ParamModel,
   paramJsonSchema,
@@ -237,5 +238,49 @@ describe("makeStructuredDoneParams（变体 B）", () => {
       expect(r2.errors.join("; ")).toBe(
         "data.total: Input should be a valid integer, unable to parse string as an integer",
       );
+  });
+});
+
+describe("compactModelSchema（变体 B 文本注入，偏离 F9.3）", () => {
+  it("structured-output 的 Posts 形态：list[Post] 嵌套逐字段展开", () => {
+    const Post: ParamModel = {
+      name: "Post",
+      fields: [
+        { name: "post_title", type: "string", required: true },
+        { name: "post_url", type: "string", required: true },
+        { name: "num_comments", type: "integer", required: true },
+        { name: "hours_since_post", type: "integer", required: true },
+      ],
+    };
+    const Posts: ParamModel = {
+      name: "Posts",
+      fields: [{ name: "posts", type: "array", required: true, refModel: Post }],
+    };
+    expect(compactModelSchema(Posts)).toBe(
+      '{"posts": [{"post_title": string, "post_url": string, ' +
+        '"num_comments": integer, "hours_since_post": integer}]}',
+    );
+  });
+
+  it("可选 `?` / 可空 `|null` / 标量数组 / 枚举 / 直接 ref / items 缺省 any", () => {
+    const Inner: ParamModel = {
+      name: "Inner",
+      fields: [{ name: "x", type: "integer", required: true }],
+    };
+    const m: ParamModel = {
+      name: "M",
+      fields: [
+        { name: "opt", type: "string" },
+        { name: "nul", type: "string", required: true, nullable: true },
+        { name: "tags", type: "array", required: true, items: { type: "string" } },
+        { name: "anyItems", type: "array", required: true, items: {} },
+        { name: "mode", type: "literal", required: true, enumValues: ["a", "b"] },
+        { name: "inner", type: "ref", required: true, refModel: Inner },
+      ],
+    };
+    expect(compactModelSchema(m)).toBe(
+      '{"opt": string?, "nul": string|null, "tags": [string], ' +
+        '"anyItems": [any], "mode": a|b, "inner": {"x": integer}}',
+    );
   });
 });

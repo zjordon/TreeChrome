@@ -1300,6 +1300,48 @@ export function makeStructuredDoneParams(outputModel: ParamModel): ParamModel {
   };
 }
 
+/**
+ * ParamModel 的紧凑 schema 渲染（变体 B 文本渠道注入用，授权偏离 F9.3 2026-10-02）：
+ * `{"posts": [{"post_title": "string", ...}]}`——字段名/类型/嵌套一层不落。Python 的
+ * 描述行只有一句 "Structured final output."（$ref 不展开），模型首次尝试前对字段名
+ * 完全盲（真机 6 轮校验梯子仍未猜中）；本渲染把 browser-use 原版「output model 进
+ * schema」的意图在文本通道找回。可选字段加 `?` 后缀，可空加 `|null`。
+ */
+export function compactModelSchema(model: ParamModel): string {
+  const inner = model.fields.map((f) => `"${f.name}": ${compactFieldSchema(f)}`).join(", ");
+  return `{${inner}}`;
+}
+
+function compactFieldSchema(f: FieldSpec): string {
+  let base: string;
+  if (f.type === "ref") {
+    base = f.refModel !== undefined ? compactModelSchema(f.refModel) : "object";
+  } else if (f.type === "array") {
+    if (f.refModel !== undefined) {
+      base = `[${compactModelSchema(f.refModel)}]`;
+    } else {
+      const itemType = f.items?.type;
+      base = Array.isArray(itemType)
+        ? "[any]"
+        : `[${typeof itemType === "string" ? itemType : "any"}]`;
+    }
+  } else if (f.type === "literal") {
+    base =
+      f.enumValues !== undefined && f.enumValues.length > 0 ? f.enumValues.join("|") : "string";
+  } else if (f.type === "object") {
+    base = "object";
+  } else {
+    base = f.type;
+  }
+  if (f.nullable === true) {
+    base += "|null";
+  }
+  if (f.required !== true) {
+    base += "?";
+  }
+  return base;
+}
+
 /** 动作定义四元组（架构 §3.3 三元组 + capability 扩维） */
 export interface ActionDefinition {
   params: ParamModel;

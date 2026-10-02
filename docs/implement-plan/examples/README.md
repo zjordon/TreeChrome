@@ -110,6 +110,14 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **验证**：core 1292（改写「500 不退避」锚定为「恒败 6 次耗尽」+ 新增 500 自愈 / extract 路径 500×2 后成功两条）。真实 wire：glm-4-flash 卡 extract 成功返回（extractCall 重构 E2E）。retryAfterMs（503 的 Retry-After）自此有退避消费方。
 
+### F9.3 授权偏离：变体 B data 行附紧凑 schema（2026-10-02，用户授权）
+
+用户跑 structured-output.mjs 暴露：3 步 165.3s 后 `successful=false`——模型 6 轮校验梯子仍未产出 schema 合法数据（用了页面自然字段 title/url/points、最后交字符串化数组）。归因（信息面核对）：**outputModel 的字段名对模型完全不可见**——tool schema 的 `action.params` 是通用 object（单工具设计，参数详情走文本），而文本渠道对变体 B 的 `data`（纯 `$ref`）只渲染一句 `Structured final output.`（TS 与 Python 逐字节一致，`Field(..., description=...)` = `description:`）。模型只能从校验错误反馈逐轮猜字段。这是 TreeWalker 设计本体弱点（Python 同款信息面），非移植缺陷。
+
+**偏离**：`models.ts` 新增 `compactModelSchema(model)`（递归紧凑渲染：键带引号、类型不带、可选 `?`、可空 `|null`、`[item]`、`ref` 嵌套 `{...}`）；registry 的变体 B done 行渲染为 `data: Structured final output. Schema: {"posts": [{"post_title": string, ...}]}`——把 browser-use 原版「output model 进 schema」的意图在文本通道找回。fixture 对拍测试改为偏离感知（fixture 行锚定 Python 侧行为，TS 行断言 schema 展开）。
+
+**验证**：core 1294（+2 compactModelSchema 单测：Posts 嵌套形态 / 修饰符全集）。真机 E2E（quotes.toscrape.com + 同构 Quotes 模型，HN 沙箱不可达）：**2 步 56.9s successful=true，首次 done 即合法 JSON**（残留 2 条容器级小错——漏 data/多 success——梯子步内自愈）；对照用户日志 3 步 165.3s successful=false。
+
 ## F10. 评审与合并记录
 
 （实施后填写：/review-loop 轮次、意见数、采纳情况、merge commit）

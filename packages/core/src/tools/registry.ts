@@ -5,7 +5,7 @@
 
 import { sha256Hex } from "@tw/dom-snapshot";
 
-import { type ParamModel, paramJsonSchema } from "./models.js";
+import { compactModelSchema, type ParamModel, paramJsonSchema } from "./models.js";
 import type { ActionHandler } from "./types.js";
 
 /** 注册条目（Python RegisteredAction :33-40） */
@@ -288,6 +288,13 @@ export class ActionRegistry {
         .map(([k, v]) => {
           const desc = isRecord(v) ? v.description : undefined;
           const type = isRecord(v) ? v.type : undefined;
+          // 变体 B 的 data 行附紧凑 schema（授权偏离 F9.3 2026-10-02）：Python 此处
+          // 只有一句 description（$ref 不展开），字段名对模型不可见——tool schema 的
+          // params 是通用 object（单工具设计），文本是唯一通道；真机 6 轮校验梯子
+          // 仍未猜中字段名的实测把这一信息缺口坐实
+          if (name === "done" && k === "data" && this.outputModel !== null) {
+            return `${k}: ${desc ?? type ?? "any"} Schema: ${compactModelSchema(this.outputModel)}`;
+          }
           return `${k}: ${desc ?? type ?? "any"}`;
         })
         .join(", ");
