@@ -12,6 +12,7 @@ export {
   DEFAULT_MAX_TOKENS,
   EventBus,
   LLMClient,
+  modelSupportsVision,
   PolicyGate,
   Tools,
 } from "@tw/core";

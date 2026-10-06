@@ -15,6 +15,10 @@ describe("boot-entry 导出面", () => {
     expect(typeof kit.Tools).toBe("function");
     expect(typeof kit.ActionResult).toBe("function");
     expect(kit.DEFAULT_MAX_TOKENS).toBe(16384);
+    // upload_file_vision.py 消费面（第六批 UP4）：视觉名单预检
+    expect(typeof kit.modelSupportsVision).toBe("function");
+    expect(kit.modelSupportsVision("glm-5.3-flash")).toBe(true);
+    expect(kit.modelSupportsVision("glm-5.3")).toBe(false);
   });
 
   test("cdp-ws 面", () => {

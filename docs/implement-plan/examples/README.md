@@ -1,7 +1,51 @@
-# examples 移植（第一批：getting_started；第二批：features；第三批：custom-functions；第四批：file-system；第五批：use-cases）
+# examples 移植（第一批：getting_started；第二批：features；第三批：custom-functions；第四批：file-system；第五批：use-cases；第六批：upload）
 
 > 分支 `feat/examples`（自 main 97733c5）。基准：TreeWalker @640d52a。
 > 前置：@tw/node-host 已合并（merge 4bf404f），薄壳模式（`loadKit` → `runAgent`）就位。
+
+# ── 第六批：upload（2026-10-06 追加） ──────────────────────────
+
+## UP1. 范围与依赖核对
+
+`TreeWalker/examples/` 根下 upload 开头的 3 示例（`debug_upload_*` 六个探针不在「upload 开头」范围，维持按需立项裁决）：
+
+| Python 文件 | 场景 | 依赖核对 |
+|---|---|---|
+| upload_file.py | 抖音创作者中心发视频存草稿 | allowed_upload_paths 三路径 + enable_planning + upload_verify×3 env 透传 |
+| upload_file_bilibili.py | B站创作者中心发视频存草稿 | allowed_upload_paths 两路径 + enable_planning |
+| upload_file_vision.py | 同抖音任务的视觉对照变体 | use_vision + llm_screenshot_size=(1400,850) + enable_skill_injection=False + model 切 glm-5.3-flash + model_supports_vision 预检 |
+
+**逐旋钮核对（2026-10-06 侦察实锚）**：
+
+- `allowed_upload_paths` → `overrides.agent.allowedUploadPaths`：node-host overrides 的 agent 层本就是 `Partial<AgentSettings>` 全键面（settings.ts:64），**零缺口**。
+- `enable_planning=True` 显式传 → node-host 运营默认已 true（node-host 批三处默认修正），示例仍显式传保真，零缺口。
+- `upload_verify×3` 透传 → TS 侧 `ToolsSettings` 默认 enabled=true / wait 1500ms / interval 250ms 与 Python dataclass 默认（config.py:176-178）**全同**，示例默认即所需，无需传；**登记限制**：`AGENT_UPLOAD_VERIFY_*` env 面 TS 不存在（P4b 起 Tools 构造默认不随 AgentSettings——settings-defaults fixture EXCLUDED 裁决延续），要改只能经 `AgentOptions.tools` 注入自构 Tools。
+- `use_vision` / `llm_screenshot_size` / `enable_skill_injection` → AgentSettings 字段现成且 overrides 全键面可达；**vision 管线是活的**（sense.ts:20 `visionGateOpen` = useVision && modelSupportsVision，:31 includeScreenshot，:144 截图块）——零缺口。
+- model 切 glm-5.3-flash → `overrides.llm.model`（mergeHostSettings definedOnly）零缺口。
+- `model_supports_vision` 预检 → **唯一扩面缺口**：core 有导出但 boot-entry 名单没有（vision 示例要预检视觉名单否则视觉门静默关）。扩面 = boot-entry core 名单 +1 行（文件头注释自带「名单随 example 需要扩面」授权，C 批 Tools/ActionResult 先例）。
+- **skill 库缺位（登记不属本批）**：TreeWalker 随仓发货 `domain-skills/`（creator.douyin.com / member.bilibili.com / localhost_7780 三套 `_sop/selectors/quirks`），AgentSettings.skills_dir="domain-skills" + SkillLoader 自动按 host 注入；TS 侧 core 只有 SkillSource 接口 + task-matcher 机制（AgentOptions.skillSource 缺省 null），**无内容库也无宿主 loader 实现**——两示例在 TS 实际都无 skill 注入。vision 变体的对照矩阵（原版 skill✓/vision skill✗）退化为「无 skill 基线上开/关视觉」的单变量对照，示例仍照移（`enableSkillInjection:false` 旋钮照传保真）。skill 内容库 + 宿主 SkillSource 是否立项独立批次，待用户拍板。
+
+## UP2. 形态（examples/ 根，kebab-case）
+
+`upload-file.mjs` / `upload-file-bilibili.mjs` / `upload-file-vision.mjs`（源在 examples/ 根，TS 同层，与 basic-agent.mjs 并列）。TASK 逐字保留中文原文（含用户机器绝对路径——示例是模板，用户改路径后运行，Python 原版同理）；抖音任务两文件文本相同逐字一致；vision 版保留对照矩阵注释；bilibili 版源里注释掉的 debug 日志行不移植。
+
+## UP3. 测试与真机
+
+- 单测：node-host boot-entry 导出测试补 `modelSupportsVision` 一例（扩面回归锚）。
+- 沙箱 smoke（`_` 前缀临时脚本用后即删）：本地 file-input 测试页（file://）+ 哑文件（txt+png）+ 临时任务「上传 X 并确认文件名显示」+ allowedUploadPaths=哑文件——证 upload 接线全链（fileChooser 拦截 + setFiles + upload_verify 默认开的等待确认）。真模型（真 LLM + 真 CDP），网络面仅本地。
+- douyin/bilibili 真跑留用户：需登录态 cookie（用户 Chrome profile）+ 个人视频/封面文件路径（D:\Videos\... 是用户机器路径），pingkai 同款不可代办。
+
+## UP4. 实施步骤
+
+1. boot-entry 扩面 + 3 示例 → 2. 测试 + 门禁 → 3. 沙箱 smoke → 4. 本 README 登记 → 5. /review-loop 增量轮（用户触发）。
+
+## UP5. 实施结果（2026-10-06）
+
+- 3 示例落 `examples/` 根（kebab-case；TASK 逐字保留含用户机器示例路径与「运行前替换」提示）；node-host 唯一扩面 = boot-entry core 名单 +`modelSupportsVision`（导出测试补三断言：函数存在 + glm-5.3-flash true + glm-5.3 false，锚 config.ts 白名单）。全仓 1573 绿 + 门禁 exit 0。
+- **沙箱 smoke 全通**：本地 file-input 页（http://127.0.0.1:7780，`_` 前缀临时脚本用后即删）+ 哑文件 note.txt/pic.png，真 LLM 4 步 151.3s successful=true——upload 全链验证：权限门 UPLOAD 放行（allowedUploadPaths 白名单生效）、file input 定位（index=3）、DOM.setFileInputFiles、upload_verify 默认开的探测日志可见。
+- **smoke 附带发现（继承语义，登记不修）**：`setFileInputFiles` 每次整体替换 FileList——同一 input 连续两次 `upload_file` 会相互覆盖，模型自发用 evaluate + DataTransfer 合并两 File 写回并派发 change（browser-use/TreeWalker 同款单文件设置语义，非移植缺陷；真实站点单视频+封面分属不同 input 的主流形态不受影响）。
+- douyin/bilibili 真跑留用户（登录态 + 个人文件路径，pingkai 同款不可代办）；skill 内容库（domain-skills 数据 + 宿主 SkillSource + node-host 接线）独立立项待拍板。
+- 备注：用户本地已改 phone-price-comparison.mjs 的 TASK 站点列表（Amazon/BestBuy → jd/taobao/pinduoduo）——属用户未提交的自留改动，本批不携带。
 
 # ── 第五批：use-cases（2026-10-06 追加） ──────────────────────────
 
