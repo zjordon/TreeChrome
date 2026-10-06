@@ -1,7 +1,44 @@
-# examples 移植（第一批：getting_started；第二批：features；第三批：custom-functions；第四批：file-system）
+# examples 移植（第一批：getting_started；第二批：features；第三批：custom-functions；第四批：file-system；第五批：use-cases）
 
 > 分支 `feat/examples`（自 main 97733c5）。基准：TreeWalker @640d52a。
 > 前置：@tw/node-host 已合并（merge 4bf404f），薄壳模式（`loadKit` → `runAgent`）就位。
+
+# ── 第五批：use-cases（2026-10-06 追加） ──────────────────────────
+
+## U1. 范围与依赖核对
+
+`TreeWalker/examples/use-cases/` 仅 1 示例（phone_price_comparison.py，跨站比价 output_model）：
+
+| 依赖 | 核对 |
+|---|---|
+| 嵌套 output_model（PriceComparison{model_name, prices: list[PhonePrice]}） | **零缺口**——`array+refModel` 形态即 features 批 structured-output 的 Posts 同款（第二批已补 list[Model] 深校验） |
+| 字段 description（Field(..., description="站点名")） | `FieldSpec.description` 现成（paramJsonSchema 渲染进 $defs；F9.3 compact 后嵌套字段名对模型可见） |
+| final_result() 消费 | `AgentHistoryList.finalResult()` 与 Python 逐语义一致（views.ts:243） |
+| 前置检查（api_key / ws_url） | loadKit 已覆盖（getting-started 批同款） |
+
+**零 core/node-host 改动**，纯薄壳。
+
+## U2. 形态（examples/use-cases/phone-price-comparison.mjs）
+
+- PhonePrice：site/price/url 三 string required，description 逐字保留（站点名 / 价格（含货币） / 商品页 URL）；PriceComparison：model_name（string required，无 description——Python 亦无）+ prices（array required refModel PhonePrice）。
+- TASK 逐字保留英文原文；outputModel 走 overrides.agent（structured-output 同款）。
+- final_result 语义保真：直接 `history.finalResult()` 无 isDone 前置（Python 同款）；null → "No result"；有则**硬校验**——pydantic `model_validate_json` 的 TS 等价 = JSON.parse + 形状检查，失败抛错走顶层 catch exit 1（本源文件本就硬抛 traceback；区别于 structured_output.py 的软兜底）。
+- 渲染逐字：前导空行 + model_name + `  - {site}: {price}  ({url})`（两空格缩进、(url) 前两空格）。
+
+## U3. 测试与真机
+
+无新单测（纯薄壳，模式已由 structured-output 覆盖，无代码改动面）。真机：Amazon/BestBuy 购物站属用户网络域（沙箱大概率不可达——excel/alphabet 先例：先沙箱尝试，不通则留用户复验）。
+
+## U4. 实施步骤
+
+1. 示例 + 本 README 登记 → 2. 全绿 + 门禁（确认无回归）→ 3. 真机（或留用户）→ 4. /review-loop 增量轮。
+
+## U5. 实施结果（2026-10-06）
+
+- `examples/use-cases/phone-price-comparison.mjs` 落盘（零 core/node-host 改动）；全仓 1573 绿 + 门禁 exit 0（纯新增无回归）。
+- **真机全通（沙箱）**：56 步 1866.2s，done=true successful=true degraded=0，exit 0。变体 B 结构化输出经 done 门校验通过，薄壳硬校验 + 渲染路径全走通（输出格式与 Python 逐字一致：前导空行 + model_name + `  - {site}: {price}  ({url})`）。
+- 模型环境自适应佐证（alphabet EDGAR 改道同族）：Amazon 503 / BestBuy 连接重置 / Target、Walmart 无果后，agent 转战日系电商（kakaku.com/Yodobashi/BicCamera/Rakuten 等 20+ 站、权限门 AutoAllow 放行 42 次），最终 kakaku.com（¥275,356 新品最低店）+ AliExpress 日区店（¥132,371 256GB facet）双站比价交付。
+- 设计内事件复核：1 次 done 参数梯子自愈（`data.summary: Extra inputs are not permitted`——extra=forbid 校验拒后重试即中，multi-step-task 同款）；1 次 LLMTimeoutError 基建退避 5s 后继续（F9.2 机制）；step 54 click 后漂移截断 2/3 剩余动作（browser-use 语义）。
 
 # ── 第四批：file-system（2026-10-02 追加） ──────────────────────────
 
