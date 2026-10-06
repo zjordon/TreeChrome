@@ -47,6 +47,15 @@
 - douyin/bilibili 真跑留用户（登录态 + 个人文件路径，pingkai 同款不可代办）；skill 内容库（domain-skills 数据 + 宿主 SkillSource + node-host 接线）独立立项待拍板。
 - 备注：用户本地已改 phone-price-comparison.mjs 的 TASK 站点列表（Amazon/BestBuy → jd/taobao/pinduoduo）——属用户未提交的自留改动，本批不携带。
 
+### UP5-a：实施后修复（2026-10-06，用户真机首跑暴露）
+
+用户跑 upload-file.mjs 报 `ERR_MODULE_NOT_FOUND`——两处同族移植 bug（smoke 未拦：`_smoke-agent.mjs` 在仓库根、深度又不同，`node --check` 只查语法不查解析）：
+
+1. **import 深度**：三个示例在 `examples/` 根（与 basic-agent.mjs 同层），`../../packages/...` 多退一级解析到 `z_jordon\packages\`——改 `../packages/node-host/boot.mjs`（根层示例惯例，basic-agent.mjs 同款）。
+2. **boot.mjs 具名导出面**：boot.mjs 只具名导出 `loadKit`，kit 面（含 modelSupportsVision）在 `await loadKit()` 返回的命名空间上——vision 示例直接具名 import 报 `does not provide an export named 'modelSupportsVision'`，改为 `kit.modelSupportsVision(MODEL)` 预检（loadKit 只装配不拨号，预检仍在 runAgent 前，Python 构造 LLMClient 前预检的等价位）。全 examples 审计仅此一处同款。
+
+回归验证（死端口解析 smoke）：`CDP_PORT=9333 node examples/upload-*.mjs` 三例均过模块解析与 vision 预检、落在 checkReady 的「Cannot connect to Chrome」友好错误——解析类问题的廉价真验证，后续新示例必跑。
+
 # ── 第五批：use-cases（2026-10-06 追加） ──────────────────────────
 
 ## U1. 范围与依赖核对

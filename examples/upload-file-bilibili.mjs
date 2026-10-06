@@ -8,7 +8,7 @@
 // 中心）；设置 ZHIPU_API_KEY（或写 cwd/.env）。用法：node examples/upload-file-bilibili.mjs
 // 注意：任务中的视频/封面路径是 Python 作者机器的示例路径，运行前改成你自己的文件。
 
-import { loadKit } from "../../packages/node-host/boot.mjs";
+import { loadKit } from "../packages/node-host/boot.mjs";
 
 // 任务文本逐字保留 Python 版（路径为示例模板，按需替换）
 const TASK =

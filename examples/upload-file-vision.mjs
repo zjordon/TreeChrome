@@ -14,15 +14,13 @@
 // 中心）；设置 ZHIPU_API_KEY（或写 cwd/.env）。用法：node examples/upload-file-vision.mjs
 // 注意：任务中的视频/封面路径是 Python 作者机器的示例路径，运行前改成你自己的文件。
 
-import { loadKit, modelSupportsVision } from "../../packages/node-host/boot.mjs";
+import { loadKit } from "../packages/node-host/boot.mjs";
 
 // 视觉门要求模型在已知视觉名单内（文本模型收图不报错只静默致盲——sense 的
-// visionGateOpen 逐步评估为 false）——显式切到 glm-5.3-flash，保证示例开箱即跑
+// visionGateOpen 逐步评估为 false）——显式切到 glm-5.3-flash，保证示例开箱即跑。
+// kit 面（含 modelSupportsVision）经 loadKit 拿到：loadKit 只装配 esbuild 包不拨号，
+// 预检仍在 runAgent 前（Python 在构造 LLMClient 前预检的等价位）
 const MODEL = "glm-5.3-flash";
-if (!modelSupportsVision(MODEL)) {
-  console.error(`Error: model '${MODEL}' is not in the vision model list`);
-  process.exit(1);
-}
 
 // 任务文本逐字保留 Python 版（与 upload-file.mjs 同文；路径为示例模板，按需替换）
 const TASK =
@@ -38,6 +36,10 @@ const TASK =
 
 try {
   const kit = await loadKit();
+  if (!kit.modelSupportsVision(MODEL)) {
+    console.error(`Error: model '${MODEL}' is not in the vision model list`);
+    process.exit(1);
+  }
   const history = await kit.runAgent({
     task: TASK,
     overrides: {
