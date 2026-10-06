@@ -252,7 +252,9 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **轮 3（2026-10-02，增量 = 轮 2 修复提交 ea39f8f 自身）**：实跑零意见（complete / 4 文件 / 4m37s）——循环收敛。零采纳零驳回零 stale。dump：_r_examples_3.md（不入库）。
 
-**累计（轮 1-3）**：意见 2 / 采纳 2（P2×2）/ 驳回 0 / stale 0；P3 backlog 空。
+**轮 4（2026-10-06，增量 6c0facc..feat/examples = 第五批 use-cases 单提交 b5d9b51：phone-price-comparison 薄壳 + 本 README U1-U5 段）**：实跑零意见（complete / 1 文件 / 1m40s）——循环收敛。零采纳零驳回零 stale；P3 backlog 空。dump：_r_examples_4.md（不入库）。
+
+**累计（轮 1-4）**：意见 2 / 采纳 2（P2×2）/ 驳回 0 / stale 0；P3 backlog 空。
 
 # ── 第一批：getting_started（2026-09-30 已实施+评审收敛） ─────────────
 
