@@ -281,13 +281,16 @@ for (const r of variantRows) {
   d.correct += r.correct_template ? 1 : 0;
   perTemplate[r.template_id] = d;
 }
+// ⚠ JS 键类型陷阱（Python dict 键是 int 两边天然同型）：perTemplate 经 JSON 键化后
+// Object.keys/entries 一律是字符串，templatesWithCards 装的是数字——Set.has 严格等值，
+// 不 Number() 归一会把所有模板判成无卡（no_card 全量误报、zero_hit 恒空）
 const zeroHitTemplates = Object.entries(perTemplate)
-  .filter(([t, d]) => d.correct === 0 && templatesWithCards.has(t))
+  .filter(([t, d]) => d.correct === 0 && templatesWithCards.has(Number(t)))
   .map(([t]) => Number(t))
   .sort((a, b) => a - b);
 const noCardTemplates = Object.keys(perTemplate)
-  .filter((t) => !templatesWithCards.has(t))
   .map(Number)
+  .filter((t) => !templatesWithCards.has(t))
   .sort((a, b) => a - b);
 
 // ── 报告 ────────────────────────────────────────────────────────────────────
@@ -334,8 +337,9 @@ writeFileSync(
       zero_hit_templates: zeroHitTemplates,
       no_card_templates: noCardTemplates,
       per_template: Object.fromEntries(
+        // Python sorted(dict) 是 int 键数值序；字符串 sort 会得 "111"<"2" 的字典序
         Object.keys(perTemplate)
-          .sort()
+          .sort((a, b) => Number(a) - Number(b))
           .map((k) => [k, perTemplate[k]]),
       ),
       tasks: rows,
