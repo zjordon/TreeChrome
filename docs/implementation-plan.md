@@ -67,7 +67,7 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 
 ## P5+ （见架构 §9）
 
-**P5 评测仓 TS 后继 + SR parity 闸门（M4）——方案已起草（2026-10-07），见 `docs/implement-plan/p5/README.md`，待用户确认后开工。**核心：独立评测仓（pnpm link: 本仓三包）移植 runner/cdp_evaluator/批量层，口径 A（无 skill）先行过闸（McNemar 噪声区间），skill 面（FsSkillSource + domain-skills 内容）后置为阶段 2 支撑口径 B/C；SR=官方 evaluator 判分不受 agent 自评影响（防谎报加固降级 post-M4 产品层）。
+**P5 评测仓 TS 后继 + SR parity 闸门（M4）——方案定稿（2026-10-07），见 `docs/implement-plan/p5/README.md`。**执行主体分工（用户裁定）：评测改造与 A 轮 parity 在独立仓 treewalker-webarena（Ubuntu 机器，用户执行，[issue #11](https://github.com/zjordon/treewalker-webarena/issues/11) 跟踪）；**本仓并行推进 P5.5 skill 面**（domain-skills 内容 + node-host FsSkillSource，供口径 B/C 与 M5），详细方案另行冻结。SR=官方 evaluator 判分不受 agent 自评影响（防谎报加固降级 post-M4 产品层）。
 
 之后：extension（WXT，M5）→ web-console（M6）→ 自进化闭环 / cli / tui → Python 退役评审（M7）。
 
