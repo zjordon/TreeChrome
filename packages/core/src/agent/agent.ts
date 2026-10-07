@@ -28,6 +28,7 @@ import {
   type SensitiveDataSpec,
 } from "./settings.js";
 import { buildTaskSkillText, matchTaskSkill } from "./skills/task-matcher.js";
+import { newestDistilledAt } from "./skills/types.js";
 import type { StepCtx } from "./step/context.js";
 import { runStep } from "./step/pipeline.js";
 import { visionGateOpen } from "./step/sense.js";
@@ -55,6 +56,9 @@ export interface AgentOptions {
   /** extract 工具专用 LLM（Python AgentSettings.extract_llm，config.py:562-570；
    *  null/缺省 = 复用主 llm——judgeLlm 同款注入口形态） */
   extractLlm?: LLMClient | null;
+  /** 任务级 skill 匹配器专用 LLM（Python AgentSettings.task_skill_llm，config.py:197/
+   *  agent.py:160-163；null/缺省 = 复用主 llm——extractLlm 同款注入口形态） */
+  taskSkillLlm?: LLMClient | null;
   /** 下载落盘目录（trackDownloads=true 时 browser.start 需要显式路径——核心包不读
    *  env/home，Python session.py:1882 的参数 > env > OS Downloads 解析序中 env/home
    *  半边归宿主，此处接收宿主解析结果） */
@@ -108,6 +112,8 @@ export class Agent implements StepCtx {
   stepStartTime = 0;
   currentModelCallId = "";
   readonly skillSource: StepCtx["skillSource"];
+  /** 匹配器专用 LLM（null = 复用主 llm——agent.py:160-163 镜像） */
+  readonly taskSkillLlm: LLMClient | null;
   taskSkillText: string | null = null;
   taskSkillSlug: string | null = null;
   readonly sensitiveDataRaw: Record<string, { value: string; urls: string[] | null }> | null;
@@ -130,6 +136,7 @@ export class Agent implements StepCtx {
     this.task = options.task;
     this.llm = options.llm;
     this.browser = options.browser;
+    this.taskSkillLlm = options.taskSkillLlm ?? null;
     this.settings = resolveAgentSettings(options.settings ?? null);
     const s = this.settings;
     // sensitive 归一化（旧全局字符串 / 新 {value,urls} 双格式兼容）
@@ -386,7 +393,25 @@ export class Agent implements StepCtx {
     if (hostKey === null) return;
     const catalog = await this.skillSource.taskCatalog(hostKey);
     if (catalog.length === 0) return;
-    const match = await matchTaskSkill(this.safeTask, catalog, this.llm);
+    const match = await matchTaskSkill(this.safeTask, catalog, this.taskSkillLlm ?? this.llm);
+    // S4 匹配日志（agent.py:563-577 单行 JSON 锚定）：命中/未命中/降档都记——
+    // catalog_newest_distilled_at 是手工迁移的过期探针；match_kind 无命中不适用记
+    // null，task_kind 是用户任务属性无论命中与否照记
+    this.log(
+      `task-skill-match: ${JSON.stringify({
+        ts: `${new Date().toISOString().slice(0, 19)}Z`,
+        host_key: hostKey,
+        catalog_size: catalog.length,
+        catalog_newest_distilled_at: newestDistilledAt(catalog),
+        task: this.safeTask.slice(0, 200),
+        match: match.slug,
+        confidence: match.confidence,
+        reason: match.reason,
+        downgraded: match.downgraded,
+        match_kind: match.slug !== null ? match.matchKind : null,
+        task_kind: match.taskKind,
+      })}`,
+    );
     if (match.slug === null) return;
     const card = catalog.find((c) => c.slug === match.slug);
     if (card === undefined) return;
@@ -396,6 +421,8 @@ export class Agent implements StepCtx {
       matchKind: match.matchKind,
       taskKind: match.taskKind,
     });
+    // 命中装载日志（agent.py:589 锚定）——检索层冒烟三件套的第三条
+    this.log(`task-skill hit: slug=${match.slug} chars=${this.taskSkillText.length}`);
   }
 
   /** 归一化 sensitive_data（旧全局字符串 / 新 {value,urls}——跳过无 value 项） */

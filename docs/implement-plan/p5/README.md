@@ -43,7 +43,8 @@
 - **口径供给**：B/C 轮时评测侧 `overrides.agent.{enableSkillInjection,enableTaskSkillInjection}` +
   skillSource 注入即达；本仓侧验证以注入单测 + （可选）真机 douyin 复跑（skill on/off 对照）代替——
   完整 B/C parity 跑机在评测仓（issue #11 并行线节已声明届时另开 issue）。
-- **详细实施计划**（模块拆分/测试矩阵/注入语义锚定 task_loader.py+task_matcher.py）另行起草冻结后开工。
+- **详细实施计划已起草**：[01-skill-face.md](./01-skill-face.md)（S0-S7：语义锚定表 / node-host 扩面 /
+  内容拷贝 / 测试矩阵 / smoke / 分支），待用户确认后开工。
 
 ## 5. 验收（M4 闸门定义，评测侧执行）
 

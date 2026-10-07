@@ -22,6 +22,7 @@ import {
   type ProviderConfig,
   resolveAgentSettings,
   type SensitiveDataSpec,
+  type SkillSource,
   type Tools,
 } from "@tw/core";
 import { attachConsole } from "./console.js";
@@ -29,12 +30,14 @@ import { NodeFs } from "./node-fs.js";
 import {
   applyDotEnv,
   checkReady,
+  DEFAULT_LLM_BASE_URL,
   type HostSettings,
   type HostSettingsOverrides,
   loadHostSettings,
   mergeHostSettings,
   resolveWsUrl,
 } from "./settings.js";
+import { FsSkillSource } from "./skill-source.js";
 
 /** transport 工厂（core connection.ts 同形；核心未导出该类型，此处本地声明） */
 export type TransportFactory = () => Promise<CdpTransport>;
@@ -58,11 +61,17 @@ export interface AssembleAgentOptions {
   transportFactory?: TransportFactory | null;
   /** extract 工具专用 LLM（缺省复用主 llm——Python extract_llm=None 同语义） */
   extractLlm?: LLMClient | null;
+  /** 任务级 skill 匹配器专用 LLM：显式给出（含 null=强制复用主 llm）时优先；缺省按
+   *  settings.llm.taskSkill 构造（无则复用主 llm——Python task_skill_llm 镜像） */
+  taskSkillLlm?: LLMClient | null;
   /** 敏感数据 {占位符: 真值|{value,urls}}（sensitive_data.py 形态；直传 Agent） */
   sensitiveData?: Record<string, SensitiveDataSpec> | null;
   /** 自定义动作注册表载体（custom_action.py 形态）：缺省自建默认 25 动作面 Tools；
    *  注入时 Agent 不自建（extractClient 接线/applyPageFilters 对注入实例照常执行） */
   tools?: Tools | null;
+  /** skill 注入源（评测/扩展自定义源注入位）：显式给出（含 null=关闭）时优先；
+   *  缺省按 settings.skillsDir 构造 FsSkillSource（null = 不装配） */
+  skillSource?: SkillSource | null;
   log?: (message: string) => void;
 }
 
@@ -90,6 +99,7 @@ export function buildProviderCard(llm: HostSettings["llm"]): ProviderConfig {
     model: llm.model,
     maxTokens: llm.maxTokens,
     outputMode: llm.outputMode,
+    ...(llm.thinkingEffort !== undefined ? { thinkingEffort: llm.thinkingEffort } : {}),
     fallback:
       llm.fallback === null
         ? null
@@ -101,6 +111,28 @@ export function buildProviderCard(llm: HostSettings["llm"]): ProviderConfig {
             model: llm.fallback.model,
             maxTokens: DEFAULT_MAX_TOKENS,
           },
+  };
+}
+
+/**
+ * 匹配器专用卡组装（独立导出便于单测与离线 harness 复用）：settings.llm.taskSkill →
+ * ProviderConfig（null = 无专用卡）。key/baseUrl 未设（含空串）时复用主卡 key / 智谱
+ * 端点——env 装载层同款缺省链（config.py:575-583），两层幂等；maxTokens 缺省 2048。
+ * thinkingEffort 缺省 low（p5/02 R9：匹配器时延敏感，网关默认 max 档思考偶发超
+ * 15s 超时；AGENT_TASK_SKILL_EFFORT 可覆盖）。
+ */
+export function buildTaskSkillCard(llm: HostSettings["llm"]): ProviderConfig | null {
+  if (llm.taskSkill === null) {
+    return null;
+  }
+  return {
+    name: "zhipu-anthropic-task-skill",
+    protocol: "anthropic-messages",
+    baseUrl: llm.taskSkill.baseUrl || DEFAULT_LLM_BASE_URL,
+    apiKey: llm.taskSkill.apiKey || llm.apiKey,
+    model: llm.taskSkill.model,
+    maxTokens: llm.taskSkill.maxTokens ?? 2048,
+    thinkingEffort: llm.taskSkill.effort ?? "low",
   };
 }
 
@@ -146,6 +178,24 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
   }
 
   const fs = options.fs !== undefined ? options.fs : new NodeFs();
+  // 匹配器专用 LLM：显式注入位优先（null=强制复用主 llm）；缺省按 settings.llm.taskSkill
+  // 构独立卡（buildTaskSkillCard——key/baseUrl 缺省链 env 装载层已应用，两层幂等）
+  let taskSkillLlm: LLMClient | null;
+  if (options.taskSkillLlm !== undefined) {
+    taskSkillLlm = options.taskSkillLlm;
+  } else {
+    const taskSkillCard = buildTaskSkillCard(options.settings.llm);
+    taskSkillLlm = taskSkillCard !== null ? new LLMClient(taskSkillCard) : null;
+  }
+  // skill 注入源：显式注入位三态优先（null = 强制关闭——评测基线形态；taskSkillLlm
+  // 同款 !== undefined 判定，显式 null 不得落入 skillsDir 分支）；缺省 settings.skillsDir
+  // 驱动构造（目录不存在时 FsSkillSource 读时静默 miss——loader.py 构造零 IO 同款）
+  const skillSource =
+    options.skillSource !== undefined
+      ? options.skillSource
+      : options.settings.skillsDir !== null
+        ? new FsSkillSource(options.settings.skillsDir, (m) => sink(`[skill] ${m}`))
+        : null;
   const agent = new Agent({
     task: options.task,
     llm,
@@ -154,8 +204,10 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     eventBus: bus,
     fs,
     extractLlm: options.extractLlm ?? null,
+    taskSkillLlm,
     sensitiveData: options.sensitiveData ?? null,
     tools: options.tools ?? null,
+    skillSource,
     downloadsPath: options.settings.browser.downloadsPath,
     // Partial 覆盖先合成全量（AgentOptions 的类型面是全量；运行时同为 resolve 合并）
     settings: resolveAgentSettings(options.settings.agent),

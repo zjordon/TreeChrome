@@ -12,8 +12,11 @@
 // LLM_MAX_TOKENS / LLM_OUTPUT_MODE / CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_MAX_STEPS /
 // AGENT_USE_VISION。第二批（features）追加：FALLBACK_LLM_MODEL / FALLBACK_LLM_API_KEY /
 // FALLBACK_LLM_BASE_URL（config.py:588-600）与 DOWNLOADS_PATH（session.py:1882 解析序
-// 的 env 半边）。扩展点（随对应 example 移植进入）：AGENT_JUDGE_MODEL /
-// AGENT_LLM_SCREENSHOT_SIZE / AGENT_EXTRACT_* / SENSITIVE_DATA 等。
+// 的 env 半边）。P5.5（skill 面）追加：AGENT_SKILLS_DIR（config.py:191/:516，缺省
+// "domain-skills"——CWD 相对解析；**偏离登记：Python 的 repo-root 回退不移植**，link:
+// 消费者显式传路径）/ AGENT_ENABLE_SKILL_INJECTION / AGENT_ENABLE_TASK_SKILL_INJECTION
+// （config.py:390/:427 评测口径 B/C 开关）。扩展点（随对应 example 移植进入）：
+// AGENT_JUDGE_MODEL / AGENT_LLM_SCREENSHOT_SIZE / AGENT_EXTRACT_* / SENSITIVE_DATA 等。
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -41,6 +44,20 @@ export interface HostSettings {
      *  env 装载层与 buildProviderCard 双层应用「未设复用主卡」链（config.py:588-600
      *  同款；overrides 只传 model 时同样生效）；maxTokens 恒 DEFAULT_MAX_TOKENS */
     fallback: { model: string; apiKey?: string; baseUrl?: string } | null;
+    /** 任务级 skill 匹配器专用卡（AGENT_TASK_SKILL_MODEL 空 = 无，复用主 llm——
+     *  config.py:575-583 四键镜像：key 缺省复用主卡 / baseUrl 缺省智谱端点 /
+     *  maxTokens 缺省 2048）。effort 缺省 low（p5/02 R9：匹配器时延敏感，网关默认
+     *  max 档思考偶发超 15s 超时——AGENT_TASK_SKILL_EFFORT 可覆盖） */
+    taskSkill: {
+      model: string;
+      apiKey?: string;
+      baseUrl?: string;
+      maxTokens?: number;
+      effort?: "low" | "high" | "max";
+    } | null;
+    /** 思考强度档位（LLM_THINKING_EFFORT，智谱 coding-plan 网关扩展——p5/02 R9）：
+     *  low/high/max，缺省不发（网关默认 max 档）——主 agent 想降档时设 */
+    thinkingEffort?: "low" | "high" | "max";
   };
   browser: {
     cdpHost: string;
@@ -60,6 +77,9 @@ export interface HostSettings {
   };
   /** AgentSettings 部分覆盖——只含 env 显式设置的键（未设键不出现，核心默认生效） */
   agent: Partial<AgentSettings>;
+  /** skill 内容根目录（AGENT_SKILLS_DIR；缺省 "domain-skills" 相对 CWD——config.py:516
+   *  同款；null = 显式关闭 skill 注入源装配，仅 overrides 可达） */
+  skillsDir: string | null;
 }
 
 /** runAgent/mergeHostSettings 的覆盖面（对应 Python replace(settings.x, ...) 形态） */
@@ -67,6 +87,7 @@ export interface HostSettingsOverrides {
   llm?: Partial<HostSettings["llm"]>;
   browser?: Partial<HostSettings["browser"]>;
   agent?: Partial<AgentSettings>;
+  skillsDir?: string | null;
 }
 
 export interface LoadSettingsOptions {
@@ -119,6 +140,28 @@ const envOutputMode = (
   return raw;
 };
 
+const THINKING_EFFORTS = new Set(["low", "high", "max"]);
+type ThinkingEffort = "low" | "high" | "max";
+
+/** 思考强度档位（LLM_THINKING_EFFORT / AGENT_TASK_SKILL_EFFORT，p5/02 R9）：
+ *  缺省回退 fallbackDefault；非法值告警后回退 */
+const envThinkingEffort = (
+  env: Record<string, string | undefined>,
+  name: string,
+  warn: (m: string) => void,
+  fallbackDefault: ThinkingEffort | undefined,
+): ThinkingEffort | undefined => {
+  const raw = envStr(env, name);
+  if (raw === undefined) {
+    return fallbackDefault;
+  }
+  if (!THINKING_EFFORTS.has(raw)) {
+    warn(`${name}="${raw}" 非法（需 low|high|max），已回退 ${fallbackDefault ?? "不发"}`);
+    return fallbackDefault;
+  }
+  return raw as ThinkingEffort;
+};
+
 /**
  * env → HostSettings（同步，不 fetch、不触网）。缺省 applyDotEnv 先行（runAgent 侧调用）。
  */
@@ -137,6 +180,15 @@ export function loadHostSettings(
   if (useVision !== undefined) {
     agent.useVision = useVision;
   }
+  // skill 注入开关（config.py:390/:427 的 env 面——评测口径 B/C 经此翻转）
+  const enableSkillInjection = envBool(env, "AGENT_ENABLE_SKILL_INJECTION");
+  if (enableSkillInjection !== undefined) {
+    agent.enableSkillInjection = enableSkillInjection;
+  }
+  const enableTaskSkillInjection = envBool(env, "AGENT_ENABLE_TASK_SKILL_INJECTION");
+  if (enableTaskSkillInjection !== undefined) {
+    agent.enableTaskSkillInjection = enableTaskSkillInjection;
+  }
 
   // fallback 卡（config.py:588-600：FALLBACK_LLM_MODEL 空 = 无；key/baseUrl 缺省链）
   const apiKey = env.ZHIPU_API_KEY ?? "";
@@ -150,6 +202,19 @@ export function loadHostSettings(
           apiKey: envStr(env, "FALLBACK_LLM_API_KEY") ?? apiKey,
           baseUrl: envStr(env, "FALLBACK_LLM_BASE_URL") ?? baseUrl,
         };
+  // 任务级 skill 匹配器专用卡（config.py:575-583 四键镜像；空 model = 无）；
+  // effort 缺省 low（R9：时延敏感调用默认降档）
+  const taskSkillModel = envStr(env, "AGENT_TASK_SKILL_MODEL");
+  const taskSkill =
+    taskSkillModel === undefined
+      ? null
+      : {
+          model: taskSkillModel,
+          apiKey: envStr(env, "AGENT_TASK_SKILL_API_KEY") ?? apiKey,
+          baseUrl: envStr(env, "AGENT_TASK_SKILL_BASE_URL") ?? DEFAULT_LLM_BASE_URL,
+          maxTokens: envInt(env, "AGENT_TASK_SKILL_MAX_TOKENS", warn) ?? 2048,
+          effort: envThinkingEffort(env, "AGENT_TASK_SKILL_EFFORT", warn, "low"),
+        };
 
   return {
     llm: {
@@ -159,6 +224,8 @@ export function loadHostSettings(
       maxTokens: envInt(env, "LLM_MAX_TOKENS", warn) ?? DEFAULT_MAX_TOKENS,
       outputMode: envOutputMode(env, warn),
       fallback,
+      taskSkill,
+      thinkingEffort: envThinkingEffort(env, "LLM_THINKING_EFFORT", warn, undefined),
     },
     browser: {
       cdpHost: envStr(env, "CDP_HOST") ?? "localhost",
@@ -167,6 +234,9 @@ export function loadHostSettings(
       downloadsPath: envStr(env, "DOWNLOADS_PATH") ?? join(homedir(), "Downloads"),
     },
     agent,
+    // Python config.py:516 缺省 "domain-skills"（CWD 相对，FsSkillSource 读时解析，
+    // 目录不存在 = 静默无 skill）；关闭走 overrides.skillsDir = null
+    skillsDir: envStr(env, "AGENT_SKILLS_DIR") ?? "domain-skills",
   };
 }
 
@@ -199,10 +269,19 @@ export function mergeHostSettings(
     llm.fallback =
       base.llm.fallback === null ? { model: "", ...fbOver } : { ...base.llm.fallback, ...fbOver };
   }
+  // taskSkill 二级合并（fallback 同款纪律）：整对象替换会丢 env 层专用网关凭证；
+  // 显式 null = 关闭（不与 base 合并）
+  if (overrides.llm?.taskSkill != null) {
+    const tsOver = definedOnly(overrides.llm.taskSkill);
+    llm.taskSkill =
+      base.llm.taskSkill === null ? { model: "", ...tsOver } : { ...base.llm.taskSkill, ...tsOver };
+  }
   return {
     llm,
     browser: { ...base.browser, ...definedOnly(overrides.browser) },
     agent: { ...base.agent, ...definedOnly(overrides.agent) },
+    // 标量：显式给出（含 null=关闭）才覆盖
+    skillsDir: overrides.skillsDir !== undefined ? overrides.skillsDir : base.skillsDir,
   };
 }
 

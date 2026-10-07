@@ -33,7 +33,10 @@ export function catalogLine(meta: TaskCardMeta): string {
   return `- \`${meta.slug}\` — ${meta.description}${suffix}`;
 }
 
-/** 三件套 → 注入文本（[SOP]/[SELECTORS]/[QUIRKS] 分段头；空段跳过——loader.py 读序） */
+/** 三件套 → 注入文本（[SOP]/[SELECTORS]/[QUIRKS] 分段头；空段跳过——loader.py 读序）。
+ *  注意：这是**站点级**渲染形态（core sense 注入时对 loadHostSkill 结果渲染）；
+ *  任务卡全文是宿主 taskCardText 给的**无分段头** `"\n\n"` 直拼（task_loader.py:127-140
+ *  card_text 语义），不要用本函数拼任务卡。 */
 export function renderTaskCard(card: { sop: string; selectors: string; quirks: string }): string {
   const sections: Array<[string, string]> = [
     ["[SOP]", card.sop],
@@ -47,4 +50,16 @@ export function renderTaskCard(card: { sop: string; selectors: string; quirks: s
     parts.push(header, t, "");
   }
   return parts.join("\n").trim();
+}
+
+/** Catalog 内最新 distilledAt（ISO 字符串字典序可比；空目录/全空串 = ""）——
+ *  手工迁移的过期探针（task_loader.py:118-125），S4 匹配日志消费 */
+export function newestDistilledAt(catalog: readonly TaskCardMeta[]): string {
+  let newest = "";
+  for (const c of catalog) {
+    if (c.distilledAt !== undefined && c.distilledAt > newest) {
+      newest = c.distilledAt;
+    }
+  }
+  return newest;
 }

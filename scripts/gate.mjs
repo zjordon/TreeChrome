@@ -147,7 +147,12 @@ function boundaries(pkgFilter) {
 // ── 暂存区检查 ─────────────────────────────────────────────────────────
 
 const STAGED_FORBIDDEN = [
-  { re: /(^|\/)_.*\.(txt|json|mjs|py|md)$/, msg: "临时文件（_ 前缀草稿）" },
+  // domain-skills/ 豁免：_sop.md/_task.json 是 TreeForge 契约文件名（skill 数据非草稿，P5.5）
+  {
+    re: /(^|\/)_.*\.(txt|json|mjs|py|md)$/,
+    msg: "临时文件（_ 前缀草稿）",
+    exempt: /^domain-skills\//,
+  },
   // (^|\/) 锚定任意层级；结尾锚定 + rc 形态 + 多段后缀（.env.local.bak），
   // 例外 .env.example（.gitignore 的 !.env.example 允许入库，两处规则须一致）
   { re: /(^|\/)\.env(rc)?(\.(?!example\b)[\w.-]+)?$/, msg: "环境变量/密钥文件" },
@@ -155,9 +160,9 @@ const STAGED_FORBIDDEN = [
   { re: /(^|\/)coverage-final\.json$/, msg: "覆盖率产物" },
 ];
 
-/** 单个路径是否命中禁入库规则（导出供 gate.test.mjs 表驱动覆盖） */
+/** 单个路径是否命中禁入库规则（导出供 gate.test.mjs 表驱动覆盖；exempt 前缀豁免） */
 export function matchStagedForbidden(f) {
-  return STAGED_FORBIDDEN.find(({ re }) => re.test(f))?.msg;
+  return STAGED_FORBIDDEN.find(({ re, exempt }) => !(exempt?.test(f) ?? false) && re.test(f))?.msg;
 }
 
 /** 解析 git status --porcelain 输出为 {status, path}（目录项剔除；导出供测试） */

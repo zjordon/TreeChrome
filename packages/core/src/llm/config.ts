@@ -34,6 +34,11 @@ export interface ProviderConfig {
    *  :285）：LLM 层自身不消费，Agent 读实例字段（agent.py:218）决定 tool schema
    *  形态。缺省 "standard"；非法值校验在宿主设置装载层（config.py:601-604 同款） */
   outputMode?: string;
+  /** 思考强度档位（智谱 coding-plan 网关协议扩展，docs.bigmodel.cn/cn/coding-plan/
+   *  latest-model）：anthropic-messages 请求体注入 `output_config:{effort}`——
+   *  low/high/max，缺省不发（网关默认 max 档）；"disabled" 亦只降 low 轻思考非真关。
+   *  TS 新增面（Python 无此参数）：匹配器等时延敏感调用降档用（p5/02 R9） */
+  thinkingEffort?: "low" | "high" | "max";
   /** openai 专属：输出上限字段名。缺省 "max_tokens"；
    *  OpenAI 新契约模型（gpt-5/4.1/o 系）须声明 "max_completion_tokens" */
   maxTokensField?: "max_tokens" | "max_completion_tokens";

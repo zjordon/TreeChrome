@@ -8,7 +8,6 @@ import { join } from "node:path";
 import {
   type AutoAllowPolicy,
   type BrowserSession,
-  type CdpTransport,
   DEFAULT_MAX_TOKENS,
   EventBus,
   LLMClient,
@@ -20,42 +19,12 @@ import {
   assembleAgent,
   autoAllowSummaryLine,
   buildProviderCard,
+  buildTaskSkillCard,
+  DEFAULT_LLM_BASE_URL,
   finalizeAssembled,
-  type HostSettings,
   runAgent,
 } from "../src/index.js";
-
-const settings = (over: Partial<HostSettings> = {}): HostSettings => ({
-  llm: {
-    apiKey: "k",
-    model: "glm-test",
-    baseUrl: "http://127.0.0.1:1",
-    maxTokens: 64,
-    outputMode: "standard",
-    fallback: null,
-  },
-  browser: { cdpHost: "localhost", cdpPort: 9222, wsUrl: "ws://stub", downloadsPath: "D:/tmp/dl" },
-  agent: {},
-  ...over,
-});
-
-const fakeTransport = (): CdpTransport => ({
-  send: async () => {
-    throw new Error("fake transport: not scripted");
-  },
-  on: () => () => {},
-  stop: () => {},
-});
-
-const deadLlm = () =>
-  new LLMClient({
-    name: "test",
-    protocol: "anthropic-messages",
-    baseUrl: "http://127.0.0.1:1",
-    apiKey: "k",
-    model: "glm-test",
-    maxTokens: 64,
-  });
+import { deadLlm, fakeTransport, settings } from "./agent-boot-helpers.js";
 
 describe("assembleAgent", () => {
   test("装配零件：缺省 AutoAllow 门 + 自建 bus + NodeFs；console:false 静默", () => {
@@ -106,6 +75,53 @@ describe("assembleAgent", () => {
     expect(assembled.bus).toBe(bus);
   });
 
+  test("taskSkillLlm 三态（Python task_skill_llm 镜像）：settings 驱动构造 / null=复用主 llm / 显式注入位优先", () => {
+    // settings.llm.taskSkill 非空 → 独立 LLMClient（构造期不触网）
+    const withCard = assembleAgent({
+      task: "t",
+      settings: settings({
+        llm: {
+          apiKey: "k",
+          model: "main",
+          baseUrl: "http://127.0.0.1:1",
+          maxTokens: 64,
+          outputMode: "standard",
+          fallback: null,
+          taskSkill: { model: "matcher-model" },
+        },
+      }),
+      wsUrl: "ws://stub",
+      console: false,
+      llm: deadLlm(),
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(withCard.agent.taskSkillLlm).toBeInstanceOf(LLMClient);
+
+    // taskSkill=null 且未注入 → null（agent 侧复用主 llm）
+    const off = assembleAgent({
+      task: "t",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      llm: deadLlm(),
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(off.agent.taskSkillLlm).toBeNull();
+
+    // 显式注入位优先（即使 settings 有 taskSkill 卡）
+    const explicit = deadLlm();
+    const injected = assembleAgent({
+      task: "t",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      llm: deadLlm(),
+      transportFactory: async () => fakeTransport(),
+      taskSkillLlm: explicit,
+    });
+    expect(injected.agent.taskSkillLlm).toBe(explicit);
+  });
+
   test("agent 覆盖透传（settings.agent 只含显式键）", () => {
     const assembled = assembleAgent({
       task: "t",
@@ -145,6 +161,7 @@ describe("assembleAgent", () => {
           maxTokens: 64,
           outputMode: "flash",
           fallback: null,
+          taskSkill: null,
         },
         browser: {
           cdpHost: "localhost",
@@ -253,6 +270,7 @@ describe("buildProviderCard（fallback 卡面）", () => {
           maxTokens: 64,
           outputMode: "standard",
           fallback: { model: "glm-4-flash", apiKey: "k", baseUrl: "http://127.0.0.1:1" },
+          taskSkill: null,
         },
       }).llm,
     );
@@ -274,6 +292,7 @@ describe("buildProviderCard（fallback 卡面）", () => {
       maxTokens: 64,
       outputMode: "standard",
       fallback: { model: "glm-4-flash", apiKey: "", baseUrl: "" },
+      taskSkill: null,
     });
     expect(card.fallback).toMatchObject({
       model: "glm-4-flash",
@@ -288,8 +307,49 @@ describe("buildProviderCard（fallback 卡面）", () => {
       maxTokens: 64,
       outputMode: "standard",
       fallback: { model: "m2" },
+      taskSkill: null,
     });
     expect(card2.fallback).toMatchObject({ model: "m2", apiKey: "main-key" });
+  });
+});
+
+describe("buildTaskSkillCard（匹配器专用卡面，config.py:575-583）", () => {
+  test("taskSkill=null → null；部分键缺省链：key 复用主卡 / baseUrl 智谱端点（非主卡）/ maxTokens 2048 / effort 缺省 low（R9）", () => {
+    expect(buildTaskSkillCard(settings().llm)).toBeNull();
+    const card = buildTaskSkillCard({
+      apiKey: "main-key",
+      model: "glm-test",
+      baseUrl: "http://main.example",
+      maxTokens: 64,
+      outputMode: "standard",
+      fallback: null,
+      taskSkill: { model: "matcher" },
+    });
+    expect(card).toEqual({
+      name: "zhipu-anthropic-task-skill",
+      protocol: "anthropic-messages",
+      baseUrl: DEFAULT_LLM_BASE_URL, // Python 硬编码智谱端点，非主卡 baseUrl
+      apiKey: "main-key",
+      model: "matcher",
+      maxTokens: 2048,
+      thinkingEffort: "low",
+    });
+    // effort 显式覆盖；主卡 thinkingEffort 透传（缺省不发）
+    const host = settings({
+      llm: {
+        apiKey: "k",
+        model: "m",
+        baseUrl: "http://x",
+        maxTokens: 64,
+        outputMode: "standard",
+        fallback: null,
+        taskSkill: { model: "matcher", effort: "high" },
+        thinkingEffort: "max",
+      },
+    }).llm;
+    expect(buildTaskSkillCard(host)?.thinkingEffort).toBe("high");
+    expect(buildProviderCard(host).thinkingEffort).toBe("max");
+    expect(buildProviderCard(settings().llm).thinkingEffort).toBeUndefined();
   });
 });
 

@@ -14,3 +14,8 @@ Thumbs.db
 .envrc
 # golden fixtures 是测试资产，需入库；仅忽略抓取过程中的临时目录（任意层级）
 _tmp/
+# 离线回归 harness 的运行产物（task_skill_match_regression 等）
+out/
+# rerun/评测运行时产物（read_grid 网格 JSON、run journal 截图）
+evaluate_output/
+rerun-history/

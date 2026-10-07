@@ -26,6 +26,7 @@ describe("loadHostSettings", () => {
       maxTokens: DEFAULT_MAX_TOKENS,
       outputMode: "standard",
       fallback: null,
+      taskSkill: null,
     });
     expect(s.llm.model).toBe("glm-5.3"); // 偏离登记：Python glm-5.1
     expect(s.browser).toEqual({
@@ -35,6 +36,7 @@ describe("loadHostSettings", () => {
       downloadsPath: join(homedir(), "Downloads"),
     });
     expect(s.agent).toEqual({}); // 未设键不出现——核心默认生效（§5.1 单源纪律）
+    expect(s.skillsDir).toBe("domain-skills"); // config.py:516 缺省
   });
 
   test("env 覆盖各键", () => {
@@ -48,6 +50,9 @@ describe("loadHostSettings", () => {
       CDP_WS_URL: "ws://localhost:9333/devtools/browser/x",
       AGENT_MAX_STEPS: "7",
       AGENT_USE_VISION: "true",
+      AGENT_SKILLS_DIR: "D:/skills",
+      AGENT_ENABLE_SKILL_INJECTION: "false",
+      AGENT_ENABLE_TASK_SKILL_INJECTION: "true",
     });
     expect(s.llm.apiKey).toBe("k");
     expect(s.llm.model).toBe("glm-4v");
@@ -59,7 +64,13 @@ describe("loadHostSettings", () => {
       wsUrl: "ws://localhost:9333/devtools/browser/x",
       downloadsPath: join(homedir(), "Downloads"),
     });
-    expect(s.agent).toEqual({ maxSteps: 7, useVision: true });
+    expect(s.agent).toEqual({
+      maxSteps: 7,
+      useVision: true,
+      enableSkillInjection: false,
+      enableTaskSkillInjection: true,
+    });
+    expect(s.skillsDir).toBe("D:/skills");
   });
 
   test("空串按未设置（shell 变量空置形态）", () => {
@@ -122,6 +133,60 @@ describe("loadHostSettings", () => {
       join(homedir(), "Downloads"),
     );
   });
+
+  test("AGENT_TASK_SKILL_*：四键缺省链（config.py:575-583）——空 model=null 复用主 llm；key 缺省复用主卡 / baseUrl 缺省智谱端点 / maxTokens 缺省 2048", () => {
+    // 空/未设 = 无专用卡
+    expect(loadHostSettings({ ZHIPU_API_KEY: "k" }).llm.taskSkill).toBeNull();
+    expect(loadHostSettings({ AGENT_TASK_SKILL_MODEL: "" }).llm.taskSkill).toBeNull();
+    // 只给 model：key 复用主卡（含 env 覆盖后的主卡值）、baseUrl 智谱缺省（非主卡 baseUrl）、
+    // effort 缺省 low（p5/02 R9：匹配器时延敏感默认降档）
+    expect(
+      loadHostSettings({
+        ZHIPU_API_KEY: "k",
+        LLM_BASE_URL: "https://gw.example/api/anthropic",
+        AGENT_TASK_SKILL_MODEL: "glm-4-flash",
+      }).llm.taskSkill,
+    ).toEqual({
+      model: "glm-4-flash",
+      apiKey: "k",
+      baseUrl: DEFAULT_LLM_BASE_URL,
+      maxTokens: 2048,
+      effort: "low",
+    });
+    // 四键齐 + effort 覆盖
+    expect(
+      loadHostSettings({
+        AGENT_TASK_SKILL_MODEL: "m2",
+        AGENT_TASK_SKILL_API_KEY: "k2",
+        AGENT_TASK_SKILL_BASE_URL: "https://ts.example",
+        AGENT_TASK_SKILL_MAX_TOKENS: "512",
+        AGENT_TASK_SKILL_EFFORT: "high",
+      }).llm.taskSkill,
+    ).toEqual({
+      model: "m2",
+      apiKey: "k2",
+      baseUrl: "https://ts.example",
+      maxTokens: 512,
+      effort: "high",
+    });
+  });
+
+  test("LLM_THINKING_EFFORT / AGENT_TASK_SKILL_EFFORT（R9）：合法值透传；非法告警回退；主卡缺省不发", () => {
+    const warns: string[] = [];
+    const log = (m: string) => warns.push(m);
+    expect(loadHostSettings({ LLM_THINKING_EFFORT: "low" }, { log }).llm.thinkingEffort).toBe(
+      "low",
+    );
+    expect(loadHostSettings({}).llm.thinkingEffort).toBeUndefined(); // 缺省不发（网关默认 max）
+    expect(loadHostSettings({ LLM_THINKING_EFFORT: "turbo" }, { log }).llm.thinkingEffort).toBe(
+      undefined,
+    );
+    expect(warns.some((m) => m.includes("LLM_THINKING_EFFORT"))).toBe(true);
+    expect(
+      loadHostSettings({ AGENT_TASK_SKILL_MODEL: "m", AGENT_TASK_SKILL_EFFORT: "xhigh" }, { log })
+        .llm.taskSkill?.effort,
+    ).toBe("low"); // 非法回退 low
+  });
 });
 
 describe("mergeHostSettings（Python replace 形态等价）", () => {
@@ -145,6 +210,29 @@ describe("mergeHostSettings（Python replace 形态等价）", () => {
       downloadsPath: join(homedir(), "Downloads"),
     });
     expect(merged.agent).toEqual({ maxSteps: 3 });
+    expect(merged.skillsDir).toBe("domain-skills"); // 未覆盖保留 base
+    // 标量三态：显式路径覆盖 / null = 显式关闭 / 未给保留
+    expect(mergeHostSettings(base, { skillsDir: "D:/other" }).skillsDir).toBe("D:/other");
+    expect(mergeHostSettings(base, { skillsDir: null }).skillsDir).toBeNull();
+    expect(mergeHostSettings(base).skillsDir).toBe("domain-skills");
+
+    // taskSkill 二级合并（fallback 同款纪律）：只传 model 不丢 env 层 key/baseUrl；
+    // 显式 null = 关闭
+    const tsBase = loadHostSettings({
+      ZHIPU_API_KEY: "k",
+      AGENT_TASK_SKILL_MODEL: "m1",
+      AGENT_TASK_SKILL_API_KEY: "k1",
+    });
+    expect(
+      mergeHostSettings(tsBase, { llm: { taskSkill: { model: "m2" } } }).llm.taskSkill,
+    ).toEqual({
+      model: "m2",
+      apiKey: "k1",
+      baseUrl: DEFAULT_LLM_BASE_URL,
+      maxTokens: 2048,
+      effort: "low",
+    });
+    expect(mergeHostSettings(tsBase, { llm: { taskSkill: null } }).llm.taskSkill).toBeNull();
   });
 
   test("显式 undefined 不清 base 值（definedOnly 语义）；空 overrides 原样", () => {
