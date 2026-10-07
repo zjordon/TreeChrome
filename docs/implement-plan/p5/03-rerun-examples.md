@@ -58,3 +58,11 @@
 - 全仓 1592 绿（断言并入既有用例）+ 门禁 exit 0；死端口解析 smoke 三件全过（base 到
   Chrome 连接错误、口径 C 包装走完横幅+配置链、vision 件守门按 Python 文案对 glm-5.3
   正确拦截）。真机（9223 + 手动登录 + WebArena 栈）留用户。
+
+## T7. 评审记录（feat/p5-skill-face 轮 3，增量 a3dcdc8）
+
+实跑 1 条意见（low：base 的 configPath 硬编码反斜杠——非 Windows 平台 --webarena-repo
+参数失效，Python 原版 os.path.join 跨平台，属移植引入收缩）——**P3 顺手修采纳**（改动
+极小且在当轮文件内）：改 `join()` 拼接，Windows 冒烟验证等价（task 1 配置正常装载）。
+顺带：`evaluate_output/`、`rerun-history/`（用户 rerun 运行时产物）补入 .gitignore——
+grid JSON 曾击穿 biome 门禁。零驳回零 stale；全仓 1592 绿 + 门禁 exit 0。

@@ -16,7 +16,7 @@
 //   node examples/p7-rerun-webarena-task.mjs --log-file out.log   # 轨迹落盘
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { loadKit } from "../packages/node-host/boot.mjs";
 
 const DEFAULT_WEBARENA_REPO = "D:\\dev\\git\\z_jordon\\evals\\webarena\\webarena_repo";
@@ -65,7 +65,7 @@ for (let i = 2; i < process.argv.length; i++) {
 process.env.CDP_PORT = String(args.port);
 
 const kit = await loadKit();
-const configPath = `${args.webarenaRepo}\\config_files\\${args.taskId}.json`;
+const configPath = join(args.webarenaRepo, "config_files", `${args.taskId}.json`);
 if (!existsSync(configPath)) {
   console.error(`✗ 任务配置不存在: ${configPath}`);
   process.exit(1);
