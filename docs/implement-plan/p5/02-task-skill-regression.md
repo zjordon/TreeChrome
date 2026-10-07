@@ -100,3 +100,20 @@ TS 补法（extractLlm 先例——AgentOptions 注入位，不挂 core AgentSet
   同数据同算式 Python 亦 37）；回放 2/2 exact 命中（same_task 分级）、泛化 0/0 除零守卫
   工作、明细落盘 out/（已清理）。matcher LLM 走主卡（.env 无 AGENT_TASK_SKILL_MODEL——
   镜像接线生效）。44/184 全量 + --gate 留用户。
+
+## R8. 全量对拍与修复（2026-10-07，用户跑 TS 184 全量 vs Python 2026-09-20 轮）
+
+- **一致性面**：任务数据逐任务全同（184/42 模板/template_id/intent 零差异）；回放面完全
+  一致（44/44/44/44、missed 空）；cross_template 同为 [458-463]；分级分布形态同
+  （replay 全 same_task；variants 以 same_template 为主）；变体**率**几乎同
+  （命中 85.4%/85.0%，正确 80.8%/80.7%——均过 80% 线）。
+- **d9b2fcd 修复（TS 键类型陷阱，Python 无此面）**：perTemplate 经对象键化后
+  Object.keys/entries 是字符串、卡模板集合是数字——`Set.has` 严格等值恒 false →
+  no_card 全量误报（39 vs 正确 5）、zero_hit 恒空（vs 正确 []）。修复 = 两处 `Number(t)`
+  归一 + 注释钉死陷阱；per_template 输出改数值序（Python sorted(int) 对照）。修正值
+  经既有结果离线重算验证 = Python（no_card [42,247,255,280,288]、zero_hit []）。
+- **TS 侧 10 个持续调用失败 vs Python 0**：全部「单次调用超时（15000ms）」——
+  glm-5.3 思考型偶发超匹配器 15s 锚定超时（Python 轮模型快零超时）；被剔除出分母
+  （设计内），per_template 计数差 = 这 10 任务的缺席。**--gate 轮因此不判 PASS（数据
+  不完整）**——正解 = 设 `AGENT_TASK_SKILL_MODEL`（快速模型，如 flash/glm-5.1）重跑，
+  此即 task_skill_llm 的存在意义；两侧模型不同（输出 JSON 不记模型，对照时注意）。
