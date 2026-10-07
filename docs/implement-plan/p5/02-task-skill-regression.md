@@ -143,3 +143,18 @@ wire）→ 智谱网关默认 **max 档思考**（docs.bigmodel.cn/cn/coding-pla
 盘上，key 经真调验证有效 → 恢复根 `.env`（key + LLM_MODEL；原 60 行其余键值用户按需
 补回）。**探针补测完成**：max 档 9.0/6.5/8.1s vs low 档 4.3/4.9/5.1s——延迟近乎减半、
 匹配结果一致（同 slug/high 置信）——R9 机制实证有效。
+
+## R10. 评审与收敛记录（feat/p5-skill-face）
+
+**轮 1（2026-10-07，全量 main..feat/p5-skill-face = 6 提交，66 文件，12m49s）**：2 条意见
+（medium×1 + low×1），**P2×1 + 顺手修×1，全采纳**，零驳回零 stale；P3 backlog 空。
+- **#1（P2）assembleAgent skillSource 显式 null 三态破缺**：条件 `!== undefined && !== null`
+  把显式 null 与缺省混同——JSDoc 承诺「显式 null=关闭」，实际落入 skillsDir 分支照常构造
+  FsSkillSource（缺省 "domain-skills" 存在时注入保持开启）——评测调 `skillSource: null`
+  跑基线会被静默污染。修复：`!== undefined` 三态（taskSkillLlm 同款）；补「skillsDir
+  非空 + 显式 null → agent.skillSource null」用例；双向验证（还原旧条件必红）。
+- **#2（顺手修，low）harness CLI 边值**：`--concurrency` 缺值/非数字/0 → NaN 信号量
+  `active < NaN` 恒 false，全任务静默死锁。修复：argparse 子集补值校验（value/intArg
+  内联于循环、闭包消费循环变量；缺值/串开关/非整数即 exit(2) 带明确报错——Python
+  argparse exit(2) 面同款）；--eval-root/--limit 同覆盖。实跑四边值形态验证。
+- 测试：node-host 73 例（断言并入既有用例）；全仓 1592 绿 + 门禁 exit 0。

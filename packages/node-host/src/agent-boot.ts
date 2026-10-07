@@ -187,10 +187,11 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     const taskSkillCard = buildTaskSkillCard(options.settings.llm);
     taskSkillLlm = taskSkillCard !== null ? new LLMClient(taskSkillCard) : null;
   }
-  // skill 注入源：显式注入位优先（null = 关闭）；缺省 settings.skillsDir 驱动构造
-  // （目录不存在时 FsSkillSource 读时静默 miss——loader.py 构造零 IO 同款）
+  // skill 注入源：显式注入位三态优先（null = 强制关闭——评测基线形态；taskSkillLlm
+  // 同款 !== undefined 判定，显式 null 不得落入 skillsDir 分支）；缺省 settings.skillsDir
+  // 驱动构造（目录不存在时 FsSkillSource 读时静默 miss——loader.py 构造零 IO 同款）
   const skillSource =
-    options.skillSource !== undefined && options.skillSource !== null
+    options.skillSource !== undefined
       ? options.skillSource
       : options.settings.skillsDir !== null
         ? new FsSkillSource(options.settings.skillsDir, (m) => sink(`[skill] ${m}`))

@@ -232,5 +232,18 @@ describe("assembleAgent skillSource 接线（P5.5 S2-3）", () => {
       skillSource: explicit,
     });
     expect(injected.agent.skillSource).toBe(explicit);
+
+    // 显式 null = 强制关闭（轮 1 #1：JSDoc 契约——即使 settings.skillsDir 非空也不得
+    // 落入 skillsDir 分支照常构造；评测基线形态）
+    const forcedOff = assembleAgent({
+      task: "t",
+      settings: settings({ skillsDir: r } as Partial<HostSettings>),
+      wsUrl: "ws://stub",
+      console: false,
+      llm: deadLlm(),
+      transportFactory: async () => fakeTransport(),
+      skillSource: null,
+    });
+    expect(forcedOff.agent.skillSource).toBeNull();
   });
 });

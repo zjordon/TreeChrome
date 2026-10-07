@@ -36,7 +36,8 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GATE_REPLAY_TOTAL = 44;
 const GATE_VARIANT_RATE = 0.8;
 
-// ── argv（argparse 子集：值参数 + 布尔开关，未知参数退出码 2） ─────────────────
+// ── argv（argparse 子集：值参数 + 布尔开关，未知/缺值/非法数值退出码 2——Python
+//    argparse 的 exit(2) 报错面同款；缺值不校验会让 NaN 信号量静默死锁/裸 TypeError） ──
 const args = {
   evalRoot: null,
   hostKey: "localhost_7780",
@@ -47,11 +48,28 @@ const args = {
 };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
-  if (a === "--eval-root") args.evalRoot = process.argv[++i];
-  else if (a === "--host-key") args.hostKey = process.argv[++i];
-  else if (a === "--concurrency") args.concurrency = Number(process.argv[++i]);
-  else if (a === "--out") args.out = process.argv[++i];
-  else if (a === "--limit") args.limit = Number(process.argv[++i]);
+  // 值提取器（闭包消费循环变量 i）：缺值/串到下一开关即报错退出
+  const value = (name) => {
+    const v = process.argv[++i];
+    if (v === undefined || v.startsWith("--")) {
+      console.error(`${name} 缺值（收到: ${v ?? "无"}）`);
+      process.exit(2);
+    }
+    return v;
+  };
+  const intArg = (name, min) => {
+    const n = Number(value(name));
+    if (!Number.isInteger(n) || n < min) {
+      console.error(`${name} 需 ≥${min} 的整数（收到: ${process.argv[i]}）`);
+      process.exit(2);
+    }
+    return n;
+  };
+  if (a === "--eval-root") args.evalRoot = value(a);
+  else if (a === "--host-key") args.hostKey = value(a);
+  else if (a === "--concurrency") args.concurrency = intArg(a, 1);
+  else if (a === "--out") args.out = value(a);
+  else if (a === "--limit") args.limit = intArg(a, 0);
   else if (a === "--gate") args.gate = true;
   else {
     console.error(`未知参数: ${a}`);
