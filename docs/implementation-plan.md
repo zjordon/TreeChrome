@@ -55,6 +55,8 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 
 ## P4 core 移植（前置检查点已过，计划已冻结待评审）
 
+> **P4 完成（2026-10-07 收口）**：五段闸门分支制（foundation/browser/tools/agent/policy-smoke）+ P4b（25 动作收齐，评测 Tier1 前置达成）+ @tw/node-host（宿主共享件）+ examples 六批 24 示例（feat/examples，merge 15dee00，评审五轮收敛）全部合并 main 并推送。实施记录见 `docs/implement-plan/p4/` 与 `docs/implement-plan/examples/README.md`。
+
 启动前置检查点（2026-09-27 核验）：
 
 1. TreeWalker 相关目录连续无结构性提交，用户确认"稳定"——**满足**（`640d52a`，2026-09-21；architecture.md 定稿后仅 4 个 fix/docs 提交）；
@@ -63,9 +65,11 @@ P1/P2/P3 相互独立可并行，都不读 TreeWalker 的 agent/ 与 tools/ 目�
 
 内容按架构 §3.1/§3.3：step pipeline 五阶段、10 核心动作（四元组含 capability）、prompts、消息管理、守卫链（权限门挂点）、Judge、BrowserSession Facade（P3 遗留的 session.py 语义）。**P2 已完成的 llm 目录直接并入**（P4 补 `extract`/`structuredCall` 扩面）。详细实施计划（browser 层 16 模块拆分 / tools 双批动作边界 / 五阶段逐阶段契约 / policy+events / 测试与 smoke，2026-09-27）见 `docs/implement-plan/p4/`——对拍基准双层同 P3：文档冻结契约与有意偏离，Python @ `640d52a` 冻结行为语义。**动作分两批**：P4 = 10 核心动作为验收门；batch2 十五动作（含 evaluate 增强通道——评测 Tier1 依赖）独立 P4b（P5 前置，预估 4~5d）。预估 8~9.75d，**5 段闸门分支串行**（2026-09-27 评审定：`feat/p4-foundation`（4.0+4.1）→ `feat/p4-browser`（4.2）→ `feat/p4-tools`（4.3）→ `feat/p4-agent`（4.4）→ `feat/p4-policy-smoke`（4.5+4.6），每段独立评审循环 + --no-ff 合并 + 删分支——P2/P3 实证小 diff 是评审收敛的第一变量；详见 p4/README §6）。
 
-## P5+ （不展开，见架构 §9）
+## P5+ （见架构 §9）
 
-评测仓 parity（闸门）→ extension（WXT）→ web-console → 自进化闭环 / cli / tui → Python 退役评审。
+**P5 评测仓 TS 后继 + SR parity 闸门（M4）——方案已起草（2026-10-07），见 `docs/implement-plan/p5/README.md`，待用户确认后开工。**核心：独立评测仓（pnpm link: 本仓三包）移植 runner/cdp_evaluator/批量层，口径 A（无 skill）先行过闸（McNemar 噪声区间），skill 面（FsSkillSource + domain-skills 内容）后置为阶段 2 支撑口径 B/C；SR=官方 evaluator 判分不受 agent 自评影响（防谎报加固降级 post-M4 产品层）。
+
+之后：extension（WXT，M5）→ web-console（M6）→ 自进化闭环 / cli / tui → Python 退役评审（M7）。
 
 ## 可选并行线（等待期富余时做，优先级低于 P1-P3）
 
