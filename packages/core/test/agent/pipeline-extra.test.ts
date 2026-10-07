@@ -365,6 +365,8 @@ describe("任务级 skill 注入", () => {
     });
     expect(typeof hit.ts).toBe("string");
     expect(hit.task).toContain("Do the equivalent thing");
+    // 命中装载日志（agent.py:589）：S4 匹配行的配套第三件
+    expect(hitLogs.some((m) => m.startsWith("task-skill hit: slug=card-a chars="))).toBe(true);
     // 未命中：match=null 且 match_kind 记 null，task_kind 是用户任务属性照记
     const missLogs: string[] = [];
     await mkAgent(

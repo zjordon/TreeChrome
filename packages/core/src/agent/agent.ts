@@ -421,6 +421,8 @@ export class Agent implements StepCtx {
       matchKind: match.matchKind,
       taskKind: match.taskKind,
     });
+    // 命中装载日志（agent.py:589 锚定）——检索层冒烟三件套的第三条
+    this.log(`task-skill hit: slug=${match.slug} chars=${this.taskSkillText.length}`);
   }
 
   /** 归一化 sensitive_data（旧全局字符串 / 新 {value,urls}——跳过无 value 项） */
