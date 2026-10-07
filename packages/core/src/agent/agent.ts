@@ -56,6 +56,9 @@ export interface AgentOptions {
   /** extract 工具专用 LLM（Python AgentSettings.extract_llm，config.py:562-570；
    *  null/缺省 = 复用主 llm——judgeLlm 同款注入口形态） */
   extractLlm?: LLMClient | null;
+  /** 任务级 skill 匹配器专用 LLM（Python AgentSettings.task_skill_llm，config.py:197/
+   *  agent.py:160-163；null/缺省 = 复用主 llm——extractLlm 同款注入口形态） */
+  taskSkillLlm?: LLMClient | null;
   /** 下载落盘目录（trackDownloads=true 时 browser.start 需要显式路径——核心包不读
    *  env/home，Python session.py:1882 的参数 > env > OS Downloads 解析序中 env/home
    *  半边归宿主，此处接收宿主解析结果） */
@@ -109,6 +112,8 @@ export class Agent implements StepCtx {
   stepStartTime = 0;
   currentModelCallId = "";
   readonly skillSource: StepCtx["skillSource"];
+  /** 匹配器专用 LLM（null = 复用主 llm——agent.py:160-163 镜像） */
+  readonly taskSkillLlm: LLMClient | null;
   taskSkillText: string | null = null;
   taskSkillSlug: string | null = null;
   readonly sensitiveDataRaw: Record<string, { value: string; urls: string[] | null }> | null;
@@ -131,6 +136,7 @@ export class Agent implements StepCtx {
     this.task = options.task;
     this.llm = options.llm;
     this.browser = options.browser;
+    this.taskSkillLlm = options.taskSkillLlm ?? null;
     this.settings = resolveAgentSettings(options.settings ?? null);
     const s = this.settings;
     // sensitive 归一化（旧全局字符串 / 新 {value,urls} 双格式兼容）
@@ -387,7 +393,7 @@ export class Agent implements StepCtx {
     if (hostKey === null) return;
     const catalog = await this.skillSource.taskCatalog(hostKey);
     if (catalog.length === 0) return;
-    const match = await matchTaskSkill(this.safeTask, catalog, this.llm);
+    const match = await matchTaskSkill(this.safeTask, catalog, this.taskSkillLlm ?? this.llm);
     // S4 匹配日志（agent.py:563-577 单行 JSON 锚定）：命中/未命中/降档都记——
     // catalog_newest_distilled_at 是手工迁移的过期探针；match_kind 无命中不适用记
     // null，task_kind 是用户任务属性无论命中与否照记

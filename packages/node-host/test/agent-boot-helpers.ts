@@ -13,6 +13,7 @@ export const settings = (over: Partial<HostSettings> = {}): HostSettings => ({
     maxTokens: 64,
     outputMode: "standard",
     fallback: null,
+    taskSkill: null,
   },
   browser: { cdpHost: "localhost", cdpPort: 9222, wsUrl: "ws://stub", downloadsPath: "D:/tmp/dl" },
   agent: {},

@@ -26,6 +26,7 @@ describe("loadHostSettings", () => {
       maxTokens: DEFAULT_MAX_TOKENS,
       outputMode: "standard",
       fallback: null,
+      taskSkill: null,
     });
     expect(s.llm.model).toBe("glm-5.3"); // 偏离登记：Python glm-5.1
     expect(s.browser).toEqual({
@@ -132,6 +133,34 @@ describe("loadHostSettings", () => {
       join(homedir(), "Downloads"),
     );
   });
+
+  test("AGENT_TASK_SKILL_*：四键缺省链（config.py:575-583）——空 model=null 复用主 llm；key 缺省复用主卡 / baseUrl 缺省智谱端点 / maxTokens 缺省 2048", () => {
+    // 空/未设 = 无专用卡
+    expect(loadHostSettings({ ZHIPU_API_KEY: "k" }).llm.taskSkill).toBeNull();
+    expect(loadHostSettings({ AGENT_TASK_SKILL_MODEL: "" }).llm.taskSkill).toBeNull();
+    // 只给 model：key 复用主卡（含 env 覆盖后的主卡值）、baseUrl 智谱缺省（非主卡 baseUrl）
+    expect(
+      loadHostSettings({
+        ZHIPU_API_KEY: "k",
+        LLM_BASE_URL: "https://gw.example/api/anthropic",
+        AGENT_TASK_SKILL_MODEL: "glm-4-flash",
+      }).llm.taskSkill,
+    ).toEqual({
+      model: "glm-4-flash",
+      apiKey: "k",
+      baseUrl: DEFAULT_LLM_BASE_URL,
+      maxTokens: 2048,
+    });
+    // 四键齐
+    expect(
+      loadHostSettings({
+        AGENT_TASK_SKILL_MODEL: "m2",
+        AGENT_TASK_SKILL_API_KEY: "k2",
+        AGENT_TASK_SKILL_BASE_URL: "https://ts.example",
+        AGENT_TASK_SKILL_MAX_TOKENS: "512",
+      }).llm.taskSkill,
+    ).toEqual({ model: "m2", apiKey: "k2", baseUrl: "https://ts.example", maxTokens: 512 });
+  });
 });
 
 describe("mergeHostSettings（Python replace 形态等价）", () => {
@@ -160,6 +189,18 @@ describe("mergeHostSettings（Python replace 形态等价）", () => {
     expect(mergeHostSettings(base, { skillsDir: "D:/other" }).skillsDir).toBe("D:/other");
     expect(mergeHostSettings(base, { skillsDir: null }).skillsDir).toBeNull();
     expect(mergeHostSettings(base).skillsDir).toBe("domain-skills");
+
+    // taskSkill 二级合并（fallback 同款纪律）：只传 model 不丢 env 层 key/baseUrl；
+    // 显式 null = 关闭
+    const tsBase = loadHostSettings({
+      ZHIPU_API_KEY: "k",
+      AGENT_TASK_SKILL_MODEL: "m1",
+      AGENT_TASK_SKILL_API_KEY: "k1",
+    });
+    expect(
+      mergeHostSettings(tsBase, { llm: { taskSkill: { model: "m2" } } }).llm.taskSkill,
+    ).toEqual({ model: "m2", apiKey: "k1", baseUrl: DEFAULT_LLM_BASE_URL, maxTokens: 2048 });
+    expect(mergeHostSettings(tsBase, { llm: { taskSkill: null } }).llm.taskSkill).toBeNull();
   });
 
   test("显式 undefined 不清 base 值（definedOnly 语义）；空 overrides 原样", () => {

@@ -12,6 +12,7 @@ export {
   DEFAULT_MAX_TOKENS,
   EventBus,
   LLMClient,
+  matchTaskSkill,
   modelSupportsVision,
   PolicyGate,
   Tools,

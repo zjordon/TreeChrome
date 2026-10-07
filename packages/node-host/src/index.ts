@@ -7,6 +7,7 @@ export {
   assembleAgent,
   autoAllowSummaryLine,
   buildProviderCard,
+  buildTaskSkillCard,
   finalizeAssembled,
   type RunAgentOptions,
   runAgent,

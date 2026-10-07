@@ -30,6 +30,7 @@ import { NodeFs } from "./node-fs.js";
 import {
   applyDotEnv,
   checkReady,
+  DEFAULT_LLM_BASE_URL,
   type HostSettings,
   type HostSettingsOverrides,
   loadHostSettings,
@@ -60,6 +61,9 @@ export interface AssembleAgentOptions {
   transportFactory?: TransportFactory | null;
   /** extract 工具专用 LLM（缺省复用主 llm——Python extract_llm=None 同语义） */
   extractLlm?: LLMClient | null;
+  /** 任务级 skill 匹配器专用 LLM：显式给出（含 null=强制复用主 llm）时优先；缺省按
+   *  settings.llm.taskSkill 构造（无则复用主 llm——Python task_skill_llm 镜像） */
+  taskSkillLlm?: LLMClient | null;
   /** 敏感数据 {占位符: 真值|{value,urls}}（sensitive_data.py 形态；直传 Agent） */
   sensitiveData?: Record<string, SensitiveDataSpec> | null;
   /** 自定义动作注册表载体（custom_action.py 形态）：缺省自建默认 25 动作面 Tools；
@@ -109,6 +113,25 @@ export function buildProviderCard(llm: HostSettings["llm"]): ProviderConfig {
   };
 }
 
+/**
+ * 匹配器专用卡组装（独立导出便于单测与离线 harness 复用）：settings.llm.taskSkill →
+ * ProviderConfig（null = 无专用卡）。key/baseUrl 未设（含空串）时复用主卡 key / 智谱
+ * 端点——env 装载层同款缺省链（config.py:575-583），两层幂等；maxTokens 缺省 2048。
+ */
+export function buildTaskSkillCard(llm: HostSettings["llm"]): ProviderConfig | null {
+  if (llm.taskSkill === null) {
+    return null;
+  }
+  return {
+    name: "zhipu-anthropic-task-skill",
+    protocol: "anthropic-messages",
+    baseUrl: llm.taskSkill.baseUrl || DEFAULT_LLM_BASE_URL,
+    apiKey: llm.taskSkill.apiKey || llm.apiKey,
+    model: llm.taskSkill.model,
+    maxTokens: llm.taskSkill.maxTokens ?? 2048,
+  };
+}
+
 export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
   const useConsole = options.console !== false;
   const log = options.log ?? ((m: string) => console.log(m));
@@ -151,6 +174,15 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
   }
 
   const fs = options.fs !== undefined ? options.fs : new NodeFs();
+  // 匹配器专用 LLM：显式注入位优先（null=强制复用主 llm）；缺省按 settings.llm.taskSkill
+  // 构独立卡（buildTaskSkillCard——key/baseUrl 缺省链 env 装载层已应用，两层幂等）
+  let taskSkillLlm: LLMClient | null;
+  if (options.taskSkillLlm !== undefined) {
+    taskSkillLlm = options.taskSkillLlm;
+  } else {
+    const taskSkillCard = buildTaskSkillCard(options.settings.llm);
+    taskSkillLlm = taskSkillCard !== null ? new LLMClient(taskSkillCard) : null;
+  }
   // skill 注入源：显式注入位优先（null = 关闭）；缺省 settings.skillsDir 驱动构造
   // （目录不存在时 FsSkillSource 读时静默 miss——loader.py 构造零 IO 同款）
   const skillSource =
@@ -167,6 +199,7 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     eventBus: bus,
     fs,
     extractLlm: options.extractLlm ?? null,
+    taskSkillLlm,
     sensitiveData: options.sensitiveData ?? null,
     tools: options.tools ?? null,
     skillSource,

@@ -44,6 +44,10 @@ export interface HostSettings {
      *  env 装载层与 buildProviderCard 双层应用「未设复用主卡」链（config.py:588-600
      *  同款；overrides 只传 model 时同样生效）；maxTokens 恒 DEFAULT_MAX_TOKENS */
     fallback: { model: string; apiKey?: string; baseUrl?: string } | null;
+    /** 任务级 skill 匹配器专用卡（AGENT_TASK_SKILL_MODEL 空 = 无，复用主 llm——
+     *  config.py:575-583 四键镜像：key 缺省复用主卡 / baseUrl 缺省智谱端点 /
+     *  maxTokens 缺省 2048） */
+    taskSkill: { model: string; apiKey?: string; baseUrl?: string; maxTokens?: number } | null;
   };
   browser: {
     cdpHost: string;
@@ -166,6 +170,17 @@ export function loadHostSettings(
           apiKey: envStr(env, "FALLBACK_LLM_API_KEY") ?? apiKey,
           baseUrl: envStr(env, "FALLBACK_LLM_BASE_URL") ?? baseUrl,
         };
+  // 任务级 skill 匹配器专用卡（config.py:575-583 四键镜像；空 model = 无）
+  const taskSkillModel = envStr(env, "AGENT_TASK_SKILL_MODEL");
+  const taskSkill =
+    taskSkillModel === undefined
+      ? null
+      : {
+          model: taskSkillModel,
+          apiKey: envStr(env, "AGENT_TASK_SKILL_API_KEY") ?? apiKey,
+          baseUrl: envStr(env, "AGENT_TASK_SKILL_BASE_URL") ?? DEFAULT_LLM_BASE_URL,
+          maxTokens: envInt(env, "AGENT_TASK_SKILL_MAX_TOKENS", warn) ?? 2048,
+        };
 
   return {
     llm: {
@@ -175,6 +190,7 @@ export function loadHostSettings(
       maxTokens: envInt(env, "LLM_MAX_TOKENS", warn) ?? DEFAULT_MAX_TOKENS,
       outputMode: envOutputMode(env, warn),
       fallback,
+      taskSkill,
     },
     browser: {
       cdpHost: envStr(env, "CDP_HOST") ?? "localhost",
@@ -217,6 +233,13 @@ export function mergeHostSettings(
     const fbOver = definedOnly(overrides.llm.fallback);
     llm.fallback =
       base.llm.fallback === null ? { model: "", ...fbOver } : { ...base.llm.fallback, ...fbOver };
+  }
+  // taskSkill 二级合并（fallback 同款纪律）：整对象替换会丢 env 层专用网关凭证；
+  // 显式 null = 关闭（不与 base 合并）
+  if (overrides.llm?.taskSkill != null) {
+    const tsOver = definedOnly(overrides.llm.taskSkill);
+    llm.taskSkill =
+      base.llm.taskSkill === null ? { model: "", ...tsOver } : { ...base.llm.taskSkill, ...tsOver };
   }
   return {
     llm,
