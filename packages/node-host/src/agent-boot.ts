@@ -99,6 +99,7 @@ export function buildProviderCard(llm: HostSettings["llm"]): ProviderConfig {
     model: llm.model,
     maxTokens: llm.maxTokens,
     outputMode: llm.outputMode,
+    ...(llm.thinkingEffort !== undefined ? { thinkingEffort: llm.thinkingEffort } : {}),
     fallback:
       llm.fallback === null
         ? null
@@ -117,6 +118,8 @@ export function buildProviderCard(llm: HostSettings["llm"]): ProviderConfig {
  * 匹配器专用卡组装（独立导出便于单测与离线 harness 复用）：settings.llm.taskSkill →
  * ProviderConfig（null = 无专用卡）。key/baseUrl 未设（含空串）时复用主卡 key / 智谱
  * 端点——env 装载层同款缺省链（config.py:575-583），两层幂等；maxTokens 缺省 2048。
+ * thinkingEffort 缺省 low（p5/02 R9：匹配器时延敏感，网关默认 max 档思考偶发超
+ * 15s 超时；AGENT_TASK_SKILL_EFFORT 可覆盖）。
  */
 export function buildTaskSkillCard(llm: HostSettings["llm"]): ProviderConfig | null {
   if (llm.taskSkill === null) {
@@ -129,6 +132,7 @@ export function buildTaskSkillCard(llm: HostSettings["llm"]): ProviderConfig | n
     apiKey: llm.taskSkill.apiKey || llm.apiKey,
     model: llm.taskSkill.model,
     maxTokens: llm.taskSkill.maxTokens ?? 2048,
+    thinkingEffort: llm.taskSkill.effort ?? "low",
   };
 }
 

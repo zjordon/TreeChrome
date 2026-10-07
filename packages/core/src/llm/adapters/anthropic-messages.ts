@@ -390,6 +390,12 @@ export function createAnthropicProvider(
       ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
       // temperature 回退链：请求级 ?? 卡片级（common.temperatureEntry）；两级缺省不发
       ...temperatureEntry(req, config, onTemperatureClamp, onTemperatureInvalid),
+      // 思考强度档位（智谱 coding-plan 网关扩展，p5/02 R9）：缺省不发（网关默认
+      // max 档）；显式 low/high/max 注入 output_config——anthropic 官方端点不识此
+      // 键的网关须测试确认（无效通常被忽略而非报错）
+      ...(config.thinkingEffort !== undefined
+        ? { output_config: { effort: config.thinkingEffort } }
+        : {}),
     };
     const json = await postJson(deps.fetch, url, headers, body, {
       provider: config.name,

@@ -314,7 +314,7 @@ describe("buildProviderCard（fallback 卡面）", () => {
 });
 
 describe("buildTaskSkillCard（匹配器专用卡面，config.py:575-583）", () => {
-  test("taskSkill=null → null；部分键缺省链：key 复用主卡 / baseUrl 智谱端点（非主卡）/ maxTokens 2048", () => {
+  test("taskSkill=null → null；部分键缺省链：key 复用主卡 / baseUrl 智谱端点（非主卡）/ maxTokens 2048 / effort 缺省 low（R9）", () => {
     expect(buildTaskSkillCard(settings().llm)).toBeNull();
     const card = buildTaskSkillCard({
       apiKey: "main-key",
@@ -332,7 +332,24 @@ describe("buildTaskSkillCard（匹配器专用卡面，config.py:575-583）", ()
       apiKey: "main-key",
       model: "matcher",
       maxTokens: 2048,
+      thinkingEffort: "low",
     });
+    // effort 显式覆盖；主卡 thinkingEffort 透传（缺省不发）
+    const host = settings({
+      llm: {
+        apiKey: "k",
+        model: "m",
+        baseUrl: "http://x",
+        maxTokens: 64,
+        outputMode: "standard",
+        fallback: null,
+        taskSkill: { model: "matcher", effort: "high" },
+        thinkingEffort: "max",
+      },
+    }).llm;
+    expect(buildTaskSkillCard(host)?.thinkingEffort).toBe("high");
+    expect(buildProviderCard(host).thinkingEffort).toBe("max");
+    expect(buildProviderCard(settings().llm).thinkingEffort).toBeUndefined();
   });
 });
 

@@ -138,7 +138,8 @@ describe("loadHostSettings", () => {
     // 空/未设 = 无专用卡
     expect(loadHostSettings({ ZHIPU_API_KEY: "k" }).llm.taskSkill).toBeNull();
     expect(loadHostSettings({ AGENT_TASK_SKILL_MODEL: "" }).llm.taskSkill).toBeNull();
-    // 只给 model：key 复用主卡（含 env 覆盖后的主卡值）、baseUrl 智谱缺省（非主卡 baseUrl）
+    // 只给 model：key 复用主卡（含 env 覆盖后的主卡值）、baseUrl 智谱缺省（非主卡 baseUrl）、
+    // effort 缺省 low（p5/02 R9：匹配器时延敏感默认降档）
     expect(
       loadHostSettings({
         ZHIPU_API_KEY: "k",
@@ -150,16 +151,41 @@ describe("loadHostSettings", () => {
       apiKey: "k",
       baseUrl: DEFAULT_LLM_BASE_URL,
       maxTokens: 2048,
+      effort: "low",
     });
-    // 四键齐
+    // 四键齐 + effort 覆盖
     expect(
       loadHostSettings({
         AGENT_TASK_SKILL_MODEL: "m2",
         AGENT_TASK_SKILL_API_KEY: "k2",
         AGENT_TASK_SKILL_BASE_URL: "https://ts.example",
         AGENT_TASK_SKILL_MAX_TOKENS: "512",
+        AGENT_TASK_SKILL_EFFORT: "high",
       }).llm.taskSkill,
-    ).toEqual({ model: "m2", apiKey: "k2", baseUrl: "https://ts.example", maxTokens: 512 });
+    ).toEqual({
+      model: "m2",
+      apiKey: "k2",
+      baseUrl: "https://ts.example",
+      maxTokens: 512,
+      effort: "high",
+    });
+  });
+
+  test("LLM_THINKING_EFFORT / AGENT_TASK_SKILL_EFFORT（R9）：合法值透传；非法告警回退；主卡缺省不发", () => {
+    const warns: string[] = [];
+    const log = (m: string) => warns.push(m);
+    expect(loadHostSettings({ LLM_THINKING_EFFORT: "low" }, { log }).llm.thinkingEffort).toBe(
+      "low",
+    );
+    expect(loadHostSettings({}).llm.thinkingEffort).toBeUndefined(); // 缺省不发（网关默认 max）
+    expect(loadHostSettings({ LLM_THINKING_EFFORT: "turbo" }, { log }).llm.thinkingEffort).toBe(
+      undefined,
+    );
+    expect(warns.some((m) => m.includes("LLM_THINKING_EFFORT"))).toBe(true);
+    expect(
+      loadHostSettings({ AGENT_TASK_SKILL_MODEL: "m", AGENT_TASK_SKILL_EFFORT: "xhigh" }, { log })
+        .llm.taskSkill?.effort,
+    ).toBe("low"); // 非法回退 low
   });
 });
 
@@ -199,7 +225,13 @@ describe("mergeHostSettings（Python replace 形态等价）", () => {
     });
     expect(
       mergeHostSettings(tsBase, { llm: { taskSkill: { model: "m2" } } }).llm.taskSkill,
-    ).toEqual({ model: "m2", apiKey: "k1", baseUrl: DEFAULT_LLM_BASE_URL, maxTokens: 2048 });
+    ).toEqual({
+      model: "m2",
+      apiKey: "k1",
+      baseUrl: DEFAULT_LLM_BASE_URL,
+      maxTokens: 2048,
+      effort: "low",
+    });
     expect(mergeHostSettings(tsBase, { llm: { taskSkill: null } }).llm.taskSkill).toBeNull();
   });
 

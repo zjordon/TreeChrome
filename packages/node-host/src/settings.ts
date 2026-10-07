@@ -46,8 +46,18 @@ export interface HostSettings {
     fallback: { model: string; apiKey?: string; baseUrl?: string } | null;
     /** 任务级 skill 匹配器专用卡（AGENT_TASK_SKILL_MODEL 空 = 无，复用主 llm——
      *  config.py:575-583 四键镜像：key 缺省复用主卡 / baseUrl 缺省智谱端点 /
-     *  maxTokens 缺省 2048） */
-    taskSkill: { model: string; apiKey?: string; baseUrl?: string; maxTokens?: number } | null;
+     *  maxTokens 缺省 2048）。effort 缺省 low（p5/02 R9：匹配器时延敏感，网关默认
+     *  max 档思考偶发超 15s 超时——AGENT_TASK_SKILL_EFFORT 可覆盖） */
+    taskSkill: {
+      model: string;
+      apiKey?: string;
+      baseUrl?: string;
+      maxTokens?: number;
+      effort?: "low" | "high" | "max";
+    } | null;
+    /** 思考强度档位（LLM_THINKING_EFFORT，智谱 coding-plan 网关扩展——p5/02 R9）：
+     *  low/high/max，缺省不发（网关默认 max 档）——主 agent 想降档时设 */
+    thinkingEffort?: "low" | "high" | "max";
   };
   browser: {
     cdpHost: string;
@@ -130,6 +140,28 @@ const envOutputMode = (
   return raw;
 };
 
+const THINKING_EFFORTS = new Set(["low", "high", "max"]);
+type ThinkingEffort = "low" | "high" | "max";
+
+/** 思考强度档位（LLM_THINKING_EFFORT / AGENT_TASK_SKILL_EFFORT，p5/02 R9）：
+ *  缺省回退 fallbackDefault；非法值告警后回退 */
+const envThinkingEffort = (
+  env: Record<string, string | undefined>,
+  name: string,
+  warn: (m: string) => void,
+  fallbackDefault: ThinkingEffort | undefined,
+): ThinkingEffort | undefined => {
+  const raw = envStr(env, name);
+  if (raw === undefined) {
+    return fallbackDefault;
+  }
+  if (!THINKING_EFFORTS.has(raw)) {
+    warn(`${name}="${raw}" 非法（需 low|high|max），已回退 ${fallbackDefault ?? "不发"}`);
+    return fallbackDefault;
+  }
+  return raw as ThinkingEffort;
+};
+
 /**
  * env → HostSettings（同步，不 fetch、不触网）。缺省 applyDotEnv 先行（runAgent 侧调用）。
  */
@@ -170,7 +202,8 @@ export function loadHostSettings(
           apiKey: envStr(env, "FALLBACK_LLM_API_KEY") ?? apiKey,
           baseUrl: envStr(env, "FALLBACK_LLM_BASE_URL") ?? baseUrl,
         };
-  // 任务级 skill 匹配器专用卡（config.py:575-583 四键镜像；空 model = 无）
+  // 任务级 skill 匹配器专用卡（config.py:575-583 四键镜像；空 model = 无）；
+  // effort 缺省 low（R9：时延敏感调用默认降档）
   const taskSkillModel = envStr(env, "AGENT_TASK_SKILL_MODEL");
   const taskSkill =
     taskSkillModel === undefined
@@ -180,6 +213,7 @@ export function loadHostSettings(
           apiKey: envStr(env, "AGENT_TASK_SKILL_API_KEY") ?? apiKey,
           baseUrl: envStr(env, "AGENT_TASK_SKILL_BASE_URL") ?? DEFAULT_LLM_BASE_URL,
           maxTokens: envInt(env, "AGENT_TASK_SKILL_MAX_TOKENS", warn) ?? 2048,
+          effort: envThinkingEffort(env, "AGENT_TASK_SKILL_EFFORT", warn, "low"),
         };
 
   return {
@@ -191,6 +225,7 @@ export function loadHostSettings(
       outputMode: envOutputMode(env, warn),
       fallback,
       taskSkill,
+      thinkingEffort: envThinkingEffort(env, "LLM_THINKING_EFFORT", warn, undefined),
     },
     browser: {
       cdpHost: envStr(env, "CDP_HOST") ?? "localhost",

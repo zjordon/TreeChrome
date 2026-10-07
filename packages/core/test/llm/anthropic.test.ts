@@ -42,6 +42,23 @@ const toolOk = (input: Record<string, unknown>) => ({
 const setupLogs = (over: Partial<ProviderConfig> = {}) =>
   setupProviderWithLogs(createAnthropicProvider, CARD, over);
 describe("请求构造（canonical → wire）", () => {
+  it("thinkingEffort（智谱网关扩展，p5/02 R9）：显式档位注入 output_config.effort；缺省不发该键", async () => {
+    const minimal: ChatRequest = {
+      systemPrompt: null,
+      messages: [{ role: "user", blocks: [{ kind: "text", text: "hi" }] }],
+      tools: null,
+    };
+    const { mock, provider } = setup({ ...CARD, thinkingEffort: "low" });
+    mock.queueMany(toolOk({ next_goal: "go" }));
+    await provider.chat(minimal);
+    expect(mock.lastBody().output_config).toEqual({ effort: "low" });
+
+    const plain = setup(CARD);
+    plain.mock.queueMany(toolOk({ next_goal: "go" }));
+    await plain.provider.chat(minimal);
+    expect(plain.mock.lastBody().output_config).toBeUndefined();
+  });
+
   it("全量映射：system 独立字段、text/image 块、tool_use、连续 toolResult 折叠进一条 user", async () => {
     const { mock, provider } = setup();
     mock.queueMany(toolOk({ next_goal: "go" }));

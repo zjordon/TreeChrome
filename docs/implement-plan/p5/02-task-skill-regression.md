@@ -117,3 +117,23 @@ TS 补法（extractLlm 先例——AgentOptions 注入位，不挂 core AgentSet
   （设计内），per_template 计数差 = 这 10 任务的缺席。**--gate 轮因此不判 PASS（数据
   不完整）**——正解 = 设 `AGENT_TASK_SKILL_MODEL`（快速模型，如 flash/glm-5.1）重跑，
   此即 task_skill_llm 的存在意义；两侧模型不同（输出 JSON 不记模型，对照时注意）。
+
+## R9. 思考强度档位（2026-10-07，用户 coding-plan 仅路由 glm-5.3 → 用 effort 降档替代换模型）
+
+根因：anthropic 适配器请求体从不传思考参数（outputMode 只是 tool schema 文本分支不进
+wire）→ 智谱网关默认 **max 档思考**（docs.bigmodel.cn/cn/coding-plan/latest-model：
+`thinking.type`+`output_config.effort`，low/high/max，disabled 亦只降 low）→ 匹配调用
+偶发超 15s。实施：
+
+- **core**：`ProviderConfig.thinkingEffort?: "low"|"high"|"max"`（TS 新增面，Python 无）；
+  anthropic-messages 请求体条件注入 `output_config:{effort}`（缺省不发）；单测双向锚定
+  （注入形态 + 缺省键不存在锁）。
+- **node-host**：主卡 `LLM_THINKING_EFFORT` env（缺省不发；非法告警回退）；taskSkill 卡
+  `AGENT_TASK_SKILL_EFFORT`（**缺省 low**——匹配器时延敏感；登记为对齐 Python 快模型
+  运行时行为的偏离）；`buildProviderCard`/`buildTaskSkillCard` 透传。
+- 全仓 1592 绿（core +1 / node-host +1）+ 门禁 exit 0。
+- **探针受阻**：实施时发现仓库根 `.env` 已缺失（用户此前全量跑尚在）——延迟对比探针
+  未跑；验证并入全量重跑（taskSkill 卡 low 下 10 个超时任务应归零）。
+- **用户侧用法**（coding-plan 单模型约束下）：`AGENT_TASK_SKILL_MODEL=glm-5.3`（同模型
+  名也行——建出带 low 的专用卡，匹配器降档而主 agent 步骤保持 max）或
+  `LLM_THINKING_EFFORT=low`（全局降档）。
