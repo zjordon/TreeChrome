@@ -5,7 +5,7 @@ import type { AgentOptions } from "../../src/agent/agent.js";
 import { Agent } from "../../src/agent/agent.js";
 import { JudgeEvaluator } from "../../src/agent/judge.js";
 import type { AgentSettings } from "../../src/agent/settings.js";
-import { catalogLine, renderTaskCard } from "../../src/agent/skills/types.js";
+import { catalogLine, newestDistilledAt, renderTaskCard } from "../../src/agent/skills/types.js";
 import { AgentHistoryList } from "../../src/agent/views.js";
 import type { BrowserSession } from "../../src/browser/session.js";
 import type { ToolDefinition } from "../../src/llm/types.js";
@@ -67,6 +67,17 @@ describe("skills/types 运行时函数（catalogLine/renderTaskCard）", () => {
       "[SOP]\nstep1\n\n[QUIRKS]\nnote",
     );
     expect(renderTaskCard({ sop: "", selectors: "", quirks: "" })).toBe("");
+  });
+  it("newestDistilledAt：ISO 字典序 max；空目录/全空串 = 空串（task_loader.py:118-125）", () => {
+    expect(newestDistilledAt([])).toBe("");
+    expect(
+      newestDistilledAt([
+        { slug: "a", description: "d", distilledAt: "2026-01-02" },
+        { slug: "b", description: "d" },
+        { slug: "c", description: "d", distilledAt: "2026-03-04T05:06:07" },
+        { slug: "e", description: "d", distilledAt: "2026-01-02" },
+      ]),
+    ).toBe("2026-03-04T05:06:07");
   });
 });
 

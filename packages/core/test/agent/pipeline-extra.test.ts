@@ -307,6 +307,80 @@ describe("任务级 skill 注入", () => {
     expect(stateText).toContain("Step 1: do it");
     expect(agent.taskSkillSlug).toBe("card-a");
   });
+
+  it("S4 匹配日志（agent.py:563-577）：命中/未命中各记一行，字段齐（P5.5 补线）", async () => {
+    const mkAgent = (
+      structuredCall: () => Promise<Record<string, unknown>>,
+      logs: string[],
+    ): Agent => {
+      const llm = new FakeAgentLLM([ok(doneOutput())]);
+      llm.structuredCall = structuredCall;
+      const skillSource = {
+        loadHostSkill: async () => null,
+        taskCatalog: async () => [
+          { slug: "card-a", description: "Do the thing", distilledAt: "2026-01-01" },
+          { slug: "card-b", description: "Do another", distilledAt: "2026-02-02" },
+        ],
+        taskCardText: async () => "Step 1",
+      };
+      return new Agent({
+        task: "Do the equivalent thing",
+        llm: llm.asLLMClient(),
+        browser: new FakeAgentBrowser() as unknown as BrowserSession,
+        settings: {
+          enableTaskSkillInjection: true,
+          judge: { enabled: false },
+          explorationActionabilityCheck: false,
+        } as unknown as AgentSettings,
+        skillSource,
+        sleep: () => Promise.resolve(),
+        now: () => 1000,
+        log: (m: string) => logs.push(m),
+      });
+    };
+    // 命中
+    const hitLogs: string[] = [];
+    await mkAgent(
+      async () => ({
+        match: "card-a",
+        confidence: "high",
+        reason: "same template",
+        match_kind: "same_template",
+        task_kind: "read",
+      }),
+      hitLogs,
+    ).run();
+    const hitLine = hitLogs.find((m) => m.startsWith("task-skill-match: "));
+    expect(hitLine).toBeDefined();
+    const hit = JSON.parse(hitLine!.slice("task-skill-match: ".length));
+    expect(hit).toMatchObject({
+      host_key: "a.example",
+      catalog_size: 2,
+      catalog_newest_distilled_at: "2026-02-02",
+      match: "card-a",
+      confidence: "high",
+      downgraded: false,
+      match_kind: "same_template",
+      task_kind: "read",
+    });
+    expect(typeof hit.ts).toBe("string");
+    expect(hit.task).toContain("Do the equivalent thing");
+    // 未命中：match=null 且 match_kind 记 null，task_kind 是用户任务属性照记
+    const missLogs: string[] = [];
+    await mkAgent(
+      async () => ({ match: null, confidence: "low", reason: "no same template" }),
+      missLogs,
+    ).run();
+    const missLine = missLogs.find((m) => m.startsWith("task-skill-match: "));
+    const miss = JSON.parse(missLine!.slice("task-skill-match: ".length));
+    expect(miss).toMatchObject({
+      match: null,
+      confidence: "low",
+      // match:null 走空值早退（降档守卫未触）——downgraded=false
+      downgraded: false,
+      match_kind: null,
+    });
+  });
 });
 
 describe("MessageCompactor 集成", () => {

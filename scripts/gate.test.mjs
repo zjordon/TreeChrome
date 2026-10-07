@@ -151,6 +151,11 @@ test(".env 系列拦截口径（评审四轮 #5 的回归覆盖）", () => {
   // 临时文件与产物口径回归
   assert.ok(matchStagedForbidden("_draft.json"));
   assert.ok(matchStagedForbidden("packages/x/dist/main.js"));
+  // domain-skills/ 豁免（P5.5）：_sop.md/_task.json 是 TreeForge 契约文件名，数据非草稿
+  assert.equal(matchStagedForbidden("domain-skills/localhost_7780/_sop.md"), undefined);
+  assert.equal(matchStagedForbidden("domain-skills/localhost_7780/tasks/x/_task.json"), undefined);
+  // 豁免仅限临时文件规则——.env 等其余规则对数据目录照常生效
+  assert.ok(matchStagedForbidden("domain-skills/x/.env"));
 });
 
 test("parseStatus：剥状态列/去引号/剔目录项/重命名取新路径", () => {

@@ -8,10 +8,8 @@ import { join } from "node:path";
 import {
   type AutoAllowPolicy,
   type BrowserSession,
-  type CdpTransport,
   DEFAULT_MAX_TOKENS,
   EventBus,
-  LLMClient,
   PolicyGate,
 } from "@tw/core";
 import { describe, expect, test, vi } from "vitest";
@@ -21,41 +19,9 @@ import {
   autoAllowSummaryLine,
   buildProviderCard,
   finalizeAssembled,
-  type HostSettings,
   runAgent,
 } from "../src/index.js";
-
-const settings = (over: Partial<HostSettings> = {}): HostSettings => ({
-  llm: {
-    apiKey: "k",
-    model: "glm-test",
-    baseUrl: "http://127.0.0.1:1",
-    maxTokens: 64,
-    outputMode: "standard",
-    fallback: null,
-  },
-  browser: { cdpHost: "localhost", cdpPort: 9222, wsUrl: "ws://stub", downloadsPath: "D:/tmp/dl" },
-  agent: {},
-  ...over,
-});
-
-const fakeTransport = (): CdpTransport => ({
-  send: async () => {
-    throw new Error("fake transport: not scripted");
-  },
-  on: () => () => {},
-  stop: () => {},
-});
-
-const deadLlm = () =>
-  new LLMClient({
-    name: "test",
-    protocol: "anthropic-messages",
-    baseUrl: "http://127.0.0.1:1",
-    apiKey: "k",
-    model: "glm-test",
-    maxTokens: 64,
-  });
+import { deadLlm, fakeTransport, settings } from "./agent-boot-helpers.js";
 
 describe("assembleAgent", () => {
   test("装配零件：缺省 AutoAllow 门 + 自建 bus + NodeFs；console:false 静默", () => {

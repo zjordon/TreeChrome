@@ -35,6 +35,7 @@ describe("loadHostSettings", () => {
       downloadsPath: join(homedir(), "Downloads"),
     });
     expect(s.agent).toEqual({}); // 未设键不出现——核心默认生效（§5.1 单源纪律）
+    expect(s.skillsDir).toBe("domain-skills"); // config.py:516 缺省
   });
 
   test("env 覆盖各键", () => {
@@ -48,6 +49,9 @@ describe("loadHostSettings", () => {
       CDP_WS_URL: "ws://localhost:9333/devtools/browser/x",
       AGENT_MAX_STEPS: "7",
       AGENT_USE_VISION: "true",
+      AGENT_SKILLS_DIR: "D:/skills",
+      AGENT_ENABLE_SKILL_INJECTION: "false",
+      AGENT_ENABLE_TASK_SKILL_INJECTION: "true",
     });
     expect(s.llm.apiKey).toBe("k");
     expect(s.llm.model).toBe("glm-4v");
@@ -59,7 +63,13 @@ describe("loadHostSettings", () => {
       wsUrl: "ws://localhost:9333/devtools/browser/x",
       downloadsPath: join(homedir(), "Downloads"),
     });
-    expect(s.agent).toEqual({ maxSteps: 7, useVision: true });
+    expect(s.agent).toEqual({
+      maxSteps: 7,
+      useVision: true,
+      enableSkillInjection: false,
+      enableTaskSkillInjection: true,
+    });
+    expect(s.skillsDir).toBe("D:/skills");
   });
 
   test("空串按未设置（shell 变量空置形态）", () => {
@@ -145,6 +155,11 @@ describe("mergeHostSettings（Python replace 形态等价）", () => {
       downloadsPath: join(homedir(), "Downloads"),
     });
     expect(merged.agent).toEqual({ maxSteps: 3 });
+    expect(merged.skillsDir).toBe("domain-skills"); // 未覆盖保留 base
+    // 标量三态：显式路径覆盖 / null = 显式关闭 / 未给保留
+    expect(mergeHostSettings(base, { skillsDir: "D:/other" }).skillsDir).toBe("D:/other");
+    expect(mergeHostSettings(base, { skillsDir: null }).skillsDir).toBeNull();
+    expect(mergeHostSettings(base).skillsDir).toBe("domain-skills");
   });
 
   test("显式 undefined 不清 base 值（definedOnly 语义）；空 overrides 原样", () => {

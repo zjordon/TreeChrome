@@ -63,7 +63,7 @@ export {
 export type { MatcherLLM, TaskSkillMatch } from "./agent/skills/task-matcher.js";
 export { buildTaskSkillText, matchTaskSkill } from "./agent/skills/task-matcher.js";
 export type { HostSkill, SkillSource, TaskCardMeta } from "./agent/skills/types.js";
-export { catalogLine, renderTaskCard } from "./agent/skills/types.js";
+export { catalogLine, newestDistilledAt, renderTaskCard } from "./agent/skills/types.js";
 export { extractHost, extractHostWithPort } from "./agent/url-utils.js";
 export type {
   ActionResultInit,

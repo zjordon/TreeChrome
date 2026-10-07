@@ -12,8 +12,11 @@
 // LLM_MAX_TOKENS / LLM_OUTPUT_MODE / CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_MAX_STEPS /
 // AGENT_USE_VISION。第二批（features）追加：FALLBACK_LLM_MODEL / FALLBACK_LLM_API_KEY /
 // FALLBACK_LLM_BASE_URL（config.py:588-600）与 DOWNLOADS_PATH（session.py:1882 解析序
-// 的 env 半边）。扩展点（随对应 example 移植进入）：AGENT_JUDGE_MODEL /
-// AGENT_LLM_SCREENSHOT_SIZE / AGENT_EXTRACT_* / SENSITIVE_DATA 等。
+// 的 env 半边）。P5.5（skill 面）追加：AGENT_SKILLS_DIR（config.py:191/:516，缺省
+// "domain-skills"——CWD 相对解析；**偏离登记：Python 的 repo-root 回退不移植**，link:
+// 消费者显式传路径）/ AGENT_ENABLE_SKILL_INJECTION / AGENT_ENABLE_TASK_SKILL_INJECTION
+// （config.py:390/:427 评测口径 B/C 开关）。扩展点（随对应 example 移植进入）：
+// AGENT_JUDGE_MODEL / AGENT_LLM_SCREENSHOT_SIZE / AGENT_EXTRACT_* / SENSITIVE_DATA 等。
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -60,6 +63,9 @@ export interface HostSettings {
   };
   /** AgentSettings 部分覆盖——只含 env 显式设置的键（未设键不出现，核心默认生效） */
   agent: Partial<AgentSettings>;
+  /** skill 内容根目录（AGENT_SKILLS_DIR；缺省 "domain-skills" 相对 CWD——config.py:516
+   *  同款；null = 显式关闭 skill 注入源装配，仅 overrides 可达） */
+  skillsDir: string | null;
 }
 
 /** runAgent/mergeHostSettings 的覆盖面（对应 Python replace(settings.x, ...) 形态） */
@@ -67,6 +73,7 @@ export interface HostSettingsOverrides {
   llm?: Partial<HostSettings["llm"]>;
   browser?: Partial<HostSettings["browser"]>;
   agent?: Partial<AgentSettings>;
+  skillsDir?: string | null;
 }
 
 export interface LoadSettingsOptions {
@@ -137,6 +144,15 @@ export function loadHostSettings(
   if (useVision !== undefined) {
     agent.useVision = useVision;
   }
+  // skill 注入开关（config.py:390/:427 的 env 面——评测口径 B/C 经此翻转）
+  const enableSkillInjection = envBool(env, "AGENT_ENABLE_SKILL_INJECTION");
+  if (enableSkillInjection !== undefined) {
+    agent.enableSkillInjection = enableSkillInjection;
+  }
+  const enableTaskSkillInjection = envBool(env, "AGENT_ENABLE_TASK_SKILL_INJECTION");
+  if (enableTaskSkillInjection !== undefined) {
+    agent.enableTaskSkillInjection = enableTaskSkillInjection;
+  }
 
   // fallback 卡（config.py:588-600：FALLBACK_LLM_MODEL 空 = 无；key/baseUrl 缺省链）
   const apiKey = env.ZHIPU_API_KEY ?? "";
@@ -167,6 +183,9 @@ export function loadHostSettings(
       downloadsPath: envStr(env, "DOWNLOADS_PATH") ?? join(homedir(), "Downloads"),
     },
     agent,
+    // Python config.py:516 缺省 "domain-skills"（CWD 相对，FsSkillSource 读时解析，
+    // 目录不存在 = 静默无 skill）；关闭走 overrides.skillsDir = null
+    skillsDir: envStr(env, "AGENT_SKILLS_DIR") ?? "domain-skills",
   };
 }
 
@@ -203,6 +222,8 @@ export function mergeHostSettings(
     llm,
     browser: { ...base.browser, ...definedOnly(overrides.browser) },
     agent: { ...base.agent, ...definedOnly(overrides.agent) },
+    // 标量：显式给出（含 null=关闭）才覆盖
+    skillsDir: overrides.skillsDir !== undefined ? overrides.skillsDir : base.skillsDir,
   };
 }
 

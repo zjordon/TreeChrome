@@ -28,6 +28,7 @@ import {
   type SensitiveDataSpec,
 } from "./settings.js";
 import { buildTaskSkillText, matchTaskSkill } from "./skills/task-matcher.js";
+import { newestDistilledAt } from "./skills/types.js";
 import type { StepCtx } from "./step/context.js";
 import { runStep } from "./step/pipeline.js";
 import { visionGateOpen } from "./step/sense.js";
@@ -387,6 +388,24 @@ export class Agent implements StepCtx {
     const catalog = await this.skillSource.taskCatalog(hostKey);
     if (catalog.length === 0) return;
     const match = await matchTaskSkill(this.safeTask, catalog, this.llm);
+    // S4 匹配日志（agent.py:563-577 单行 JSON 锚定）：命中/未命中/降档都记——
+    // catalog_newest_distilled_at 是手工迁移的过期探针；match_kind 无命中不适用记
+    // null，task_kind 是用户任务属性无论命中与否照记
+    this.log(
+      `task-skill-match: ${JSON.stringify({
+        ts: `${new Date().toISOString().slice(0, 19)}Z`,
+        host_key: hostKey,
+        catalog_size: catalog.length,
+        catalog_newest_distilled_at: newestDistilledAt(catalog),
+        task: this.safeTask.slice(0, 200),
+        match: match.slug,
+        confidence: match.confidence,
+        reason: match.reason,
+        downgraded: match.downgraded,
+        match_kind: match.slug !== null ? match.matchKind : null,
+        task_kind: match.taskKind,
+      })}`,
+    );
     if (match.slug === null) return;
     const card = catalog.find((c) => c.slug === match.slug);
     if (card === undefined) return;

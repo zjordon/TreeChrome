@@ -22,6 +22,7 @@ import {
   type ProviderConfig,
   resolveAgentSettings,
   type SensitiveDataSpec,
+  type SkillSource,
   type Tools,
 } from "@tw/core";
 import { attachConsole } from "./console.js";
@@ -35,6 +36,7 @@ import {
   mergeHostSettings,
   resolveWsUrl,
 } from "./settings.js";
+import { FsSkillSource } from "./skill-source.js";
 
 /** transport 工厂（core connection.ts 同形；核心未导出该类型，此处本地声明） */
 export type TransportFactory = () => Promise<CdpTransport>;
@@ -63,6 +65,9 @@ export interface AssembleAgentOptions {
   /** 自定义动作注册表载体（custom_action.py 形态）：缺省自建默认 25 动作面 Tools；
    *  注入时 Agent 不自建（extractClient 接线/applyPageFilters 对注入实例照常执行） */
   tools?: Tools | null;
+  /** skill 注入源（评测/扩展自定义源注入位）：显式给出（含 null=关闭）时优先；
+   *  缺省按 settings.skillsDir 构造 FsSkillSource（null = 不装配） */
+  skillSource?: SkillSource | null;
   log?: (message: string) => void;
 }
 
@@ -146,6 +151,14 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
   }
 
   const fs = options.fs !== undefined ? options.fs : new NodeFs();
+  // skill 注入源：显式注入位优先（null = 关闭）；缺省 settings.skillsDir 驱动构造
+  // （目录不存在时 FsSkillSource 读时静默 miss——loader.py 构造零 IO 同款）
+  const skillSource =
+    options.skillSource !== undefined && options.skillSource !== null
+      ? options.skillSource
+      : options.settings.skillsDir !== null
+        ? new FsSkillSource(options.settings.skillsDir, (m) => sink(`[skill] ${m}`))
+        : null;
   const agent = new Agent({
     task: options.task,
     llm,
@@ -156,6 +169,7 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     extractLlm: options.extractLlm ?? null,
     sensitiveData: options.sensitiveData ?? null,
     tools: options.tools ?? null,
+    skillSource,
     downloadsPath: options.settings.browser.downloadsPath,
     // Partial 覆盖先合成全量（AgentOptions 的类型面是全量；运行时同为 resolve 合并）
     settings: resolveAgentSettings(options.settings.agent),

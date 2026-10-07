@@ -28,3 +28,4 @@ export {
   type ResolveWsUrlDeps,
   resolveWsUrl,
 } from "./settings.js";
+export { FsSkillSource, type FsTaskCardMeta } from "./skill-source.js";

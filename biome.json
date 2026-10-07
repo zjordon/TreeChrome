@@ -14,7 +14,8 @@
       "**/*.mjs",
       "**/*.json",
       "!**/test/fixtures",
-      "!docs"
+      "!docs",
+      "!domain-skills"
     ]
   },
   "formatter": {
