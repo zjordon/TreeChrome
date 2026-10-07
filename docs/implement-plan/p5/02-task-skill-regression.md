@@ -137,3 +137,9 @@ wire）→ 智谱网关默认 **max 档思考**（docs.bigmodel.cn/cn/coding-pla
 - **用户侧用法**（coding-plan 单模型约束下）：`AGENT_TASK_SKILL_MODEL=glm-5.3`（同模型
   名也行——建出带 low 的专用卡，匹配器降档而主 agent 步骤保持 max）或
   `LLM_THINKING_EFFORT=low`（全局降档）。
+
+**R9 补记（同日）**：根 `.env` 丢失（成因未明——git 无追踪/stash/回收站/备份均无；非
+本会话命令所删，嫌疑为外部工具）。恢复：`packages/.env`（2026-09-30 的单键拷贝）尚在
+盘上，key 经真调验证有效 → 恢复根 `.env`（key + LLM_MODEL；原 60 行其余键值用户按需
+补回）。**探针补测完成**：max 档 9.0/6.5/8.1s vs low 档 4.3/4.9/5.1s——延迟近乎减半、
+匹配结果一致（同 slug/high 置信）——R9 机制实证有效。
