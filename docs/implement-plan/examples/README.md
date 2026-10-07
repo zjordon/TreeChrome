@@ -307,7 +307,9 @@ node-host：sensitiveData 透传落 Agent；downloadsPath（env 命中/缺省 ho
 
 **轮 4（2026-10-06，增量 6c0facc..feat/examples = 第五批 use-cases 单提交 b5d9b51：phone-price-comparison 薄壳 + 本 README U1-U5 段）**：实跑零意见（complete / 1 文件 / 1m40s）——循环收敛。零采纳零驳回零 stale；P3 backlog 空。dump：_r_examples_4.md（不入库）。
 
-**累计（轮 1-4）**：意见 2 / 采纳 2（P2×2）/ 驳回 0 / stale 0；P3 backlog 空。
+**轮 5（2026-10-07，增量 133c3c0..feat/examples = 第六批 upload 2 提交 def8156+df428b4：三示例 + boot-entry 扩 modelSupportsVision + import 修复）**：实跑零意见（complete / 5 文件 / 1m38s）——循环收敛。零采纳零驳回零 stale；P3 backlog 空。dump：_r_examples_5.md（不入库）。备注：本轮起工作区含用户自留的 phone-price-comparison.mjs TASK 改动（用户拍板保持原样不携带，git add 精确点名）。
+
+**累计（轮 1-5）**：意见 2 / 采纳 2（P2×2）/ 驳回 0 / stale 0；P3 backlog 空。
 
 # ── 第一批：getting_started（2026-09-30 已实施+评审收敛） ─────────────
 
