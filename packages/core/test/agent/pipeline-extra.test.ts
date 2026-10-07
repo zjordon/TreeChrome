@@ -84,7 +84,7 @@ describe("Act 守卫与投影补充", () => {
     // navigate 无 index；投影等长且 null（节点投影路径经 selectorMap 命中分支在另一用例）
     expect(history.history[0].interactedElement).toEqual([null]);
   });
-  it("下载通知进下一步 state 消息", async () => {
+  it("下载通知进下一步 state 消息（偏离 F9.1：filePath 可得时带完整路径；无 path 纯文件名）", async () => {
     const browser = new FakeAgentBrowser();
     const { agent, llm } = make(
       [ok({ action: waitAct, actions: [waitAct] }), ok(doneOutput())],
@@ -101,7 +101,20 @@ describe("Act 守卫与投影补充", () => {
       .filter((m) => m.role === "user")
       .map((m) => (m as { blocks: Array<{ text: string }> }).blocks.map((b) => b.text).join(""))
       .find((t) => t.includes("[Downloads]"));
-    expect(secondCallText).toContain("[Downloads] New files available: a.pdf");
+    expect(secondCallText).toContain("[Downloads] New files available: a.pdf (C:/dl/a.pdf)");
+
+    // 无 path（老 Chrome：downloadProgress 无 filePath）——退回纯文件名
+    const browser2 = new FakeAgentBrowser();
+    const run2 = make([ok({ action: waitAct, actions: [waitAct] }), ok(doneOutput())], browser2, {
+      settings: { trackDownloads: true },
+    });
+    browser2.downloads.push({ filename: "b.pdf", url: "https://a.example/b.pdf", path: null });
+    await run2.agent.run();
+    const text2 = run2.llm.calls[1].messages
+      .filter((m) => m.role === "user")
+      .map((m) => (m as { blocks: Array<{ text: string }> }).blocks.map((b) => b.text).join(""))
+      .find((t) => t.includes("[Downloads]"));
+    expect(text2).toContain("[Downloads] New files available: b.pdf");
   });
 });
 
@@ -126,6 +139,39 @@ describe("obs 事件流", () => {
       "session_end",
     ]);
     bus.close();
+  });
+
+  it("model_result 携带 token 用量（P6 后续 I2 接线：最终那次调用的 usage；缺省 null=?+?）", async () => {
+    const browser = new FakeAgentBrowser();
+    const bus = new EventBus({ log: () => {} });
+    const results: Array<Record<string, unknown>> = [];
+    bus.subscribe("model_result", (e) => results.push(e as unknown as Record<string, unknown>));
+    const { agent } = make(
+      [
+        {
+          kind: "ok",
+          toolInput: doneOutput(),
+          usage: { inputTokens: 1200, outputTokens: 340 },
+        },
+      ],
+      browser,
+      { eventBus: bus },
+    );
+    await agent.run();
+    expect(results).toHaveLength(1);
+    expect(results[0].inputTokens).toBe(1200);
+    expect(results[0].outputTokens).toBe(340);
+    bus.close();
+
+    // 对照：script 不带 usage（缺省 null）→ 事件字段 null（渲染层显示 ?+?）
+    const bus2 = new EventBus({ log: () => {} });
+    const results2: Array<Record<string, unknown>> = [];
+    bus2.subscribe("model_result", (e) => results2.push(e as unknown as Record<string, unknown>));
+    const run2 = make([ok(doneOutput())], browser, { eventBus: bus2 });
+    await run2.agent.run();
+    expect(results2[0].inputTokens).toBeNull();
+    expect(results2[0].outputTokens).toBeNull();
+    bus2.close();
   });
 });
 

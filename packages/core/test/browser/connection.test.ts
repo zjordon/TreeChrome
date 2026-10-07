@@ -15,7 +15,7 @@ import {
 import { makeInternals, scriptConnect } from "./fake-transport.js";
 
 describe("connectSession（enable 序列顺序保真）", () => {
-  it("顺序：getTargets → attach → Page.enable → DOM.enable → dialog → Network+register → setAutoAttach → fileChooser", async () => {
+  it("顺序：getTargets → attach → Page.enable → DOM.enable → Overlay.enable → dialog → Network+register → setAutoAttach → fileChooser", async () => {
     const h = makeInternals();
     scriptConnect(h.transport);
     h.s.currentTargetId = null;
@@ -27,6 +27,7 @@ describe("connectSession（enable 序列顺序保真）", () => {
       "Target.attachToTarget",
       "Page.enable",
       "DOM.enable",
+      "Overlay.enable",
       "Network.enable",
       "Target.setAutoAttach",
       "Page.setInterceptFileChooserDialog",
@@ -50,6 +51,16 @@ describe("connectSession（enable 序列顺序保真）", () => {
     await connectSession(h.s);
     expect(h.s.networkIdle.isEnabled).toBe(false);
     expect(h.logs.some((m) => m.includes("degrading"))).toBe(true);
+  });
+  it("Overlay.enable 失败降级（无高亮，不阻断连接——偏离修复的容错面）", async () => {
+    const h = makeInternals();
+    scriptConnect(h.transport);
+    h.transport.failOn("Overlay.enable", new Error("no overlay"));
+    h.s.currentTargetId = null;
+    h.s.currentSessionId = null;
+    await connectSession(h.s); // 不抛
+    expect(h.s.currentSessionId).toBe("S1");
+    expect(h.logs.some((m) => m.includes("Overlay.enable failed"))).toBe(true);
   });
   it("dialog 注册失败降级；setAutoAttach 失败吞掉", async () => {
     const h = makeInternals();
@@ -152,15 +163,36 @@ describe("下载追踪", () => {
       url: "https://x/a.zip",
       suggestedFilename: "a.zip",
     });
-    // downloadProgress 协议形状：{guid, totalBytes, receivedBytes, state}——无 url/filePath
+    // inProgress 不入缓冲
     h.transport.emit("Browser.downloadProgress", { guid: "g1", state: "inProgress" });
     expect(h.s.completedDownloads).toHaveLength(0);
-    h.transport.emit("Browser.downloadProgress", { guid: "g1", state: "completed" });
+    // completed：协议文档未列 filePath，但 Chrome 实发（用户真机日志证实）——
+    // Python :1914 event.get("filePath") 等价读取，供「二.C 并入 done 附件」
+    h.transport.emit("Browser.downloadProgress", {
+      guid: "g1",
+      state: "completed",
+      filePath: "C:/Users/u/Downloads/a.zip",
+    });
     expect(h.s.completedDownloads).toEqual([
-      { filename: "a.zip", url: "https://x/a.zip", path: null },
+      { filename: "a.zip", url: "https://x/a.zip", path: "C:/Users/u/Downloads/a.zip" },
     ]);
     const consumed = h.s.completedDownloads.splice(0);
     expect(consumed).toHaveLength(1);
+  });
+
+  it("completed 无 filePath 字段时 path=null（二.C 跳过该下载）", async () => {
+    const h = makeInternals();
+    h.transport.respond("Browser.setDownloadBehavior", {});
+    await setupDownloadTracking(h.s, "D:/dl");
+    h.transport.emit("Browser.downloadWillBegin", {
+      guid: "g2",
+      url: "https://x/b.zip",
+      suggestedFilename: "b.zip",
+    });
+    h.transport.emit("Browser.downloadProgress", { guid: "g2", state: "completed" });
+    expect(h.s.completedDownloads).toEqual([
+      { filename: "b.zip", url: "https://x/b.zip", path: null },
+    ]);
   });
 });
 

@@ -837,11 +837,35 @@ describe("退避与预算（FakeClock；常量锚定 2,4,8,16,30 共 5 次睡眠
     expect(mock.calls.length).toBe(1);
   });
 
-  it("非 infra（500）不退避：无 fallback 直接抛 LLMServerError，1 次请求", async () => {
-    const { mock, client } = setup();
-    mock.queueMany(r500());
-    await expect(client.getAction("sys", msgs(), TOOL)).rejects.toBeInstanceOf(LLMServerError);
-    expect(mock.calls.length).toBe(1);
+  it("500 退避（授权偏离 2026-10-02，SDK 等效）：恒败 6 次请求耗尽名额后抛 LLMServerError", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r500(), r500(), r500(), r500(), r500(), r500());
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0);
+    await drainBackoffLadder(clock);
+    await expect(p).rejects.toBeInstanceOf(LLMServerError);
+    expect(mock.calls.length).toBe(6);
+  });
+
+  it("500 一次后成功（网关瞬时抖动自愈——用户实测 extract 被打死的那类 500）", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r500(), toolOk({ done: 1 }));
+    const p = client.getAction("sys", msgs(), TOOL);
+    await clock.advance(0);
+    await drainBackoffLadder(clock);
+    const r = await p;
+    expect(r.kind).toBe("ok");
+    expect(mock.calls.length).toBe(2);
+  });
+
+  it("extract 路径同样退避：500×2 后文本响应成功（偏离落地在 extractCall→callWithBackoff）", async () => {
+    const { mock, clock, client } = setup();
+    mock.queueMany(r500(), r500(), text("extraction result"));
+    const p = client.extract("query", "page content");
+    await clock.advance(0);
+    await drainBackoffLadder(clock);
+    await expect(p).resolves.toBe("extraction result");
+    expect(mock.calls.length).toBe(3);
   });
 
   it("网络层失败同样走退避（ConnectionError 是 infra 谓词成员）", async () => {
@@ -1622,5 +1646,37 @@ describe("getAction action→actions 物化（Python client.py :559-605 移植�
     );
     expect(ok.toolInput.action).toEqual({ name: "scroll", params: { direction: "down" } });
     expect(ok.toolInput.actions).toEqual([{ name: "scroll", params: { direction: "down" } }]);
+  });
+});
+
+describe("轮 2 #1：extractCall 切 fallback 后按新卡能力重建请求（闭包内重算 caps）", () => {
+  it("主卡 forced tool_choice → fallback 声明 supportsForcedTool=false：切换重发无 tool_choice、落 prompt 约束", async () => {
+    const noForced: ProviderConfig = {
+      ...FALLBACK,
+      capabilities: { supportsTools: true, supportsForcedTool: false },
+    };
+    const { mock, clock, client } = setup({ fallback: noForced });
+    const SCHEMA = { type: "object", properties: { answer: { type: "string" } } };
+    const extractOk = (): MockResponseSpec => ({
+      status: 200,
+      body: {
+        content: [{ type: "tool_use", id: "t", name: "extract_result", input: { answer: "x" } }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 5, output_tokens: 7 },
+      },
+    });
+    // extract 带 outputSchema → 走 tool/forced 分支；首呼 429 切换
+    mock.queueMany(r429(), extractOk());
+    const p = client.extract("query", "content", { outputSchema: SCHEMA });
+    await clock.advance(0);
+    const r = await p;
+    expect(typeof r).toBe("string");
+    expect(mock.calls.length).toBe(2);
+    expect(mock.calls[1].url).toContain("fallback.example");
+    const fb = mock.bodyAt(1);
+    // 主卡形态：tool_choice 强制 extract_result；新卡：无 tool_choice、system 带约束
+    expect(mock.bodyAt(0).tool_choice).toEqual({ type: "tool", name: "extract_result" });
+    expect(fb.tool_choice).toBeUndefined();
+    expect(String(fb.system)).toContain("extract_result");
   });
 });

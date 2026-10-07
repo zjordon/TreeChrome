@@ -27,6 +27,10 @@ describe("BrowserSession 生命周期", () => {
     expect(session.currentSessionId).toBe("S1");
     expect(session.currentTargetId).toBe("T1");
   });
+  it("waitBetweenActionsS 公开只读面：缺省 0 / 设置快照（Agent 构造消费）", () => {
+    expect(makeSession().session.waitBetweenActionsS).toBe(0);
+    expect(makeSession({ waitBetweenActions: 0.1 }).session.waitBetweenActionsS).toBe(0.1);
+  });
   it("握手失败自愈一次（重试工厂）；二次失败抛原始异常", async () => {
     let attempts = 0;
     const good = new FakeCdpTransport();

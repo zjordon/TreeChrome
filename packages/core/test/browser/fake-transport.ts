@@ -116,6 +116,7 @@ export function scriptConnect(transport: FakeCdpTransport, sessionId = "S1"): vo
     .respond("Target.attachToTarget", { sessionId })
     .respond("Page.enable", {})
     .respond("DOM.enable", {})
+    .respond("Overlay.enable", {})
     .respond("Network.enable", {})
     .respond("Target.setAutoAttach", {})
     .respond("Page.setInterceptFileChooserDialog", {});

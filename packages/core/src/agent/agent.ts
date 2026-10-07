@@ -52,6 +52,13 @@ export interface AgentOptions {
   /** judge 独立评审 LLM（对应 JudgeSettings.model 非空的独立模型卡；缺省复用主 llm
    *  ——Python AGENT_JUDGE_MODEL 装载独立卡的宿主侧等价注入口） */
   judgeLlm?: LLMClient | null;
+  /** extract 工具专用 LLM（Python AgentSettings.extract_llm，config.py:562-570；
+   *  null/缺省 = 复用主 llm——judgeLlm 同款注入口形态） */
+  extractLlm?: LLMClient | null;
+  /** 下载落盘目录（trackDownloads=true 时 browser.start 需要显式路径——核心包不读
+   *  env/home，Python session.py:1882 的参数 > env > OS Downloads 解析序中 env/home
+   *  半边归宿主，此处接收宿主解析结果） */
+  downloadsPath?: string;
   /** I/O 注入（测试） */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   now?: () => number;
@@ -110,7 +117,10 @@ export class Agent implements StepCtx {
   readonly log: (message: string) => void;
   readonly fs: FileSystemProvider | null;
   readonly rerunHistoryDir: string;
+  /** 下载落盘目录（宿主解析；trackDownloads=true 时 run() 传 browser.start） */
+  readonly downloadsPath: string | undefined;
   readonly waitBetweenActionsS: number;
+  readonly outputMode: string;
   private readonly judge: JudgeEvaluator | null;
   private resumeGate: Promise<void> = Promise.resolve();
   private resumeRelease: (() => void) | null = null;
@@ -162,8 +172,8 @@ export class Agent implements StepCtx {
     if (s.actionPageFilters !== null) {
       this.tools.applyPageFilters(s.actionPageFilters);
     }
-    // extract 工具接线（专用 LLM 缺省复用主 llm——P2 面即 LLMClient 实例）
-    this.tools.ctx.extractClient = this.llm;
+    // extract 工具接线（专用 LLM 缺省复用主 llm——Python extract_llm=None 同语义）
+    this.tools.ctx.extractClient = options.extractLlm ?? this.llm;
     this.tools.ctx.extractionSchema = s.extractionSchema;
 
     this.compactor = s.messageCompaction?.enabled
@@ -182,7 +192,12 @@ export class Agent implements StepCtx {
     this.log = options.log ?? ((m) => console.info(m));
     this.fs = options.fs ?? null;
     this.rerunHistoryDir = options.rerunHistoryDir ?? "rerun-history";
-    this.waitBetweenActionsS = 0; // Python 读 BrowserSettings.waitBetweenActions——宿主经 browser 设置传入
+    this.downloadsPath = options.downloadsPath;
+    // Python agent.py:93 从 browser._settings 快照；BrowserSession 公开只读面承载
+    this.waitBetweenActionsS = options.browser.waitBetweenActionsS;
+    // Python agent.py:218 getattr(llm, 'output_mode', 'standard')——registry 侧
+    // destructuring 缺省即 getattr 兜底（fake client 无字段 → undefined → standard）
+    this.outputMode = options.llm.outputMode;
     this.judge = s.judge.enabled ? new JudgeEvaluator(options.judgeLlm ?? this.llm, s.judge) : null;
     this.historyMessageProvider = () => this.buildAgentHistoryDescription();
 
@@ -195,6 +210,7 @@ export class Agent implements StepCtx {
     this.toolSchema = this.tools.registry.getToolSchema({
       enablePlanning: s.enablePlanning,
       maxActions: s.maxActionsPerStep,
+      outputMode: this.outputMode,
     }) as unknown as Record<string, unknown>;
   }
 
@@ -208,6 +224,8 @@ export class Agent implements StepCtx {
     await this.browser.start({
       trackDownloads: this.settings.trackDownloads,
       enableRecentEvents: this.settings.enableRecentEvents,
+      // 宿主解析的下载目录（trackDownloads=true 时 BrowserSession 要求显式路径）
+      downloadsPath: this.downloadsPath,
     });
 
     const initialUrl = extractUrl(this.task);

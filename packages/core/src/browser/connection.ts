@@ -3,6 +3,10 @@
 // （@640d52a）。有意偏离（p4/01 §6）：连接经 transportFactory（自愈=重试工厂一次，
 // 无 url 比较——discover 在宿主工厂内）；下载目录由宿主显式传入（核心包禁 ambient，
 // Python 的 env/~/Downloads 回退属宿主职责）；多播事件下先解订再注册的单例纪律。
+// 有意偏离（examples 批，2026-09-30）：连接序列补 Overlay.enable——Python 从不启用
+// Overlay 域却直接发 Overlay.highlightNode，Chrome 拒绝（"Overlay must be enabled"），
+// Python 侧同款失败被 logger.debug 吞掉不可见；TS 修复使交互高亮真正生效（switchTab
+// 侧随 file-chooser 拦截的 per-session 重发先例一并重发）。
 
 import type { SessionInternals } from "./transport.js";
 import { bindSend, type CdpTransport } from "./transport.js";
@@ -43,9 +47,9 @@ export async function acquireTransport(
 
 /**
  * _connect 序列（session.py:1642-1721，顺序保真）：tracker reset → 握手 →
- * target 发现/attach → Page.enable → DOM.enable → dialog 回调（降级）→
- * Network.enable + tracker 注册（降级）→ setAutoAttach（best-effort）→
- * file-chooser 拦截 → highlight 接线。
+ * target 发现/attach → Page.enable → DOM.enable → Overlay.enable（偏离修复）→
+ * dialog 回调（降级）→ Network.enable + tracker 注册（降级）→ setAutoAttach
+ * （best-effort）→ file-chooser 拦截 → highlight 接线。
  */
 export async function connectSession(s: SessionInternals): Promise<void> {
   s.networkIdle.reset();
@@ -70,6 +74,7 @@ export async function connectSession(s: SessionInternals): Promise<void> {
 
   await s.send("Page.enable", {});
   await s.send("DOM.enable", {});
+  await enableOverlay(s);
   // dialog 回调 always-on（挂起的 alert/confirm 冻结 Runtime.evaluate——493 教训）；
   // 失败降级为不处理
   try {
@@ -104,6 +109,60 @@ export function unsubscribeAllEvents(s: SessionInternals): void {
   for (const dispose of s.eventDisposers) dispose();
   s.eventDisposers.length = 0;
   s.fileChooserListenerDispose = null;
+}
+
+/**
+ * Overlay 域启用（交互高亮的 CDP 前置——偏离修复，见文件头）：best-effort，失败
+ * 降级为无高亮（highlight 自身即 non-critical 设计）。per-session——switchTab 换
+ * target 后由 enableSessionDomains 全套重发（Overlay 依赖同批的 DOM.enable——
+ * 用户日志暴露的 "DOM should be enabled first" 缺口）。
+ */
+export async function enableOverlay(s: SessionInternals): Promise<void> {
+  try {
+    await s.send("Overlay.enable", {});
+  } catch (e) {
+    s.log(`Overlay.enable failed (degrading, no highlight): ${String(e)}`);
+  }
+}
+
+/**
+ * switchTab 的全套域重发（授权偏离 2026-10-02，方案 F9.4）：connect 序列的
+ * per-session 子集——Page/DOM/Network(+tracker 重注册，幂等先解订)/setAutoAttach，
+ * 域命令逐条降级（switchTab 是会话中操作，单域失败只降级不硬失败——PDF viewer 等
+ * 特殊页可能拒绝个别域）。dialog 监听**不重注册**（transport 级单例，
+ * Page.enable 重发即恢复事件流，重复注册会随切页次数累积）。Overlay.enable 由
+ * 调用方（tabs.ts）在本批之后发送（依赖 DOM 先启用）。Python switch_tab 不重发
+ * 任何域（其 Overlay 从不启用故无此依赖暴露）——p4/01 §3.2 复核项就此了结。
+ */
+export async function enableSessionDomains(s: SessionInternals): Promise<void> {
+  try {
+    await s.send("Page.enable", {});
+  } catch (e) {
+    s.log(`Page.enable re-send failed (degrading): ${String(e)}`);
+  }
+  try {
+    await s.send("DOM.enable", {});
+  } catch (e) {
+    s.log(`DOM.enable re-send failed (degrading): ${String(e)}`);
+  }
+  const transport = s.transport;
+  if (transport !== null) {
+    try {
+      await s.send("Network.enable", {});
+      s.networkIdle.register(transport);
+    } catch (e) {
+      s.log(`Network.enable re-send failed (degrading): ${String(e)}`);
+    }
+  }
+  try {
+    await s.send("Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
+  } catch {
+    // 与 connect 同款：best-effort 吞掉
+  }
 }
 
 /**
@@ -215,8 +274,8 @@ export async function setupDownloadTracking(
       const e = isRecord(event) ? event : {};
       const guid = typeof e.guid === "string" ? e.guid : "";
       const filename = typeof e.suggestedFilename === "string" ? e.suggestedFilename : "unknown";
-      // url 只在 begin 事件携带（评审轮 1 #3：downloadProgress 协议无 url/filePath——
-      // Python :1907-1915 同款缺口，在此捕获）
+      // url 只在 begin 事件携带（评审轮 1 #3：progress 事件无 url——Python :1907-1915
+      // 同款缺口，在此捕获；filePath 则相反，只在 progress 的 completed 实发）
       const url = typeof e.url === "string" ? e.url : "";
       s.pendingDownloads.set(guid, { filename, url });
       s.log(`Download started: ${filename}`);
@@ -232,7 +291,10 @@ export async function setupDownloadTracking(
       s.completedDownloads.push({
         filename: entry.filename,
         url: entry.url,
-        path: null, // downloadProgress 无 filePath；实际路径属宿主/文件族（P4b）
+        // Python :1914 event.get("filePath") 等价——协议文档未列该字段，但 Chrome
+        // 实发（真机日志证实：completed 事件携带 filePath）。path 是「二.C 下载自动
+        // 并入 done 附件」的供氧面：null 会让该下载被跳过（用户日志暴露的断链点）
+        path: typeof e.filePath === "string" ? e.filePath : null,
       });
       s.log(`Download completed: ${entry.filename}`);
     }),

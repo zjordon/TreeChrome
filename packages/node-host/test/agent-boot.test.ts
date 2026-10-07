@@ -1,10 +1,15 @@
-// assembleAgent / runAgent / autoAllowSummaryLine：装配接线与 one-shot 早退/失败路径
-// （无网络：transport 用假工厂，LLM 用真 LLMClient+死端点卡片——构造期不触网）。
+// assembleAgent / runAgent / autoAllowSummaryLine / buildProviderCard：装配接线与
+// one-shot 早退/失败路径（无网络：transport 用假工厂，LLM 用真 LLMClient+死端点
+// 卡片——构造期不触网）。
 
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   type AutoAllowPolicy,
   type BrowserSession,
   type CdpTransport,
+  DEFAULT_MAX_TOKENS,
   EventBus,
   LLMClient,
   PolicyGate,
@@ -14,6 +19,7 @@ import {
   type AssembledAgent,
   assembleAgent,
   autoAllowSummaryLine,
+  buildProviderCard,
   finalizeAssembled,
   type HostSettings,
   runAgent,
@@ -25,8 +31,10 @@ const settings = (over: Partial<HostSettings> = {}): HostSettings => ({
     model: "glm-test",
     baseUrl: "http://127.0.0.1:1",
     maxTokens: 64,
+    outputMode: "standard",
+    fallback: null,
   },
-  browser: { cdpHost: "localhost", cdpPort: 9222, wsUrl: "ws://stub" },
+  browser: { cdpHost: "localhost", cdpPort: 9222, wsUrl: "ws://stub", downloadsPath: "D:/tmp/dl" },
   agent: {},
   ...over,
 });
@@ -120,6 +128,168 @@ describe("assembleAgent", () => {
       console: false,
     });
     expect(assembled.agent.systemPrompt.length).toBeGreaterThan(0);
+    // 未覆盖时浏览器/Agent 走核心默认（fast_agent.py 对照组）
+    expect(assembled.browser.waitBetweenActionsS).toBe(0);
+    expect(assembled.agent.waitBetweenActionsS).toBe(0);
+    expect(assembled.agent.outputMode).toBe("standard");
+  });
+
+  test("browser 时延覆盖落 BrowserSession、llm.outputMode 落卡片（fast_agent 接线）", () => {
+    const assembled = assembleAgent({
+      task: "t",
+      settings: settings({
+        llm: {
+          apiKey: "k",
+          model: "glm-test",
+          baseUrl: "http://127.0.0.1:1",
+          maxTokens: 64,
+          outputMode: "flash",
+          fallback: null,
+        },
+        browser: {
+          cdpHost: "localhost",
+          cdpPort: 9222,
+          wsUrl: "ws://stub",
+          waitBetweenActions: 0.1,
+          pageSettleTimeout: 0.5,
+          downloadsPath: "D:/tmp/dl",
+        },
+      }),
+      wsUrl: "ws://stub",
+      console: false,
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(assembled.browser.waitBetweenActionsS).toBe(0.1);
+    expect(assembled.agent.waitBetweenActionsS).toBe(0.1); // Agent 构造快照（agent.py:93）
+    expect(assembled.agent.outputMode).toBe("flash"); // 卡片 → LLMClient → Agent 快照
+    const schema = assembled.agent.toolSchema as {
+      input_schema: { required: string[] };
+    };
+    expect(schema.input_schema.required).toEqual(["action"]); // flash schema 形态
+  });
+
+  test("downloadsPath/sensitiveData/extractLlm 透传落 Agent（features 批 F3）", () => {
+    const extractLlm = deadLlm();
+    const assembled = assembleAgent({
+      task: "填 <x_name>",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      extractLlm,
+      sensitiveData: { "<x_name>": "real-name" },
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(assembled.agent.downloadsPath).toBe("D:/tmp/dl");
+    expect(assembled.agent.tools.ctx.extractClient).toBe(extractLlm);
+    // sensitive：safeTask 占位替换 + 归一化字典（Agent.normalizeSensitiveData 扁平形态）
+    expect(assembled.agent.safeTask).toBe("填 <x_name>");
+    expect(assembled.agent.sensitiveDataRaw).toEqual({
+      "<x_name>": { value: "real-name", urls: null },
+    });
+    // 对照：不注入时 extractClient 复用主 llm、sensitiveDataRaw 为 null
+    const plain = assembleAgent({
+      task: "t",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(plain.agent.tools.ctx.extractClient).toBe(plain.agent.llm);
+    expect(plain.agent.sensitiveDataRaw).toBeNull();
+  });
+
+  test("tools 透传（第三批 C2-1）：注入实例落 agent.tools 身份；缺省自建 25 动作面", async () => {
+    const { Tools } = await import("@tw/core");
+    const custom = new Tools({ log: () => {} });
+    custom.registry.register({
+      name: "count_words",
+      description: "Count words (test).",
+      params: {
+        name: "CountParams",
+        fields: [{ name: "text", type: "string", required: true }],
+      },
+      handler: async () => null,
+      terminatesSequence: false,
+    });
+    const assembled = assembleAgent({
+      task: "t",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      tools: custom,
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(assembled.agent.tools).toBe(custom); // 身份——Agent 不自建
+    expect(assembled.agent.tools.registry.actions.has("count_words")).toBe(true);
+    expect(assembled.agent.tools.registry.actions.size).toBe(26); // 默认 25 + 自定义 1
+
+    const plain = assembleAgent({
+      task: "t",
+      settings: settings(),
+      wsUrl: "ws://stub",
+      console: false,
+      transportFactory: async () => fakeTransport(),
+    });
+    expect(plain.agent.tools).not.toBe(custom);
+    expect(plain.agent.tools.registry.actions.size).toBe(25);
+  });
+});
+
+describe("buildProviderCard（fallback 卡面）", () => {
+  test("无 fallback：卡片不挂 fallback 键值（null）", () => {
+    const card = buildProviderCard(settings().llm);
+    expect(card.name).toBe("zhipu-anthropic");
+    expect(card.protocol).toBe("anthropic-messages");
+    expect(card.fallback).toBeNull();
+  });
+
+  test("有 fallback：完整独立卡（maxTokens 恒 DEFAULT_MAX_TOKENS）", () => {
+    const card = buildProviderCard(
+      settings({
+        llm: {
+          apiKey: "k",
+          model: "glm-test",
+          baseUrl: "http://127.0.0.1:1",
+          maxTokens: 64,
+          outputMode: "standard",
+          fallback: { model: "glm-4-flash", apiKey: "k", baseUrl: "http://127.0.0.1:1" },
+        },
+      }).llm,
+    );
+    expect(card.fallback).toEqual({
+      name: "zhipu-anthropic-fallback",
+      protocol: "anthropic-messages",
+      baseUrl: "http://127.0.0.1:1",
+      apiKey: "k",
+      model: "glm-4-flash",
+      maxTokens: DEFAULT_MAX_TOKENS,
+    });
+  });
+
+  test("fallback 部分覆盖：key/baseUrl 未设（含空串）时复用主卡（overrides 形态）", () => {
+    const card = buildProviderCard({
+      apiKey: "main-key",
+      model: "glm-test",
+      baseUrl: "http://main.example",
+      maxTokens: 64,
+      outputMode: "standard",
+      fallback: { model: "glm-4-flash", apiKey: "", baseUrl: "" },
+    });
+    expect(card.fallback).toMatchObject({
+      model: "glm-4-flash",
+      apiKey: "main-key",
+      baseUrl: "http://main.example",
+      maxTokens: DEFAULT_MAX_TOKENS,
+    });
+    const card2 = buildProviderCard({
+      apiKey: "main-key",
+      model: "glm-test",
+      baseUrl: "http://main.example",
+      maxTokens: 64,
+      outputMode: "standard",
+      fallback: { model: "m2" },
+    });
+    expect(card2.fallback).toMatchObject({ model: "m2", apiKey: "main-key" });
   });
 });
 
@@ -132,6 +302,55 @@ describe("runAgent", () => {
     );
   });
 
+  test("overrides 在 checkReady 前合并生效（双向证据：补 key 放行 / 清 key 拦截）", async () => {
+    const noKey = settings();
+    noKey.llm.apiKey = "";
+    // 正向：overrides 补回 key → 通过前置检查，推进到 transport（wsUrl 直连跳过发现）
+    await expect(
+      runAgent({
+        task: "t",
+        settings: noKey,
+        overrides: { llm: { apiKey: "k" } },
+        console: false,
+        transportFactory: async () => {
+          throw new Error("reached-transport");
+        },
+      }),
+    ).rejects.toThrow("reached-transport");
+    // 反向：overrides 清空 key → 被前置检查拦截
+    await expect(
+      runAgent({
+        task: "t",
+        settings: settings(),
+        overrides: { llm: { apiKey: "" } },
+        console: false,
+      }),
+    ).rejects.toThrow("Error: Set ZHIPU_API_KEY environment variable");
+  });
+
+  test("trackDownloads：runAgent 先 ensureDir 再装配（目录在 transport 失败前已建）", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "tw-dltest-"));
+    const dl = join(tmp, "nested", "downloads");
+    try {
+      await expect(
+        runAgent({
+          task: "t",
+          settings: settings({
+            agent: { trackDownloads: true },
+            browser: { ...settings().browser, downloadsPath: dl },
+          }),
+          console: false,
+          transportFactory: async () => {
+            throw new Error("boom");
+          },
+        }),
+      ).rejects.toThrow("boom");
+      expect(existsSync(dl)).toBe(true); // ensureDir 在装配前执行（嵌套层级可建）
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("Chrome 发现失败：抛 Python 同款文案 + 详情", async () => {
     const fetch = vi.fn(async () => {
       throw new TypeError("fetch failed");
@@ -141,7 +360,14 @@ describe("runAgent", () => {
       await expect(
         runAgent({
           task: "t",
-          settings: settings({ browser: { cdpHost: "localhost", cdpPort: 9222, wsUrl: null } }),
+          settings: settings({
+            browser: {
+              cdpHost: "localhost",
+              cdpPort: 9222,
+              wsUrl: null,
+              downloadsPath: "D:/tmp/dl",
+            },
+          }),
           console: false,
         }),
       ).rejects.toThrow(

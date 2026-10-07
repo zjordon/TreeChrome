@@ -64,6 +64,9 @@ export interface StepCtx {
   skipStepIncrement: boolean;
   /** 动作间反检测等待·秒（Python 从 BrowserSettings 构造时快照） */
   readonly waitBetweenActionsS: number;
+  /** 输出模式（Python step._output_mode，agent.py:218 从 llm 实例读取）：
+   *  传给 getToolSchema 决定 standard/flash/thinking schema 形态 */
+  readonly outputMode: string;
   stepStartTime: number;
   currentModelCallId: string;
   /** 站点级/任务级 skill 注入源（宿主注入；null = 禁用） */

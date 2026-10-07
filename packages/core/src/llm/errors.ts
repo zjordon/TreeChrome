@@ -104,16 +104,16 @@ export class LLMCallTimeoutError extends Error {
 }
 
 /**
- * 退避谓词：429、连接类与单请求级超时（对齐 Python is_llm_infra_error——
- * auth/5xx 不退避，重试无益，维持 fallback-切换-否则-抛）。
- * LLMTimeoutError 纳入（轮 13 #15）：能到达本谓词的超时只来自单请求级
- * timeoutMs（无梯子 deadline 的 600s 兜底等，网关挂起类瞬时基建故障）——
- * Python SDK 侧 APITimeoutError ⊂ APIConnectionError 同为 infra；梯子
- * deadline 的到点强杀不会以本类型到达（callWithBackoff 的 signal 预检先
- * 还原为裸 abort 上抛，getAction 层才转 LLMTimeoutError）。
- * 注意（轮 40 #11 口径收口）：http.ts 会为 5xx（LLMServerError）挂载
- * retryAfterMs（轮 38 #8），但 5xx 不在本谓词内——该字段无退避消费方，
- * 仅为宿主侧重试决策的信息挂载；勿据「retryAfterMs 存在」扩员。
+ * 退避/分罪谓词：429、连接类与单请求级超时（对齐 Python is_llm_infra_error——
+ * auth/4xx/5xx 不在其内）。LLMTimeoutError 纳入（轮 13 #15）：能到达本谓词的超时
+ * 只来自单请求级 timeoutMs（无梯子 deadline 的 600s 兜底等，网关挂起类瞬时基建
+ * 故障）——Python SDK 侧 APITimeoutError ⊂ APIConnectionError 同为 infra；梯子
+ * deadline 的到点强杀不会以本类型到达（callWithBackoff 的 signal 预检先还原为
+ * 裸 abort 上抛，getAction 层才转 LLMTimeoutError）。
+ * 5xx（LLMServerError，授权偏离 2026-10-02）：**不在本谓词**（step 分罪仍计能力
+ * 失败，Python is_llm_infra_error 同款），但 callWithBackoff 侧对其单独放行退避
+ * ——Python 经 anthropic SDK 隐式重试 5xx，TS 无 SDK 显式补齐（client.ts 内联
+ * 谓词）；http.ts 挂载的 retryAfterMs 因此有了退避消费方。
  */
 export function isInfraError(
   e: unknown,

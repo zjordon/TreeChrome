@@ -1,10 +1,12 @@
 // Tab 管理：getTabs/switchTab/closeTab/createTab。移植自 TreeWalker session.py
-// :3617-3670 @640d52a。switchTab 清缓存 + 重挂 file-chooser 拦截（per-session，
-// Bug-1 回归源）+ settle；不重发域 enable（Python 现状，p4/01 §3.2 登记复核项）。
+// :3617-3670 @640d52a。switchTab 清缓存 + 全套域重发（授权偏离 2026-10-02，方案
+// F9.4——Python 只重挂 file-chooser 拦截；曾按其现状不重发域 enable 并标记 p4/01
+// §3.2 复核项，用户日志暴露 Overlay 依赖 DOM 的缺口后就此了结：Page/DOM/Network/
+// setAutoAttach/拦截/Overlay 全重发，见 connection.ts enableSessionDomains）+ settle。
 // Target.* 浏览器级命令一律不绑 sessionId 发送（Python 同款；评审轮 1 #8——关闭当前
 // tab 后旧 session 已销毁，绑定发送会命中 "Session with given id not found"）。
 
-import { enableFileChooserIntercept } from "./connection.js";
+import { enableFileChooserIntercept, enableOverlay, enableSessionDomains } from "./connection.js";
 import { waitForReadyStateSettle } from "./navigation.js";
 import type { SessionInternals } from "./transport.js";
 import type { TabInfo } from "./views.js";
@@ -39,7 +41,7 @@ export async function getTabs(s: SessionInternals): Promise<TabInfo[]> {
   return tabs;
 }
 
-/** 切换 tab（:3637-3651）：清两层缓存 → activate + attach → 重挂拦截 → settle */
+/** 切换 tab（:3637-3651）：清两层缓存 → activate + attach → 全套域重发 → settle */
 export async function switchTab(s: SessionInternals, targetId: string): Promise<void> {
   s.clearSelectorMapCaches();
   await browserSend("Target.activateTarget", s, { targetId });
@@ -49,8 +51,12 @@ export async function switchTab(s: SessionInternals, targetId: string): Promise<
   });
   s.currentTargetId = targetId;
   s.currentSessionId = String(result.sessionId);
-  // file-chooser 拦截是 per-session 的：新 tab 必须重发，否则原生对话框回归
+  // 新 session 的域全套重发（F9.4）：域 enable → file-chooser 拦截（per-session，
+  // Bug-1 回归源）→ Overlay.enable（依赖同批的 DOM.enable，此前单发被
+  // "DOM should be enabled first" 拒绝）
+  await enableSessionDomains(s);
   await enableFileChooserIntercept(s);
+  await enableOverlay(s);
   s.log(`Switched to tab: ${targetId}`);
   await waitForReadyStateSettle(s);
 }

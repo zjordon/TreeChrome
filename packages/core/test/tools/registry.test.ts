@@ -177,7 +177,7 @@ describe("getActionDescriptionsText", () => {
     expect(enumOf(schemaOn).enum).toEqual(FIXTURE.batch1.pageFiltered.schemaNames);
     expect(enumOf(schemaOff).enum).toEqual(FIXTURE.batch1.pageFiltered.schemaNamesOther);
   });
-  it("变体 B done 隐藏 success/files_to_display（对拍 fixture）", async () => {
+  it("变体 B done 隐藏 success/files_to_display + data 行附紧凑 schema（偏离 F9.3；fixture 为 Python 侧行为锚）", async () => {
     const { readFileSync: rf } = await import("node:fs");
     const fixture = JSON.parse(
       rf(fileURLToPath(new URL("../fixtures/python-anchors/tools.json", import.meta.url)), "utf8"),
@@ -190,7 +190,6 @@ describe("getActionDescriptionsText", () => {
       ],
     };
     const tools = new Tools({ outputModel, log: () => {} });
-    // fixture 的变体 B 文本只有 done/navigate 两行动作——逐行比对 done 行
     const doneLine = tools.registry
       .getActionDescriptionsText()
       .split("\n")
@@ -198,8 +197,13 @@ describe("getActionDescriptionsText", () => {
     const fixtureDoneLine = fixture.structuredDone.descriptionsText
       .split("\n")
       .find((l) => l.startsWith("- **done**"));
-    expect(doneLine).toBe(fixtureDoneLine);
-    expect(doneLine).toContain("data: Structured final output.");
+    // 偏离 F9.3（2026-10-02）：Python 原文（=fixture 行）只有一句 description——
+    // $ref 不展开使字段名对模型不可见（tool schema 的 params 是通用 object，文本是
+    // 唯一通道）；TS 在 data 描述后附紧凑 schema。fixture 行锚定 Python 侧行为
+    expect(fixtureDoneLine?.startsWith("- **done**(data: Structured final output.): ")).toBe(true);
+    expect(doneLine).toContain("data: Structured final output. Schema: ");
+    expect(doneLine).toContain('"total": integer');
+    expect(doneLine).toContain('"note": string?');
     expect(doneLine).not.toContain("success:");
   });
 });

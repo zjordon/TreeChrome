@@ -4,6 +4,7 @@
 
 export { CdpWsClient, discoverWebSocketUrl } from "@tw/cdp-ws";
 export {
+  ActionResult,
   Agent,
   type AgentHistoryList,
   AutoAllowPolicy,
@@ -11,6 +12,8 @@ export {
   DEFAULT_MAX_TOKENS,
   EventBus,
   LLMClient,
+  modelSupportsVision,
   PolicyGate,
+  Tools,
 } from "@tw/core";
 export * from "./index.js";

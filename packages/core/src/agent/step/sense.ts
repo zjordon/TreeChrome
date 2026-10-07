@@ -85,7 +85,11 @@ export async function prepareContext(
           path: d.path ?? null,
         });
       }
-      downloadNotice = `New files available: ${newDownloads.map((d) => d.filename).join(", ")}`;
+      // 偏离（用户授权 2026-10-02，方案 F9.1）：Python step.py:403 只报文件名；TS 在
+      // downloadProgress.filePath 可得时附带完整路径——模型可直接 read_file 真实路径
+      // 验证，免掉猜下载目录的弯路（两轮真机日志共同暴露的模式）。无 path 保持纯文件名
+      const items = newDownloads.map((d) => (d.path ? `${d.filename} (${d.path})` : d.filename));
+      downloadNotice = `New files available: ${items.join(", ")}`;
     }
   }
 
@@ -210,6 +214,7 @@ export function updateActionModelsForPage(ctx: StepCtx, pageUrl: string): void {
     pageUrl,
     enablePlanning: ctx.settings.enablePlanning,
     maxActions: ctx.settings.maxActionsPerStep,
+    outputMode: ctx.outputMode,
   }) as unknown as Record<string, unknown>;
   ctx.systemPrompt = buildSystemPrompt(
     ctx.tools.registry.getActionDescriptionsText(pageUrl),
@@ -244,6 +249,7 @@ function forceDoneOnLastStep(ctx: StepCtx): void {
     ctx.toolSchema = ctx.tools.registry.getToolSchema({
       includeActions: ["done"],
       maxActions: 1,
+      outputMode: ctx.outputMode,
     }) as unknown as Record<string, unknown>;
   }
 }
@@ -252,12 +258,13 @@ function forceDoneAfterFailure(ctx: StepCtx): void {
   if (ctx.state.consecutiveFailures >= ctx.settings.maxFailures) {
     const msg =
       `FAILURE LIMIT: You have failed ${ctx.state.consecutiveFailures} consecutive times. ` +
-      `The agent will terminate after this step. ` +
+      "The agent will terminate after this step. " +
       'You must call the "done" action now with whatever results you have.';
     addContextMessage(ctx, msg);
     ctx.toolSchema = ctx.tools.registry.getToolSchema({
       includeActions: ["done"],
       maxActions: 1,
+      outputMode: ctx.outputMode,
     }) as unknown as Record<string, unknown>;
   }
 }

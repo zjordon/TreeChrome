@@ -19,6 +19,7 @@ import {
   LLMCallTimeoutError,
   LLMError,
   LLMProtocolViolationError,
+  LLMServerError,
   LLMTimeoutError,
 } from "./errors.js";
 import type { LLMProvider } from "./provider.js";
@@ -252,10 +253,10 @@ function materializeActionsMirror(toolInput: Record<string, unknown>): void {
   if (!("action" in toolInput)) return;
   // Python get("action", {})：缺省只在键缺失时生效（上方早退）——action: null
   // 保持 null 原样入列，归一化交 think 层
-  const raw = toolInput["action"];
+  const raw = toolInput.action;
   const list = Array.isArray(raw) ? raw : [raw];
-  toolInput["actions"] = list;
-  toolInput["action"] = list.length > 0 ? list[0] : {};
+  toolInput.actions = list;
+  toolInput.action = list.length > 0 ? list[0] : {};
 }
 
 /**
@@ -285,9 +286,13 @@ export class LLMClient {
   /** opts.timeoutMs 非法值一次性告警的去重（轮 38 #3：误配每步都在发生，一次即可） */
   private warnedInvalidDeadline = false;
   private readonly deps: Required<LLMDeps>;
+  /** 输出模式（Python client.py:147 self.output_mode）：LLM 层不消费，Agent 侧
+   *  读取（agent.py:218 getattr 等价）传给 getToolSchema 决定 schema 形态 */
+  readonly outputMode: string;
 
   constructor(config: ProviderConfig, deps?: LLMDeps, provider?: LLMProvider) {
     this.config = config;
+    this.outputMode = config.outputMode ?? "standard";
     this.deps = resolveDeps(deps);
     this.sensitiveObs = new SensitiveObservability(this.deps.log);
     // provider 注入（构造注入优先）：宿主自建适配器/测试 ScriptedLLMProvider 直挂。
@@ -710,11 +715,13 @@ export class LLMClient {
   }
 
   /**
-   * 单次直发调用（Python _extract_call :621-633 等价）：**不走 getAction 的解析梯子
-   * 与退避**——RateLimit/APIError 仅触发 fallback 单向切换（切换成功重入自身一次）；
-   * callTimeoutMs 内层超时抛 LLMCallTimeoutError（不被 fallback 捕获，Python
-   * asyncio.TimeoutError 同款）。承重墙复用：supportsForcedTool=false 落 prompt
-   * 约束，无 tools 能力落 schema 进 system。
+   * 单次直发调用（Python _extract_call :621-633 等价）：不走 getAction 的解析梯子；
+   * **退避经 callWithBackoff**（授权偏离 2026-10-02：Python 此层代码无退避，但其
+   * anthropic SDK 隐式重试 408/409/429/5xx/连接错——TS 无 SDK，补齐等效韧性）；
+   * APIError 仍触发 fallback 单向切换（切换成功重入自身一次）；callTimeoutMs 内层
+   * 超时抛 LLMCallTimeoutError（不被退避/fallback 捕获，Python asyncio.TimeoutError
+   * 同款）。承重墙复用：supportsForcedTool=false 落 prompt 约束，无 tools 能力落
+   * schema 进 system。
    */
   private async extractCall(
     systemPrompt: string | null,
@@ -723,26 +730,33 @@ export class LLMClient {
     maxTokens: number | undefined,
     callTimeoutMs: number | null,
   ): Promise<ChatResponse> {
-    const caps = this.provider.capabilities;
-    let sys = systemPrompt;
-    let tools: ToolDefinition[] | null = null;
-    let toolChoice: ToolChoice | undefined;
-    if (tool !== null && caps.supportsTools) {
-      tools = [tool];
-      if (caps.supportsForcedTool) {
-        toolChoice = { kind: "forced", name: tool.name };
-      } else {
-        sys = (sys ?? "") + forcedToolConstraint(tool.name);
+    // 能力派生字段（tools/toolChoice/prompt 约束）须每轮按 this.provider 现值重算：
+    // callWithBackoff 内部的 fallback 切换会 continue 重发——闭包外一次性构建会把
+    // 旧卡的 forced toolChoice/tools 发给能力不同的新卡（端点 400，切换名额已耗尽；
+    // 轮 2 #1 回归——getAction 的 buildChatRequest 每轮重读 caps，此处同构）
+    const buildReq = (signal?: AbortSignal): ChatRequest => {
+      const caps = this.provider.capabilities;
+      let sys = systemPrompt;
+      let tools: ToolDefinition[] | null = null;
+      let toolChoice: ToolChoice | undefined;
+      if (tool !== null && caps.supportsTools) {
+        tools = [tool];
+        if (caps.supportsForcedTool) {
+          toolChoice = { kind: "forced", name: tool.name };
+        } else {
+          sys = (sys ?? "") + forcedToolConstraint(tool.name);
+        }
+      } else if (tool !== null) {
+        sys = (sys ?? "") + noToolsConstraint(tool);
       }
-    } else if (tool !== null) {
-      sys = (sys ?? "") + noToolsConstraint(tool);
-    }
-    const req: ChatRequest = {
-      systemPrompt: sys,
-      messages: [{ role: "user", blocks: [{ kind: "text", text: userPrompt }] }],
-      tools,
-      toolChoice,
-      maxTokens,
+      return {
+        systemPrompt: sys,
+        messages: [{ role: "user", blocks: [{ kind: "text", text: userPrompt }] }],
+        tools,
+        toolChoice,
+        maxTokens,
+        ...(signal !== undefined ? { signal } : {}),
+      };
     };
     try {
       if (callTimeoutMs !== null && callTimeoutMs > 0) {
@@ -755,7 +769,7 @@ export class LLMClient {
           },
         );
         try {
-          return await this.provider.chat({ ...req, signal: controller.signal });
+          return await this.callWithBackoff(() => buildReq(controller.signal));
         } catch (e) {
           if (controller.signal.aborted && isAbortError(e)) {
             throw new LLMCallTimeoutError(
@@ -768,10 +782,11 @@ export class LLMClient {
           cancel.abort(); // 取消计时（真实时钟下不留悬挂定时器）
         }
       }
-      return await this.provider.chat(req);
+      return await this.callWithBackoff(() => buildReq());
     } catch (e) {
-      // fallback 切换不占重试名额：切换成功重入自身（新卡重发）；否则原样上抛。
-      // ProtocolViolation 不切换（trySwitchToFallback 内部拒绝）
+      // 防御位（轮 2 #1 核验后事实不可达：callWithBackoff 对任意可切换 LLMError 已
+      // 先行切换并重发，单向锁使此处 trySwitchToFallback 恒 false）：原样上抛。
+      // ProtocolViolation 本就不切换（trySwitchToFallback 内部拒绝）
       if (e instanceof LLMError && this.trySwitchToFallback(e)) {
         return this.extractCall(systemPrompt, userPrompt, tool, maxTokens, callTimeoutMs);
       }
@@ -922,7 +937,12 @@ export class LLMClient {
         if (this.trySwitchToFallback(e)) {
           continue; // buildReq 每轮重建：切换后取新 model/maxTokens/capabilities
         }
-        if (!isInfraError(e)) {
+        // 5xx 退避（授权偏离 2026-10-02）：Python 经 anthropic SDK 隐式重试 5xx
+        //（默认 ×2），TreeWalker 代码层的退避元组不含它——TS 无 SDK，显式补齐等效
+        // 韧性（用户实测网关瞬时 500 打死 extract）。step 分罪的 isInfraError 谓词
+        // **不变**：持续 5xx 仍计能力失败（Python is_llm_infra_error 同款）
+        const backoffRetryable = e instanceof LLMServerError || isInfraError(e);
+        if (!backoffRetryable) {
           throw e;
         }
         if (retries >= INFRA_RETRY_MAX) {

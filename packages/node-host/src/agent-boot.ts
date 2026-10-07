@@ -12,13 +12,17 @@ import {
   type BrowserSession,
   BrowserSession as BrowserSessionClass,
   type CdpTransport,
+  DEFAULT_MAX_TOKENS,
   EventBus,
   type EventBus as EventBusType,
   type FileSystemProvider,
   LLMClient,
   PolicyGate,
   type PolicyGate as PolicyGateType,
+  type ProviderConfig,
   resolveAgentSettings,
+  type SensitiveDataSpec,
+  type Tools,
 } from "@tw/core";
 import { attachConsole } from "./console.js";
 import { NodeFs } from "./node-fs.js";
@@ -26,7 +30,9 @@ import {
   applyDotEnv,
   checkReady,
   type HostSettings,
+  type HostSettingsOverrides,
   loadHostSettings,
+  mergeHostSettings,
   resolveWsUrl,
 } from "./settings.js";
 
@@ -50,6 +56,13 @@ export interface AssembleAgentOptions {
   llm?: LLMClient | null;
   /** transport 工厂（缺省 wsUrl→CdpWsClient；测试/自定义宿主注入） */
   transportFactory?: TransportFactory | null;
+  /** extract 工具专用 LLM（缺省复用主 llm——Python extract_llm=None 同语义） */
+  extractLlm?: LLMClient | null;
+  /** 敏感数据 {占位符: 真值|{value,urls}}（sensitive_data.py 形态；直传 Agent） */
+  sensitiveData?: Record<string, SensitiveDataSpec> | null;
+  /** 自定义动作注册表载体（custom_action.py 形态）：缺省自建默认 25 动作面 Tools；
+   *  注入时 Agent 不自建（extractClient 接线/applyPageFilters 对注入实例照常执行） */
+  tools?: Tools | null;
   log?: (message: string) => void;
 }
 
@@ -61,6 +74,36 @@ export interface AssembledAgent {
   autoAllow: AutoAllowPolicy | null;
 }
 
+/**
+ * 主卡组装（独立导出便于单测）：settings.llm → ProviderConfig。fallback 存在时组
+ * 完整独立卡（config.py FallbackLLMSettings；maxTokens 恒 DEFAULT_MAX_TOKENS——
+ * FALLBACK_LLM_MAX_TOKENS 缺省 16384 同值，宿主面不再暴露该键）。fallback 的
+ * key/baseUrl 未设（含空串）时复用主卡——env 装载层同款缺省链，overrides 只传
+ * model 也能得到完整卡（两层幂等）。
+ */
+export function buildProviderCard(llm: HostSettings["llm"]): ProviderConfig {
+  return {
+    name: "zhipu-anthropic",
+    protocol: "anthropic-messages",
+    baseUrl: llm.baseUrl,
+    apiKey: llm.apiKey,
+    model: llm.model,
+    maxTokens: llm.maxTokens,
+    outputMode: llm.outputMode,
+    fallback:
+      llm.fallback === null
+        ? null
+        : {
+            name: "zhipu-anthropic-fallback",
+            protocol: "anthropic-messages",
+            baseUrl: llm.fallback.baseUrl || llm.baseUrl,
+            apiKey: llm.fallback.apiKey || llm.apiKey,
+            model: llm.fallback.model,
+            maxTokens: DEFAULT_MAX_TOKENS,
+          },
+  };
+}
+
 export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
   const useConsole = options.console !== false;
   const log = options.log ?? ((m: string) => console.log(m));
@@ -68,28 +111,25 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
 
   const llm =
     options.llm ??
-    new LLMClient(
-      {
-        name: "zhipu-anthropic",
-        protocol: "anthropic-messages",
-        baseUrl: options.settings.llm.baseUrl,
-        apiKey: options.settings.llm.apiKey,
-        model: options.settings.llm.model,
-        maxTokens: options.settings.llm.maxTokens,
-      },
-      { log: (m) => sink(`[llm] ${m}`) },
-    );
+    new LLMClient(buildProviderCard(options.settings.llm), {
+      log: (m) => sink(`[llm] ${m}`),
+    });
 
   const transportFactory =
     options.transportFactory ??
     (() => CdpWsClient.connect({ wsUrl: options.wsUrl, logger: (m) => sink(`[cdp-ws] ${m}`) }));
-  const browser = new BrowserSessionClass(
-    transportFactory,
-    {},
-    {
-      log: (m) => sink(`[browser] ${m}`),
-    },
-  );
+  // 浏览器覆盖透传（fast_agent.py:37-41 的 replace 形态）：未设键不传——
+  // BrowserSession 构造按缺省合并（pageSettleTimeout 2.0 / waitBetweenActions 0.0）
+  const browserOverrides: { pageSettleTimeout?: number; waitBetweenActions?: number } = {};
+  if (options.settings.browser.pageSettleTimeout !== undefined) {
+    browserOverrides.pageSettleTimeout = options.settings.browser.pageSettleTimeout;
+  }
+  if (options.settings.browser.waitBetweenActions !== undefined) {
+    browserOverrides.waitBetweenActions = options.settings.browser.waitBetweenActions;
+  }
+  const browser = new BrowserSessionClass(transportFactory, browserOverrides, {
+    log: (m) => sink(`[browser] ${m}`),
+  });
 
   let policy: PolicyGateType;
   let autoAllow: AutoAllowPolicy | null = null;
@@ -113,6 +153,10 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     policy,
     eventBus: bus,
     fs,
+    extractLlm: options.extractLlm ?? null,
+    sensitiveData: options.sensitiveData ?? null,
+    tools: options.tools ?? null,
+    downloadsPath: options.settings.browser.downloadsPath,
     // Partial 覆盖先合成全量（AgentOptions 的类型面是全量；运行时同为 resolve 合并）
     settings: resolveAgentSettings(options.settings.agent),
     log: (m) => sink(`[agent] ${m}`),
@@ -137,6 +181,9 @@ export interface RunAgentOptions extends Omit<AssembleAgentOptions, "settings" |
   settings?: HostSettings | null;
   /** 缺省 resolveWsUrl（CDP_WS_URL ‖ 发现）；解析失败抛 Python 同款文案 */
   wsUrl?: string;
+  /** env 装载后在 settings 上做程序化覆盖（Python replace(settings.x, ...) 形态；
+   *  fast_agent 的 flash/时延收紧走此口） */
+  overrides?: HostSettingsOverrides;
 }
 
 /**
@@ -170,12 +217,20 @@ export async function finalizeAssembled(
  * one-shot：装载配置 → checkReady → 解析 ws_url → 装配 → agent.run() → finally 收口
  * （AutoAllow 记账汇总 / bus.close / browser.stop）。缺 key / 连不上 Chrome 时抛的即
  * Python 示例原文案（basic_agent.py:26-32），由调用方 catch 打印后 exit 1。
+ * trackDownloads 开启时先 ensureDir(settings.browser.downloadsPath)（核心要求宿主
+ * 保证目录存在；fs 注入 null = 跳过——自定义宿主自管）。
  */
 export async function runAgent(options: RunAgentOptions): Promise<AgentHistoryList> {
   let settings = options.settings;
   if (settings === undefined || settings === null) {
     applyDotEnv();
     settings = loadHostSettings();
+  }
+  if (options.overrides !== undefined) {
+    settings = mergeHostSettings(settings, options.overrides);
+  }
+  if (settings.agent.trackDownloads === true && options.fs !== null) {
+    await (options.fs ?? new NodeFs()).ensureDir(settings.browser.downloadsPath);
   }
 
   const ready = checkReady(settings);
