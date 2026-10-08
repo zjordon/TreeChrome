@@ -107,6 +107,10 @@ export interface AgentSettings {
   explorationPageSettleStablePolls: number;
   /** 变体 B done 结构化输出模型（Python output_model 构造参数的 settings 化） */
   outputModel: ParamModel | null;
+  /** submit 预确认（M5 段 C，架构 §5.3）：click 命中 submit 特征且表单有变更字段
+   *  → 二道门 confirmSubmit。可选键缺省视为 false（评测/examples 行为不变）；
+   *  不进 DEFAULT_AGENT_SETTINGS——Python 对拍 fixture 零变化（m5/03 §2.2） */
+  submitConfirmEnabled?: boolean;
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {

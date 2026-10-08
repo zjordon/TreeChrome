@@ -71,4 +71,10 @@ describe("NodeFs", () => {
     expect(await fs.isFile(nested)).toBe(false); // 目录不是文件
     expect(await fs.isFile(join(dir, "nope"))).toBe(false);
   });
+
+  // M5 段 C 红向保真：NodeFs 不实现 readAttachment（路径宿主语义——附件句柄是
+  // 扩展形态缝；Node 侧 upload_file 永走路径分支，登记出界项）
+  test("readAttachment 未实现（Node 行为零变化的缝证明）", () => {
+    expect((fs as Partial<Record<"readAttachment", unknown>>).readAttachment).toBeUndefined();
+  });
 });

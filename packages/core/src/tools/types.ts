@@ -19,6 +19,7 @@ import type {
   SearchPageData,
 } from "../browser/search-find.js";
 import type { BrowserStateSummary, TabInfo } from "../browser/views.js";
+import type { AttachmentPayload } from "./fs.js";
 
 /** batch1 十 + P4b 段 1/2 二十三 + 段 3 两动作用到的 BrowserSession 面 */
 export interface ToolsBrowser {
@@ -91,6 +92,8 @@ export interface ToolsBrowser {
     filePath: string,
     fileInputBackendIds?: number[] | null,
   ): Promise<void>;
+  /** bytes 注入通道（M5 段 C 扩展形态；路径宿主 fake 可编程面镜像 setFileInput） */
+  setFileInputData(backendNodeId: number, payload: AttachmentPayload): Promise<void>;
   discoverFileInputViaClick(backendNodeId: number, timeoutMs?: number): Promise<number | null>;
   evalFunctionOnNode(backendNodeId: number, functionDeclaration: string): Promise<unknown>;
   // ── P4b 段 3（p4b/03）：evaluate 增强 + 网格读取 ──

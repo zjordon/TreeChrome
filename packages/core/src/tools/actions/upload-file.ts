@@ -4,6 +4,8 @@
 // 页面级验证探针（P1 四次修订轮询版）。全部 error 文案逐字节照搬。
 // 偏离（p4b/02 §6）：非 ASCII 文件名 ASCII 临时副本不落核心（upload.ts 头注）；
 // guessMime 用精简表（Python mimetypes 是平台注册表相关全表——锚定用例域内等价）。
+// M5 段 C 净新增：附件 ref 二态（readAttachment 命中 → bytes 注入通道
+// setFileInputData，跳路径校验；未命中原路径分支逐字节不动——Node 行为零变化）。
 
 import { ActionResult } from "../../agent/views.js";
 import type { EnhancedDOMTreeNode } from "../../browser/views.js";
@@ -214,25 +216,40 @@ export function createUploadFileHandler(ctx: ToolsContext): ActionHandler {
     const filePath = params.path;
     const index = params.index;
 
-    // 1. 白名单（resolve 归一化后比对——段 1 评审轮 1 [6] 同款收严）+ 存在/非空校验
-    const p = ctx.fs !== null ? ctx.fs.resolve(filePath) : filePath;
-    if (
-      ctx.allowedUploadPaths !== null &&
-      !ctx.allowedUploadPaths.some((prefix) => p.startsWith(prefix))
-    ) {
-      return new ActionResult({ error: `File path not in allowed upload paths: ${p}` });
-    }
-    if (ctx.fs === null) {
-      return new ActionResult({
-        error: `File upload failed: no filesystem provider injected`,
-      });
-    }
-    if (!(await ctx.fs.isFile(p))) {
-      return new ActionResult({ error: `File not found: ${p}` });
-    }
-    const stat = await ctx.fs.stat(p);
-    if (stat !== null && stat.size === 0) {
-      return new ActionResult({ error: `File is empty: ${p}` });
+    // 1. 附件句柄先问（M5 段 C，扩展形态）：命中 → 附件分支（跳过路径白名单与
+    //    isFile/stat——附件由用户手势亲手选定，白名单防的是 agent 指定服务端路径，
+    //    附件不在威胁面；size===0 沿用空文件校验文案）；未命中（null / fs 无可选
+    //    方法）→ 原路径分支（逐字节不动，NodeFs 零开销短路）
+    const attachment =
+      ctx.fs !== null && ctx.fs.readAttachment !== undefined
+        ? await ctx.fs.readAttachment(filePath)
+        : null;
+    let p = filePath;
+    if (attachment !== null) {
+      if (attachment.size === 0) {
+        return new ActionResult({ error: `File is empty: ${filePath}` });
+      }
+    } else {
+      // 白名单（resolve 归一化后比对——段 1 评审轮 1 [6] 同款收严）+ 存在/非空校验
+      p = ctx.fs !== null ? ctx.fs.resolve(filePath) : filePath;
+      if (
+        ctx.allowedUploadPaths !== null &&
+        !ctx.allowedUploadPaths.some((prefix) => p.startsWith(prefix))
+      ) {
+        return new ActionResult({ error: `File path not in allowed upload paths: ${p}` });
+      }
+      if (ctx.fs === null) {
+        return new ActionResult({
+          error: `File upload failed: no filesystem provider injected`,
+        });
+      }
+      if (!(await ctx.fs.isFile(p))) {
+        return new ActionResult({ error: `File not found: ${p}` });
+      }
+      const stat = await ctx.fs.stat(p);
+      if (stat !== null && stat.size === 0) {
+        return new ActionResult({ error: `File is empty: ${p}` });
+      }
     }
 
     // 2. 元素查找
@@ -345,23 +362,34 @@ export function createUploadFileHandler(ctx: ToolsContext): ActionHandler {
     // 上传前页面信号快照（验证关闭时跳过）
     const beforeSignals = ctx.uploadVerifyEnabled ? await probeUploadSignals(browser) : null;
 
-    // 4. 高亮 + 上传（共用 try 统一映射；highlight best-effort）
+    // 4. 高亮 + 上传（共用 try 统一映射；highlight best-effort；附件分支走 bytes 注入通道）
     try {
       await browser.highlightElement(backendId);
-      await browser.setFileInput(backendId, p, isFileInput ? null : fileInputIds);
+      if (attachment !== null) {
+        await browser.setFileInputData(backendId, attachment);
+      } else {
+        await browser.setFileInput(backendId, p, isFileInput ? null : fileInputIds);
+      }
     } catch (e) {
-      return new ActionResult({ error: `File upload failed: ${errText(e)}` });
+      return new ActionResult({
+        error:
+          attachment !== null
+            ? `File upload failed (data channel): ${errText(e)}`
+            : `File upload failed: ${errText(e)}`,
+      });
     }
 
-    // 5. 成功回显 + 目标来源说明 + accept 软校验 + 页面级验证
-    let memory = describeUpload(node, index, p);
+    // 5. 成功回显 + 目标来源说明 + accept 软校验 + 页面级验证（附件分支以
+    //    filename 回填路径语义——set 后页面状态与注入方式无关，共用不动）
+    const displayPath = attachment !== null ? attachment.filename : p;
+    let memory = describeUpload(node, index, displayPath);
     if (uploadNote !== "") memory += uploadNote;
 
     const fileInputEntry = isFileInput
       ? node
       : findNodeByBackendId(backendId, ctx.cachedBrowserState?.domState ?? null);
     const acceptAttr = fileInputEntry?.attributes.accept ?? null;
-    if (acceptAttr !== null && acceptAttr !== "" && !fileMatchesAccept(p, acceptAttr)) {
+    if (acceptAttr !== null && acceptAttr !== "" && !fileMatchesAccept(displayPath, acceptAttr)) {
       memory +=
         `  ℹ️ Note: file extension does not match this input's ` +
         `accept=${JSON.stringify(acceptAttr)}. The file was uploaded successfully regardless ` +
@@ -371,7 +399,7 @@ export function createUploadFileHandler(ctx: ToolsContext): ActionHandler {
     memory += await verifyUpload(
       browser,
       beforeSignals,
-      p.replaceAll("\\", "/").split("/").pop() ?? "",
+      displayPath.replaceAll("\\", "/").split("/").pop() ?? "",
       ctx,
     );
 

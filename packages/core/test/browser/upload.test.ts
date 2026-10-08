@@ -1,11 +1,14 @@
 // 上传族 session 层集成（FakeCdpTransport）：setFileInput 直设 + fallback 链
 // （显式 bid → ids[0] → shadow DOM 搜索 → 抛错）/ discoverFileInputViaClick
-// （拦截守卫拒点 / chooser 命中返回 bid / 超时 null——假钟推进）。
+// （拦截守卫拒点 / chooser 命中返回 bid / 超时 null——假钟推进）/
+// setFileInputData bytes 注入（M5 段 C）。
 
 import { describe, expect, it } from "vitest";
 import {
   discoverFileInputViaClick,
+  SET_FILE_INPUT_DATA_FN,
   setFileInput,
+  setFileInputData,
   walkForFileInputs,
 } from "../../src/browser/upload.js";
 import { makeInternals } from "./fake-transport.js";
@@ -184,5 +187,78 @@ describe("补面：walk 边界与 chooser 非数字 bid", () => {
     const { findFileInputsInShadowDom } = await import("../../src/browser/upload.js");
     expect(await findFileInputsInShadowDom(h.s)).toEqual([]);
     expect(h.logs.some((l) => l.includes("DOM.getDocument(pierce) failed"))).toBe(true);
+  });
+});
+
+describe("setFileInputData（bytes → 页面内注入，M5 段 C）", () => {
+  const PAYLOAD = { base64: "QUJD", filename: "clip.mp4", mimeType: "video/mp4", size: 3 };
+  const chain = (h: ReturnType<typeof makeInternals>, value: unknown) => {
+    h.transport
+      .respond("DOM.resolveNode", (p: Record<string, unknown> | undefined) =>
+        p?.backendNodeId === undefined ? {} : { object: { objectId: `obj-${p.backendNodeId}` } },
+      )
+      .respond("Runtime.callFunctionOn", { result: { value } });
+  };
+  it("成功链：resolveNode → callFunctionOn（objectId/函数体/参数逐项锚定）+ 日志行", async () => {
+    const h = makeInternals();
+    chain(h, { success: true, dispatched: true, name: "clip.mp4", size: 3, type: "video/mp4" });
+    await setFileInputData(h.s, 77, PAYLOAD);
+    const resolve = h.transport.framesOf("DOM.resolveNode")[0];
+    expect(resolve?.params).toEqual({ backendNodeId: 77 });
+    const call = h.transport.framesOf("Runtime.callFunctionOn")[0];
+    expect(call?.params).toEqual({
+      objectId: "obj-77",
+      functionDeclaration: SET_FILE_INPUT_DATA_FN,
+      arguments: [{ value: "QUJD" }, { value: "clip.mp4" }, { value: "video/mp4" }],
+      returnByValue: true,
+    });
+    expect(
+      h.logs.some((l) => l === "set_file_input_data: backend_node_id=77, file=clip.mp4, size=3"),
+    ).toBe(true);
+  });
+  it("页面返回 success=false → 抛页面 error 文案（非 file input 分支）", async () => {
+    const h = makeInternals();
+    chain(h, {
+      success: false,
+      dispatched: false,
+      error: "Target is not an <input type=file>.",
+    });
+    await expect(setFileInputData(h.s, 8, PAYLOAD)).rejects.toThrow(
+      "Target is not an <input type=file>.",
+    );
+  });
+  it("页面返回非对象（undefined/无 error 字段）→ 兜底文案", async () => {
+    const h1 = makeInternals();
+    chain(h1, undefined);
+    await expect(setFileInputData(h1.s, 8, PAYLOAD)).rejects.toThrow(
+      "The page did not return an upload result.",
+    );
+    const h2 = makeInternals();
+    chain(h2, { success: false });
+    await expect(setFileInputData(h2.s, 8, PAYLOAD)).rejects.toThrow(
+      "The page did not return an upload result.",
+    );
+  });
+  it("resolveNode 未返回 objectId → 抛错（不上页面）", async () => {
+    const h = makeInternals();
+    h.transport.respond("DOM.resolveNode", {});
+    await expect(setFileInputData(h.s, 8, PAYLOAD)).rejects.toThrow(
+      "setFileInputData: resolveNode 未返回 objectId",
+    );
+    expect(h.transport.framesOf("Runtime.callFunctionOn")).toHaveLength(0);
+  });
+  it("注入函数体逐句锚定：File/DataTransfer/files 赋值与 input+change 双 dispatch", () => {
+    expect(SET_FILE_INPUT_DATA_FN).toContain(
+      "if (!(this instanceof HTMLInputElement) || this.type !== 'file')",
+    );
+    expect(SET_FILE_INPUT_DATA_FN).toContain("const file = new File([bytes], filename,");
+    expect(SET_FILE_INPUT_DATA_FN).toContain("const transfer = new DataTransfer();");
+    expect(SET_FILE_INPUT_DATA_FN).toContain("this.files = transfer.files;");
+    expect(SET_FILE_INPUT_DATA_FN).toContain(
+      "this.dispatchEvent(new Event('input', { bubbles: true }));",
+    );
+    expect(SET_FILE_INPUT_DATA_FN).toContain(
+      "this.dispatchEvent(new Event('change', { bubbles: true }));",
+    );
   });
 });

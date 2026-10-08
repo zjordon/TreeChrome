@@ -18,6 +18,7 @@ import type {
 import type { BrowserStateSummary, TabInfo } from "../../src/browser/views.js";
 import type { ToolsContext } from "../../src/tools/actions/context.js";
 import { Tools } from "../../src/tools/actions/index.js";
+import type { AttachmentPayload } from "../../src/tools/fs.js";
 import type { ToolsBrowser } from "../../src/tools/types.js";
 
 export function makeNode(
@@ -246,6 +247,9 @@ export class FakeBrowser implements ToolsBrowser {
     ids: number[] | null;
   }> = [];
   setFileInputError: Error | null = null;
+  /** bytes 注入通道（M5 段 C）调用记录 */
+  setFileInputDataCalls: Array<{ backendNodeId: number; filename: string; size: number }> = [];
+  setFileInputDataError: Error | null = null;
   discoverResult: number | null = null;
   discoverCalls: number[] = [];
   evalFunctionResults: Record<number, unknown> = {};
@@ -297,6 +301,15 @@ export class FakeBrowser implements ToolsBrowser {
       backendNodeId,
       filePath,
       ids: fileInputBackendIds ?? null,
+    });
+    return Promise.resolve();
+  }
+  setFileInputData(backendNodeId: number, payload: AttachmentPayload): Promise<void> {
+    if (this.setFileInputDataError !== null) return Promise.reject(this.setFileInputDataError);
+    this.setFileInputDataCalls.push({
+      backendNodeId,
+      filename: payload.filename,
+      size: payload.size,
     });
     return Promise.resolve();
   }

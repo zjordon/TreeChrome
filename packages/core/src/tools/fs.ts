@@ -2,6 +2,16 @@
 // done 附件存在性与内联读取 / P4b 文件三动作（嗅探与窗口计量）经此注入；未注入时
 // 调用方降级（跳过落盘 + metadata 标注 / 附件跳过存在性校验），见 p4/02 偏离 6。
 
+/** 附件载荷（扩展形态，M5 段 C：用户在侧边栏亲手选文件，SW 持 bytes） */
+export interface AttachmentPayload {
+  /** 文件字节（SW 侧由用户手势读得） */
+  base64: string;
+  filename: string;
+  mimeType: string;
+  /** 字节数（upload 空文件校验复用） */
+  size: number;
+}
+
 export interface FileSystemProvider {
   /** os.path.abspath 等价（白名单前缀比对前归一化） */
   resolve(path: string): string;
@@ -23,4 +33,7 @@ export interface FileSystemProvider {
   /** 头部字节读取（P4b read_file 的 magic 嗅探——Python _sniff_file_kind 只读 12
    *  字节头；读失败返回 null） */
   readHead(path: string, n: number): Promise<Uint8Array | null>;
+  /** 附件句柄解析（扩展形态，M5 段 C）：ref 形如 "attachment:att_1"；不识别/未注册 →
+   *  null。可选方法——不实现即纯路径宿主（NodeFs 不实现，Node 行为零变化） */
+  readAttachment?(ref: string): Promise<AttachmentPayload | null>;
 }

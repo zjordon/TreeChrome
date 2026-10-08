@@ -2,14 +2,16 @@
 // is_done·error 截断/terminatesSequence/URL·target 漂移）+ per-action 超时与异常
 // 分诊（InterruptedError·连接类 re-raise）+ actionability 等待 + streak 记录 +
 // ToolCall/ToolResult 事件 + 权限门逐动作过门（4.5，架构 §5.3——denied 走 error
-// 通道不计 consecutiveFailures）。
+// 通道不计 consecutiveFailures）+ submit 预确认二道门（M5 段 C，缺省关）。
 
 import type { BrowserStateSummary, EnhancedDOMTreeNode } from "../../browser/views.js";
 import { toolCallEvent, toolResultEvent } from "../../events/events.js";
 import { hostForAction, resolveCapability } from "../../policy/capability.js";
+import type { GateCheckRequest } from "../../policy/policy.js";
 import { actionsOf, isRecord, nameOf, paramsOf } from "../action-shape.js";
 import { ACTIONABILITY_ACTIONS, isFileInput, waitForActionability } from "../actionability.js";
 import { InterruptedError } from "../constants.js";
+import { probeSubmitForClick } from "../submit-probe.js";
 import type { ModelOutput } from "../views.js";
 import { ActionResult } from "../views.js";
 import type { StepCtx } from "./context.js";
@@ -90,11 +92,13 @@ export async function executeActions(
     // 权限门（4.5，架构 §5.3）：ToolCallEvent 之后、actionability 之前，逐动作。
     // 拒绝回流走 error 通道（Guard#2/#3 截断序列），不计 consecutiveFailures。
     let deniedResult: ActionResult | null = null;
-    if (ctx.policy !== null) {
+    let gateReq: GateCheckRequest | null = null;
+    const policy = ctx.policy;
+    if (policy !== null) {
       const capability = resolveCapability(actionName, actionParams);
       if (capability !== "none") {
         const host = hostForAction(actionName, actionParams, preActionUrl);
-        const outcome = await ctx.policy.check({
+        gateReq = {
           capability,
           host,
           actionName,
@@ -103,7 +107,8 @@ export async function executeActions(
           elementIndex: geometry.elementIndex,
           elementBbox: geometry.elementBbox,
           elementXpath: geometry.elementXpath,
-        });
+        };
+        const outcome = await policy.check(gateReq);
         if (!outcome.allowed) {
           deniedResult = new ActionResult({
             success: false,
@@ -111,6 +116,32 @@ export async function executeActions(
             error: outcome.reason,
           });
           ctx.log(`  [${i + 1}/${total}] ${actionName}: policy denied — ${outcome.reason}`);
+        }
+      }
+    }
+
+    // submit 预确认二道门（M5 段 C，架构 §5.3）：CLICK 已放行 + 开关开 + 快照预筛
+    // 命中 → JS probe 一步判定+摘要 → confirmSubmit；deny 与权限 deny 同款记账
+    // （denied 不计 consecutiveFailures）。探针 fail-open（异常/非 submit/无变更
+    // 字段 → null 放行点击）；交互侧 submitGate 才 fail-closed。缺省关——
+    // 评测/examples 行为不变（m5/03 §2.2 红向）。
+    if (
+      deniedResult === null &&
+      policy !== null &&
+      gateReq !== null &&
+      actionName === "click" &&
+      ctx.settings.submitConfirmEnabled === true
+    ) {
+      const summary = await probeSubmitForClick(ctx.browser, browserState.domState, actionParams);
+      if (summary !== null) {
+        const outcome = await policy.submitGate(gateReq, summary);
+        if (!outcome.allowed) {
+          deniedResult = new ActionResult({
+            success: false,
+            denied: true,
+            error: outcome.reason,
+          });
+          ctx.log(`  [${i + 1}/${total}] ${actionName}: submit gate denied — ${outcome.reason}`);
         }
       }
     }
