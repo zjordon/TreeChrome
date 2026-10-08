@@ -1,0 +1,28 @@
+{
+  "name": "extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "TreeChrome 扩展宿主（WXT：SW 壳 + sidepanel + options + run journal；架构 §2 apps/extension）",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "wxt prepare && tsc --noEmit"
+  },
+  "dependencies": {
+    "@tw/cdp-chrome": "workspace:*",
+    "@tw/console-ui": "workspace:*",
+    "@tw/core": "workspace:*",
+    "@tw/protocol": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.6.0",
+    "wxt": "^0.21.0"
+  }
+}

@@ -19,3 +19,6 @@ out/
 # rerun/评测运行时产物（read_grid 网格 JSON、run journal 截图）
 evaluate_output/
 rerun-history/
+# WXT（apps/extension）生成物：.wxt 类型/临时、.output 构建产物
+.wxt/
+.output/

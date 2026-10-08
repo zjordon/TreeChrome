@@ -10,6 +10,7 @@
       "**/*.ts",
       "**/*.mts",
       "**/*.cts",
+      "**/*.tsx",
       "**/*.js",
       "**/*.mjs",
       "**/*.json",
@@ -42,7 +43,8 @@
       "includes": [
         "packages/dom-snapshot/src/**",
         "packages/core/src/**",
-        "packages/cdp-ws/src/**"
+        "packages/cdp-ws/src/**",
+        "packages/console-ui/src/**"
       ],
       "linter": {
         "rules": {
@@ -51,9 +53,9 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "chrome": "chrome.* 只能出现在 cdp-chrome 适配包（架构铁律：核心包平台无关）",
-                  "node:process": "核心包禁 ambient env：配置必须显式传入（架构铁律）",
-                  "process": "核心包禁 ambient env：配置必须显式传入（架构铁律）"
+                  "chrome": "chrome.* 只能出现在 cdp-chrome 适配包与扩展宿主（架构铁律：平台中立包）",
+                  "node:process": "平台中立包禁 ambient env：配置必须显式传入（架构铁律）",
+                  "process": "平台中立包禁 ambient env：配置必须显式传入（架构铁律）"
                 }
               }
             },
@@ -61,7 +63,7 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "process": "核心包禁 process 全局（含 process.env）：配置必须显式传入（架构铁律）"
+                  "process": "平台中立包禁 process 全局（含 process.env）：配置必须显式传入（架构铁律）"
                 }
               }
             }

@@ -1,0 +1,11 @@
+/* 侧边栏页面级样式（组件样式在 @tw/console-ui/theme.css 的变量之上做页面 reset） */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+#root {
+  height: 100%;
+}
