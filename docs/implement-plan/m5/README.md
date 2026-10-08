@@ -171,6 +171,9 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
   前次成功 closeTarget 未消费的抑制标记不被误清）；回归 1 例（迟到事件消费链，红绿双向）。
   cdp-chrome 36→37 例；门禁 exit 0。
   本轮 P1/P2：1（已实施）｜P3：0。
+- **轮 4（2026-10-08，增量 diffBase=20b4dd8，2 文件，3m4s）**：**零意见**——循环收敛。
+  累计：4 轮，意见 9 / 采纳 9 / 驳回 0 / stale 0（P3 backlog 空）；cdp-chrome 30→37 例
+  （98.8% 档）；分支 4 提交（84a3c17 + bfcb1ad + 20b4dd8 + 96be307）待授权合并。
 
 - **轮 1（2026-10-08，diffBase=main，30 文件，6m4s）**：意见 1（high/bug）→ **采纳 1 P2**。
   gate.mjs 把 console-ui 纳入 CORE_PACKAGES 但 `SRC_EXT`/`CORE_SRC_RE` 只认 `ts|mts|mjs`——
