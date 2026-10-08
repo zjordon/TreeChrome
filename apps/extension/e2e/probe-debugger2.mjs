@@ -2,9 +2,33 @@
 // ②用 createTarget 返回的真 targetId 发 attachToTarget 是否可行；③若可行，
 // Debuggee 哪种形状路由该会话（tabId=创建者 vs tabId=新 tab）；④子会话事件流。
 // 用法：node apps/extension/e2e/probe-debugger2.mjs
+import { createServer } from "node:http";
 import { connectOurServiceWorker, launchChrome } from "./lib-harness.mjs";
 
 const PORT = 9777;
+
+// q4 试验页：worker.html（同源 Worker 目标）+ cross.html（127.0.0.1 内嵌 localhost iframe——跨站）
+const srvA = createServer((req, res) => {
+  res.writeHead(200, {
+    "content-type": req.url === "/w.js" ? "text/javascript" : "text/html; charset=utf-8",
+  });
+  if (req.url === "/w.js") res.end("onmessage = (e) => postMessage(e.data + 1);");
+  else if (req.url === "/worker.html")
+    res.end(
+      '<!doctype html><html><body><h1>worker-host</h1><script>const w = new Worker("/w.js"); w.onmessage = (e) => document.title = "wk:" + e.data; w.postMessage(41);</script></body></html>',
+    );
+  else
+    res.end(
+      '<!doctype html><html><body><h1>cross-host</h1><iframe src="http://localhost:8806/b.html" width="200" height="100"></iframe></body></html>',
+    );
+});
+const srvB = createServer((_req, res) => {
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end("<!doctype html><html><body><h2>cross-oopif</h2></body></html>");
+});
+await new Promise((r) => srvA.listen(8805, "127.0.0.1", r));
+await new Promise((r) => srvB.listen(8806, "127.0.0.1", r));
+
 const { proc, profileDir } = await launchChrome({ port: PORT });
 const { sw } = await connectOurServiceWorker(PORT, profileDir);
 
@@ -53,19 +77,39 @@ const PROBE = `(async () => {
     } catch (e) { out.q3_pageEnableViaSession = { ok: false, err: String(e).slice(0, 80) }; }
   }
 
-  // ④ 子会话事件：对既有 attach 的会话发 setAutoAttach（经会话路由），导航新 tab 到
-  //    带 Worker 的本地页（Worker 目标会触发 autoAttach 子会话——不依赖 OOPIF 判定）
+  // ④ 子会话事件：**先发 setAutoAttach**（评审轮 1 [2]——原版漏发此命令，q4 恒零事件是
+  //    假阴性），经根路由（q2 失败时无会话可用；sid 在则会话路由），再导航两页：
+  //    Worker 页（同源 Worker 目标）+ 跨站 iframe 页（127.0.0.1 vs localhost）
   const seen = [];
-  const onEvt = (source, method) => { seen.push({ sid: source && source.sessionId ? source.sessionId.slice(0, 8) : null, method: String(method).split(".").slice(0, 2).join(".") }); };
+  let childSid = null; // 首个 autoAttach 子会话的完整 sessionId（命令路由验证用）
+  const onEvt = (source, method) => {
+    seen.push({ sid: source && source.sessionId ? source.sessionId.slice(0, 8) : null, method: String(method).split(".").slice(0, 2).join(".") });
+  };
+  const onEvtFull = (source, method) => { if (childSid === null && source && typeof source.sessionId === "string" && method !== "Target.attachedToTarget") childSid = source.sessionId; };
   dbg.onEvent.addListener(onEvt);
+  dbg.onEvent.addListener(onEvtFull);
   try {
-    const html = '<script>new Worker(URL.createObjectURL(new Blob(["onmessage=e=>postMessage(1)"],{type:"text/javascript"})));</script>worker-page';
-    const url = "data:text/html;charset=utf-8," + encodeURIComponent(html);
-    await chrome.tabs.update(tabA.id, { url });
-    await new Promise(r => setTimeout(r, 1500));
-    out.q4 = { events: seen.length, withSid: seen.filter(s => s.sid !== null).length, methods: [...new Set(seen.map(s => s.method))].slice(0, 10) };
+    const shape = sid !== null ? { tabId: tabA.id, sessionId: sid } : { tabId: tabA.id };
+    let setAutoAttachErr = null;
+    try { await dbg.sendCommand(shape, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }); }
+    catch (e) { setAutoAttachErr = String(e).slice(0, 90); }
+    await chrome.tabs.update(tabA.id, { url: "http://127.0.0.1:8805/worker.html" });
+    // 捕获即路由（评审轮 1 [2] 复盘教训：worker 短命，导航离开后 Session not found 是时序假象）
+    for (let i = 0; i < 30 && childSid === null; i++) await new Promise(r => setTimeout(r, 100));
+    if (childSid !== null) {
+      try {
+        const ev = await dbg.sendCommand({ tabId: tabA.id, sessionId: childSid }, "Runtime.evaluate", { expression: "typeof self", returnByValue: true });
+        out.q5_childRoute = { ok: true, value: ev?.result?.value };
+      } catch (e) { out.q5_childRoute = { ok: false, err: String(e).slice(0, 90) }; }
+    } else {
+      out.q5_childRoute = { skipped: "no child session observed" };
+    }
+    await chrome.tabs.update(tabA.id, { url: "http://127.0.0.1:8805/cross.html" });
+    await new Promise(r => setTimeout(r, 2000));
+    out.q4 = { setAutoAttachErr, events: seen.length, withSid: seen.filter(s => s.sid !== null).length, sidMethods: [...new Set(seen.filter(s => s.sid !== null).map(s => s.method))].slice(0, 10), rootMethods: [...new Set(seen.filter(s => s.sid === null).map(s => s.method))].slice(0, 10) };
   } catch (e) { out.q4 = { err: String(e).slice(0, 100) }; }
   dbg.onEvent.removeListener(onEvt);
+  dbg.onEvent.removeListener(onEvtFull);
 
   // 清理：detach + 关多余 tab
   try { await dbg.detach({ tabId: tabA.id }); } catch {}
@@ -77,5 +121,7 @@ const PROBE = `(async () => {
 const value = await sw.evaluate(PROBE);
 console.log(value);
 sw.close();
+srvA.close();
+srvB.close();
 proc.kill();
 setTimeout(() => process.exit(0), 300);

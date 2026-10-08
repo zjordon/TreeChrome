@@ -101,7 +101,7 @@ const PROBE = `(async () => {
 
   // P3b：setAutoAttach + OOPIF 子会话事件
   const seen = [];
-  const onEvt = (source, method) => { if (source && source.sessionId) seen.push({ sid: source.sessionId.slice(0, 8), method: String(method).split(".").slice(0, 2).join(".") }); };
+  const onEvt = (source, method) => { if (source && source.sessionId) seen.push({ sid: source.sessionId.slice(0, 8), fullSid: source.sessionId, method: String(method).split(".").slice(0, 2).join(".") }); };
   dbg.onEvent.addListener(onEvt);
   try {
     await dbg.sendCommand({ tabId: tabA.id }, "Page.enable", {});
@@ -110,15 +110,17 @@ const PROBE = `(async () => {
     await new Promise(r => setTimeout(r, 3000));
     const sids = [...new Set(seen.map(s => s.sid))];
     out.p3b = { childSessionEvents: seen.length, distinctChildSids: sids.length, sampleMethods: [...new Set(seen.map(s => s.method))].slice(0, 8) };
+    // 子会话路由验证：完整的 sid（截断版不能路由）发一条 Runtime.evaluate——成功即证
+    // Debuggee {tabId, sessionId} 可路由（评审轮 1 [3]：原死块等待下一事件无超时会挂死）
     if (sids.length > 0) {
-      const fullSid = seen[0].sid; // 截断的——用完整值重新抓
-      try {
-        const ev2 = await new Promise((resolve) => {
-          const h = (source, method, params) => { dbg.onEvent.removeListener(h); resolve({ source, method, params }); };
-          dbg.onEvent.addListener(h);
-        }).catch(() => null);
-        out.p3b.childRouteNote = "full-sid capture skipped; routing already proven by p3a shape";
-      } catch (e) { out.p3b.childRouteNote = String(e).slice(0, 60); }
+      const full = seen.find(s => s.sid !== null);
+      const fullSid = (full && full.fullSid) || null;
+      if (typeof fullSid === "string") {
+        try {
+          const ev = await dbg.sendCommand({ tabId: tabA.id, sessionId: fullSid }, "Runtime.evaluate", { expression: "1", returnByValue: true });
+          out.p3b.childRoute = { ok: true, value: ev?.result?.value };
+        } catch (e) { out.p3b.childRoute = { ok: false, err: String(e).slice(0, 90) }; }
+      }
     }
   } catch (e) { out.p3b = { err: String(e).slice(0, 120) }; }
 

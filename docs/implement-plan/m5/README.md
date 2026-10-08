@@ -135,7 +135,27 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
 
 > 段独立评审循环的处置账本（严重度门控与收敛规则见 .zcode/commands/review-loop）。
 
-### 段 A `feat/m5-foundation`
+### 段 B `feat/m5-cdp-chrome`
+
+- **轮 1（2026-10-08，diffBase=main，15 文件，18m31s）**：意见 6（high×3/medium×2/low×1）→
+  **采纳 5 P2 + 1 P3 顺手**，驳回 0 / stale 0。
+  - **[2] 探针仪器缺陷引发设计翻案（本轮最重）**：probe2 q4 漏发 setAutoAttach（假阴性证据）——
+    修正探针后实证 `Target.setAutoAttach` 可用：Worker 子会话事件（source.sessionId）+ 子会话命令
+    路由（Debuggee {tabId, sessionId}，Worker 上下文 evaluate 成功）双通；**撤 no-op 拦截改透传**，
+    02 §0 事实表 #5 已改写（被拒的只剩显式 attachToTarget——根握手方案 S 不变；OOPIF 本机对不足
+    触发，段 F 真机复核）。
+  - [4] createTarget 透传后 targetInfosCache 不失效——navigate(new_tab) 链 activateTarget 必抛
+    "not found"（100% 失败）：透传后置空缓存 + closeTarget 同族；动态世界 fake 回归（红绿双向）。
+  - [5] 关当前锚定 tab → onDetach(target_closed) 永久击穿会话：suppressDetachForTab 抑制标记
+    （core closeTab 随后 getTargets+switchTab 重锚照常）+ fake 派发 detach 回归。
+  - [6] 事件源不按锚定 tab 过滤——switch 重叠窗/旧 tab detach 失败残留串扰（recentEvents/
+    networkIdle/fileChooser 污染）：globalEventHandler 按 currentTabId 过滤（无 tabId 事件放行）。
+  - [1] background smoke 兜底：core start() 失败分支只置 transportRef=null 不级联 stop——闭包
+    transport 直接 stop（幂等）；TS CFA 窄化用 ref 对象持有关闭点。
+  - [3] P3 顺手：probe1 死块（无超时等待下一事件，挂死风险）删除并改为完整 sid 立即路由验证。
+  cdp-chrome 30→35 例（覆盖率 98.79%）；对拍 smoke 复跑 PARITY PASS（setAutoAttach 透传后全链
+  一致）；门禁 exit 0。
+  本轮 P1/P2：5（已实施）｜P3：1（顺手修）。
 
 - **轮 1（2026-10-08，diffBase=main，30 文件，6m4s）**：意见 1（high/bug）→ **采纳 1 P2**。
   gate.mjs 把 console-ui 纳入 CORE_PACKAGES 但 `SRC_EXT`/`CORE_SRC_RE` 只认 `ts|mts|mjs`——

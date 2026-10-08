@@ -32,16 +32,18 @@ function isDiagMessage(v: unknown): v is UiDiagMessage {
 async function runSmokeAttach(payload: unknown): Promise<unknown> {
   const tabId = (payload as { tabId?: unknown } | null)?.tabId;
   if (typeof tabId !== "number") return { ok: false, error: "smoke:attach requires payload.tabId" };
-  let transport: ChromeDebuggerTransport | null = null;
+  // ref 对象持有闭包内赋值的 transport（TS CFA 对 let+闭包赋值会在 finally 处
+  // 收窄成 never——属性访问不受窄化影响）
+  const transportRef: { current: ChromeDebuggerTransport | null } = { current: null };
   const factory = async (): Promise<ChromeDebuggerTransport> => {
-    if (transport !== null) await transport.stop().catch(() => {});
-    transport = await createChromeDebuggerTransport({
+    if (transportRef.current !== null) await transportRef.current.stop().catch(() => {});
+    transportRef.current = await createChromeDebuggerTransport({
       api: chromeDebuggerApi(),
       tabs: chromeTabsApi(),
       tabId,
       log: (m) => console.log(`[cdp-chrome] ${m}`),
     });
-    return transport;
+    return transportRef.current;
   };
   const session = new BrowserSession(factory, {}, { log: (m) => console.log(`[smoke] ${m}`) });
   try {
@@ -58,6 +60,9 @@ async function runSmokeAttach(payload: unknown): Promise<unknown> {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   } finally {
     await session.stop().catch(() => {});
+    // 兜底（评审轮 1 [1]）：connectSession 失败路径 core 只置 transportRef=null 不级联
+    // stop——闭包 transport 直接 stop 回收附着与全局监听（幂等，成功路径零 API 调用）
+    await transportRef.current?.stop().catch(() => {});
   }
 }
 

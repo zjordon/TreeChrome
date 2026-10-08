@@ -17,7 +17,7 @@ B1-B5 全部落地：transport 全量（30 mock 例，包覆盖率 98.71%）+ �
 | 2 | `Target.attachToTarget` 被拒 `Not allowed`——**真 targetId（createTarget 返回值）亦然** | **方案 S 定案**：握手拦截返回 `ROOT_SESSION_ID` 合成标记；send 侧 `isRootSessionId` 省略 Debuggee.sessionId |
 | 3 | API `getTargets()` 条目键 = `attached,id,tabId,title,type,url`——target 标识字段名是 **id**（无 targetId 键；v1 探针报错根源） | `TargetInfoDto.id`；合成 getTargets 的 targetId 取自 id |
 | 4 | `Target.createTarget` 原生可用（返回真 targetId） | 透传不拦（switchTab 消费其 targetId 走重映射） |
-| 5 | OOPIF 子会话结构性不可达（attach 被拒）→ `Target.setAutoAttach` 拦截为 no-op 成功（v1 实证：透传不抛但永不产生子会话事件） | **登记偏离**：跨源 iframe 走 DOM.getDocument pierce 同进程降级（core 采集器双路径天然支持）；Debuggee sessionId 路由代码保留（正确性无害） |
+| 5 | ~~OOPIF 子会话结构性不可达~~ **评审轮 1 [2] 探针修正后翻案**：v1/v2 探针 q4 漏发 setAutoAttach（假阴性）——修正后实证 `Target.setAutoAttach` 可用且产生 flat 子会话（Worker：`Target.attachedToTarget` + 带 sessionId 事件），**子会话命令路由 `Debuggee {tabId, sessionId}` 双通**（Worker 上下文 Runtime.evaluate 成功）；被拒的只有显式 `Target.attachToTarget`（根握手方案 S 不变） | `setAutoAttach` 改**透传**（撤 no-op 拦截）；core 采集器 per-frame 会话在真跨站页可期（本机 localhost 对不足以触发 OOPIF，段 F 真机复核）；pierce 同进程路径仍是兜底 |
 | 6 | switchTab 重映射：**attach 新 tab 在前、detach 旧在后**（chrome.debugger 允许同扩展多 tab 并发附着——无空窗；新 attach 失败原附着不动=天然回滚） | `interceptAttachToTarget` |
 | 7 | `activateTarget`/`closeTarget` 拦截走 `TabsApi`（chrome.tabs.update/remove——协议路径可用性未证，tabs 通道确定可用） | 注入接口 `TabsApi`，adapter 实现 |
 | 8 | 根事件 source 带 tabId 无 sessionId；`onDetach(source,reason)` 按当前 tab 过滤 | 事件多播 + `onDetached` 回调 + pending 全量拒绝 |

@@ -192,11 +192,15 @@ describe("activate/close/setAutoAttach/createTarget", () => {
     expect(env.calls.some((c) => c.kind === "remove" && c.tabId === 22)).toBe(true);
   });
 
-  it("setAutoAttach → no-op 成功（不落 api——子会话结构性不可达）", async () => {
+  it("setAutoAttach → 透传（评审轮 1 [2] 探针修正实证：autoAttach 可用，Worker 子会话双通）", async () => {
     const { t, env } = makeTransport();
-    const r = await t.send("Target.setAutoAttach", { autoAttach: true, flatten: true });
-    expect(r).toEqual({});
-    expect(env.calls).toHaveLength(0);
+    const r = await t.send<{ ok: boolean }>("Target.setAutoAttach", {
+      autoAttach: true,
+      flatten: true,
+    });
+    expect(r).toEqual({ ok: true });
+    expect(env.calls.at(-1)?.method).toBe("Target.setAutoAttach");
+    expect(env.calls.at(-1)?.debuggee).toEqual({ tabId: 11 });
   });
 
   it("createTarget → 原生透传（探针 P6 实证可用），结果原样返回", async () => {
@@ -262,6 +266,89 @@ describe("事件多播与 onDetach", () => {
     env.fireDetach({ tabId: 99 }, "canceled_by_user");
     await t.send("Page.enable", {});
     expect(env.calls.at(-1)?.kind).toBe("command");
+  });
+});
+
+describe("评审轮 1 修复回归", () => {
+  it("[4] createTarget 透传后快照失效——navigate(new_tab) 全链（activate→attach）可达", async () => {
+    // 动态世界：getTargets 随 createTarget 增长（静态 fake 掩盖了陈旧缓存缺陷）
+    const world = PAGES.map((p) => ({ ...p }));
+    const env = fakeApis([]);
+    env.api.getTargets = async () => world.map((p) => ({ ...p }));
+    env.api.sendCommand = async (debuggee, method, params) => {
+      env.calls.push({ kind: "command", debuggee, method, params });
+      if (method === "Target.createTarget") {
+        world.push({ id: "NEW_TID", type: "page", url: "about:blank", tabId: 33 });
+        return { targetId: "NEW_TID" };
+      }
+      return { ok: true };
+    };
+    const t = new ChromeDebuggerTransport({ api: env.api, tabs: env.tabs, tabId: 11 });
+    // connectSession 首步填缓存 → createTab 链：createTarget → activate → attach
+    await t.send("Target.getTargets", {});
+    const created = await t.send<{ targetId: string }>("Target.createTarget", {
+      url: "about:blank",
+    });
+    expect(created.targetId).toBe("NEW_TID");
+    await t.send("Target.activateTarget", { targetId: created.targetId }); // 修复前此处必抛 not found
+    const r = await t.send("Target.attachToTarget", { targetId: created.targetId, flatten: true });
+    expect(r).toEqual({ sessionId: ROOT_SESSION_ID });
+    expect(t.tabId).toBe(33);
+  });
+
+  it("[5] 关当前锚定 tab：预期 target_closed 被抑制，会话不击穿、后续命令可达", async () => {
+    const env = fakeApis(PAGES);
+    // 真 Chrome 语义：移除附着中的 tab 会派发 onDetach(source, "target_closed")
+    const origRemove = env.tabs.remove;
+    env.tabs.remove = async (tabId) => {
+      await origRemove(tabId);
+      env.fireDetach({ tabId }, "target_closed");
+    };
+    const onDetached = vi.fn();
+    const t = new ChromeDebuggerTransport({ api: env.api, tabs: env.tabs, tabId: 11, onDetached });
+    await t.send("Target.closeTarget", { targetId: "TID_A" });
+    expect(onDetached).not.toHaveBeenCalled();
+    // core closeTab 随后的 getTargets（重锚流程）不被 "Debugger detached" 拒绝
+    const r = await t.send("Target.getTargets", {});
+    expect(r).toBeInstanceOf(Object);
+    await t.send("Page.enable", {});
+  });
+
+  it("[5] 关非当前 tab：无抑制路径，target_closed 不影响（source 过滤）", async () => {
+    const { t, env } = makeTransport(11);
+    await t.send("Target.closeTarget", { targetId: "TID_B" }); // tab 22 无附着
+    await t.send("Page.enable", {});
+    expect(env.calls.at(-1)?.kind).toBe("command");
+  });
+
+  it("[6] 事件源过滤：他 tab 事件不入多播；锚定 tab 与无 tabId 事件照常", async () => {
+    const { t, env } = makeTransport(11);
+    const l: CdpEventListener = vi.fn();
+    t.on("Page.frameStartedLoading", l);
+    env.fire({ tabId: 99 }, "Page.frameStartedLoading", { from: "other-tab" });
+    expect(l).not.toHaveBeenCalled();
+    env.fire({ tabId: 11 }, "Page.frameStartedLoading", { from: "own" });
+    env.fire({ tabId: undefined }, "Page.frameStartedLoading", { from: "no-tabid" });
+    expect(l).toHaveBeenCalledTimes(2);
+    expect(l).toHaveBeenNthCalledWith(1, { from: "own" }, undefined);
+    expect(l).toHaveBeenNthCalledWith(2, { from: "no-tabid" }, undefined);
+  });
+
+  it("[6] switchTab 后旧 tab 残留事件（detach 失败场景）被过滤", async () => {
+    const env = fakeApis(PAGES);
+    const origDetach = env.api.detach;
+    env.api.detach = async (debuggee) => {
+      if (debuggee.tabId === 11) throw new Error("detach rejected"); // 旧 tab 残留附着
+      return origDetach(debuggee);
+    };
+    const t = new ChromeDebuggerTransport({ api: env.api, tabs: env.tabs, tabId: 11 });
+    await t.send("Target.attachToTarget", { targetId: "TID_B", flatten: true });
+    const l: CdpEventListener = vi.fn();
+    t.on("Page.javascriptDialogOpening", l);
+    env.fire({ tabId: 11 }, "Page.javascriptDialogOpening", { stale: true }); // 旧 tab
+    env.fire({ tabId: 22 }, "Page.javascriptDialogOpening", { fresh: true }); // 新锚
+    expect(l).toHaveBeenCalledTimes(1);
+    expect(l).toHaveBeenCalledWith({ fresh: true }, undefined);
   });
 });
 

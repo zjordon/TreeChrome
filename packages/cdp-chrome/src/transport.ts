@@ -42,18 +42,30 @@ export class ChromeDebuggerTransport implements CdpTransport {
     method: string,
     params: unknown,
   ): void => {
-    // 全局单播源 → 按 method 多播；source.sessionId 透传（根事件无 sessionId——探针实证）
+    // 全局单播源 → 按 method 多播；source.sessionId 透传（根事件无 sessionId——探针实证）。
+    // 事件源过滤（评审轮 1 [6]）：仅当前锚定 tab 的事件入多播——switch 重叠窗与旧 tab
+    // detach 失败残留的事件（根形态与他 tab 不可区分）不得污染 recentEvents/networkIdle/
+    // fileChooser 状态；出站命令同经 currentTabId 路由，过滤不丢合法事件
+    if (source.tabId !== undefined && source.tabId !== this.currentTabId) return;
     for (const listener of this.listeners.get(method) ?? []) {
       listener(params, typeof source.sessionId === "string" ? source.sessionId : undefined);
     }
   };
   private readonly globalDetachHandler = (source: Debuggee, reason?: string): void => {
+    // 关闭当前锚定 tab 的预期 target_closed（评审轮 1 [5]）：interceptCloseTarget 登记
+    // 抑制——core closeTab 随后 getTargets+switchTab 重锚，markDetached 会击穿整个会话
+    if (this.suppressDetachForTab !== null && source.tabId === this.suppressDetachForTab) {
+      this.suppressDetachForTab = null;
+      return;
+    }
     if (source.tabId !== this.currentTabId) return;
     this.markDetached(typeof reason === "string" ? reason : "unknown");
   };
   /** 在途 send 的 reject 柄（detach 时全量拒绝——core 错误分罪按文本匹配，原文透传） */
   private readonly pendingRejections = new Set<(e: Error) => void>();
   private targetInfosCache: TargetInfoDto[] | null = null;
+  /** 预期内的 target_close（interceptCloseTarget 关当前 tab）——抑制其 onDetach */
+  private suppressDetachForTab: number | null = null;
 
   constructor(options: ChromeDebuggerTransportOptions) {
     this.api = options.api;
@@ -86,18 +98,19 @@ export class ChromeDebuggerTransport implements CdpTransport {
           return (await this.interceptActivateTarget(params)) as T;
         case "Target.closeTarget":
           return (await this.interceptCloseTarget(params)) as T;
-        case "Target.setAutoAttach":
-          // 子会话结构性不可达（attachToTarget 被拒——探针 q2 实证）：no-op 成功，
-          // 避免 SetAutoAttach 在不同内核上抛错拖死 connect 序列（该调用 best-effort）
-          this.log(
-            "cdp-chrome: Target.setAutoAttach intercepted as no-op (child sessions unavailable)",
-          );
-          return {} as T;
+        // Target.setAutoAttach 透传（评审轮 1 [2] 探针修正后实证：autoAttach 可用——
+        // Worker 子会话事件（source.sessionId）与子会话命令路由（Debuggee {tabId,
+        // sessionId}）双通；被拒的只有显式 attachToTarget（握手拦截方案 S 不变）
         default:
           break;
       }
     }
-    return (await this.sendRaw<T>(method, params, sessionId)) as T;
+    const result = (await this.sendRaw<T>(method, params, sessionId)) as T;
+    // createTarget 透传新建 tab（评审轮 1 [4]）：快照立即失效——core createTab→switchTab
+    // 紧跟的 activateTarget/attachToTarget 必须重新解析 targetId→tabId，陈旧缓存必抛
+    // "not found"（navigate(new_tab) 100% 失败链）
+    if (method === "Target.createTarget") this.targetInfosCache = null;
+    return result;
   }
 
   on(method: string, listener: CdpEventListener): () => void {
@@ -115,6 +128,7 @@ export class ChromeDebuggerTransport implements CdpTransport {
   async stop(): Promise<void> {
     const alreadyDetached = this.detached;
     this.teardownListeners();
+    this.suppressDetachForTab = null;
     this.markDetached("stopped");
     if (alreadyDetached) return; // 幂等：重复 stop 零 API 调用（onDetach 先到同此路径）
     try {
@@ -236,7 +250,11 @@ export class ChromeDebuggerTransport implements CdpTransport {
         : "";
     const tabId = await this.tabIdForTarget(targetId);
     if (tabId === null) throw new Error(`closeTarget: target ${targetId} not found`);
+    // 关当前锚定 tab（评审轮 1 [5]）：tab 关闭必然触发 onDetach(target_closed)——登记抑制，
+    // core closeTab 随后 getTargets+switchTab 重锚；非当前 tab 的关闭无附着关系、不触发
+    if (tabId === this.currentTabId) this.suppressDetachForTab = tabId;
     await this.tabs.remove(tabId);
+    this.targetInfosCache = null; // tab 集已变（评审轮 1 [4] 同族：快照立即失效）
     return {};
   }
 
