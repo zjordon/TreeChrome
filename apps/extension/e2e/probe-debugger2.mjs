@@ -89,9 +89,11 @@ const PROBE = `(async () => {
   dbg.onEvent.addListener(onEvt);
   dbg.onEvent.addListener(onEvtFull);
   try {
-    const shape = sid !== null ? { tabId: tabA.id, sessionId: sid } : { tabId: tabA.id };
+    // setAutoAttach 固定经根路由（评审轮 2 [1]）：经 sid（q2 产物=新 tab 会话）路由会把
+    // autoAttach 作用域限定到新 tab 的子目标，而 worker.html 加载在 tabA——q2 成功的
+    // 运行里作用域错位必致 q4/q5 假阴性；会话路由能力已由 q3/p3a 覆盖，无需在此复验
     let setAutoAttachErr = null;
-    try { await dbg.sendCommand(shape, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }); }
+    try { await dbg.sendCommand({ tabId: tabA.id }, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }); }
     catch (e) { setAutoAttachErr = String(e).slice(0, 90); }
     await chrome.tabs.update(tabA.id, { url: "http://127.0.0.1:8805/worker.html" });
     // 捕获即路由（评审轮 1 [2] 复盘教训：worker 短命，导航离开后 Session not found 是时序假象）

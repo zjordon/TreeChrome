@@ -321,6 +321,22 @@ describe("评审轮 1 修复回归", () => {
     expect(env.calls.at(-1)?.kind).toBe("command");
   });
 
+  it("[轮2-2] remove 失败（用户拖标签条）：抑制标记回滚，后续真实 detach 照常击穿", async () => {
+    const env = fakeApis(PAGES);
+    env.tabs.remove = async () => {
+      throw new Error("The tabs cannot be edited right now");
+    };
+    const onDetached = vi.fn();
+    const t = new ChromeDebuggerTransport({ api: env.api, tabs: env.tabs, tabId: 11, onDetached });
+    await expect(t.send("Target.closeTarget", { targetId: "TID_A" })).rejects.toThrow(
+      "cannot be edited",
+    );
+    // tab 未关、仍附着——后续用户取消调试是真实 detach，必须击穿（残留标记会吞掉它）
+    env.fireDetach({ tabId: 11 }, "canceled_by_user");
+    expect(onDetached).toHaveBeenCalledWith("canceled_by_user");
+    await expect(t.send("Page.enable", {})).rejects.toThrow("Debugger detached: canceled_by_user");
+  });
+
   it("[6] 事件源过滤：他 tab 事件不入多播；锚定 tab 与无 tabId 事件照常", async () => {
     const { t, env } = makeTransport(11);
     const l: CdpEventListener = vi.fn();

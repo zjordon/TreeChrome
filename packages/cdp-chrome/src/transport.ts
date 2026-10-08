@@ -253,7 +253,15 @@ export class ChromeDebuggerTransport implements CdpTransport {
     // 关当前锚定 tab（评审轮 1 [5]）：tab 关闭必然触发 onDetach(target_closed)——登记抑制，
     // core closeTab 随后 getTargets+switchTab 重锚；非当前 tab 的关闭无附着关系、不触发
     if (tabId === this.currentTabId) this.suppressDetachForTab = tabId;
-    await this.tabs.remove(tabId);
+    try {
+      await this.tabs.remove(tabId);
+    } catch (e) {
+      // 关闭未发生（评审轮 2 [2]：用户拖动标签条时 Chrome 拒 "tabs cannot be edited"）——
+      // 抑制标记作废（tab 仍附着），残留会误吞该 tab 后续真实 detach（canceled_by_user/
+      // replaced_with_devtools），markDetached 失灵
+      this.suppressDetachForTab = null;
+      throw e;
+    }
     this.targetInfosCache = null; // tab 集已变（评审轮 1 [4] 同族：快照立即失效）
     return {};
   }

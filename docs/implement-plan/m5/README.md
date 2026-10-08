@@ -156,6 +156,15 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
   cdp-chrome 30→35 例（覆盖率 98.79%）；对拍 smoke 复跑 PARITY PASS（setAutoAttach 透传后全链
   一致）；门禁 exit 0。
   本轮 P1/P2：5（已实施）｜P3：1（顺手修）。
+- **轮 2（2026-10-08，增量 diffBase=84a3c17，6 文件，15m13s）**：意见 2（high×1/medium×1）→
+  **采纳 2 P2**，驳回 0 / stale 0。
+  - [2] suppressDetachForTab 在 tabs.remove 抛错时未回滚——残留标记会吞该 tab 后续真实
+    detach（canceled_by_user/replaced_with_devtools），markDetached 失灵：remove 失败清标记
+    再上抛 + 回归（fake 抛 "cannot be edited" 后真实 detach 照常击穿）。
+  - [1] probe2 setAutoAttach 作用域错位（q2 若成功则经新 tab 会话路由、worker 却在 tabA——
+    假阴性）：固定根路由（当前实测 q2 恒败故未触发，工具健壮性收口）。
+  cdp-chrome 35→36 例；门禁 exit 0。
+  本轮 P1/P2：2（已实施）｜P3：0。
 
 - **轮 1（2026-10-08，diffBase=main，30 文件，6m4s）**：意见 1（high/bug）→ **采纳 1 P2**。
   gate.mjs 把 console-ui 纳入 CORE_PACKAGES 但 `SRC_EXT`/`CORE_SRC_RE` 只认 `ts|mts|mjs`——
