@@ -3,8 +3,31 @@
 > 分支 `feat/m5-cdp-chrome`。前置：段 A 骨架。
 > 对拍基准：webbrain cdp-client.js（Debuggee sessionId 事实与生命周期模式，设计取用代码重写）+
 > core `browser/transport.ts` 的 `CdpTransport` 契约（形状与 cdp-ws 鸭子兼容的既定口径）。
-> 验收：mock 单测全绿 + Playwright 加载扩展真机 smoke：附着 → dom-snapshot 采集 → 与 Node 侧
-> cdp-ws 同页产物对拍一致（golden 方法：同一页两通道产出 `element_tree_text` 逐字节一致）。
+> 验收：mock 单测全绿 + 真机 smoke：附着 → dom-snapshot 采集 → 与 Node 侧 cdp-ws 同页产物对拍一致。
+
+## 0. 实施结果（2026-10-08 完成）
+
+B1-B5 全部落地：transport 全量（30 mock 例，包覆盖率 98.71%）+ 真机跨通道对拍 smoke **PARITY PASS**
+（同页 element_tree_text 逐字节一致，5 interactive/286 字符）。探针两轮
+（`apps/extension/e2e/probe-debugger*.mjs`，可复跑）定案与实施期新事实：
+
+| # | 探针/实施事实 | 落点 |
+|---|---|---|
+| 1 | 协议 `Target.getTargets` 经 debugger 会话被拒 `Not allowed`(-32000) | 拦截合成（数据源=API `getTargets()`；附着 tab 置首——core connectSession 取首个 page target） |
+| 2 | `Target.attachToTarget` 被拒 `Not allowed`——**真 targetId（createTarget 返回值）亦然** | **方案 S 定案**：握手拦截返回 `ROOT_SESSION_ID` 合成标记；send 侧 `isRootSessionId` 省略 Debuggee.sessionId |
+| 3 | API `getTargets()` 条目键 = `attached,id,tabId,title,type,url`——target 标识字段名是 **id**（无 targetId 键；v1 探针报错根源） | `TargetInfoDto.id`；合成 getTargets 的 targetId 取自 id |
+| 4 | `Target.createTarget` 原生可用（返回真 targetId） | 透传不拦（switchTab 消费其 targetId 走重映射） |
+| 5 | OOPIF 子会话结构性不可达（attach 被拒）→ `Target.setAutoAttach` 拦截为 no-op 成功（v1 实证：透传不抛但永不产生子会话事件） | **登记偏离**：跨源 iframe 走 DOM.getDocument pierce 同进程降级（core 采集器双路径天然支持）；Debuggee sessionId 路由代码保留（正确性无害） |
+| 6 | switchTab 重映射：**attach 新 tab 在前、detach 旧在后**（chrome.debugger 允许同扩展多 tab 并发附着——无空窗；新 attach 失败原附着不动=天然回滚） | `interceptAttachToTarget` |
+| 7 | `activateTarget`/`closeTarget` 拦截走 `TabsApi`（chrome.tabs.update/remove——协议路径可用性未证，tabs 通道确定可用） | 注入接口 `TabsApi`，adapter 实现 |
+| 8 | 根事件 source 带 tabId 无 sessionId；`onDetach(source,reason)` 按当前 tab 过滤 | 事件多播 + `onDetached` 回调 + pending 全量拒绝 |
+| 9 | **构建管线事实**：`imports:false` 下 @tw/core 进 bundle 仍触发 WXT 管线对 `wxt/browser` 的解析（rollup 归因到 core 文件但变换后代码无此 import——虚警归因），从 packages/* 侧 node 解析不到 wxt（pnpm 严格隔离） | wxt.config.ts `resolve.alias` 显式别名收口（登记） |
+| 10 | **e2e harness 事实**：①组件扩展 SW（Gemini in Chrome 等）也在 /json/list 且可能同名 background.js——按 manifest.name/扩展 id 挑，绝不取首个；②我们的 SW headless 无事件数秒即死——唤醒链=从 profile `Preferences` 读未打包扩展 id（management.getAll 在组件 SW 是无权限桩、路径哈希推导对不上版，均淘汰）→ 借组件 SW tabs.create 开我们页面 → 页面 sendMessage 唤醒；③`runtime.sendMessage` 不回投发送者上下文（段 A/B 双实证）——diag 驱动一律从 sidepanel 页发起；④e2e 每跑新 profile | `e2e/lib-harness.mjs`（connectOurServiceWorker/ensureSidepanelPage/launchChrome） |
+| 11 | **对拍方法适配（登记）**：golden fixture 页不可 HTTP 重放（CDP 捕获物非 HTML）——改为**跨通道活页对拍**（同 headless chrome 同 fixture 页：chrome.debugger 通道 vs cdp-ws 通道各跑 BrowserSession 全链，element_tree_text 逐字节比对）——比 fixture 重放更强（活页实证） | `e2e/smoke-cdp-chrome.mjs` + background `diag:smoke:attach` |
+
+包结构：`types.ts`（注入接口）/ `root-session.ts`（根标记）/ `transport.ts`（本体）/ `adapter.ts`
+（唯一全局 chrome 文件，fake globalThis.chrome 可测）/ `index.ts`。e2e 脚本为 dev 工具
+（`pnpm --filter extension e2e:smoke`），不进 vitest 默认跑。
 
 ## 1. DebuggerApi 注入接口（可测性根基）
 
