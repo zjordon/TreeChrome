@@ -145,3 +145,5 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
   （注入 `import "chrome"` 进 themed-root.tsx → boundaries exit 2 拦截；还原后 exit 0）。
   驳回 0 / stale 0。门禁 exit 0（gate 单测 14 例绿）。
   本轮 P1/P2：1（已实施）｜P3：0。
+- **轮 2（2026-10-08，增量 diffBase=9a49cc9，2 文件，2m15s）**：**零意见**——循环收敛。
+  累计：2 轮，意见 1 / 采纳 1 / 驳回 0 / stale 0；分支 2 提交（9a49cc9 + 6b55b43）待授权合并。
