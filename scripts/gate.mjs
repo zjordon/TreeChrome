@@ -28,16 +28,21 @@ const exit = (code, msg) => {
 };
 const ok = (msg) => console.log(`[gate] ${msg}`);
 
-// ── 架构铁律：核心包边界 ────────────────────────────────────────────────
+// ── 架构铁律：平台中立包边界 ────────────────────────────────────────────
+// 铁律作用面 = 平台中立包（核心三包 + console-ui——M5 起组件包禁 chrome.* 保 M6 复用，
+// m5/01 §1.3）；宿主适配（cdp-chrome 的全局适配件 / apps/extension）不在此列。
 
-const CORE_PACKAGES = ["dom-snapshot", "core", "cdp-ws"];
+const CORE_PACKAGES = ["dom-snapshot", "core", "cdp-ws", "console-ui"];
 // 禁止模式：任何形式的 chrome 模块导入（含 type 导入，类型依赖同样耦合）、
 // process 导入与 process.env 读取。globalThis.crypto/TextEncoder 等 Web 标准不受限。
 const FORBIDDEN = [
-  { re: /["']chrome["']/, msg: '禁止 import "chrome"（chrome.* 只能出现在 cdp-chrome 适配包）' },
+  {
+    re: /["']chrome["']/,
+    msg: '禁止 import "chrome"（chrome.* 只能出现在 cdp-chrome 适配包与扩展宿主粘合层）',
+  },
   {
     re: /["']node:process["']|[^:\w]process\.env\b/,
-    msg: "禁止 process / process.env（核心包禁 ambient env，配置显式传入）",
+    msg: "禁止 process / process.env（平台中立包禁 ambient env，配置显式传入）",
   },
 ];
 

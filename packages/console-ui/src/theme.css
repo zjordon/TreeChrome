@@ -1,0 +1,73 @@
+/* TreeChrome 控制台主题变量（m5/05 §3：单 CSS 变量骨架，视觉打磨后置）。
+   亮/暗两套变量；.tc-root[data-tc-theme] 是作用域根，"auto" 跟随系统媒体查询，
+   显式 light/dark 覆盖。 */
+
+.tc-root {
+  color-scheme: light dark;
+  background: var(--tc-bg);
+  color: var(--tc-fg);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100%;
+}
+
+.tc-root[data-tc-theme="auto"] {
+  --tc-bg: #ffffff;
+  --tc-fg: #1f2328;
+  --tc-muted: #656d76;
+  --tc-accent: #0969da;
+  --tc-accent-fg: #ffffff;
+  --tc-danger: #cf222e;
+  --tc-success: #1a7f37;
+  --tc-warning: #9a6700;
+  --tc-border: #d0d7de;
+  --tc-card-bg: #f6f8fa;
+}
+
+.tc-root[data-tc-theme="light"] {
+  --tc-bg: #ffffff;
+  --tc-fg: #1f2328;
+  --tc-muted: #656d76;
+  --tc-accent: #0969da;
+  --tc-accent-fg: #ffffff;
+  --tc-danger: #cf222e;
+  --tc-success: #1a7f37;
+  --tc-warning: #9a6700;
+  --tc-border: #d0d7de;
+  --tc-card-bg: #f6f8fa;
+}
+
+.tc-root[data-tc-theme="dark"] {
+  --tc-bg: #0d1117;
+  --tc-fg: #e6edf3;
+  --tc-muted: #8b949e;
+  --tc-accent: #388bfd;
+  --tc-accent-fg: #ffffff;
+  --tc-danger: #f85149;
+  --tc-success: #3fb950;
+  --tc-warning: #d29922;
+  --tc-border: #30363d;
+  --tc-card-bg: #161b22;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tc-root[data-tc-theme="auto"] {
+    --tc-bg: #0d1117;
+    --tc-fg: #e6edf3;
+    --tc-muted: #8b949e;
+    --tc-accent: #388bfd;
+    --tc-accent-fg: #ffffff;
+    --tc-danger: #f85149;
+    --tc-success: #3fb950;
+    --tc-warning: #d29922;
+    --tc-border: #30363d;
+    --tc-card-bg: #161b22;
+  }
+}

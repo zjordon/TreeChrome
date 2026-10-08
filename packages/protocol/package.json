@@ -1,0 +1,26 @@
+{
+  "name": "@tw/protocol",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "事件协议类型包（架构 §8）：core 事件类型 re-export + SW↔UI 消息信封。纯类型零运行时（kind 常量表除外）；console-ui 只依赖本包不依赖 core",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tw/core": "workspace:*",
+    "@vitest/coverage-v8": "^3.2.7",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  }
+}
