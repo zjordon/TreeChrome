@@ -251,7 +251,10 @@ export class ChromeDebuggerTransport implements CdpTransport {
     const tabId = await this.tabIdForTarget(targetId);
     if (tabId === null) throw new Error(`closeTarget: target ${targetId} not found`);
     // 关当前锚定 tab（评审轮 1 [5]）：tab 关闭必然触发 onDetach(target_closed)——登记抑制，
-    // core closeTab 随后 getTargets+switchTab 重锚；非当前 tab 的关闭无附着关系、不触发
+    // core closeTab 随后 getTargets+switchTab 重锚；非当前 tab 的关闭无附着关系、不触发。
+    // save/restore（评审轮 3 [1]）：前一次成功 closeTarget 的抑制标记可能尚未被（异步迟到的）
+    // target_closed 消费——失败回滚恢复原值而非置 null，否则误清后迟到事件将击穿会话
+    const prevSuppress = this.suppressDetachForTab;
     if (tabId === this.currentTabId) this.suppressDetachForTab = tabId;
     try {
       await this.tabs.remove(tabId);
@@ -259,7 +262,7 @@ export class ChromeDebuggerTransport implements CdpTransport {
       // 关闭未发生（评审轮 2 [2]：用户拖动标签条时 Chrome 拒 "tabs cannot be edited"）——
       // 抑制标记作废（tab 仍附着），残留会误吞该 tab 后续真实 detach（canceled_by_user/
       // replaced_with_devtools），markDetached 失灵
-      this.suppressDetachForTab = null;
+      this.suppressDetachForTab = prevSuppress;
       throw e;
     }
     this.targetInfosCache = null; // tab 集已变（评审轮 1 [4] 同族：快照立即失效）

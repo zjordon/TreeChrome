@@ -337,6 +337,27 @@ describe("评审轮 1 修复回归", () => {
     await expect(t.send("Page.enable", {})).rejects.toThrow("Debugger detached: canceled_by_user");
   });
 
+  it("[轮3-1] remove 失败回滚恢复原值：前次成功 closeTarget 未消费的抑制标记不被误清", async () => {
+    const env = fakeApis(PAGES);
+    // 第 1 步：关当前 tab A 成功但 target_closed **迟到**（不在此刻派发）——标记=A 挂起
+    let failForB = false;
+    env.tabs.remove = async (tabId) => {
+      if (failForB && tabId === 22) throw new Error("The tabs cannot be edited right now");
+    };
+    const onDetached = vi.fn();
+    const t = new ChromeDebuggerTransport({ api: env.api, tabs: env.tabs, tabId: 11, onDetached });
+    await t.send("Target.closeTarget", { targetId: "TID_A" });
+    // 第 2 步：关非当前 tab B 失败——回滚须恢复 A 的挂起标记（无条件置 null 会误清）
+    failForB = true;
+    await expect(t.send("Target.closeTarget", { targetId: "TID_B" })).rejects.toThrow(
+      "cannot be edited",
+    );
+    // 第 3 步：A 的迟到 target_closed 到达——被挂起标记消费（旧代码此处误击穿会话）
+    env.fireDetach({ tabId: 11 }, "target_closed");
+    expect(onDetached).not.toHaveBeenCalled();
+    await t.send("Page.enable", {});
+  });
+
   it("[6] 事件源过滤：他 tab 事件不入多播；锚定 tab 与无 tabId 事件照常", async () => {
     const { t, env } = makeTransport(11);
     const l: CdpEventListener = vi.fn();

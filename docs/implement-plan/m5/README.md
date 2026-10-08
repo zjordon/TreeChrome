@@ -165,6 +165,12 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
     假阴性）：固定根路由（当前实测 q2 恒败故未触发，工具健壮性收口）。
   cdp-chrome 35→36 例；门禁 exit 0。
   本轮 P1/P2：2（已实施）｜P3：0。
+- **轮 3（2026-10-08，增量 diffBase=bfcb1ad，3 文件，5m17s）**：意见 1（medium）→ **采纳 1**
+  （窄路径 P2——三重失败链可达：关当前 tab 后 core 内部重锚失败 + 后续关他 tab 失败 + 迟到的
+  target_closed），驳回 0 / stale 0。remove 失败回滚改 **save/restore**（恢复原值而非置 null——
+  前次成功 closeTarget 未消费的抑制标记不被误清）；回归 1 例（迟到事件消费链，红绿双向）。
+  cdp-chrome 36→37 例；门禁 exit 0。
+  本轮 P1/P2：1（已实施）｜P3：0。
 
 - **轮 1（2026-10-08，diffBase=main，30 文件，6m4s）**：意见 1（high/bug）→ **采纳 1 P2**。
   gate.mjs 把 console-ui 纳入 CORE_PACKAGES 但 `SRC_EXT`/`CORE_SRC_RE` 只认 `ts|mts|mjs`——
