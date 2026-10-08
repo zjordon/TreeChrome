@@ -130,3 +130,18 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
    `node scripts/gate.mjs pre-commit` exit 0。
 4. **Node 宿主回归**：examples 抽样 3 例（fast-agent/upload-file/sensitive）真机回归——core 缝零行为
    变化的端到端证据。
+
+## 9. 评审轮登记（/review-loop）
+
+> 段独立评审循环的处置账本（严重度门控与收敛规则见 .zcode/commands/review-loop）。
+
+### 段 A `feat/m5-foundation`
+
+- **轮 1（2026-10-08，diffBase=main，30 文件，6m4s）**：意见 1（high/bug）→ **采纳 1 P2**。
+  gate.mjs 把 console-ui 纳入 CORE_PACKAGES 但 `SRC_EXT`/`CORE_SRC_RE` 只认 `ts|mts|mjs`——
+  .tsx 组件文件在 boundaries/hookEdit/size 三处扫描空转，「双强制」宣称对 gate 层 fail-open。
+  修复：两处扩展名集合补 `tsx|cts`（与 biome files.includes 口径对齐）；CORE_SRC_RE 收口为导出的
+  `isCoreSrcPath()`（hookEdit 消费同一实现）+ gate.test.mjs 补回归 6 例；红绿双向验证
+  （注入 `import "chrome"` 进 themed-root.tsx → boundaries exit 2 拦截；还原后 exit 0）。
+  驳回 0 / stale 0。门禁 exit 0（gate 单测 14 例绿）。
+  本轮 P1/P2：1（已实施）｜P3：0。

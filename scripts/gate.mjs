@@ -77,7 +77,9 @@ function checkFileSizes(paths) {
   ok(`size 通过（无超过 ${MAX_FILE_LINES} 行的源文件）`);
 }
 
-const SRC_EXT = /\.(ts|mts|mjs)$/;
+// 扩展名集合含 .tsx（console-ui 组件主体）与 .cts（与 biome files.includes 对齐）；
+// 不含则 boundaries/size 对组件文件空转、hookEdit 直接放行——评审轮 1 [1] 实证
+const SRC_EXT = /\.(ts|mts|cts|tsx|mjs)$/;
 
 function walkSrc(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -589,15 +591,21 @@ function hookCommit() {
   fullGate();
 }
 
-/** 核心包 src 路径识别正则：从 CORE_PACKAGES 动态构造，避免双份硬编码漂移 */
+/** 核心包 src 路径识别正则：从 CORE_PACKAGES 动态构造，避免双份硬编码漂移；
+ *  扩展名与 SRC_EXT 同集（tsx/cts 在内）——console-ui 组件主体是 .tsx */
 const CORE_SRC_RE = new RegExp(
-  String.raw`[\\/]packages[\\/](${CORE_PACKAGES.join("|")})[\\/]src[\\/].*\.(ts|mts|mjs)$`,
+  String.raw`[\\/]packages[\\/](${CORE_PACKAGES.join("|")})[\\/]src[\\/].*\.(ts|mts|cts|tsx|mjs)$`,
 );
+
+/** hookEdit 的边界判定（导出供测试：tsx 覆盖回归锚定） */
+export function isCoreSrcPath(path) {
+  return CORE_SRC_RE.test(String(path));
+}
 
 function hookEdit() {
   const input = readHookInput();
   const path = input?.tool_input?.file_path ?? input?.tool_input?.path ?? "";
-  if (!CORE_SRC_RE.test(String(path))) process.exit(0);
+  if (!isCoreSrcPath(path)) process.exit(0);
   const violations = scanFile(String(path).replaceAll("\\", "/"));
   if (violations.length) exit(2, `${path}:\n  ${violations.join("\n  ")}`);
   const lines = countLines(String(path));

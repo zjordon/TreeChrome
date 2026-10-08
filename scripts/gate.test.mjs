@@ -1,10 +1,11 @@
-// isGitCommit / matchStagedForbidden / parseStatus / gitSegmentHasFlag / gitAddIsBroad 判定用例
-// （评审二/四/五轮修复的回归覆盖）
+// isGitCommit / matchStagedForbidden / parseStatus / gitSegmentHasFlag / gitAddIsBroad /
+// isCoreSrcPath 判定用例（评审二/四/五轮修复的回归覆盖）
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
   gitAddIsBroad,
   gitSegmentHasFlag,
+  isCoreSrcPath,
   isGitCommit,
   matchStagedForbidden,
   parseStatus,
@@ -215,4 +216,16 @@ test("gitAddIsBroad：-u 不是广域暂存（评审五轮 #11）；--/../stage 
   assert.equal(gitAddIsBroad("git add -u && git commit"), false); // 只更新已跟踪条目
   assert.equal(gitAddIsBroad("git add packages && git commit"), false);
   assert.equal(gitAddIsBroad("git add -- packages/a.ts && git commit"), false); // -- 后是 pathspec
+});
+
+test("isCoreSrcPath：tsx/cts 在内（m5 评审轮 1 [1]——console-ui 组件主体空转回归）", () => {
+  // 双分隔符与 tsx（console-ui 主体扩展名）
+  assert.equal(isCoreSrcPath("D:\\x\\packages\\console-ui\\src\\themed-root.tsx"), true);
+  assert.equal(isCoreSrcPath("D:/x/packages/console-ui/src/deep/card.tsx"), true);
+  assert.equal(isCoreSrcPath("D:/x/packages/core/src/llm/client.ts"), true);
+  assert.equal(isCoreSrcPath("D:/x/packages/core/src/x.cts"), true); // biome 口径对齐
+  // 非 src / 宿主区 / 测试文件不在边界内
+  assert.equal(isCoreSrcPath("D:/x/packages/core/test/client.test.ts"), false);
+  assert.equal(isCoreSrcPath("D:/x/apps/extension/entrypoints/background.ts"), false);
+  assert.equal(isCoreSrcPath("D:/x/packages/node-host/src/settings.ts"), false); // 宿主共享件
 });
