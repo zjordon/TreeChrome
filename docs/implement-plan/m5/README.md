@@ -135,7 +135,45 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
 
 > 段独立评审循环的处置账本（严重度门控与收敛规则见 .zcode/commands/review-loop）。
 
-### 段 A `feat/m5-foundation`
+### 段 B `feat/m5-cdp-chrome`
+
+- **轮 1（2026-10-08，diffBase=main，15 文件，18m31s）**：意见 6（high×3/medium×2/low×1）→
+  **采纳 5 P2 + 1 P3 顺手**，驳回 0 / stale 0。
+  - **[2] 探针仪器缺陷引发设计翻案（本轮最重）**：probe2 q4 漏发 setAutoAttach（假阴性证据）——
+    修正探针后实证 `Target.setAutoAttach` 可用：Worker 子会话事件（source.sessionId）+ 子会话命令
+    路由（Debuggee {tabId, sessionId}，Worker 上下文 evaluate 成功）双通；**撤 no-op 拦截改透传**，
+    02 §0 事实表 #5 已改写（被拒的只剩显式 attachToTarget——根握手方案 S 不变；OOPIF 本机对不足
+    触发，段 F 真机复核）。
+  - [4] createTarget 透传后 targetInfosCache 不失效——navigate(new_tab) 链 activateTarget 必抛
+    "not found"（100% 失败）：透传后置空缓存 + closeTarget 同族；动态世界 fake 回归（红绿双向）。
+  - [5] 关当前锚定 tab → onDetach(target_closed) 永久击穿会话：suppressDetachForTab 抑制标记
+    （core closeTab 随后 getTargets+switchTab 重锚照常）+ fake 派发 detach 回归。
+  - [6] 事件源不按锚定 tab 过滤——switch 重叠窗/旧 tab detach 失败残留串扰（recentEvents/
+    networkIdle/fileChooser 污染）：globalEventHandler 按 currentTabId 过滤（无 tabId 事件放行）。
+  - [1] background smoke 兜底：core start() 失败分支只置 transportRef=null 不级联 stop——闭包
+    transport 直接 stop（幂等）；TS CFA 窄化用 ref 对象持有关闭点。
+  - [3] P3 顺手：probe1 死块（无超时等待下一事件，挂死风险）删除并改为完整 sid 立即路由验证。
+  cdp-chrome 30→35 例（覆盖率 98.79%）；对拍 smoke 复跑 PARITY PASS（setAutoAttach 透传后全链
+  一致）；门禁 exit 0。
+  本轮 P1/P2：5（已实施）｜P3：1（顺手修）。
+- **轮 2（2026-10-08，增量 diffBase=84a3c17，6 文件，15m13s）**：意见 2（high×1/medium×1）→
+  **采纳 2 P2**，驳回 0 / stale 0。
+  - [2] suppressDetachForTab 在 tabs.remove 抛错时未回滚——残留标记会吞该 tab 后续真实
+    detach（canceled_by_user/replaced_with_devtools），markDetached 失灵：remove 失败清标记
+    再上抛 + 回归（fake 抛 "cannot be edited" 后真实 detach 照常击穿）。
+  - [1] probe2 setAutoAttach 作用域错位（q2 若成功则经新 tab 会话路由、worker 却在 tabA——
+    假阴性）：固定根路由（当前实测 q2 恒败故未触发，工具健壮性收口）。
+  cdp-chrome 35→36 例；门禁 exit 0。
+  本轮 P1/P2：2（已实施）｜P3：0。
+- **轮 3（2026-10-08，增量 diffBase=bfcb1ad，3 文件，5m17s）**：意见 1（medium）→ **采纳 1**
+  （窄路径 P2——三重失败链可达：关当前 tab 后 core 内部重锚失败 + 后续关他 tab 失败 + 迟到的
+  target_closed），驳回 0 / stale 0。remove 失败回滚改 **save/restore**（恢复原值而非置 null——
+  前次成功 closeTarget 未消费的抑制标记不被误清）；回归 1 例（迟到事件消费链，红绿双向）。
+  cdp-chrome 36→37 例；门禁 exit 0。
+  本轮 P1/P2：1（已实施）｜P3：0。
+- **轮 4（2026-10-08，增量 diffBase=20b4dd8，2 文件，3m4s）**：**零意见**——循环收敛。
+  累计：4 轮，意见 9 / 采纳 9 / 驳回 0 / stale 0（P3 backlog 空）；cdp-chrome 30→37 例
+  （98.8% 档）；分支 4 提交（84a3c17 + bfcb1ad + 20b4dd8 + 96be307）待授权合并。
 
 - **轮 1（2026-10-08，diffBase=main，30 文件，6m4s）**：意见 1（high/bug）→ **采纳 1 P2**。
   gate.mjs 把 console-ui 纳入 CORE_PACKAGES 但 `SRC_EXT`/`CORE_SRC_RE` 只认 `ts|mts|mjs`——
