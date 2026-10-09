@@ -2,8 +2,8 @@
 // 采集变更字段摘要（≤8，password 值打码）。TreeChrome 净新增（Python 无扩展形态）。
 // 两段式：快照侧 tag/type 预筛（语言无关确定性、零 CDP 开销——矩阵外不触页面）→
 // 页面内一步 JS probe（submit 复核 + form 祖先 + defaultValue/defaultChecked/defaultSelected
-// 变更比对）。探针 best-effort fail-open：异常/非 submit/无变更字段 → null 放行点击
-// （检测不阻塞动作；交互侧 submitGate 才 fail-closed）。
+// 变更比对）。探针 best-effort fail-open：异常/超时/非 submit/无变更字段 → null
+// 放行点击（检测不阻塞动作；交互侧 submitGate 才 fail-closed）。
 
 import type { EnhancedDOMTreeNode } from "../browser/views.js";
 import type { SubmitFieldSummary } from "../policy/policy.js";
@@ -16,6 +16,14 @@ export interface SubmitProbeBrowser {
 /** 摘要上限与值截断（架构 §5.3：变更字段 ≤8；值 40 字符） */
 export const SUBMIT_SUMMARY_MAX_FIELDS = 8;
 export const SUBMIT_SUMMARY_VALUE_MAX_CHARS = 40;
+
+/** probe 挂起保护（评审轮 1 [2]）：本 await 在 act.ts 挂点位于 withActionTimeout
+ *  之外（该超时只包 tools.execute），而 evalFunctionOnNode 的 Runtime.callFunctionOn
+ *  不带 timeout、两宿主 transport（cdp-ws opt-in / chrome.debugger）均无 per-call
+ *  超时——页面主线程被同步长任务阻塞时响应永不返回，executeActions 会永久挂死
+ *  （stop 检查在循环轮首也到不了）。超时按 null 放行（与 fail-open 同语义：
+ *  检测不阻塞动作；挂起的孤儿 promise 不消费）。 */
+export const SUBMIT_PROBE_TIMEOUT_MS = 3000;
 
 /**
  * 快照侧预筛（tag/type 矩阵）：input[type=submit] / button[type=submit] /
@@ -61,7 +69,7 @@ export function parseSubmitProbeResult(raw: unknown): SubmitFieldSummary[] | nul
   return out.length > 0 ? out : null;
 }
 
-/** act 挂点消费端：index → selectorMap 预筛 → JS probe。绝不抛（异常 → null） */
+/** act 挂点消费端：index → selectorMap 预筛 → JS probe。绝不抛（异常/超时 → null） */
 export async function probeSubmitForClick(
   browser: SubmitProbeBrowser,
   domState: { selectorMap: Map<number, EnhancedDOMTreeNode> } | null,
@@ -71,11 +79,18 @@ export async function probeSubmitForClick(
   if (typeof idx !== "number") return null;
   const node = domState?.selectorMap.get(idx) ?? null;
   if (node === null || !isSubmitCandidateNode(node)) return null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    return parseSubmitProbeResult(
-      await browser.evalFunctionOnNode(node.backendNodeId, SUBMIT_PROBE_JS),
-    );
+    const raw = await Promise.race([
+      browser.evalFunctionOnNode(node.backendNodeId, SUBMIT_PROBE_JS),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), SUBMIT_PROBE_TIMEOUT_MS);
+      }),
+    ]);
+    return parseSubmitProbeResult(raw);
   } catch {
     return null; // 检测 best-effort（fail-open）；交互侧 submitGate 才 fail-closed
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
 }

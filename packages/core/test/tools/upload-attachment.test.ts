@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { BrowserStateSummary } from "../../src/browser/views.js";
 import type { Tools } from "../../src/tools/actions/index.js";
 import type { AttachmentPayload, FileSystemProvider } from "../../src/tools/fs.js";
+import { DEFAULT_MAX_ATTACHMENT_BYTES } from "../../src/tools/settings.js";
 import { FakeBrowser, makeNode, makeTools } from "./fake-browser.js";
 import { makeFakeFs } from "./fake-fs.js";
 
@@ -100,6 +101,44 @@ describe("附件分支（绿向：命中 → bytes 注入通道）", () => {
     );
     expect(r.error).toBe("File is empty: attachment:att_9");
     expect(browser.setFileInputDataCalls).toEqual([]);
+  });
+
+  it("体积超上限 → 快速失败可操作 error（不触注入通道；轮 1 [1]）", async () => {
+    const browser = new FakeBrowser();
+    const r = await runWith(
+      makeAttachmentFs({ "attachment:att_1": { ...ATT, size: 100 } }),
+      browser,
+      { path: "attachment:att_1", index: 30 },
+      { maxAttachmentBytes: 99 },
+    );
+    expect(r.error).toBe(
+      "Attachment too large for data channel upload: attachment:att_1 (100 bytes > 99 bytes limit)",
+    );
+    expect(browser.setFileInputDataCalls).toEqual([]);
+  });
+
+  it("上限边界：恰等放行；显式 null 解除；构造缺省 32MB", async () => {
+    const browser = new FakeBrowser();
+    const atLimit = await runWith(
+      makeAttachmentFs({ "attachment:att_1": { ...ATT, size: 99 } }),
+      browser,
+      { path: "attachment:att_1", index: 30 },
+      { maxAttachmentBytes: 99 },
+    );
+    expect(atLimit.error).toBeNull();
+    expect(browser.setFileInputDataCalls).toHaveLength(1);
+
+    const browser2 = new FakeBrowser();
+    const uncapped = await runWith(
+      makeAttachmentFs({ "attachment:att_1": { ...ATT, size: 999 } }),
+      browser2,
+      { path: "attachment:att_1", index: 30 },
+      { maxAttachmentBytes: null },
+    );
+    expect(uncapped.error).toBeNull();
+
+    const { tools } = makeTools();
+    expect(tools.ctx.maxAttachmentBytes).toBe(DEFAULT_MAX_ATTACHMENT_BYTES);
   });
 
   it("注入通道抛错 → File upload failed (data channel) 前缀 + 页面 error 上翻", async () => {

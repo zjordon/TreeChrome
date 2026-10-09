@@ -8,7 +8,7 @@ import type { BrowserStateSummary } from "../../browser/views.js";
 import { ACTION_DEFINITIONS, makeStructuredDoneParams, type ParamModel } from "../models.js";
 import { ActionRegistry } from "../registry.js";
 import type { ToolsOptions } from "../settings.js";
-import { DEFAULT_TRUNCATION_SETTINGS } from "../settings.js";
+import { DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_TRUNCATION_SETTINGS } from "../settings.js";
 import type { ActionHandler, ToolsBrowser } from "../types.js";
 import { createClickHandler } from "./click.js";
 import { createCloseTabHandler } from "./close-tab.js";
@@ -99,6 +99,10 @@ export class Tools {
       uploadVerifyEnabled: options.uploadVerifyEnabled ?? true,
       uploadVerifyWaitMs: options.uploadVerifyWaitMs ?? 1500,
       uploadVerifyIntervalMs: options.uploadVerifyIntervalMs ?? 250,
+      maxAttachmentBytes:
+        options.maxAttachmentBytes === undefined
+          ? DEFAULT_MAX_ATTACHMENT_BYTES
+          : options.maxAttachmentBytes,
       cachedBrowserState: null,
     };
     // 变体 B：outputModel 须在 _registerAll 前就位（registry 据此隐藏字段、注册变体参数模型）

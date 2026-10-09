@@ -229,6 +229,16 @@ export function createUploadFileHandler(ctx: ToolsContext): ActionHandler {
       if (attachment.size === 0) {
         return new ActionResult({ error: `File is empty: ${filePath}` });
       }
+      // bytes 通道体积上限（评审轮 1 [1]）：全量 base64 单条 CDP 消息的峰值内存与
+      // 页面端同步解码随体积线性——超限快速失败回可操作 error（路径通道按 OS
+      // 路径寻址无此退化；null = 宿主显式解除）
+      if (ctx.maxAttachmentBytes !== null && attachment.size > ctx.maxAttachmentBytes) {
+        return new ActionResult({
+          error:
+            `Attachment too large for data channel upload: ${filePath} ` +
+            `(${attachment.size} bytes > ${ctx.maxAttachmentBytes} bytes limit)`,
+        });
+      }
     } else {
       // 白名单（resolve 归一化后比对——段 1 评审轮 1 [6] 同款收严）+ 存在/非空校验
       p = ctx.fs !== null ? ctx.fs.resolve(filePath) : filePath;

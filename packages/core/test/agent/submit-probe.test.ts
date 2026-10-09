@@ -1,14 +1,15 @@
 // M5 段 C 缝二单元：SubmitProbe 预筛矩阵（tag/type）+ probe 返回解析契约（8 项/
-// 40 字符/形态过滤）+ probeSubmitForClick 全链（预筛短路零 CDP / eval 异常
-// fail-open）。JS 体锚定关键语句（closest/defaultChecked/defaultSelected/password
-// 打码）——页面真值验证在段 F 真机。
+// 40 字符/形态过滤）+ probeSubmitForClick 全链（预筛短路零 CDP / eval 异常与
+// 挂起超时 fail-open——评审轮 1 [2]）。JS 体锚定关键语句（closest/defaultChecked/
+// defaultSelected/password 打码）——页面真值验证在段 F 真机。
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   isSubmitCandidateNode,
   parseSubmitProbeResult,
   probeSubmitForClick,
   SUBMIT_PROBE_JS,
+  SUBMIT_PROBE_TIMEOUT_MS,
 } from "../../src/agent/submit-probe.js";
 import type { EnhancedDOMTreeNode } from "../../src/browser/views.js";
 import { makeNode } from "../tools/fake-browser.js";
@@ -101,6 +102,19 @@ describe("probeSubmitForClick（挂点消费端）", () => {
     expect(
       await probeSubmitForClick(fakeBrowser(null, new Error("cdp down")), domState, { index: 3 }),
     ).toBeNull();
+  });
+  it("eval 挂起（页面主线程阻塞，响应永不返回）→ 超时 null 放行不永久挂死（轮 1 [2]）", async () => {
+    vi.useFakeTimers();
+    try {
+      const hanging = {
+        evalFunctionOnNode: (_bid: number, _fn: string) => new Promise<unknown>(() => {}),
+      };
+      const p = probeSubmitForClick(hanging, domState, { index: 3 });
+      await vi.advanceTimersByTimeAsync(SUBMIT_PROBE_TIMEOUT_MS);
+      expect(await p).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("probe 返回 null（无 form/无变更字段）→ null", async () => {
     expect(await probeSubmitForClick(fakeBrowser(null), domState, { index: 3 })).toBeNull();
