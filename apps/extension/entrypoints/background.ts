@@ -10,7 +10,6 @@ import {
   chromeTabsApi,
   createChromeDebuggerTransport,
 } from "@tw/cdp-chrome";
-import type { SkillSource } from "@tw/core";
 import type { RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
@@ -29,7 +28,12 @@ import { KeepaliveController } from "../src/host/keepalive.js";
 import { OpfsFs } from "../src/host/opfs-fs.js";
 import { SettingsStore } from "../src/host/settings-store.js";
 import { ExtensionSkillSource } from "../src/host/skill-source.js";
-import { type BuiltinsManifest, openSkillDb, SkillStore } from "../src/host/skill-store.js";
+import {
+  type BuiltinsManifest,
+  openSkillDb,
+  type SkillDb,
+  SkillStore,
+} from "../src/host/skill-store.js";
 import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
 import { PortServer } from "../src/runtime/port-server.js";
@@ -145,7 +149,22 @@ interface Booted {
   skillStore: SkillStore;
 }
 
-/** SW 重活装配（消息路由已先行注册——boot 期间到达的消息经 bootPromise 排队） */
+/** IDB 打不开时的降级空库（评审轮 1 [13]：skill 是可选增强，存储故障不得
+ *  拖垮 run 主链——get 恒 null/写 noop，全部 miss） */
+function memorySkillDb(): SkillDb {
+  return {
+    get: async () => null,
+    put: async () => {},
+    delete: async () => {},
+    getAllKeys: async () => [],
+  };
+}
+
+/** SW 重活装配（消息路由已先行注册——boot 期间到达的消息经 bootPromise 排队）。
+ *  MV3 时序纪律（评审轮 1 [15]）：全部事件监听器（PortServer onConnect/
+ *  onInstalled）必须在首个 await 前同步注册——Chrome 唤醒 SW 后在顶层求值完成
+ *  即派发排队事件，晚于 await 点注册的监听器会丢事件（connect 丢失=sidepanel
+ *  永远收不到 hello，无自愈）。故 openSkillDb（boot 唯一 await 点）置于尾部。 */
 async function boot(): Promise<Booted> {
   const storage = chromeStorageLocal();
   const settingsStore = new SettingsStore(storage);
@@ -159,14 +178,14 @@ async function boot(): Promise<Booted> {
   const fs = new OpfsFs();
   const keepalive = new KeepaliveController(chromeAlarms());
 
-  // skills：IndexedDB 打开（毫秒级）+ built-in 刷新（onInstalled/onUpdated）
-  const skillStore = new SkillStore(await openSkillDb(globalThis.indexedDB));
-  const skillSource: SkillSource = new ExtensionSkillSource(skillStore);
-  void refreshBuiltins(skillStore);
-  chromeOnInstalled().addListener((details: unknown) => {
-    const reason = (details as { reason?: unknown } | null)?.reason;
-    if (reason === "install" || reason === "update") void refreshBuiltins(skillStore);
-  });
+  // skills 晚绑定 holder（store 在尾部 await openSkillDb 后就位；makeSkillSource
+  // 只在 run 启动时调用——bootPromise 已把关，届时必已就绪）
+  const skillRefs: { store: SkillStore | null; ready: Promise<unknown> } = {
+    store: null,
+    ready: Promise.resolve(),
+  };
+  const refreshSkills = (): Promise<void> =>
+    skillRefs.store !== null ? refreshBuiltins(skillRefs.store) : Promise.resolve();
 
   // 广播/端口态闭包晚绑定（portServer 在 runManager 之后构造——双向引用经 holder 收口）
   let portServerRef: PortServer | null = null;
@@ -179,7 +198,13 @@ async function boot(): Promise<Booted> {
     tabsQuery: chromeTabsQuery(),
     tabsOnRemoved: chromeTabsOnRemoved(),
     transportFactoryFor: (tabId) => makeDebuggerTransportFactory(tabId, {}, log),
-    makeSkillSource: () => skillSource,
+    makeSkillSource: () => {
+      const store = skillRefs.store;
+      if (store === null) throw new Error("skill store not ready");
+      // 每 run 新实例（缓存不跨 run——刷新后的数据下一 run 可见）+ ready gate
+      //（首装窗口期空库不固化负缓存，评审轮 1 [1][12]）
+      return new ExtensionSkillSource(store, log, skillRefs.ready);
+    },
     grantStore,
     broadcast: (m) => portServerRef?.broadcast(m),
     hasPorts: () => portServerRef?.hasPorts ?? false,
@@ -190,12 +215,31 @@ async function boot(): Promise<Booted> {
     onUiMessage: (message) => runManager.handleUiMessage(message),
     onAllPortsDisconnected: () => runManager.onAllPortsDisconnected(),
   });
+  chromeOnInstalled().addListener((details: unknown) => {
+    const reason = (details as { reason?: unknown } | null)?.reason;
+    if (reason === "install" || reason === "update") void refreshSkills();
+  });
 
   // SW 被杀恢复：非终态 journal 且无活 run → interrupted（README 决策 5：不续跑）
   void recoverInterruptedRuns(storage, runManager);
 
+  // —— boot 唯一 await 点（尾部；失败降级内存空库——评审轮 1 [13]）——
+  let store: SkillStore;
+  let dbOk = true;
+  try {
+    store = new SkillStore(await openSkillDb(globalThis.indexedDB));
+  } catch (e) {
+    log(`skill db unavailable, skills disabled: ${e instanceof Error ? e.message : String(e)}`);
+    store = new SkillStore(memorySkillDb());
+    dbOk = false;
+  }
+  skillRefs.store = store;
+  // built-in 刷新（fetch 打包清单 → upsert；失败只记日志——skill 是可选增强；
+  //  内部 try/catch 恒 settle，可安全作 ExtensionSkillSource 的 ready gate）
+  if (dbOk) skillRefs.ready = refreshBuiltins(store);
+
   log("SW booted (segment D runtime)");
-  return { runManager, skillStore };
+  return { runManager, skillStore: store };
 }
 
 /** built-in 刷新（fetch 打包清单 → upsert；失败只记日志——skill 是可选增强） */

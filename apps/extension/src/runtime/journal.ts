@@ -17,10 +17,6 @@ export const JOURNAL_EVENT_JSON_LIMIT = 1024 * 1024;
 
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}…` : s);
 
-function _isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
 /** TwEvent → journal 压缩投影（字段级截断；未知 type 原样浅拷贝） */
 export function compactEventData(event: TwEvent): Record<string, unknown> {
   const base: Record<string, unknown> = { step: event.step };
@@ -207,11 +203,6 @@ export class RunJournal {
     if (event.eventType === "step_end") snap.stepCount = Math.max(snap.stepCount, event.step);
     this.persistDeferred();
     return entry;
-  }
-
-  /** 单事件消息体护栏：超 1MB 的事件 data 置截断标记（转发层消费） */
-  static oversizedEventData(entry: JournalEvent): boolean {
-    return JSON.stringify(entry).length > JOURNAL_EVENT_JSON_LIMIT;
   }
 
   setStatus(

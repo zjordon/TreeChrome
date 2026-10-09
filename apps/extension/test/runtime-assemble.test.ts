@@ -5,7 +5,7 @@
 
 import type { CdpTransport, LLMClient, ProviderConfig } from "@tw/core";
 import { describe, expect, it } from "vitest";
-import { AttachmentRegistry } from "../src/host/attachment-registry.js";
+import { AttachmentRegistry, MAX_ATTACHMENT_BYTES } from "../src/host/attachment-registry.js";
 import type { DirHandleLike, FileHandleLike } from "../src/host/opfs-fs.js";
 import { OpfsFs } from "../src/host/opfs-fs.js";
 import { parseExtensionSettings } from "../src/host/settings-store.js";
@@ -153,6 +153,11 @@ describe("assembleRun", () => {
     // extract/judge 未设 → null（Agent 复用主 llm 语义）
     expect(assembled.agent).toBeDefined();
     expect(assembled.bus).toBeDefined();
+    // 附件数据通道上限对齐注册表（评审轮 1 [4]）：core 缺省 32MB < 注册表 100MB
+    // 时 33-100MB 附件入表后 upload 必被拒——拒绝还发生在 resolve() 全量转码之后
+    const ctx = (assembled.agent as unknown as { tools: { ctx: { maxAttachmentBytes: number } } })
+      .tools.ctx;
+    expect(ctx.maxAttachmentBytes).toBe(MAX_ATTACHMENT_BYTES);
   });
 
   it("附件注册表有附件 → taskText 拼接 [Attachments] 段；无附件原样", () => {

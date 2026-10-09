@@ -72,9 +72,16 @@ const llm = createServer((req, res) => {
     if (hasTools && toolCallCount < SCRIPT.length) {
       let input = SCRIPT[toolCallCount];
       if (toolCallCount === 1) {
-        // click 步：按当前状态解析按钮索引（状态在本次请求的对话文本里）
+        // click 步：按当前状态解析按钮索引（状态在本次请求的对话文本里）。
+        // 解析失败回 500（'end' 回调里 throw 是 uncaughtException 直接崩进程——
+        // 清理钩子全不执行，Chrome/端口残留拖死下一轮 e2e）：run 自然落 error
+        // 终态，由既有 final.status 断言面捕获
         const idx = buttonIndexOf(body);
-        if (idx === null) throw new Error("mock LLM: 状态文本中无 [N]<button 可点");
+        if (idx === null) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "mock LLM: no [N]<button in state text" }));
+          return;
+        }
         input = {
           ...input,
           action: { name: "click", params: { index: idx } },
@@ -106,92 +113,106 @@ const fixtureSrv = createServer((_req, res) => {
 });
 await new Promise((r) => fixtureSrv.listen(FIXTURE_PORT, "127.0.0.1", r));
 
-const { proc, profileDir } = await launchChrome({ port: CDP_PORT });
-const { sw } = await connectOurServiceWorker(CDP_PORT, profileDir);
-const page = await ensureSidepanelPage(CDP_PORT, await sw.evaluate("chrome.runtime.id"));
-
-// ① 写入 mock 卡配置
-await page.evaluate(`(async () => {
-  await chrome.storage.local.set({ tc_settings: {
-    providerCards: [{ name: "mock", protocol: "anthropic-messages", baseUrl: "http://127.0.0.1:${LLM_PORT}", apiKey: "k", model: "mock-model", maxTokens: 128 }],
-    activeCard: "mock",
-  } });
-})()`);
-
-// ② 开 fixture tab（成为活动 tab——run 绑定目标）+ 装 Port 自动应答器
-const tabId = await page.evaluate(`(async () => {
-  const before = new Set((await chrome.tabs.query({})).map((t) => t.id));
-  await chrome.tabs.create({ url: "${FIXTURE_URL}" });
-  await new Promise((r) => setTimeout(r, 1500));
-  const t = (await chrome.tabs.query({})).find((t) => !before.has(t.id));
-  return t ? t.id : null;
-})()`);
-if (typeof tabId !== "number") throw new Error("fixture tab not created");
-
-await page.evaluate(`(() => {
-  window.__e2e = { permissions: 0, snapshots: [], events: 0, errors: [] };
-  const port = chrome.runtime.connect({ name: "e2e-driver" });
-  port.onMessage.addListener((m) => {
-    if (m.kind === "permission-request") {
-      window.__e2e.permissions += 1;
-      port.postMessage({ kind: "permission-resolve", token: m.token, verdict: "allow-once" });
-    } else if (m.kind === "journal-snapshot") {
-      window.__e2e.snapshots.push({ status: m.snapshot.status, isDone: m.snapshot.isDone,
-        stepCount: m.snapshot.stepCount, lastError: m.snapshot.lastError, runId: m.snapshot.runId });
-    } else if (m.kind === "event") {
-      window.__e2e.events += 1;
-    }
-  });
-})()`);
-
-// ③ 起跑
-const startAck = await page.evaluate(`(async () => {
-  await chrome.runtime.sendMessage({ kind: "control", action: "start", task: "打开 fixture 页，点击第一个按钮，然后完成" });
-  return "sent";
-})()`);
-void startAck;
-
-// ④ 轮询 journal 落盘直到终态（60s 预算）
-const deadline = Date.now() + 60_000;
+// ── 主链（try/finally 收口清理：任一断言/意外异常路径都杀 Chrome 关端口——
+//    残留 CDP 9778/fixture 8807/LLM 8899 会拖死下一轮 e2e 的 launchChrome）──
+let proc = null;
+const failures = [];
 let final = null;
-while (Date.now() < deadline) {
-  await new Promise((r) => setTimeout(r, 1000));
-  final = await page.evaluate(`(async () => {
-    const items = await chrome.storage.local.get(null);
-    const key = Object.keys(items).find((k) => k.startsWith("tc_runUi:"));
-    return key ? JSON.stringify(items[key]) : null;
+let d = { permissions: 0, events: 0, snapshots: [] };
+let tabId = null;
+try {
+  const { proc: chromeProc, profileDir } = await launchChrome({ port: CDP_PORT });
+  proc = chromeProc;
+  const { sw } = await connectOurServiceWorker(CDP_PORT, profileDir);
+  const page = await ensureSidepanelPage(CDP_PORT, await sw.evaluate("chrome.runtime.id"));
+
+  // ① 写入 mock 卡配置
+  await page.evaluate(`(async () => {
+    await chrome.storage.local.set({ tc_settings: {
+      providerCards: [{ name: "mock", protocol: "anthropic-messages", baseUrl: "http://127.0.0.1:${LLM_PORT}", apiKey: "k", model: "mock-model", maxTokens: 128 }],
+      activeCard: "mock",
+    } });
   })()`);
-  if (final !== null) {
-    const snap = JSON.parse(final);
-    if (["done", "error", "interrupted"].includes(snap.status)) {
-      final = snap;
-      break;
+
+  // ② 开 fixture tab（成为活动 tab——run 绑定目标）+ 装 Port 自动应答器
+  tabId = await page.evaluate(`(async () => {
+    const before = new Set((await chrome.tabs.query({})).map((t) => t.id));
+    await chrome.tabs.create({ url: "${FIXTURE_URL}" });
+    await new Promise((r) => setTimeout(r, 1500));
+    const t = (await chrome.tabs.query({})).find((t) => !before.has(t.id));
+    return t ? t.id : null;
+  })()`);
+  if (typeof tabId !== "number") throw new Error("fixture tab not created");
+
+  await page.evaluate(`(() => {
+    window.__e2e = { permissions: 0, snapshots: [], events: 0, errors: [] };
+    const port = chrome.runtime.connect({ name: "e2e-driver" });
+    port.onMessage.addListener((m) => {
+      if (m.kind === "permission-request") {
+        window.__e2e.permissions += 1;
+        port.postMessage({ kind: "permission-resolve", token: m.token, verdict: "allow-once" });
+      } else if (m.kind === "journal-snapshot") {
+        window.__e2e.snapshots.push({ status: m.snapshot.status, isDone: m.snapshot.isDone,
+          stepCount: m.snapshot.stepCount, lastError: m.snapshot.lastError, runId: m.snapshot.runId });
+      } else if (m.kind === "event") {
+        window.__e2e.events += 1;
+      }
+    });
+  })()`);
+
+  // ③ 起跑
+  const startAck = await page.evaluate(`(async () => {
+    await chrome.runtime.sendMessage({ kind: "control", action: "start", task: "打开 fixture 页，点击第一个按钮，然后完成" });
+    return "sent";
+  })()`);
+  void startAck;
+
+  // ④ 轮询 journal 落盘直到终态（60s 预算）
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1000));
+    final = await page.evaluate(`(async () => {
+      const items = await chrome.storage.local.get(null);
+      const key = Object.keys(items).find((k) => k.startsWith("tc_runUi:"));
+      return key ? JSON.stringify(items[key]) : null;
+    })()`);
+    if (final !== null) {
+      const snap = JSON.parse(final);
+      if (["done", "error", "interrupted"].includes(snap.status)) {
+        final = snap;
+        break;
+      }
     }
   }
-}
 
-// ⑤ 断言
-const driver = await page.evaluate("JSON.stringify(window.__e2e)");
-const d = JSON.parse(driver);
-const failures = [];
-if (final === null || typeof final === "string") {
-  failures.push(`run 未在预算内到终态（last=${JSON.stringify(final)?.slice(0, 200)}）`);
-} else {
-  if (final.status !== "done") failures.push(`status=${final.status} lastError=${final.lastError}`);
-  if (final.isDone !== true) failures.push("isDone !== true");
-  // done 步不发 step_end（journal 计步只数 step_end）——navigate/click 两步落账，
-  // 第 3 步 LLM 调用由 toolCalls 断言覆盖
-  if (final.stepCount < 2) failures.push(`stepCount=${final.stepCount} < 2`);
-  if ((final.finalResult ?? "") !== "smoke done") failures.push(`finalResult=${final.finalResult}`);
-}
-if (d.permissions < 2) failures.push(`permission cards = ${d.permissions} < 2`);
-if (d.events < 3) failures.push(`port events = ${d.events} < 3`);
-if (toolCallCount < 3) failures.push(`LLM tool calls = ${toolCallCount} < 3`);
-const title = await page.evaluate(
-  `(async () => { const t = (await chrome.tabs.query({})).find((x) => x.id === ${tabId}); return t ? t.title : null; })()`,
-);
-if (title !== "CLICKED-A" && title !== "CLICKED-B" && title !== "CLICKED-BODY") {
-  failures.push(`fixture title = ${title}（点击副作用未落地）`);
+  // ⑤ 断言
+  const driver = await page.evaluate("JSON.stringify(window.__e2e)");
+  d = JSON.parse(driver);
+  if (final === null || typeof final === "string") {
+    failures.push(`run 未在预算内到终态（last=${JSON.stringify(final)?.slice(0, 200)}）`);
+  } else {
+    if (final.status !== "done")
+      failures.push(`status=${final.status} lastError=${final.lastError}`);
+    if (final.isDone !== true) failures.push("isDone !== true");
+    // done 步不发 step_end（journal 计步只数 step_end）——navigate/click 两步落账，
+    // 第 3 步 LLM 调用由 toolCalls 断言覆盖
+    if (final.stepCount < 2) failures.push(`stepCount=${final.stepCount} < 2`);
+    if ((final.finalResult ?? "") !== "smoke done")
+      failures.push(`finalResult=${final.finalResult}`);
+  }
+  if (d.permissions < 2) failures.push(`permission cards = ${d.permissions} < 2`);
+  if (d.events < 3) failures.push(`port events = ${d.events} < 3`);
+  if (toolCallCount < 3) failures.push(`LLM tool calls = ${toolCallCount} < 3`);
+  const title = await page.evaluate(
+    `(async () => { const t = (await chrome.tabs.query({})).find((x) => x.id === ${tabId}); return t ? t.title : null; })()`,
+  );
+  if (title !== "CLICKED-A" && title !== "CLICKED-B" && title !== "CLICKED-BODY") {
+    failures.push(`fixture title = ${title}（点击副作用未落地）`);
+  }
+} finally {
+  proc?.kill();
+  fixtureSrv.close();
+  llm.close();
 }
 
 console.log(
@@ -202,9 +223,6 @@ console.log(
 );
 console.log(`[smoke-sw-runtime] llm: toolCalls=${toolCallCount} total=${llmRequests.length}`);
 
-proc.kill();
-fixtureSrv.close();
-llm.close();
 if (failures.length > 0) {
   console.error(`SMOKE FAIL:\n  - ${failures.join("\n  - ")}`);
   process.exit(1);

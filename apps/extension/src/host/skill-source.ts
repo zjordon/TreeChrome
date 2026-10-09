@@ -2,6 +2,9 @@
 // 读序对齐 FsSkillSource（缓存/miss=null——实现方负责缓存）；任务卡全文无头
 // "\n\n" join（P5.5 冻结口径：strip 后无分段头直拼——core renderTaskCard 的带头
 // 版是站点级渲染形态，不得使用）。
+// ready gate（评审轮 1 [1][12]）：首装时 built-in 刷新（fetch+upsert 数秒）与
+// run 启动并发——空库窗口期的 null/[] 会固化进无失效机制的缓存。首查前 await
+// 刷新落定 promise，缓存判定只在数据就位后发生。
 
 import type { HostSkill, SkillSource, TaskCardMeta } from "@tw/core";
 import type { SkillStore } from "./skill-store.js";
@@ -15,16 +18,24 @@ export interface ExtensionTaskCardMeta extends TaskCardMeta {
 export class ExtensionSkillSource implements SkillSource {
   private readonly store: SkillStore;
   private readonly log: (message: string) => void;
+  private readonly ready: Promise<unknown>;
   private readonly hostCache = new Map<string, HostSkill | null>();
   private readonly catalogCache = new Map<string, ExtensionTaskCardMeta[]>();
 
-  constructor(store: SkillStore, log: (message: string) => void = () => {}) {
+  constructor(
+    store: SkillStore,
+    log: (message: string) => void = () => {},
+    /** built-in 刷新落定 promise（background 注入；缺省已就绪）——不得 reject */
+    ready: Promise<unknown> = Promise.resolve(),
+  ) {
     this.store = store;
     this.log = log;
+    this.ready = ready;
   }
 
   async loadHostSkill(host: string): Promise<HostSkill | null> {
     if (host === "") return null;
+    await this.ready;
     if (this.hostCache.has(host)) return this.hostCache.get(host) ?? null;
     const card = await this.store.getCard(host, "");
     if (card === null || (card.sop === "" && card.selectors === "" && card.quirks === "")) {
@@ -38,6 +49,7 @@ export class ExtensionSkillSource implements SkillSource {
   }
 
   async taskCatalog(hostKey: string): Promise<TaskCardMeta[]> {
+    await this.ready;
     const cached = this.catalogCache.get(hostKey);
     if (cached !== undefined) return [...cached];
     const slugs = await this.store.listTaskSlugs(hostKey);

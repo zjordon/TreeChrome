@@ -111,6 +111,11 @@ export interface AgentSettings {
    *  → 二道门 confirmSubmit。可选键缺省视为 false（评测/examples 行为不变）；
    *  不进 DEFAULT_AGENT_SETTINGS——Python 对拍 fixture 零变化（m5/03 §2.2） */
   submitConfirmEnabled?: boolean;
+  /** 附件数据通道单附件上限（M5 段 D 评审轮 1 [4]：宿主附件注册表与 core 上限
+   *  对齐的透传线——扩展侧 100MB，缺省 Tools 的 32MB；语义同 ToolsSettings
+   *  同名键：undefined=缺省、显式 null=解除）。可选键不进 DEFAULT_AGENT_SETTINGS
+   *  （对拍 fixture 零变化） */
+  maxAttachmentBytes?: number | null;
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {

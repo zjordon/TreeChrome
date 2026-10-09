@@ -57,6 +57,10 @@ function makeDeps(
     tabId?: number;
     /** assemble 覆盖（抛错/连接断类场景注入特殊 stub） */
     agent?: ReturnType<typeof stubAgent> | { run: () => Promise<AgentHistoryList> };
+    /** tabsQuery 闸门（starting 互斥竞态测试：挂住首查直到放行） */
+    queryGate?: Promise<void>;
+    /** 装配时捕获 policyInteraction（桥 pending 收口测试） */
+    captureInteraction?: (i: unknown) => void;
   } = {},
 ) {
   const journal = new RunJournal({ now: () => 1234 });
@@ -86,12 +90,15 @@ function makeDeps(
       }) as never;
     }
     const agent = options.agent ?? stub.agent;
-    return (() => ({
-      agent,
-      browser: { stop: async () => void browserStops.push(1) },
-      bus: { subscribe: () => {}, close: () => void 0 } as never,
-      taskText: "task text",
-    })) as never;
+    return ((_input: unknown, deps: { policyInteraction: unknown }) => {
+      options.captureInteraction?.(deps.policyInteraction);
+      return {
+        agent,
+        browser: { stop: async () => void browserStops.push(1) },
+        bus: { subscribe: () => {}, close: () => void 0 } as never,
+        taskText: "task text",
+      };
+    }) as never;
   })();
   const deps: RunManagerDeps = {
     settingsStore: {
@@ -102,7 +109,10 @@ function makeDeps(
     fs: new OpfsFs(async () => noRoot),
     keepalive,
     tabsQuery: {
-      query: async () => [{ id: "tabId" in options ? options.tabId : 77 }],
+      query: async () => {
+        if (options.queryGate !== undefined) await options.queryGate;
+        return [{ id: "tabId" in options ? options.tabId : 77 }];
+      },
     },
     tabsOnRemoved: {
       addListener: (cb) => void tabRemovedListeners.push(cb),
@@ -189,7 +199,79 @@ describe("RunManager 状态机", () => {
     expect(m.tabRemovedListeners).toHaveLength(0);
     const last = m.broadcasts.at(-1);
     expect(last).toMatchObject({ kind: "journal-snapshot" });
+    // 清表广播（评审轮 1 [16]）：add/remove 均广播，clear 不得静默
+    expect(m.broadcasts.filter((b) => b.kind === "attachments")).toEqual([
+      { kind: "attachments", items: [] },
+    ]);
     expect(m.manager.busy).toBe(false);
+  });
+
+  it("starting 互斥：tabsQuery 挂起期间的并发 start 被拒（判空与置 active 的 await 间隙）", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const m = makeDeps({ queryGate: gate });
+    const first = m.manager.control("start", "第一个");
+    // 首查仍挂起（this.active 未置）——第二条 start 必须被 starting 标志挡下
+    expect(await m.manager.control("start", "第二个")).toMatchObject({
+      ok: false,
+      error: "请先停止当前任务",
+    });
+    release();
+    expect(await first).toEqual({ ok: true });
+    m.stub.finish(new AgentHistoryList());
+    await new Promise((r) => setTimeout(r, 10));
+    expect(m.journal.current()).toMatchObject({ status: "done" });
+    // 互斥释放后可再跑
+    expect(await m.manager.control("start", "第三个")).toEqual({ ok: true });
+    m.stub.finish(new AgentHistoryList());
+  });
+
+  it("stop 收口挂起确认：agent 挂在桥 pending 上 → stop 同步 deny → run 解除挂起", async () => {
+    let interaction: {
+      requestPermission: (req: {
+        capability: "CLICK";
+        host: string;
+        actionName: string;
+        params: Record<string, unknown>;
+        tabId: string;
+        elementIndex: number;
+        elementBbox: { left: number; top: number; width: number; height: number };
+        elementXpath: string;
+      }) => Promise<string>;
+    } | null = null;
+    const verdicts: string[] = [];
+    const agent = {
+      // run 挂在权限卡上（真 PolicyGate 同款路径）——stop 不收口则永久悬挂
+      run: async () => {
+        if (interaction === null) throw new Error("interaction not captured");
+        verdicts.push(
+          await interaction.requestPermission({
+            capability: "CLICK",
+            host: "a.example",
+            actionName: "click",
+            params: { index: 1 },
+            tabId: "T1",
+            elementIndex: 1,
+            elementBbox: { left: 0, top: 0, width: 8, height: 8 },
+            elementXpath: "//button[1]",
+          }),
+        );
+        return new AgentHistoryList();
+      },
+      stop: () => void 0,
+      pause: () => void 0,
+      resume: () => void 0,
+    };
+    const m = makeDeps({ agent, captureInteraction: (i) => (interaction = i as never) });
+    expect(await m.manager.control("start", "t")).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 10)); // agent.run 进入 pending
+    expect(m.journal.status).toBe("awaiting-permission");
+    expect(await m.manager.control("stop")).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(verdicts).toEqual(["deny"]); // pending 被 stop 同步收口（非 300s 兜底）
+    expect(m.journal.current()).toMatchObject({ status: "interrupted", lastError: "用户中断" });
   });
 
   it("stop → agent.stop() + interrupted（用户中断文案，非 error）", async () => {

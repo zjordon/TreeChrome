@@ -1,7 +1,9 @@
 // policy-bridge 单测（m5/04 §4.3）：requestPermission/confirmSubmit 的侧边栏往返
 // ——无端口立即 deny（fail-closed）、有端口挂起 + token resolve、同 token 二次
 // resolve 忽略、全断未决 deny、backToRunning 状态回写、卡片 payload 转换（label/
-// expiresAt/tabId number）——fake journal/broadcast。
+// expiresAt/tabId number）、桥层超时收口（过期删条目+permission-cancelled 广播+
+// 迟到 resolve 落空）与 cancelAll（run 停止收口）——fake journal/broadcast、
+// 短超时注入。
 
 import type { PermissionRequest } from "@tw/core";
 import type { SwToUiMessage } from "@tw/protocol";
@@ -20,7 +22,7 @@ const REQ: PermissionRequest = {
   elementXpath: "//a[1]",
 };
 
-function makeBridge(ports: number) {
+function makeBridge(ports: number, timings?: { promptTimeoutMs: number; expiryGraceMs: number }) {
   const journal = new RunJournal({ now: () => 1 });
   journal.begin({ runId: "r", tabId: 9, task: "t", attachments: [] });
   const sent: SwToUiMessage[] = [];
@@ -30,6 +32,7 @@ function makeBridge(ports: number) {
     hasPorts: () => ports > 0,
     runTabId: 9,
     newToken: () => "tok_1",
+    ...(timings ?? {}),
   });
   return { journal, sent, bridge };
 }
@@ -83,6 +86,55 @@ describe("SidepanelPolicyBridge", () => {
     bridge.onAllPortsDisconnected();
     expect(await p1).toBe("deny");
     expect(await p2).toBe(false);
+  });
+
+  it("全断 → backToRunning（deny 是非致命路径——journal 不得停留 awaiting-*）", async () => {
+    const { bridge, journal } = makeBridge(1);
+    const p = bridge.interaction.requestPermission(REQ);
+    expect(journal.status).toBe("awaiting-permission");
+    bridge.onAllPortsDisconnected();
+    expect(await p).toBe("deny");
+    expect(journal.status).toBe("running");
+  });
+
+  it("桥层超时收口：过期 → deny + running + permission-cancelled 广播；迟到 resolve 落空", async () => {
+    const { bridge, journal, sent } = makeBridge(1, { promptTimeoutMs: 20, expiryGraceMs: 10 });
+    const p = bridge.interaction.requestPermission(REQ);
+    expect(journal.status).toBe("awaiting-permission");
+    expect(await p).toBe("deny"); // gate race 已超时，桥随后清场
+    expect(journal.status).toBe("running");
+    expect(sent.some((m) => m.kind === "permission-cancelled" && m.token === "tok_1")).toBe(true);
+    bridge.resolvePermission("tok_1", "allow-once"); // 迟到：条目已删，忽略
+  });
+
+  it("submit 同款超时收口：过期 → false + running（无 cancelled 广播面）", async () => {
+    const { bridge, journal, sent } = makeBridge(1, { promptTimeoutMs: 20, expiryGraceMs: 10 });
+    const p = bridge.interaction.confirmSubmit(REQ, [{ name: "u", value: "v" }]);
+    expect(journal.status).toBe("awaiting-submit");
+    expect(await p).toBe(false);
+    expect(journal.status).toBe("running");
+    expect(sent.some((m) => m.kind === "permission-cancelled")).toBe(false);
+  });
+
+  it("按时 resolve → 过期计时器取消（grace 后无 cancelled 广播/状态不翻动）", async () => {
+    const { bridge, journal, sent } = makeBridge(1, { promptTimeoutMs: 20, expiryGraceMs: 30 });
+    const p = bridge.interaction.requestPermission(REQ);
+    bridge.resolvePermission("tok_1", "allow-once");
+    expect(await p).toBe("allow-once");
+    expect(journal.status).toBe("running");
+    await new Promise((r) => setTimeout(r, 80)); // 跨过超时+grace
+    expect(sent.some((m) => m.kind === "permission-cancelled")).toBe(false);
+    expect(journal.status).toBe("running");
+  });
+
+  it("cancelAll（run 停止收口）：未决全 deny + 状态复位", async () => {
+    const { bridge, journal } = makeBridge(1);
+    const p1 = bridge.interaction.requestPermission(REQ);
+    const p2 = bridge.interaction.confirmSubmit(REQ, [{ name: "u", value: "v" }]);
+    bridge.cancelAll();
+    expect(await p1).toBe("deny");
+    expect(await p2).toBe(false);
+    expect(journal.status).toBe("running");
   });
 });
 

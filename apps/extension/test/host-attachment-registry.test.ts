@@ -56,4 +56,20 @@ describe("AttachmentRegistry", () => {
       limit: 15,
     });
   });
+
+  it("invalid 硬化：非字符串字段 / 非法 base64（dataURL 前缀、空白）结构化拒绝不抛", () => {
+    const reg = new AttachmentRegistry();
+    // UI 消息信封只校验 kind——字段以 unknown 形态可达（cast 模拟运行时形态）
+    expect(reg.add(undefined as never, "a", "m")).toMatchObject({ ok: false, reason: "invalid" });
+    expect(reg.add(b64("x"), 123 as never, "m")).toMatchObject({ ok: false, reason: "invalid" });
+    expect(reg.add(b64("x"), "a", null as never)).toMatchObject({ ok: false, reason: "invalid" });
+    expect(reg.add("data:video/mp4;base64,AAAA", "a.mp4", "video/mp4")).toMatchObject({
+      ok: false,
+      reason: "invalid",
+    });
+    // 注：atob 是 forgiving-base64——内部空白会被剥除后解码成功，不属拒绝面
+    expect(reg.add("not-base64!!", "a", "m")).toMatchObject({ ok: false, reason: "invalid" });
+    expect(reg.add("A", "a", "m")).toMatchObject({ ok: false, reason: "invalid" });
+    expect(reg.list()).toEqual([]); // 全部未入表
+  });
 });

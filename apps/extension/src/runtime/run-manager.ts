@@ -66,6 +66,9 @@ const TERMINAL: readonly string[] = ["done", "error", "interrupted"];
 export class RunManager {
   private readonly deps: RunManagerDeps;
   private active: ActiveRun | null = null;
+  /** 起跑互斥（评审轮 1 [8]）：判空与置 active 之间有 await 间隙——双击/双面板
+   *  并发 start 会穿透单飞互斥，starting 标志在首个 await 前同步占位 */
+  private starting = false;
   private readonly now: () => number;
 
   constructor(deps: RunManagerDeps) {
@@ -139,6 +142,9 @@ export class RunManager {
     if (action === "stop") {
       active.interruptReason = "用户中断";
       active.agent.stop();
+      // agent.stop() 只置标志位——挂在桥 pending 上的 run 要等收口才解除（最长
+      // 300s gate 兜底），此处同步 deny 未决确认（评审轮 1 [17]）
+      active.bridge.cancelAll();
       return { ok: true };
     }
     if (action === "pause") {
@@ -150,9 +156,18 @@ export class RunManager {
   }
 
   private async start(task: string): Promise<ControlResult> {
-    if (this.active !== null) {
+    if (this.active !== null || this.starting) {
       return { ok: false, error: "请先停止当前任务" };
     }
+    this.starting = true;
+    try {
+      return await this.startInner(task);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  private async startInner(task: string): Promise<ControlResult> {
     if (task.trim() === "") {
       return { ok: false, error: "任务不能为空" };
     }
@@ -210,15 +225,8 @@ export class RunManager {
     const forwarder = new EventForwarder(assembled.bus, this.deps.journal, this.deps.broadcast);
     forwarder.start();
 
-    const onTabRemoved = (removed: number): void => {
-      if (removed === tabId && this.active !== null) {
-        this.active.interruptReason = "绑定标签页被关闭";
-        this.active.agent.stop();
-      }
-    };
-    this.deps.tabsOnRemoved.addListener(onTabRemoved);
-    this.deps.keepalive.onStartRun();
-
+    // 监听器闭包捕获本 run 引用（评审轮 1 [10]）：操作 active 自身而非
+    // this.active——后者可能被并发路径覆盖（防御纵深，配合 starting 互斥）
     const active: ActiveRun = {
       runId,
       tabId,
@@ -227,8 +235,17 @@ export class RunManager {
       bus: assembled.bus,
       bridge,
       interruptReason: null,
-      onTabRemoved,
+      onTabRemoved: () => {},
     };
+    active.onTabRemoved = (removed: number): void => {
+      if (removed !== tabId) return;
+      active.interruptReason = "绑定标签页被关闭";
+      active.agent.stop();
+      active.bridge.cancelAll();
+    };
+    this.deps.tabsOnRemoved.addListener(active.onTabRemoved);
+    this.deps.keepalive.onStartRun();
+
     this.active = active;
     this.deps.log?.(`run started: ${runId} (tab ${tabId})`);
 
@@ -263,9 +280,14 @@ export class RunManager {
         lastError: active.interruptReason ?? message,
       });
     } finally {
+      // 兜底收口（agent 异常路径可能残留未决确认——deny 后 promise 才不泄漏）
+      active.bridge.cancelAll();
       this.deps.tabsOnRemoved.removeListener(active.onTabRemoved);
       this.deps.keepalive.onEndRun();
       this.deps.attachments.clearForRun();
+      // 清表广播（评审轮 1 [16]）：add/remove 均广播，clear 静默会让已连接
+      // sidepanel 的附件视图与注册表失同步（下一 run 静默丢附件）
+      this.deps.broadcast({ kind: "attachments", items: this.deps.attachments.list() });
       try {
         active.bus.close();
       } catch {
@@ -276,7 +298,10 @@ export class RunManager {
       } catch {
         // 清理路径不抛（连接已断时的二次 stop）
       }
-      this.active = null;
+      // 身份校验（评审轮 1 [9]）：防御纵深——只清自己的控制引用
+      if (this.active === active) {
+        this.active = null;
+      }
       // 终态广播（sidepanel 收 journal-snapshot 收口视图）
       const snapshot = journal.current();
       if (snapshot !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot });

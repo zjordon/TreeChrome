@@ -21,6 +21,7 @@ import {
   type SkillSource,
 } from "@tw/core";
 import type { AttachmentRegistry } from "../host/attachment-registry.js";
+import { MAX_ATTACHMENT_BYTES } from "../host/attachment-registry.js";
 import type { OpfsFs } from "../host/opfs-fs.js";
 import type { ExtensionSettings } from "../host/settings-store.js";
 import { findCard, sensitiveSpecsOf } from "../host/settings-store.js";
@@ -120,6 +121,9 @@ export function assembleRun(input: AssembleInput, deps: AssembleDeps): Assembled
     submitConfirmEnabled: true,
     enableSkillInjection: true,
     enableTaskSkillInjection: true,
+    // 附件数据通道上限对齐注册表（评审轮 1 [4]）：core 缺省 32MB < 注册表 100MB
+    // 时，33-100MB 附件入表后 upload 必被拒——且拒绝发生在 resolve() 全量转码之后
+    maxAttachmentBytes: MAX_ATTACHMENT_BYTES,
     ...(input.settings.agent?.useVision !== undefined
       ? { useVision: input.settings.agent.useVision }
       : {}),

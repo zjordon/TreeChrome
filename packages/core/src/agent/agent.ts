@@ -169,6 +169,7 @@ export class Agent implements StepCtx {
         allowedReadPaths: s.allowedReadPaths,
         displayFilesInDoneText: s.displayFilesInDoneText,
         outputModel: s.outputModel,
+        maxAttachmentBytes: s.maxAttachmentBytes,
         pageSettleEnabled: s.explorationPageSettle,
         pageSettleTimeoutS: s.explorationPageSettleTimeout,
         pageSettlePollS: s.explorationPageSettlePoll,

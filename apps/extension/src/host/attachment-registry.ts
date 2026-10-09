@@ -53,10 +53,24 @@ export class AttachmentRegistry {
         size: number;
         limit: number;
       } {
-    if (base64 === "" || name === "" || mimeType === "") {
+    // 信封层只校验 kind 不校验字段类型——UI 消息字段以 unknown 形态可达
+    //（评审轮 1 [3]）：typeof 判面 + atob 非法字符（dataURL 前缀/空白）结构化拒绝
+    if (
+      typeof base64 !== "string" ||
+      base64 === "" ||
+      typeof name !== "string" ||
+      name === "" ||
+      typeof mimeType !== "string" ||
+      mimeType === ""
+    ) {
       return { ok: false, reason: "invalid", size: 0, limit: 0 };
     }
-    const bytes = base64ToBytes(base64);
+    let bytes: Uint8Array;
+    try {
+      bytes = base64ToBytes(base64);
+    } catch {
+      return { ok: false, reason: "invalid", size: 0, limit: 0 };
+    }
     if (bytes.length > this.maxBytes) {
       return { ok: false, reason: "too-large", size: bytes.length, limit: this.maxBytes };
     }

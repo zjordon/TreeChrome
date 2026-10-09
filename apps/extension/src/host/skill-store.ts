@@ -49,6 +49,7 @@ export interface BuiltinsManifest {
 export interface SkillDb {
   get(key: string): Promise<unknown>;
   put(key: string, value: SkillCardData): Promise<void>;
+  delete(key: string): Promise<void>;
   getAllKeys(): Promise<string[]>;
 }
 
@@ -59,7 +60,7 @@ export const cardKey = (host: string, slug: string): string => `${host}::${slug}
 
 /** IndexedDB 窄实现（onupgradeneeded 建库；调用点 SW——真 IDB 绑定不进 node
  *  单测：node 无 IDB，此函数由 e2e 真机覆盖；窄接口面经 SkillDb fake 全覆盖） */
-// v8 ignore next 38
+/* v8 ignore start */
 export async function openSkillDb(indexedDB: {
   open(name: string, version: number): IDBOpenDBRequest;
 }): Promise<SkillDb> {
@@ -92,6 +93,16 @@ export async function openSkillDb(indexedDB: {
             r.onerror = () => rej(r.error);
           });
         },
+        async delete(key) {
+          return new Promise((res, rej) => {
+            const r = db
+              .transaction(SKILL_STORE_NAME, "readwrite")
+              .objectStore(SKILL_STORE_NAME)
+              .delete(key);
+            r.onsuccess = () => res();
+            r.onerror = () => rej(r.error);
+          });
+        },
         async getAllKeys() {
           return new Promise((res, rej) => {
             const r = db
@@ -107,6 +118,7 @@ export async function openSkillDb(indexedDB: {
     req.onerror = () => reject(req.error);
   });
 }
+/* v8 ignore stop */
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -136,10 +148,13 @@ export class SkillStore {
   /**
    * built-in 刷新（幂等）：清单卡 upsert——已有卡 provenance.sourceType 必须精确
    * 为 "built-in" 才覆盖（import/distilled 不碰），且内容未变（updatedAt 外全等）
-   * 不重写；返回写入数（重装幂等可断言——第二次应为 0）。
+   * 不重写；随后 prune（评审轮 1 [2]）：不在本清单内且 provenance 为 built-in 的
+   * 残留卡删除（源侧删除/改名后扩展与技能源失同步且无自愈——import/distilled
+   * 不碰）。返回写入数（含删除；重装幂等可断言——第二次应为 0）。
    */
   async refreshBuiltins(manifest: BuiltinsManifest, now = Date.now()): Promise<number> {
     let written = 0;
+    const live = new Set<string>();
     for (const [host, bundle] of Object.entries(manifest.hosts)) {
       const hostCard: SkillCardData = {
         host,
@@ -151,6 +166,7 @@ export class SkillStore {
         updatedAt: now,
       };
       if (await this.upsertBuiltins(hostCard)) written += 1;
+      live.add(cardKey(host, ""));
       for (const [slug, task] of Object.entries(bundle.tasks ?? {})) {
         const taskCard: SkillCardData = {
           host,
@@ -165,6 +181,16 @@ export class SkillStore {
           updatedAt: now,
         };
         if (await this.upsertBuiltins(taskCard)) written += 1;
+        live.add(cardKey(host, slug));
+      }
+    }
+    for (const key of await this.db.getAllKeys()) {
+      if (live.has(key)) continue;
+      const raw = await this.db.get(key);
+      const prov = isRecord(raw) ? raw.provenance : null;
+      if (isRecord(prov) && prov.sourceType === "built-in") {
+        await this.db.delete(key);
+        written += 1;
       }
     }
     return written;
