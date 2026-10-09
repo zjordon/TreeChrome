@@ -101,6 +101,18 @@ export function ProviderCardForm({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
+  // card 身份变化时重置表单态（轮 2 [1]）：宿主不重挂直接切换编辑目标/新增时
+  // useState 初始化不再执行——陈旧基础字段 × 新 card 的高级字段/originalName
+  // 混源保存（B 卡被替换成 A 的密钥）。渲染期 setState 是 React 官方的
+  // derived-state-reset 形态（条件守卫防循环）
+  const cardKey = card?.name ?? "";
+  const [syncedKey, setSyncedKey] = useState(cardKey);
+  if (syncedKey !== cardKey) {
+    setSyncedKey(cardKey);
+    setForm(formStateOf(card));
+    setErrors({});
+  }
+
   const set = (patch: Partial<CardFormState>): void => {
     setForm((f) => ({ ...f, ...patch }));
   };

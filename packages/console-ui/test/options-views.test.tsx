@@ -127,6 +127,51 @@ describe("ProviderCardForm", () => {
     expect(saved).toEqual([]);
   });
 
+  it("切换编辑目标/新增不重挂时表单态跟随新 card 重置（轮 2 [1] 混源保存防线）", () => {
+    const saved: Array<[ProviderCardDto, string | null]> = [];
+    const { rerender } = render(
+      <ProviderCardForm
+        card={CARD}
+        onSave={(c, orig) => saved.push([c, orig])}
+        onCancel={() => {}}
+        onTest={async () => ({ ok: true, message: "" })}
+      />,
+    );
+    // 编辑 A 中改字段 → 不关表单直接切到卡 B：字段必须重置为 B
+    fireEvent.change(screen.getByLabelText("模型"), { target: { value: "A 的改动" } });
+    rerender(
+      <ProviderCardForm
+        card={{ ...CARD, name: "B", model: "b-model", apiKey: "b-key" }}
+        onSave={(c, orig) => saved.push([c, orig])}
+        onCancel={() => {}}
+        onTest={async () => ({ ok: true, message: "" })}
+      />,
+    );
+    expect((screen.getByLabelText("模型") as HTMLInputElement).value).toBe("b-model");
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(saved).toHaveLength(1);
+    const [saved1, orig1] = saved[0];
+    expect(orig1).toBe("B"); // 原名跟随新 card（不再是 A）
+    expect(saved1.model).toBe("b-model");
+    expect(saved1.apiKey).toBe("b-key"); // 密钥不再混源
+    // 切到新增（card=undefined）：表单清空 + 原名 null
+    rerender(
+      <ProviderCardForm
+        onSave={(c, orig) => saved.push([c, orig])}
+        onCancel={() => {}}
+        onTest={async () => ({ ok: true, message: "" })}
+      />,
+    );
+    expect((screen.getByLabelText("模型") as HTMLInputElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("模型"), { target: { value: "n" } });
+    fireEvent.change(screen.getByLabelText("卡片名"), { target: { value: "n" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "https://x" } });
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "k" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(saved[1][1]).toBeNull();
+    expect(saved[1][0]).not.toHaveProperty("maxTokensField"); // 新增不带他卡高级字段
+  });
+
   it("测试连接：loading 态 + 异步结果回显；编辑态出删除钮", async () => {
     const holder: { resolve?: (r: { ok: boolean; message: string }) => void } = {};
     render(

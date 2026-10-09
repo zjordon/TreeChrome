@@ -312,5 +312,25 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
   尾巴合并/快照换 run 重建/宽限窗×2/mutation-queue/起始快照广播）。
   全仓 1795 绿；门禁 exit 0；wxt build 后双 smoke 复跑 PASS（ui + sw-runtime）。
   本轮 P1/P2：12（已实施）｜P3：1（顺手实施，backlog 空）。
+- **轮 2（2026-10-09，增量 diffBase=60ef13c（轮 1 覆盖的 tip），10 文件，15m29s）**：
+  意见 3（high×2/medium×1）→ **采纳 3 P2 实施**，驳回 0 / stale 0——全部指向轮 1
+  修复代码自身的缺陷：
+  - **[1] 表单切换混源保存（high）**：ProviderCardForm 无 key——编辑 A 不关表单直接
+    切卡 B 时组件不重挂（useState 初始化不再执行），字段停留 A 的值而
+    advancedFieldsOf/originalName 读新卡 → B 被替换成「B 高级字段 + A 密钥」；
+    切「+新增」则复活轮 1 [9] 的字段剥离。修复：cardKey 变化渲染期重置表单态
+    （React derived-state-reset 官方形态）。
+  - **[2] 新增路径撞名守卫恒假（high）**：守卫条件 `card.name !== target` 在
+    originalName=null 时恒 false——同名新增仍静默整卡替换既有卡（含密钥+高级字段
+    剥离）。修复：撞名判定统一为「同名占用且非被编辑卡本身」。
+  - **[3] activeCard 双展开互覆（medium）**：「无活跃卡自动激活」与「改名重定向」
+    两个条件展开对 activeCard 后写胜前写——删过活跃卡后改名保存永远激活不上。
+    修复：[2][3] 一并抽 planCardMutation 纯函数（ui-glue/card-mutation.ts）——
+    撞名统一判定 + activeCard 单点计算，options-app 只留错误呈现。
+  测试：console-ui 37→38（切换重置/原名跟随/新增不带他卡高级字段）；extension
+  85→89（card-mutation 四路径：新增撞名拒绝/原位替换/改名指针重定向/自动激活与
+  重定向合并不互覆）。全仓绿；门禁 exit 0；smoke-ui 复跑 PASS。
+  本轮 P1/P2：3（已实施）｜P3：0。
+
 
 

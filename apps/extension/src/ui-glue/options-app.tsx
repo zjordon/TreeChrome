@@ -13,6 +13,7 @@ import {
 import type { Grant, OptionsOp, ProviderCardDto, SkillCardInfo } from "@tw/protocol";
 import { useCallback, useEffect, useState } from "react";
 import type { ExtensionSettings } from "../host/settings-store.js";
+import { planCardMutation } from "./card-mutation.js";
 
 export interface OptionsAppProps {
   request: (op: OptionsOp, payload?: unknown) => Promise<unknown>;
@@ -73,27 +74,14 @@ export function OptionsApp({ request }: OptionsAppProps) {
 
   const mutateCard = (card: ProviderCardDto, originalName: string | null): void => {
     if (settings === null) return;
-    const target = originalName ?? card.name;
-    // 撞名守卫：新名已被另一张卡占用 → 静默覆盖既有配置（含密钥）不可接受
-    if (card.name !== target && settings.providerCards.some((c) => c.name === card.name)) {
-      setError(`卡片名「${card.name}」已被占用`);
+    // 撞名/替换/指针重定向全在纯函数（轮 2 [2][3]：新增路径守卫恒假 +
+    // activeCard 双展开互覆）——组件层只留错误呈现
+    const plan = planCardMutation(settings, card, originalName);
+    if (!plan.ok) {
+      setError(plan.error);
       return;
     }
-    const exists = settings.providerCards.some((c) => c.name === target);
-    const cards = exists
-      ? settings.providerCards.map((c) => (c.name === target ? card : c))
-      : [...settings.providerCards, card];
-    // 改名时指针重定向（activeCard/附属卡指向旧名 → 新名）
-    const retarget = (v: string | undefined): string | undefined => (v === target ? card.name : v);
-    void saveSettings({
-      ...settings,
-      providerCards: cards,
-      ...(settings.activeCard === "" ? { activeCard: card.name } : {}),
-      ...(card.name !== target ? { activeCard: retarget(settings.activeCard) } : {}),
-      ...(card.name !== target ? { taskSkillCard: retarget(settings.taskSkillCard) } : {}),
-      ...(card.name !== target ? { judgeCard: retarget(settings.judgeCard) } : {}),
-      ...(card.name !== target ? { extractCard: retarget(settings.extractCard) } : {}),
-    });
+    void saveSettings(plan.next);
     setForm({ mode: "closed" });
   };
 
