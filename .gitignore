@@ -22,3 +22,6 @@ rerun-history/
 # WXT（apps/extension）生成物：.wxt 类型/临时、.output 构建产物
 .wxt/
 .output/
+
+# M5 extension generated artifacts
+apps/extension/public/domain-skills.json

@@ -1,6 +1,7 @@
-// SW 壳（m5/01 §1.4）：消息路由（diag:echo 冒烟 + diag:smoke:attach——段 B e2e
-// 对拍通道：cdp-chrome transport + core BrowserSession 全链采集）+ 图标点击开
-// 侧边栏 + onInstalled 占位（段 D 扩为 skills 刷新/run journal 恢复）。
+// SW 壳（m5/01 §1.4 → m5/04 段 D 全量接线）：消息路由先注册（headless 无
+// sidePanel API 时 setPanelBehavior 同步抛错拖死路由的教训——任何重活/异步初始化
+// 都不得前置于路由注册）；随后 boot 装配 host/runtime 全部件（settings/grant/
+// skills/attachments/journal/keepalive/run-manager/port-server）。
 // 本目录（entrypoints/）与 src/host/ 是扩展内合法使用 chrome.*/browser 的区域。
 
 import {
@@ -9,12 +10,36 @@ import {
   chromeTabsApi,
   createChromeDebuggerTransport,
 } from "@tw/cdp-chrome";
-import { BrowserSession } from "@tw/core";
-import type { UiDiagMessage } from "@tw/protocol";
+import type { RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
+import { AttachmentRegistry } from "../src/host/attachment-registry.js";
+import {
+  chromeAlarms,
+  chromeOnConnect,
+  chromeOnInstalled,
+  chromeStorageLocal,
+  chromeTabsOnRemoved,
+  chromeTabsQuery,
+} from "../src/host/chrome-apis.js";
+import { makeDebuggerTransportFactory } from "../src/host/debugger-api.js";
+import { ChromeGrantStore } from "../src/host/grant-store.js";
+import { KeepaliveController } from "../src/host/keepalive.js";
+import { OpfsFs } from "../src/host/opfs-fs.js";
+import { SettingsStore } from "../src/host/settings-store.js";
+import { ExtensionSkillSource } from "../src/host/skill-source.js";
+import {
+  type BuiltinsManifest,
+  openSkillDb,
+  type SkillDb,
+  SkillStore,
+} from "../src/host/skill-store.js";
+import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
+import { registerMessageRouter } from "../src/runtime/message-router.js";
+import { PortServer } from "../src/runtime/port-server.js";
+import { RunManager } from "../src/runtime/run-manager.js";
 
-function isDiagMessage(v: unknown): v is UiDiagMessage {
+function _isDiagMessage(v: unknown): v is UiDiagMessage {
   return (
     typeof v === "object" &&
     v !== null &&
@@ -45,7 +70,13 @@ async function runSmokeAttach(payload: unknown): Promise<unknown> {
     });
     return transportRef.current;
   };
-  const session = new BrowserSession(factory, {}, { log: (m) => console.log(`[smoke] ${m}`) });
+  const session = new (await import("@tw/core")).BrowserSession(
+    factory,
+    {},
+    {
+      log: (m) => console.log(`[smoke] ${m}`),
+    },
+  );
   try {
     await session.start();
     const state = await session.getState({ includeScreenshot: false });
@@ -60,34 +91,41 @@ async function runSmokeAttach(payload: unknown): Promise<unknown> {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   } finally {
     await session.stop().catch(() => {});
-    // 兜底（评审轮 1 [1]）：connectSession 失败路径 core 只置 transportRef=null 不级联
-    // stop——闭包 transport 直接 stop 回收附着与全局监听（幂等，成功路径零 API 调用）
+    // 兜底（段 B 评审轮 1 [1]）：connectSession 失败路径 core 只置 transportRef=null
+    // 不级联 stop——闭包 transport 直接 stop 回收附着与全局监听（幂等）
     await transportRef.current?.stop().catch(() => {});
   }
 }
 
-export default defineBackground(() => {
-  browser.runtime.onInstalled.addListener((details) => {
-    console.log(`[tc] onInstalled: ${details.reason}`);
-  });
+const log = (m: string): void => {
+  console.log(`[tc] ${m}`);
+};
 
-  // 消息路由先注册（后续任何宿主探测失败都不得拖死路由——headless 无 sidePanel
-  // API 时 setPanelBehavior 同步抛错的教训）
-  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-    if (!isDiagMessage(message)) return false;
-    if (message.command === "echo") {
-      // sendMessage 请求-应答的自由形态（非 Port 信封——event 流才走 @tw/protocol 信封）
-      sendResponse({ ok: true, command: "echo", payload: message.payload ?? null });
-      return false; // 同步应答
-    }
-    if (message.command === "smoke:attach") {
-      // 异步应答：return true 保持消息通道打开（BrowserSession 采集秒级）
-      void runSmokeAttach(message.payload)
-        .then((result) => sendResponse(result))
-        .catch((e: unknown) => sendResponse({ ok: false, error: String(e) }));
-      return true;
-    }
-    return false;
+export default defineBackground(() => {
+  // ── 路由先注册（纪律：任何初始化失败不得拖死消息面）──
+  registerMessageRouter(browser.runtime.onMessage, {
+    onUiMessage: (message) => {
+      void bootPromise
+        .then(({ runManager }) => runManager.handleUiMessage(message))
+        .catch((e: unknown) => {
+          console.error(
+            `[tc] handleUiMessage failed: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        });
+    },
+    onDiag: (command, payload, sendResponse) => {
+      if (command === "echo") {
+        sendResponse({ ok: true, command: "echo", payload: payload ?? null });
+        return false;
+      }
+      if (command === "smoke:attach") {
+        void runSmokeAttach(payload)
+          .then((result) => sendResponse(result))
+          .catch((e: unknown) => sendResponse({ ok: false, error: String(e) }));
+        return true;
+      }
+      return false;
+    },
   });
 
   // 点扩展图标 = 开侧边栏（sidepanel entrypoint 由 WXT 注册 default_path）。
@@ -99,4 +137,138 @@ export default defineBackground(() => {
   } catch (e) {
     console.warn(`[tc] sidePanel API unavailable: ${String(e)}`);
   }
+
+  const bootPromise = boot();
+  bootPromise.catch((e: unknown) => {
+    console.error(`[tc] boot failed: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+  });
 });
+
+interface Booted {
+  runManager: RunManager;
+  skillStore: SkillStore;
+}
+
+/** IDB 打不开时的降级空库（评审轮 1 [13]：skill 是可选增强，存储故障不得
+ *  拖垮 run 主链——get 恒 null/写 noop，全部 miss） */
+function memorySkillDb(): SkillDb {
+  return {
+    get: async () => null,
+    put: async () => {},
+    delete: async () => {},
+    getAllKeys: async () => [],
+  };
+}
+
+/** SW 重活装配（消息路由已先行注册——boot 期间到达的消息经 bootPromise 排队）。
+ *  MV3 时序纪律（评审轮 1 [15]）：全部事件监听器（PortServer onConnect/
+ *  onInstalled）必须在首个 await 前同步注册——Chrome 唤醒 SW 后在顶层求值完成
+ *  即派发排队事件，晚于 await 点注册的监听器会丢事件（connect 丢失=sidepanel
+ *  永远收不到 hello，无自愈）。故 openSkillDb（boot 唯一 await 点）置于尾部。 */
+async function boot(): Promise<Booted> {
+  const storage = chromeStorageLocal();
+  const settingsStore = new SettingsStore(storage);
+  const grantStore = new ChromeGrantStore(storage);
+  const attachments = new AttachmentRegistry();
+  const journal = new RunJournal({
+    scheduler: new DebounceScheduler(async (runKey, snapshot) => {
+      await storage.set({ [runKey]: snapshot });
+    }),
+  });
+  const fs = new OpfsFs();
+  const keepalive = new KeepaliveController(chromeAlarms());
+
+  // skills 晚绑定 holder（store 在尾部 await openSkillDb 后就位；makeSkillSource
+  // 只在 run 启动时调用——bootPromise 已把关，届时必已就绪）
+  const skillRefs: { store: SkillStore | null; ready: Promise<unknown> } = {
+    store: null,
+    ready: Promise.resolve(),
+  };
+  const refreshSkills = (): Promise<void> =>
+    skillRefs.store !== null ? refreshBuiltins(skillRefs.store) : Promise.resolve();
+
+  // 广播/端口态闭包晚绑定（portServer 在 runManager 之后构造——双向引用经 holder 收口）
+  let portServerRef: PortServer | null = null;
+  const runManager = new RunManager({
+    settingsStore,
+    attachments,
+    journal,
+    fs,
+    keepalive,
+    tabsQuery: chromeTabsQuery(),
+    tabsOnRemoved: chromeTabsOnRemoved(),
+    transportFactoryFor: (tabId) => makeDebuggerTransportFactory(tabId, {}, log),
+    makeSkillSource: () => {
+      const store = skillRefs.store;
+      if (store === null) throw new Error("skill store not ready");
+      // 每 run 新实例（缓存不跨 run——刷新后的数据下一 run 可见）+ ready gate
+      //（首装窗口期空库不固化负缓存，评审轮 1 [1][12]）
+      return new ExtensionSkillSource(store, log, skillRefs.ready);
+    },
+    grantStore,
+    broadcast: (m) => portServerRef?.broadcast(m),
+    hasPorts: () => portServerRef?.hasPorts ?? false,
+    log,
+  });
+  portServerRef = new PortServer(chromeOnConnect(), {
+    hello: () => runManager.hello(),
+    onUiMessage: (message) => runManager.handleUiMessage(message),
+    onAllPortsDisconnected: () => runManager.onAllPortsDisconnected(),
+  });
+  chromeOnInstalled().addListener((details: unknown) => {
+    const reason = (details as { reason?: unknown } | null)?.reason;
+    if (reason === "install" || reason === "update") void refreshSkills();
+  });
+
+  // SW 被杀恢复：非终态 journal 且无活 run → interrupted（README 决策 5：不续跑）
+  void recoverInterruptedRuns(storage, runManager);
+
+  // —— boot 唯一 await 点（尾部；失败降级内存空库——评审轮 1 [13]）——
+  let store: SkillStore;
+  let dbOk = true;
+  try {
+    store = new SkillStore(await openSkillDb(globalThis.indexedDB));
+  } catch (e) {
+    log(`skill db unavailable, skills disabled: ${e instanceof Error ? e.message : String(e)}`);
+    store = new SkillStore(memorySkillDb());
+    dbOk = false;
+  }
+  skillRefs.store = store;
+  // built-in 刷新（fetch 打包清单 → upsert；失败只记日志——skill 是可选增强；
+  //  内部 try/catch 恒 settle，可安全作 ExtensionSkillSource 的 ready gate）
+  if (dbOk) skillRefs.ready = refreshBuiltins(store);
+
+  log("SW booted (segment D runtime)");
+  return { runManager, skillStore: store };
+}
+
+/** built-in 刷新（fetch 打包清单 → upsert；失败只记日志——skill 是可选增强） */
+async function refreshBuiltins(store: SkillStore): Promise<void> {
+  try {
+    // SW 的 location.href 即扩展根（chrome-extension://<id>/…）——相对解析免 API
+    const url = new URL("domain-skills.json", globalThis.location.href).href;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`fetch ${url} -> ${res.status}`);
+    const manifest = (await res.json()) as BuiltinsManifest;
+    const written = await store.refreshBuiltins(manifest);
+    log(`skills refreshed: ${written} cards upserted`);
+  } catch (e) {
+    log(`skills refresh failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** 读全部 tc_runUi:<tabId> 快照 → 非终态恢复为 interrupted */
+async function recoverInterruptedRuns(
+  storage: ReturnType<typeof chromeStorageLocal>,
+  runManager: RunManager,
+): Promise<void> {
+  try {
+    const items = await storage.get(null);
+    for (const [key, value] of Object.entries(items)) {
+      if (!key.startsWith("tc_runUi:")) continue;
+      runManager.recoverInterrupted(value as RunJournalSnapshot);
+    }
+  } catch (e) {
+    log(`journal recover failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

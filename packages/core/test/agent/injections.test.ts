@@ -9,6 +9,7 @@ import { Agent } from "../../src/agent/agent.js";
 import type { AgentSettings } from "../../src/agent/settings.js";
 import type { BrowserSession } from "../../src/browser/session.js";
 import { type ParamModel, paramJsonSchema, validateParams } from "../../src/tools/models.js";
+import { DEFAULT_MAX_ATTACHMENT_BYTES } from "../../src/tools/settings.js";
 import { FakeAgentBrowser, FakeAgentLLM, type LlmScriptEntry } from "./fixtures.js";
 
 const ok = (toolInput: Record<string, unknown>): LlmScriptEntry => ({ kind: "ok", toolInput });
@@ -55,6 +56,25 @@ describe("AgentOptions.extractLlm（F2-b，config.py:562-570）", () => {
     const withExtract = makeAgent({ extractLlm: extract.asLLMClient() });
     expect(withExtract.agent.tools.ctx.extractClient).toBe(extract.asLLMClient());
     expect(withExtract.agent.tools.ctx.extractClient).not.toBe(withExtract.llm.asLLMClient());
+  });
+});
+
+describe("AgentSettings.maxAttachmentBytes（M5 段 D 评审轮 1 [4]：宿主上限透传线）", () => {
+  const baseFields = {
+    judge: { enabled: false },
+    explorationActionabilityCheck: false,
+    maxSteps: 10,
+    llmTimeout: 30,
+  } as AgentSettings;
+
+  it("未设 → Tools 缺省 32MB；数值/null 逐语义透传（null=解除）", () => {
+    expect(makeAgent().agent.tools.ctx.maxAttachmentBytes).toBe(DEFAULT_MAX_ATTACHMENT_BYTES);
+    const custom = makeAgent({
+      settings: { ...baseFields, maxAttachmentBytes: 100 * 1024 * 1024 },
+    });
+    expect(custom.agent.tools.ctx.maxAttachmentBytes).toBe(100 * 1024 * 1024);
+    const unlimited = makeAgent({ settings: { ...baseFields, maxAttachmentBytes: null } });
+    expect(unlimited.agent.tools.ctx.maxAttachmentBytes).toBeNull();
   });
 });
 

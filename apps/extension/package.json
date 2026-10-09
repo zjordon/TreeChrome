@@ -10,7 +10,10 @@
     "zip": "wxt zip",
     "e2e:smoke": "node e2e/smoke-cdp-chrome.mjs",
     "e2e:probe": "node e2e/probe-debugger.mjs && node e2e/probe-debugger2.mjs",
-    "typecheck": "wxt prepare && tsc --noEmit"
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "e2e:runtime": "node e2e/smoke-sw-runtime.mjs"
   },
   "dependencies": {
     "@tw/cdp-chrome": "workspace:*",
@@ -25,6 +28,8 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "^5.6.0",
-    "wxt": "^0.21.0"
+    "wxt": "^0.21.0",
+    "vitest": "^3.2.7",
+    "@vitest/coverage-v8": "^3.2.7"
   }
 }

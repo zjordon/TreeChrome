@@ -211,3 +211,65 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
   重跑后 complete 零意见。
   累计：2 轮，意见 2 / 采纳 2 / 驳回 0 / stale 0（P3 backlog 空）；core 1337→1340 例；
   分支 2 提交（8d57f49 + ea002ac）待授权合并。
+
+### 段 D `feat/m5-sw-runtime`
+
+- **轮 1（2026-10-09，diffBase=main，25 文件，22m24s）**：意见 17（high×5/medium×10/
+  low×2）→ **采纳 17**（P2 实施 15 + P3 顺手 2），驳回 0 / stale 0。
+  - **[5] 桥层超时不收口（high）**：core PolicyGate 的 race 超时只放弃 interaction
+    promise 不 settle——桥 pending 永挂：journal 停 awaiting-*（实际在烧步数）+ 迟到
+    resolve 命中残留条目错误翻状态。修复：桥自兜底（gate 超时 + 1000ms grace）过期删
+    条目 + backToRunning + permission-cancelled 广播（protocol 已定义全程无人发送）+
+    resolve deny；submit 同款（无广播面）；resolve 路径 cancelExpiry；超时值构造注入。
+  - **[8][9][10] start 竞态三连（high×2/medium×1）**：判空与置 active 间有 await 间隙
+    （双击/双面板并发 start 穿透互斥：双 attach/journal 双 begin/finally 互清）。
+    修复：starting 标志首个 await 前同步占位 + drive finally 身份校验（只清自己的
+    引用）+ onTabRemoved 闭包捕获本 run 的 active（不再操作 this.active）。
+  - **[15] 监听器晚于首个 await 注册（high）**：openSkillDb 是 boot 唯一 await 点且
+    在 PortServer/onInstalled 之前——MV3 唤醒时派发排队事件时 onConnect 无监听 →
+    sidepanel 永远收不到 hello 无自愈。修复：boot 重排——全部 addListener 同步注册
+    完成后 openSkillDb 挪尾部；skill 经 holder 晚绑定（makeSkillSource 每 run 新实例）。
+  - **[13] IDB 打开失败拖死 boot（medium）**：profile 损坏 → boot reject → 全部件不
+    构造、扩展死寂。修复：openSkillDb 失败降级内存空库（get→null/写 noop）+ 日志，
+    run 主链不受可选增强拖垮（降级时不刷新 built-ins）。
+  - **[1][12] 负缓存固化（high/medium）**：refreshBuiltins 是 fire-and-forget，首装
+    窗口期空库的 null/[] 固化进无失效机制的 hostCache/catalogCache（background 实际
+    单实例跨 run——比评审描述更重）。修复：ExtensionSkillSource 构造注入 ready
+    promise（refreshBuiltins 恒 settle），loadHostSkill/taskCatalog 首查前 await。
+  - **[2] built-in 残留卡无 prune（medium）**：源侧删除/改名后旧卡永久残留（taskCatalog
+    列废弃卡、matchTaskSkill 仍可命中）。修复：refreshBuiltins 尾段 prune——不在本
+    清单且 provenance.sourceType==="built-in" 的键删除（import/distilled 不碰）；
+    SkillDb 增 delete（openSkillDb + fake 同步）。
+  - **[3] add() invalid 拒绝面未实现（medium）**：只判空串不判 typeof + atob 无捕获
+    （dataURL 前缀等非法 base64 → SW 未捕获异常静默丢附件）。修复：typeof 三判 +
+    base64ToBytes try/catch → 结构化 invalid（forgiving-base64 剥空白不属拒绝面，
+    实测定案进测试注释）。
+  - **[4] 注册表 100MB vs core 32MB 上限不匹配（medium）**：33-100MB 附件入表后
+    upload 必被拒且拒绝发生在 resolve() 全量转码之后。修复方向裁定：保 04 §7 冻结的
+    100MB（video 场景——降 32MB 直接杀死段 F 抖音视频用例），core AgentSettings 增
+    可选 maxAttachmentBytes 透传线（submitConfirmEnabled 同款：不进默认值，对拍
+    fixture 零变化）+ assemble 对齐注入——避免 assemble 重复构造 Tools 的漂移面。
+  - **[6][7][17] 全断 deny 后不 backToRunning / stop 不收口挂起确认（medium×3）**：
+    全断 deny 是非致命路径但状态停 awaiting-*；stop/onTabRemoved 只置标志位——挂在
+    桥 pending 上的 run 要等 300s gate 兜底。修复：cancelAll()（deny 全部+状态复位）
+    收口三挂点（onAllPortsDisconnected 语义保留、control stop、onTabRemoved）+
+    drive finally 兜底。
+  - **[16] clearForRun 静默清表（medium）**：add/remove 均广播唯独 clear 不广播——
+    sidepanel 附件视图失同步（下 run 静默丢附件）。修复：清表后广播空列表。
+  - **[11] journal 死代码（low 顺手）**：_isRecord/oversizedEventData 无调用点且后者
+    口径与 event-forwarder 内联判定不一致（误用会永不触发）——删除。
+  - **[14] smoke mock LLM throw 崩进程（low 顺手）**：'end' 回调内 throw =
+    uncaughtException，清理不执行、端口残留拖死下轮 e2e。修复：解析失败回 500 让 run
+    自然落 error 终态（既有断言面捕获）+ 主链 try/finally 收口 proc.kill/close。
+  测试：extension 60→70 例（超时收口×4/cancelAll/互斥竞态/stop 收口挂起确认/prune/
+  ready gate/invalid 硬化/清表广播）；core +1（maxAttachmentBytes 透传三态）；
+  skill-store v8 ignore 随 delete 方法扩窗改 start/stop 范围式（58.51%→100%）。
+  真机：wxt build + smoke-sw-runtime SMOKE PASS（重构后 boot/桥/状态机全链）。
+  全仓 1746 绿（+3 skip）；门禁 exit 0（首轮 gate 因 dom-snapshot MAX_RECTS 重负载测试在
+  coverage 插桩下超时 5.6s 抖动——单跑 3.6s 过、复跑门禁全绿；与本轮改动无关包）。
+  本轮 P1/P2：15（已实施）｜P3：2（顺手实施）。
+- **轮 2（2026-10-09，增量 diffBase=c79bc80（轮 1 覆盖的 tip），12 文件，7m49s）**：
+  **零意见**——循环收敛（段 C 同款：修复轮后增量零意见即收敛）。
+  累计：2 轮，意见 17 / 采纳 17 / 驳回 0 / stale 0（P3 全部顺手实施，backlog 空）；
+  extension 60→70 例、core 1340→1341 例；分支 2 提交（c79bc80 + 86bf9d4）待授权合并。
+

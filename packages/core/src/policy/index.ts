@@ -19,6 +19,7 @@ export type {
   PermissionVerdict,
   PolicyGateOptions,
   PolicyInteraction,
+  SubmitFieldSummary,
 } from "./policy.js";
 export {
   DEFAULT_PROMPT_TIMEOUT_MS,
