@@ -145,6 +145,16 @@ export class SkillStore {
       .map((k) => k.slice(prefix.length));
   }
 
+  /** 全卡列举（options SkillListView 投影源——键序即返回序） */
+  async listAll(): Promise<SkillCardData[]> {
+    const out: SkillCardData[] = [];
+    for (const key of await this.db.getAllKeys()) {
+      const raw = await this.db.get(key);
+      if (isRecord(raw)) out.push(raw as unknown as SkillCardData);
+    }
+    return out;
+  }
+
   /**
    * built-in 刷新（幂等）：清单卡 upsert——已有卡 provenance.sourceType 必须精确
    * 为 "built-in" 才覆盖（import/distilled 不碰），且内容未变（updatedAt 外全等）

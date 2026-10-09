@@ -21,6 +21,8 @@ export interface PortServerDeps {
   onUiMessage: (message: UiToSwMessage) => void;
   /** 全部端口断连（policy-bridge 未决请求收口） */
   onAllPortsDisconnected: () => void;
+  /** 未决确认卡（sidepanel 重连补发——m5/05 §2：awaiting-* 期间重开面板竖卡重弹） */
+  pendingCards?: () => SwToUiMessage[];
 }
 
 export class PortServer {
@@ -44,6 +46,8 @@ export class PortServer {
     });
     const { runId, snapshot } = this.deps.hello();
     this.post(port, { kind: "hello", runId, snapshot });
+    // 挂起确认卡补发（原样重放——expiresAt 保持首次请求墙上钟，倒计时真实）
+    for (const card of this.deps.pendingCards?.() ?? []) this.post(port, card);
   }
 
   /** 广播（journal 事件流/确认卡/attachments——发给全部连接副本） */

@@ -1,16 +1,18 @@
-// options 占位页（m5/01 §A4）：段 E 换 ProviderList/GrantsView/SkillListView 全量组态。
+// options 粘合层（m5/05 §2）：chrome 交互只在此文件——options 单发请求工厂注入
+// OptionsApp（settings 读写全走 SW 单一写者，UI 不直碰 chrome.storage）。
 
-import { ThemedRoot } from "@tw/console-ui";
+import type { OptionsOp } from "@tw/protocol";
+import { browser } from "wxt/browser";
+import { OptionsApp } from "../../src/ui-glue/options-app.js";
+
+// 模块级稳定引用（OptionsApp 的 refresh 依赖 request 身份——内联箭头会每渲染重建）
+const request = (op: OptionsOp, payload?: unknown): Promise<unknown> =>
+  browser.runtime.sendMessage({
+    kind: "options",
+    op,
+    ...(payload !== undefined ? { payload } : {}),
+  });
 
 export function App() {
-  return (
-    <ThemedRoot>
-      <main style={{ maxWidth: 720, margin: "0 auto", padding: 16, display: "grid", gap: 8 }}>
-        <h1 style={{ fontSize: 16, margin: 0 }}>TreeChrome 设置</h1>
-        <p style={{ margin: 0, color: "var(--tc-muted)" }}>
-          M5 段 A 骨架——provider 卡片 / always 授权 / skill 列表在段 E 落地。
-        </p>
-      </main>
-    </ThemedRoot>
-  );
+  return <OptionsApp request={request} />;
 }

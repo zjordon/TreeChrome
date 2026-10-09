@@ -117,6 +117,8 @@ export class RunManager {
         return;
       case "settings-changed":
         return; // 热读面：每次 start 前 load——运行中不换卡（run 装配一次性）
+      case "options":
+        return; // options 是 sendMessage 单发应答面（message-router 分发）——Port 不受理
       case "diag":
         return;
     }
@@ -312,6 +314,11 @@ export class RunManager {
   /** 全部端口断连（port-server 回调——活跃桥收口未决确认 fail-closed） */
   onAllPortsDisconnected(): void {
     this.active?.bridge.onAllPortsDisconnected();
+  }
+
+  /** 未决确认卡（port-server 重连补发面） */
+  pendingCards(): SwToUiMessage[] {
+    return this.active?.bridge.pendingCards() ?? [];
   }
 
   /** SW 重启恢复：非终态快照且无活 run → interrupted（SW 被杀即终态——不续跑） */

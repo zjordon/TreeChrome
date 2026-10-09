@@ -152,6 +152,19 @@ describe("SkillStore 列举", () => {
     expect(await store.listTaskSlugs("b.example")).toEqual([]);
     expect(await store.listTaskSlugs("c.example")).toEqual([]);
   });
+
+  it("listAll：全卡（含站点级空 slug + provenance 面）——SkillListView 投影源", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    await store.refreshBuiltins(MANIFEST, 1000);
+    const all = await store.listAll();
+    expect(all.map((c) => [c.host, c.slug])).toEqual([
+      ["a.example", ""],
+      ["a.example", "task-one"],
+      ["b.example", ""],
+    ]);
+    expect(all.every((c) => c.provenance.sourceType === "built-in")).toBe(true);
+  });
 });
 
 describe("ExtensionSkillSource", () => {

@@ -2,7 +2,7 @@
 // broadcast 多副本 / UI 消息路由分发 / 断连全断回调 / 非信封消息忽略 /
 // sendMessage 单发 diag（echo + 异步）/settings-changed 分发。
 
-import type { UiToSwMessage } from "@tw/protocol";
+import type { SwToUiMessage, UiToSwMessage } from "@tw/protocol";
 import { describe, expect, it } from "vitest";
 import type { OnConnectApi, RuntimePort } from "../src/host/chrome-apis.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
@@ -99,6 +99,27 @@ describe("PortServer", () => {
     expect(server.hasPorts).toBe(false);
     expect(disconnected).toHaveLength(1);
     void received;
+  });
+
+  it("重连补发挂起卡：accept → hello 后原样重放 pendingCards（m5/05 §2）", () => {
+    const onConnect = fakeOnConnect();
+    const pending: SwToUiMessage[] = [];
+    new PortServer(onConnect.api, {
+      hello: () => ({ runId: null, snapshot: null }),
+      onUiMessage: () => {},
+      onAllPortsDisconnected: () => {},
+      pendingCards: () => pending,
+    });
+    const card: SwToUiMessage = { kind: "permission-request", token: "tok_1", req: null as never };
+    pending.push(card);
+    const port = fakePort();
+    onConnect.connect(port);
+    expect(port.inbox).toEqual([{ kind: "hello", runId: null, snapshot: null }, card]);
+    // deps.pendingCards 缺省：零补发
+    const bare = makeServer();
+    const p2 = fakePort();
+    bare.onConnect.connect(p2);
+    expect(p2.inbox).toHaveLength(1);
   });
 
   it("UI 消息路由：信封消息分发（薄委托——diag 也转发，run-manager 侧忽略）、非信封忽略", () => {

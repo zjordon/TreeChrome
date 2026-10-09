@@ -6,7 +6,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
     environment: "node",
     coverage: {
       provider: "v8",
@@ -14,7 +14,12 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       // chrome-apis.ts 的真绑定访问器（扩展上下文才有 chrome——测试不触，
       // 注入面已被各件覆盖）
-      exclude: ["src/host/chrome-apis.ts"],
+      exclude: [
+        "src/host/chrome-apis.ts",
+        // ui-glue 的 *-app.tsx 组态薄层（React 挂载装配——m5/05 §4「不测 chrome.* 本体，
+        // 粘合层真机 smoke 覆盖」；适配器纯函数 port-client/sidepanel-state 全测）
+        "src/ui-glue/*-app.tsx",
+      ],
       thresholds: { statements: 85, lines: 85, functions: 85, branches: 85 },
       reporter: ["text", "html"],
     },

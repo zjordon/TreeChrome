@@ -268,8 +268,11 @@ describe("RunManager 状态机", () => {
     expect(await m.manager.control("start", "t")).toEqual({ ok: true });
     await new Promise((r) => setTimeout(r, 10)); // agent.run 进入 pending
     expect(m.journal.status).toBe("awaiting-permission");
+    // 挂起卡可枚举（port-server 重连补发面）
+    expect(m.manager.pendingCards()).toMatchObject([{ kind: "permission-request" }]);
     expect(await m.manager.control("stop")).toEqual({ ok: true });
     await new Promise((r) => setTimeout(r, 10));
+    expect(m.manager.pendingCards()).toEqual([]); // stop 收口后无挂起卡
     expect(verdicts).toEqual(["deny"]); // pending 被 stop 同步收口（非 300s 兜底）
     expect(m.journal.current()).toMatchObject({ status: "interrupted", lastError: "用户中断" });
   });
@@ -343,10 +346,12 @@ describe("RunManager 状态机", () => {
     m.stub.finish(new AgentHistoryList());
   });
 
-  it("handleUiMessage：diag/settings-changed no-op；无效附件拒绝；无活 run 的 resolve 忽略；tabsQuery 抛错兜底", async () => {
+  it("handleUiMessage：diag/settings-changed/options no-op；无效附件拒绝；无活 run 的 resolve 忽略；tabsQuery 抛错兜底", async () => {
     const m = makeDeps();
     m.manager.handleUiMessage({ kind: "diag", command: "echo" });
     m.manager.handleUiMessage({ kind: "settings-changed" });
+    // options 是 sendMessage 单发应答面——Port 携带时静默忽略
+    m.manager.handleUiMessage({ kind: "options", op: "get-settings" });
     // 无效附件（空名）→ 拒绝不广播
     m.manager.handleUiMessage({ kind: "attachment-add", name: "", mimeType: "m", base64: "eA==" });
     expect(m.broadcasts.filter((b) => b.kind === "attachments")).toEqual([]);

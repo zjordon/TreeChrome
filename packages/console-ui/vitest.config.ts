@@ -3,7 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
-    environment: "node",
+    // 组件测试面（段 E）：jsdom + @testing-library/react；renderToString 冒烟同成立
+    environment: "jsdom",
+    // RTL 自动 cleanup 依赖全局 afterEach——globals 开（测试内仍显式 import，不依赖推断）
+    globals: true,
     coverage: {
       provider: "v8",
       enabled: true,

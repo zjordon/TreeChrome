@@ -9,7 +9,13 @@
 
 import type { PermissionRequest, PermissionVerdict, SubmitFieldSummary } from "@tw/core";
 import { CAPABILITY_LABEL, DEFAULT_PROMPT_TIMEOUT_MS } from "@tw/core";
-import type { PermissionCardPayload, SubmitField, SwToUiMessage } from "@tw/protocol";
+import type {
+  PermissionCardPayload,
+  SubmitField,
+  SwPermissionRequestMessage,
+  SwSubmitRequestMessage,
+  SwToUiMessage,
+} from "@tw/protocol";
 import type { RunJournal } from "./journal.js";
 
 export type Broadcast = (message: SwToUiMessage) => void;
@@ -22,10 +28,13 @@ const DEFAULT_EXPIRY_GRACE_MS = 1000;
 interface PendingPermission {
   resolve: (verdict: PermissionVerdict) => void;
   cancelExpiry: () => void;
+  /** 原始广播消息（重连补发用——expiresAt 是首次请求的墙上钟，重建会漂移） */
+  message: SwPermissionRequestMessage;
 }
 interface PendingSubmit {
   resolve: (approved: boolean) => void;
   cancelExpiry: () => void;
+  message: SwSubmitRequestMessage;
 }
 
 /** core PermissionRequest → UI 卡 payload（tabId 换扩展原生 number——绑 run 的
@@ -90,10 +99,15 @@ export class SidepanelPolicyBridge {
     }
     const token = this.newToken();
     this.journal.setStatus("awaiting-permission");
-    this.broadcast({ kind: "permission-request", token, req: toCardPayload(req, this.runTabId) });
+    const message: SwPermissionRequestMessage = {
+      kind: "permission-request",
+      token,
+      req: toCardPayload(req, this.runTabId),
+    };
+    this.broadcast(message);
     return new Promise<PermissionVerdict>((resolve) => {
       const cancelExpiry = this.armPermissionExpiry(token, resolve);
-      this.pendingPermissions.set(token, { resolve, cancelExpiry });
+      this.pendingPermissions.set(token, { resolve, cancelExpiry, message });
     });
   }
 
@@ -103,16 +117,25 @@ export class SidepanelPolicyBridge {
     }
     const token = this.newToken();
     this.journal.setStatus("awaiting-submit");
-    this.broadcast({
+    const message: SwSubmitRequestMessage = {
       kind: "submit-request",
       token,
       req: toCardPayload(req, this.runTabId),
       fields: summary as SubmitField[],
-    });
+    };
+    this.broadcast(message);
     return new Promise<boolean>((resolve) => {
       const cancelExpiry = this.armSubmitExpiry(token, resolve);
-      this.pendingSubmits.set(token, { resolve, cancelExpiry });
+      this.pendingSubmits.set(token, { resolve, cancelExpiry, message });
     });
+  }
+
+  /** 未决确认卡原始消息（sidepanel 重连补发——port-server accept 消费） */
+  pendingCards(): SwToUiMessage[] {
+    return [
+      ...[...this.pendingPermissions.values()].map((p) => p.message),
+      ...[...this.pendingSubmits.values()].map((p) => p.message),
+    ];
   }
 
   /** 桥层过期（gate 超时 + grace 后）：条目仍在 → 删条目 + backToRunning +

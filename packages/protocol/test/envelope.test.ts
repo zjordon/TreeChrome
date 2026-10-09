@@ -32,6 +32,7 @@ function uiKindOf(msg: UiToSwMessage): UiToSwKind {
     case "attachment-add":
     case "attachment-remove":
     case "settings-changed":
+    case "options":
     case "diag":
       return msg.kind;
     default: {
@@ -57,7 +58,7 @@ describe("@tw/protocol 信封", () => {
   });
 
   it("UI→SW kind 常量表与判别联合一致", () => {
-    expect([...UI_TO_SW_KINDS]).toHaveLength(8);
+    expect([...UI_TO_SW_KINDS]).toHaveLength(9);
     const samples: UiToSwMessage[] = [
       { kind: "journal-ack", seq: 3 },
       { kind: "permission-resolve", token: "t", verdict: "deny" },
@@ -66,6 +67,7 @@ describe("@tw/protocol 信封", () => {
       { kind: "attachment-add", name: "a.mp4", mimeType: "video/mp4", base64: "" },
       { kind: "attachment-remove", attachmentId: "att_1" },
       { kind: "settings-changed" },
+      { kind: "options", op: "list-grants" },
       { kind: "diag", command: "echo" },
     ];
     expect(samples.map(uiKindOf)).toEqual([...UI_TO_SW_KINDS]);

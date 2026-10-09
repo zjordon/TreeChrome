@@ -136,6 +136,24 @@ describe("SidepanelPolicyBridge", () => {
     expect(await p2).toBe(false);
     expect(journal.status).toBe("running");
   });
+
+  it("pendingCards：未决卡原始消息（原样重放面）；resolve 后清空", async () => {
+    const { bridge } = makeBridge(1);
+    const p1 = bridge.interaction.requestPermission(REQ);
+    const p2 = bridge.interaction.confirmSubmit(REQ, [{ name: "u", value: "v" }]);
+    const cards = bridge.pendingCards();
+    expect(cards).toMatchObject([
+      { kind: "permission-request", token: "tok_1", req: { host: "a.example", label: "点击" } },
+      { kind: "submit-request", token: "tok_1", fields: [{ name: "u", value: "v" }] },
+    ]);
+    // 二次调用返回同一引用形态（expiresAt 不漂移——原始消息重放）
+    expect(bridge.pendingCards()[0]).toEqual(cards[0]);
+    bridge.resolvePermission("tok_1", "allow-once");
+    bridge.resolveSubmit("tok_1", false);
+    expect(bridge.pendingCards()).toEqual([]);
+    expect(await p1).toBe("allow-once");
+    expect(await p2).toBe(false);
+  });
 });
 
 describe("toCardPayload", () => {
