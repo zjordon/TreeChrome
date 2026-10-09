@@ -4,16 +4,35 @@
 // resolve.alias：@tw/core 源码进 bundle 后，WXT 管线在某虚拟模块上产生对
 // "wxt/browser" 的解析（rollup 归因到 core 文件——变换后代码无此 import，虚警），
 // 从 packages/* 侧 node 解析找不到 wxt（pnpm 严格隔离）——显式别名收口。
+// buildStart 钩子：built-in skills 打包（domain-skills/ → public/domain-skills.json，
+// m5/04 §5——dev/build 都先跑；SW onInstalled fetch 后 upsert IndexedDB）。
 
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "wxt";
 
 const wxtBrowser = fileURLToPath(new URL("./node_modules/wxt/dist/browser.mjs", import.meta.url));
+const embedSkillsScript = fileURLToPath(new URL("./scripts/embed-skills.mjs", import.meta.url));
 
 export default defineConfig({
   vite: () => ({
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: "tc-embed-skills",
+        // 子进程跑独立脚本（.mjs 无类型面不进 tsconfig；await 保证 public/ 拷贝前产物就绪）
+        async buildStart() {
+          await new Promise<void>((resolve) => {
+            execFile(process.execPath, [embedSkillsScript], (_err, stdout) => {
+              const line = String(stdout).trim();
+              if (line !== "") console.log(line);
+              resolve();
+            });
+          });
+        },
+      },
+    ],
     resolve: { alias: { "wxt/browser": wxtBrowser } },
   }),
   imports: false,
@@ -30,5 +49,8 @@ export default defineConfig({
       "alarms",
     ],
     host_permissions: ["<all_urls>"],
+    // domain-skills.json 走 web_accessible_resources（SW fetch 自身资源不需
+    // web_accessible——但显式声明无害且便于诊断页直读）
+    web_accessible_resources: [{ resources: ["domain-skills.json"], matches: ["<all_urls>"] }],
   },
 });
