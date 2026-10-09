@@ -185,3 +185,29 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
   本轮 P1/P2：1（已实施）｜P3：0。
 - **轮 2（2026-10-08，增量 diffBase=9a49cc9，2 文件，2m15s）**：**零意见**——循环收敛。
   累计：2 轮，意见 1 / 采纳 1 / 驳回 0 / stale 0；分支 2 提交（9a49cc9 + 6b55b43）待授权合并。
+
+### 段 C `feat/m5-core-seams`
+
+- **轮 1（2026-10-09，diffBase=main，18 文件，16m24s）**：意见 2（high×1/medium×1）→
+  **采纳 2 P2**，驳回 0 / stale 0。
+  - **[2] probe 挂起保护（high 自评）**：probeSubmitForClick 的 fail-open 只覆盖异常，缺挂起
+    兜底——该 await 在 act.ts 挂点位于 withActionTimeout **之外**（该超时只包 tools.execute），
+    且 evalFunctionOnNode 的 Runtime.callFunctionOn 不带 timeout、两宿主 transport
+    （cdp-ws opt-in / chrome.debugger 无 per-call）均无超时——页面主线程被同步长任务阻塞时
+    executeActions 永久挂死（stop 检查在循环轮首也到不了）。已核实三处源码属实。修复：函数内
+    补 SUBMIT_PROBE_TIMEOUT_MS=3000 短超时 race（超时按 null 放行，与 fail-open 同语义；
+    挂起孤儿 promise 不消费）；fake timers 挂起用例回归。
+  - **[1] bytes 通道体积上限（medium 自评）**：附件分支对 payload 无上限——全量 base64 单条
+    CDP 消息峰值内存 ~2.7x + 页面端 atob/字节循环主线程占用线性增长，段 F 抖音视频（几十 MB
+    级）可致 MV3 SW 超内存被回收。webbrain 机制源无先例（净新增加固）。修复：
+    maxAttachmentBytes 可配置上限（ToolsOptions/ToolsContext/构造缺省
+    DEFAULT_MAX_ATTACHMENT_BYTES=32MB，显式 null 解除）+ 命中分支超限快速失败回可操作 error；
+    仅附件分支消费（Node 路径宿主不可达——零变化声明保持）。红绿双向（撤守卫新用例必红）。
+  core 1337→1340 例；门禁 exit 0。
+  本轮 P1/P2：2（已实施）｜P3：0。
+- **轮 2（2026-10-09，增量 diffBase=8d57f49，7 文件，1m21s）**：**零意见**——循环收敛。
+  过程登记：首次跑误取 diffBase=轮 1 修复提交（与 tip 相同 → 空 diff 被 skip "no items
+  were selected"，无效结果已删）；正确口径=**上一轮评审覆盖的 tip**（段 B 轮 2-4 同款），
+  重跑后 complete 零意见。
+  累计：2 轮，意见 2 / 采纳 2 / 驳回 0 / stale 0（P3 backlog 空）；core 1337→1340 例；
+  分支 2 提交（8d57f49 + ea002ac）待授权合并。

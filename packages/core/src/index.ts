@@ -164,7 +164,7 @@ export {
   chunkMarkdownByStructure,
   extractCleanMarkdown,
 } from "./tools/extract-markdown.js";
-export type { FileSystemProvider } from "./tools/fs.js";
+export type { AttachmentPayload, FileSystemProvider } from "./tools/fs.js";
 export type {
   ActionDefinition,
   Capability,

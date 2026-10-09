@@ -1,7 +1,8 @@
 // PolicyGate（p4/04 §1.2/§3；架构 §5.1/§5.3）：组合 decide 决策表 + PolicyInteraction
 // 确认卡 + GrantStore 授权。判定顺序：once grant → always grant → 决策表 →
 // PolicyInteraction；边界纪律：交互异常/超时一律按 deny。TreeChrome 净新增（设计取
-// webbrain，代码重写）。
+// webbrain，代码重写）。submitGate（M5 段 C）：submit 特征 click 的二道门——
+// confirmSubmit 逐次确认、无 grant 记账（submit 卡按动作粒度，always 语义不适用）。
 
 import type { ElementBbox } from "../events/events.js";
 import { CAPABILITY_LABEL, type GatedCapability } from "./capability.js";
@@ -22,11 +23,19 @@ export interface PermissionRequest {
 
 export type PermissionVerdict = "allow-once" | "allow-always" | "deny";
 
+/** submit 预确认卡的字段摘要（架构 §5.3：变更字段 ≤8，password 值打码） */
+export interface SubmitFieldSummary {
+  /** name 属性 → id → aria-label/placeholder 兜底的字段标识 */
+  name: string;
+  /** 当前值（≤40 字符；password 字段恒 "***"） */
+  value: string;
+}
+
 /** 宿主交互面（架构 §4 五接口之一；扩展侧确认卡 UI——M5 落地） */
 export interface PolicyInteraction {
   requestPermission(req: PermissionRequest): Promise<PermissionVerdict>;
-  /** submit 预确认接口就位（表单摘要检测与 UI 是 M5 出界项，04 §5 偏离 3） */
-  confirmSubmit(req: PermissionRequest): Promise<boolean>;
+  /** submit 预确认（M5 段 C 挂点）：req + 变更字段摘要；true=放行提交 */
+  confirmSubmit(req: PermissionRequest, summary: SubmitFieldSummary[]): Promise<boolean>;
 }
 
 export interface GateCheckRequest {
@@ -56,6 +65,12 @@ export const DEFAULT_PROMPT_TIMEOUT_MS = 300_000;
 /** 用户拒绝文案（架构 §5.1 逐字模板；交互异常/超时同文案——模型不区分拒绝来源） */
 function deniedReason(host: string, capability: GatedCapability): string {
   return `用户拒绝在 ${host} 上 ${CAPABILITY_LABEL[capability]}，不要重试，可改道或询问`;
+}
+
+/** submit 预确认拒绝文案（M5 段 C，架构 §5.3 变体——不复用 CLICK 文案，避免模型
+ *  误解为点击本身被拒；交互异常/超时同文案） */
+function deniedSubmitReason(host: string): string {
+  return `用户拒绝在 ${host} 上提交表单，不要重试，可改道或询问`;
 }
 
 /** fail-closed（host 识别不出）文案 */
@@ -114,6 +129,32 @@ export class PolicyGate {
       return { allowed: true, reason: null };
     } catch {
       return { allowed: false, reason: deniedReason(req.host, req.capability) };
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * submit 预确认二道门（M5 段 C，架构 §5.3）：CLICK 已放行后的独立确认——
+   * confirmSubmit 一步问（无 grant 记账：submit 卡按动作粒度逐次确认，always 语义
+   * 不适用）。边界纪律同 check：交互异常/超时一律 deny；host 空 fail-closed。
+   */
+  async submitGate(req: GateCheckRequest, summary: SubmitFieldSummary[]): Promise<GateCheckResult> {
+    if (req.host === "") {
+      return { allowed: false, reason: failClosedReason(req.capability) };
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const verdict = await Promise.race([
+        this.interaction.confirmSubmit(req, summary),
+        new Promise<"__timeout__">((resolve) => {
+          timer = setTimeout(() => resolve("__timeout__"), this.promptTimeoutMs);
+        }),
+      ]);
+      if (verdict === true) return { allowed: true, reason: null };
+      return { allowed: false, reason: deniedSubmitReason(req.host) };
+    } catch {
+      return { allowed: false, reason: deniedSubmitReason(req.host) };
     } finally {
       if (timer !== null) clearTimeout(timer);
     }

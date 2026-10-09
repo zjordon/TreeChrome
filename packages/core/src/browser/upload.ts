@@ -4,7 +4,10 @@
 // （upload-file.ts，对齐 Python 的 Tools._probe_upload_signals 位置）。
 // 偏离（p4b/02 §6）：非 ASCII 文件名的 ASCII 临时副本（tempfile+shutil.copy2）
 // 不落核心——tmp 目录与全量二进制复制属宿主面，宿主可在 fs 层前置重命名。
+// setFileInputData（M5 段 C）：bytes → 页面内 File+DataTransfer 注入——机制源
+// webbrain cdp-client.js:2189-2222，代码重写；注入函数体逐句对齐实证版。
 
+import type { AttachmentPayload } from "../tools/fs.js";
 import { clickElement } from "./element-pointer.js";
 import type { FileChooserRecord, SessionInternals } from "./transport.js";
 
@@ -146,4 +149,50 @@ export async function discoverFileInputViaClick(
       `file chooser within ${(timeoutMs / 1000).toFixed(1)}s (custom dialog?)`,
   );
   return null;
+}
+
+/** bytes 注入函数体（this = file input；base64 → File → DataTransfer → files 赋值 →
+ *  input+change 双 dispatch）。逐句对齐 webbrain 实证版（cdp-client.js:2189-2222）；
+ *  非 file input 目标返回结构化 error——与 setFileInput 的 Python 文案分支互补 */
+export const SET_FILE_INPUT_DATA_FN =
+  "function (base64, filename, mimeType) {  if (!(this instanceof HTMLInputElement) || this.type !== 'file') {    return { success: false, dispatched: false, error: 'Target is not an <input type=file>.' };  }  let dispatched = false;  try {    const binary = atob(base64);    const bytes = new Uint8Array(binary.length);    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);    const file = new File([bytes], filename, { type: mimeType || 'application/octet-stream' });    const transfer = new DataTransfer();    transfer.items.add(file);    this.files = transfer.files;    dispatched = true;    this.dispatchEvent(new Event('input', { bubbles: true }));    this.dispatchEvent(new Event('change', { bubbles: true }));    return { success: true, dispatched: true, name: file.name, size: file.size, type: file.type };  } catch (error) {    return { success: false, dispatched, error: (error && error.message) || String(error) };  }}";
+
+/**
+ * bytes → 页面内注入（M5 段 C，无 OS 路径宿主的上传执行端）：
+ * DOM.resolveNode(backendNodeId) → objectId → Runtime.callFunctionOn（页面内
+ * new File + DataTransfer）。页面返回 success!==true / 非对象 → 抛 Error（文案 =
+ * 页面 error，调用方包 "File upload failed (data channel): ..."）。
+ */
+export async function setFileInputData(
+  s: SessionInternals,
+  backendNodeId: number,
+  payload: AttachmentPayload,
+): Promise<void> {
+  s.log(
+    `set_file_input_data: backend_node_id=${backendNodeId}, ` +
+      `file=${payload.filename}, size=${payload.size}`,
+  );
+  const resolve = await s.send<Record<string, unknown>>("DOM.resolveNode", { backendNodeId });
+  const object = isRecord(resolve.object) ? resolve.object : {};
+  if (typeof object.objectId !== "string") {
+    throw new Error("setFileInputData: resolveNode 未返回 objectId");
+  }
+  const result = await s.send<Record<string, unknown>>("Runtime.callFunctionOn", {
+    objectId: object.objectId,
+    functionDeclaration: SET_FILE_INPUT_DATA_FN,
+    arguments: [
+      { value: payload.base64 },
+      { value: payload.filename },
+      { value: payload.mimeType },
+    ],
+    returnByValue: true,
+  });
+  const value = (isRecord(result.result) ? result.result : {}).value;
+  if (!isRecord(value) || value.success !== true) {
+    throw new Error(
+      isRecord(value) && typeof value.error === "string" && value.error !== ""
+        ? value.error
+        : "The page did not return an upload result.",
+    );
+  }
 }

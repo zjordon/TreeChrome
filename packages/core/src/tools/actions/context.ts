@@ -44,6 +44,8 @@ export interface ToolsContext {
   uploadVerifyEnabled: boolean;
   uploadVerifyWaitMs: number;
   uploadVerifyIntervalMs: number;
+  /** bytes 通道单附件体积上限（M5 段 C 评审轮 1 [1]）；null = 不设限 */
+  maxAttachmentBytes: number | null;
   /** execute() 帧内缓存（Python _cached_browser_state） */
   cachedBrowserState: BrowserStateSummary | null;
 }

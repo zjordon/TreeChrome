@@ -46,6 +46,13 @@ export const DEFAULT_TRUNCATION_SETTINGS: ToolsTruncationSettings = {
   doneAttachmentMaxChars: 2000,
 };
 
+/** bytes 通道单附件体积上限缺省（评审轮 1 [1]）：全量 base64 走单条
+ *  Runtime.callFunctionOn，峰值内存 ≈ host 侧 base64 + core CDP 消息拷贝（~2.7x
+ *  原始体积）+ 页面端 atob/字节循环主线程占用随体积线性——32MB 封顶峰值 ~86MB、
+ *  页面循环百 ms 级。仅附件分支消费（Node 路径宿主不可达，零变化声明保持）；
+ *  宿主可覆盖，显式 null 解除。 */
+export const DEFAULT_MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024;
+
 /** Tools 构造选项（Python Tools.__init__ :730-745 的 batch1 消费面） */
 export interface ToolsOptions {
   truncation?: Partial<ToolsTruncationSettings>;
@@ -66,6 +73,9 @@ export interface ToolsOptions {
   uploadVerifyEnabled?: boolean;
   uploadVerifyWaitMs?: number;
   uploadVerifyIntervalMs?: number;
+  /** bytes 通道单附件体积上限（M5 段 C 评审轮 1 [1]）；缺省
+   *  DEFAULT_MAX_ATTACHMENT_BYTES，显式 null 解除（仅附件分支消费） */
+  maxAttachmentBytes?: number | null;
   /** wait 动作与健康检查用（缺省真实 setTimeout） */
   sleep?: (ms: number) => Promise<void>;
   log?: (message: string) => void;

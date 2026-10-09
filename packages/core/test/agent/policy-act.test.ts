@@ -8,16 +8,20 @@ import type { AgentOptions } from "../../src/agent/agent.js";
 import { Agent } from "../../src/agent/agent.js";
 import type { AgentSettings } from "../../src/agent/settings.js";
 import { postProcess } from "../../src/agent/step/post.js";
+import { SUBMIT_PROBE_JS } from "../../src/agent/submit-probe.js";
 import { ActionResult } from "../../src/agent/views.js";
 import type { BrowserSession } from "../../src/browser/session.js";
 import { EventBus } from "../../src/events/event-bus.js";
 import type { TwEvent } from "../../src/events/events.js";
+import { AutoAllowPolicy } from "../../src/policy/auto-allow.js";
 import {
   type PermissionRequest,
   type PermissionVerdict,
   PolicyGate,
+  type SubmitFieldSummary,
 } from "../../src/policy/policy.js";
-import { FakeAgentBrowser, FakeAgentLLM, type LlmScriptEntry } from "./fixtures.js";
+import { makeNode } from "../tools/fake-browser.js";
+import { FakeAgentBrowser, FakeAgentLLM, type LlmScriptEntry, makeState } from "./fixtures.js";
 
 function makeAgent(
   script: LlmScriptEntry[],
@@ -215,5 +219,129 @@ describe("act 挂点：直过与计费面", () => {
     const history = await agent.run();
     expect(history.isDone()).toBe(true);
     expect(history.history[0].result[0].denied ?? false).toBe(false);
+  });
+});
+
+describe("act 挂点：submit 预确认二道门（M5 段 C）", () => {
+  const SUMMARY = [
+    { name: "user", value: "alice" },
+    { name: "pwd", value: "***" },
+  ];
+  /** 按钮（submit 候选）进 selectorMap 的 state */
+  const stateWithNode = (node: ReturnType<typeof makeNode>) =>
+    makeState({ selectorEntries: new Map([[1, node]]) });
+  const clickDone = () => [clickWaitStep(), doneStep()] as LlmScriptEntry[];
+
+  /** interaction：requestPermission 恒 allow-once；confirmSubmit 可编程 */
+  const submitInteraction = (confirm: boolean | Error) => {
+    const confirmSeen: Array<{ req: PermissionRequest; summary: unknown }> = [];
+    return {
+      confirmSeen,
+      interaction: {
+        requestPermission: async () => "allow-once" as PermissionVerdict,
+        confirmSubmit: async (req: PermissionRequest, summary: SubmitFieldSummary[]) => {
+          confirmSeen.push({ req, summary });
+          if (confirm instanceof Error) throw confirm;
+          return confirm;
+        },
+      },
+    };
+  };
+
+  it("enabled + submit 候选 + probe 摘要 → confirmSubmit 被调一次；deny → 提交表单文案 + 不计失败", async () => {
+    const browser = new FakeAgentBrowser(
+      stateWithNode(makeNode({ nodeName: "BUTTON", backendNodeId: 9 })),
+    );
+    browser.evalFunctionResult = SUMMARY;
+    const { confirmSeen, interaction } = submitInteraction(false);
+    const agent = makeAgent(clickDone(), browser, {
+      policy: new PolicyGate(interaction),
+      overrides: { submitConfirmEnabled: true },
+    });
+    const history = await agent.run();
+    expect(confirmSeen).toHaveLength(1);
+    expect(confirmSeen[0]?.summary).toEqual(SUMMARY);
+    expect(browser.evalFunctionCalls).toEqual([{ backendNodeId: 9, fn: SUBMIT_PROBE_JS }]);
+    const step1 = history.history[0];
+    expect(step1.result[0].denied).toBe(true);
+    expect(step1.result[0].error).toBe("用户拒绝在 a.example 上提交表单，不要重试，可改道或询问");
+    expect(step1.result[0].success).toBe(false);
+    expect(agent.state.consecutiveFailures).toBe(0); // 与权限 deny 同款记账
+    expect(history.isDone()).toBe(true); // denied 不终止 run
+  });
+
+  it("enabled + confirmSubmit 放行 → 点击照常执行", async () => {
+    const browser = new FakeAgentBrowser(
+      stateWithNode(makeNode({ nodeName: "BUTTON", backendNodeId: 9 })),
+    );
+    browser.evalFunctionResult = SUMMARY;
+    const { confirmSeen, interaction } = submitInteraction(true);
+    const agent = makeAgent(clickDone(), browser, {
+      policy: new PolicyGate(interaction),
+      overrides: { submitConfirmEnabled: true },
+    });
+    const history = await agent.run();
+    expect(confirmSeen).toHaveLength(1);
+    expect(history.history[0].result[0].denied ?? false).toBe(false);
+    expect(history.history[0].result[0].error).toBeNull();
+  });
+
+  it("enabled + 非 submit 候选（DIV）→ 预筛短路：零 probe 零 confirmSubmit", async () => {
+    const browser = new FakeAgentBrowser(
+      stateWithNode(makeNode({ nodeName: "DIV", backendNodeId: 9 })),
+    );
+    const { confirmSeen, interaction } = submitInteraction(false);
+    const agent = makeAgent(clickDone(), browser, {
+      policy: new PolicyGate(interaction),
+      overrides: { submitConfirmEnabled: true },
+    });
+    const history = await agent.run();
+    expect(browser.evalFunctionCalls).toHaveLength(0);
+    expect(confirmSeen).toHaveLength(0);
+    expect(history.history[0].result[0].denied ?? false).toBe(false);
+  });
+
+  it("enabled + probe 无变更字段（null）→ 不确认，点击直过", async () => {
+    const browser = new FakeAgentBrowser(
+      stateWithNode(makeNode({ nodeName: "BUTTON", backendNodeId: 9 })),
+    );
+    browser.evalFunctionResult = null;
+    const { confirmSeen, interaction } = submitInteraction(false);
+    const agent = makeAgent(clickDone(), browser, {
+      policy: new PolicyGate(interaction),
+      overrides: { submitConfirmEnabled: true },
+    });
+    const history = await agent.run();
+    expect(browser.evalFunctionCalls).toHaveLength(1); // probe 跑了
+    expect(confirmSeen).toHaveLength(0); // 但无摘要不确认
+    expect(history.history[0].result[0].denied ?? false).toBe(false);
+  });
+
+  it("红向保真：缺省（不设 submitConfirmEnabled）→ 全链零调用零 probe", async () => {
+    const browser = new FakeAgentBrowser(
+      stateWithNode(makeNode({ nodeName: "BUTTON", backendNodeId: 9 })),
+    );
+    browser.evalFunctionResult = SUMMARY;
+    const { confirmSeen, interaction } = submitInteraction(false);
+    const agent = makeAgent(clickDone(), browser, { policy: new PolicyGate(interaction) });
+    const history = await agent.run();
+    expect(browser.evalFunctionCalls).toHaveLength(0);
+    expect(confirmSeen).toHaveLength(0);
+    expect(history.history[0].result[0].denied ?? false).toBe(false);
+  });
+
+  it("enabled + AutoAllowPolicy → confirmSubmit=true 恒过（评测形态零阻塞）", async () => {
+    const browser = new FakeAgentBrowser(
+      stateWithNode(makeNode({ nodeName: "BUTTON", backendNodeId: 9 })),
+    );
+    browser.evalFunctionResult = SUMMARY;
+    const auto = new AutoAllowPolicy();
+    const agent = makeAgent(clickDone(), browser, {
+      policy: new PolicyGate(auto),
+      overrides: { submitConfirmEnabled: true },
+    });
+    const history = await agent.run();
+    expect(history.history[0].result[0].denied ?? false).toBe(false);
+    expect(history.history[0].result[0].error).toBeNull();
   });
 });

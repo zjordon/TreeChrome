@@ -10,6 +10,7 @@ import {
   type SerializedDOMState,
 } from "@tw/dom-snapshot";
 import type { Logger } from "../agent/action-shape.js";
+import type { AttachmentPayload } from "../tools/fs.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 import type { StartOptions, TransportFactory } from "./connection.js";
 import {
@@ -65,7 +66,7 @@ import { findElements, findElementsNodeIds, findText, searchPage } from "./searc
 import { closeTab, createTab, getTabs, switchTab } from "./tabs.js";
 import { clearTextField, forceSetValue, readActiveText, typeText } from "./text-input.js";
 import type { BoundSend, CdpTransport, DownloadRecord, SessionInternals } from "./transport.js";
-import { discoverFileInputViaClick, setFileInput } from "./upload.js";
+import { discoverFileInputViaClick, setFileInput, setFileInputData } from "./upload.js";
 import type {
   BrowserEvent,
   BrowserSessionSettings,
@@ -555,6 +556,10 @@ export class BrowserSession {
     fileInputBackendIds?: number[] | null,
   ): Promise<void> {
     return setFileInput(this.context(), backendNodeId, filePath, fileInputBackendIds ?? null);
+  }
+  /** bytes 注入（M5 段 C 扩展形态）：与 setFileInput 对称的附件通道端点 */
+  setFileInputData(backendNodeId: number, payload: AttachmentPayload): Promise<void> {
+    return setFileInputData(this.context(), backendNodeId, payload);
   }
   discoverFileInputViaClick(backendNodeId: number, timeoutMs?: number): Promise<number | null> {
     return discoverFileInputViaClick(this.context(), backendNodeId, timeoutMs);

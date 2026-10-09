@@ -204,6 +204,15 @@ export class FakeAgentBrowser {
   executeJs(): Promise<unknown> {
     return Promise.resolve(undefined);
   }
+  /** submit probe 消费（M5 段 C）：backendNodeId 可编程返回 + 调用记录 */
+  evalFunctionCalls: Array<{ backendNodeId: number; fn: string }> = [];
+  evalFunctionResult: unknown = null;
+  evalFunctionError: Error | null = null;
+  evalFunctionOnNode(backendNodeId: number, fn: string): Promise<unknown> {
+    this.evalFunctionCalls.push({ backendNodeId, fn });
+    if (this.evalFunctionError !== null) return Promise.reject(this.evalFunctionError);
+    return Promise.resolve(this.evalFunctionResult);
+  }
   getPageHtml(): Promise<string> {
     return Promise.resolve("<html><body><p>x</p></body></html>");
   }

@@ -1,6 +1,6 @@
 // decide 决策表纯函数全组合（04 §1.2：once/always 命中、fail-closed、默认 prompt）
 // + PolicyGate 组合面（判定顺序/交互异常超时按 deny/allow-once·always 记账/
-// clearOnce）+ AutoAllowPolicy 记账。
+// clearOnce）+ AutoAllowPolicy 记账 + submitGate 二道门（M5 段 C）。
 
 import { describe, expect, it } from "vitest";
 import { AutoAllowPolicy } from "../../src/policy/auto-allow.js";
@@ -11,6 +11,7 @@ import {
   type PermissionRequest,
   type PermissionVerdict,
   PolicyGate,
+  type SubmitFieldSummary,
 } from "../../src/policy/policy.js";
 
 const REQ = {
@@ -250,5 +251,78 @@ describe("AutoAllowPolicy（评测口径）", () => {
     );
     expect(auto.requests.map((r) => r.capability)).toEqual(["CLICK", "TYPE"]);
     await expect(auto.confirmSubmit(req)).resolves.toBe(true);
+  });
+});
+
+describe("PolicyGate.submitGate（M5 段 C 二道门）", () => {
+  const SUMMARY = [
+    { name: "user", value: "alice" },
+    { name: "pwd", value: "***" },
+  ];
+  const submitGateWith = (
+    behavior: boolean | Error | "hang",
+    options: { promptTimeoutMs?: number } = {},
+  ) => {
+    const confirmSeen: Array<{ req: PermissionRequest; summary: unknown }> = [];
+    const interaction = {
+      requestPermission: async () => "allow-once" as PermissionVerdict,
+      confirmSubmit: async (req: PermissionRequest, summary: SubmitFieldSummary[]) => {
+        confirmSeen.push({ req, summary });
+        if (behavior instanceof Error) throw behavior;
+        if (behavior === "hang") return new Promise<boolean>(() => {});
+        return behavior;
+      },
+    };
+    return {
+      gate: new PolicyGate(interaction, null, options),
+      confirmSeen,
+    };
+  };
+
+  it("true → 放行；confirmSubmit 收到 req+summary 透传", async () => {
+    const { gate, confirmSeen } = submitGateWith(true);
+    const out = await gate.submitGate({ ...REQ, capability: "CLICK", host: "a.example" }, SUMMARY);
+    expect(out).toEqual({ allowed: true, reason: null });
+    expect(confirmSeen).toHaveLength(1);
+    expect(confirmSeen[0]?.summary).toEqual(SUMMARY);
+    expect(confirmSeen[0]?.req.actionName).toBe("click");
+  });
+
+  it("false → 拒绝（提交表单变体文案——不复用 CLICK 文案）", async () => {
+    const { gate } = submitGateWith(false);
+    const out = await gate.submitGate({ ...REQ, capability: "CLICK", host: "a.example" }, SUMMARY);
+    expect(out.allowed).toBe(false);
+    expect(out.reason).toBe("用户拒绝在 a.example 上提交表单，不要重试，可改道或询问");
+  });
+
+  it("交互异常 → 按拒绝（fail-closed，同 requestPermission 边界纪律）", async () => {
+    const { gate } = submitGateWith(new Error("card crashed"));
+    const out = await gate.submitGate({ ...REQ, capability: "CLICK", host: "a.example" }, SUMMARY);
+    expect(out.allowed).toBe(false);
+    expect(out.reason).toContain("用户拒绝在 a.example 上提交表单");
+  });
+
+  it("超时 → 按拒绝（真实定时器小超时）", async () => {
+    const { gate } = submitGateWith("hang", { promptTimeoutMs: 10 });
+    const out = await gate.submitGate({ ...REQ, capability: "CLICK", host: "a.example" }, SUMMARY);
+    expect(out.allowed).toBe(false);
+    expect(out.reason).toContain("提交表单");
+  });
+
+  it("host 空 → fail-closed（不问交互）", async () => {
+    const { gate, confirmSeen } = submitGateWith(true);
+    const out = await gate.submitGate({ ...REQ, capability: "CLICK", host: "" }, SUMMARY);
+    expect(out.allowed).toBe(false);
+    expect(out.reason).toContain("无法识别目标站点 host");
+    expect(confirmSeen).toHaveLength(0);
+  });
+
+  it("无 grant 记账：确认放行后 once/always 授权面零变化", async () => {
+    const { gate } = submitGateWith(true);
+    await gate.submitGate({ ...REQ, capability: "CLICK", host: "a.example" }, SUMMARY);
+    expect(await gate.listAlwaysGrants()).toEqual([]);
+    // 同键 requestPermission 仍走 prompt（submit 放行不产生任何授权）
+    const check = await gate.check({ ...REQ, capability: "CLICK", host: "a.example" });
+    expect(check.allowed).toBe(true); // interaction.requestPermission 恒 allow-once
   });
 });
