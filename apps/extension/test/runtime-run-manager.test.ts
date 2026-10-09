@@ -185,6 +185,10 @@ describe("RunManager 状态机", () => {
       status: "running",
       task: "task text",
     });
+    // 起始快照广播（评审轮 1 [6]）：begin 重置 seq 后必须广播——否则 UI 的
+    // seq 去重把新 run 事件判为旧 run 重复而丢弃
+    const startSnap = m.broadcasts.find((b) => b.kind === "journal-snapshot");
+    expect(startSnap).toMatchObject({ snapshot: { runId: "run_test", status: "running" } });
     m.stub.finish(doneHistory());
     await new Promise((r) => setTimeout(r, 10)); // drive() 微任务收口
     expect(m.journal.current()).toMatchObject({
@@ -268,8 +272,11 @@ describe("RunManager 状态机", () => {
     expect(await m.manager.control("start", "t")).toEqual({ ok: true });
     await new Promise((r) => setTimeout(r, 10)); // agent.run 进入 pending
     expect(m.journal.status).toBe("awaiting-permission");
+    // 挂起卡可枚举（port-server 重连补发面）
+    expect(m.manager.pendingCards()).toMatchObject([{ kind: "permission-request" }]);
     expect(await m.manager.control("stop")).toEqual({ ok: true });
     await new Promise((r) => setTimeout(r, 10));
+    expect(m.manager.pendingCards()).toEqual([]); // stop 收口后无挂起卡
     expect(verdicts).toEqual(["deny"]); // pending 被 stop 同步收口（非 300s 兜底）
     expect(m.journal.current()).toMatchObject({ status: "interrupted", lastError: "用户中断" });
   });
@@ -343,10 +350,12 @@ describe("RunManager 状态机", () => {
     m.stub.finish(new AgentHistoryList());
   });
 
-  it("handleUiMessage：diag/settings-changed no-op；无效附件拒绝；无活 run 的 resolve 忽略；tabsQuery 抛错兜底", async () => {
+  it("handleUiMessage：diag/settings-changed/options no-op；无效附件拒绝；无活 run 的 resolve 忽略；tabsQuery 抛错兜底", async () => {
     const m = makeDeps();
     m.manager.handleUiMessage({ kind: "diag", command: "echo" });
     m.manager.handleUiMessage({ kind: "settings-changed" });
+    // options 是 sendMessage 单发应答面——Port 携带时静默忽略
+    m.manager.handleUiMessage({ kind: "options", op: "get-settings" });
     // 无效附件（空名）→ 拒绝不广播
     m.manager.handleUiMessage({ kind: "attachment-add", name: "", mimeType: "m", base64: "eA==" });
     expect(m.broadcasts.filter((b) => b.kind === "attachments")).toEqual([]);

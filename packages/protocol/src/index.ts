@@ -49,6 +49,7 @@ export const UI_TO_SW_KINDS = [
   "attachment-add",
   "attachment-remove",
   "settings-changed",
+  "options",
   "diag",
 ] as const;
 
@@ -137,6 +138,31 @@ export interface RunJournalSnapshot {
 /** provider 卡片的存储/表单形态（单一事实源 = core ProviderConfig；扩展 chrome.storage
  * 与 options 表单直存此形——字段漂移由别名收口，不另立 Dto） */
 export type ProviderCardDto = ProviderConfig;
+
+/** 技能卡的 UI 投影（SkillListView 消费；宿主从 skill 存储映射——含 provenance 面） */
+export interface SkillCardInfo {
+  host: string;
+  /** "" = 站点级；非空 = 任务卡 slug */
+  slug: string;
+  sourceType: "built-in" | "import" | "distilled";
+  updatedAt: number;
+  distilledAt?: string;
+}
+
+/** options 页请求-应答操作集（sendMessage 单发；应答经 sendResponse 原样回——
+ *  形态由宿主与粘合层约定，不进本包：get-settings/save-settings 载荷为宿主设置
+ *  对象，list-grants 回 Grant[]，revoke-grant 载荷 {capability, host}，
+ *  list-skills 回 SkillCardInfo[]，test-card 载荷 ProviderCardDto 回 {ok, message}） */
+export const OPTIONS_OPS = [
+  "get-settings",
+  "save-settings",
+  "list-grants",
+  "revoke-grant",
+  "list-skills",
+  "test-card",
+] as const;
+
+export type OptionsOp = (typeof OPTIONS_OPS)[number];
 
 // —— SW → UI 消息（Port 广播 + hello/journal-snapshot 全量补发）——
 
@@ -233,6 +259,14 @@ export interface UiSettingsChangedMessage {
   kind: "settings-changed";
 }
 
+/** options 页请求（sendMessage 单发 + sendResponse 应答；Port 通道不受理——
+ *  run-manager 静默忽略）。payload 形态见 OPTIONS_OPS 注释。 */
+export interface UiOptionsRequestMessage {
+  kind: "options";
+  op: OptionsOp;
+  payload?: unknown;
+}
+
 export interface UiDiagMessage {
   kind: "diag";
   command: "echo" | "smoke:attach";
@@ -247,4 +281,5 @@ export type UiToSwMessage =
   | UiAttachmentAddMessage
   | UiAttachmentRemoveMessage
   | UiSettingsChangedMessage
+  | UiOptionsRequestMessage
   | UiDiagMessage;

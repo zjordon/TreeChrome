@@ -13,7 +13,8 @@
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "e2e:runtime": "node e2e/smoke-sw-runtime.mjs"
+    "e2e:runtime": "node e2e/smoke-sw-runtime.mjs",
+    "e2e:ui": "node e2e/smoke-ui.mjs"
   },
   "dependencies": {
     "@tw/cdp-chrome": "workspace:*",

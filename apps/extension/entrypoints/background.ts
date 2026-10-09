@@ -10,7 +10,7 @@ import {
   chromeTabsApi,
   createChromeDebuggerTransport,
 } from "@tw/cdp-chrome";
-import type { RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
+import type { OptionsOp, ProviderCardDto, RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
 import { AttachmentRegistry } from "../src/host/attachment-registry.js";
@@ -26,7 +26,7 @@ import { makeDebuggerTransportFactory } from "../src/host/debugger-api.js";
 import { ChromeGrantStore } from "../src/host/grant-store.js";
 import { KeepaliveController } from "../src/host/keepalive.js";
 import { OpfsFs } from "../src/host/opfs-fs.js";
-import { SettingsStore } from "../src/host/settings-store.js";
+import { parseExtensionSettings, SettingsStore } from "../src/host/settings-store.js";
 import { ExtensionSkillSource } from "../src/host/skill-source.js";
 import {
   type BuiltinsManifest,
@@ -36,6 +36,7 @@ import {
 } from "../src/host/skill-store.js";
 import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
+import { createMutationQueue } from "../src/runtime/mutation-queue.js";
 import { PortServer } from "../src/runtime/port-server.js";
 import { RunManager } from "../src/runtime/run-manager.js";
 
@@ -126,6 +127,16 @@ export default defineBackground(() => {
       }
       return false;
     },
+    // options 请求-应答（段 E）：单发 + sendResponse；经 bootPromise 排队到部件就绪
+    onOptions: (op, payload, sendResponse) => {
+      void bootPromise
+        .then((booted) => handleOptionsRequest(op, payload, booted.options))
+        .then((result) => sendResponse(result))
+        .catch((e: unknown) =>
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+        );
+      return true;
+    },
   });
 
   // 点扩展图标 = 开侧边栏（sidepanel entrypoint 由 WXT 注册 default_path）。
@@ -147,6 +158,100 @@ export default defineBackground(() => {
 interface Booted {
   runManager: RunManager;
   skillStore: SkillStore;
+  /** options 请求-应答面（段 E） */
+  options: OptionsFace;
+}
+
+/** options 面（段 E）：settings 读写 / grants 列举撤销 / skills 列举 / 端点测试 */
+interface OptionsFace {
+  settingsStore: SettingsStore;
+  grantStore: ChromeGrantStore;
+  skillStore: SkillStore;
+}
+
+/** options 请求处理（全路径 fail-soft：异常/坏载荷回 {ok:false,error} 不炸通道） */
+const grantsMutation = createMutationQueue();
+
+async function handleOptionsRequest(
+  op: OptionsOp,
+  payload: unknown,
+  face: OptionsFace,
+): Promise<unknown> {
+  try {
+    switch (op) {
+      case "get-settings":
+        return { ok: true, settings: await face.settingsStore.load() };
+      case "save-settings":
+        // 宽松收窄再落盘（单一写者=SW——UI 不直碰 chrome.storage，避免双端竞态）
+        await face.settingsStore.save(parseExtensionSettings(payload));
+        return { ok: true };
+      case "list-grants":
+        return { ok: true, grants: await face.grantStore.loadAlways() };
+      case "revoke-grant": {
+        const p = payload as { capability?: unknown; host?: unknown } | null;
+        if (
+          p === null ||
+          typeof p.capability !== "string" ||
+          typeof p.host !== "string" ||
+          p.capability === "" ||
+          p.host === ""
+        ) {
+          return { ok: false, error: "revoke-grant 需要 {capability, host}" };
+        }
+        // 读-改-写串行化（评审轮 1 [12]）：两条 revoke 在 await 点交错时后写者
+        // 以陈旧全量覆盖回——已撤销的授权复活且不再弹权限卡
+        const removed = await grantsMutation(() =>
+          (async () => {
+            const grants = await face.grantStore.loadAlways();
+            const kept = grants.filter(
+              (g) => !(g.capability === p.capability && g.host === p.host),
+            );
+            await face.grantStore.saveAlways(kept);
+            return grants.length - kept.length;
+          })(),
+        );
+        return { ok: true, removed };
+      }
+      case "list-skills": {
+        const cards = await face.skillStore.listAll();
+        return {
+          ok: true,
+          cards: cards.map((c) => ({
+            host: c.host,
+            slug: c.slug,
+            sourceType: c.provenance.sourceType,
+            updatedAt: c.updatedAt,
+            ...(c.distilledAt !== undefined ? { distilledAt: c.distilledAt } : {}),
+          })),
+        };
+      }
+      case "test-card": {
+        const card = payload as ProviderCardDto | null;
+        if (
+          card === null ||
+          typeof card.baseUrl !== "string" ||
+          !/^https?:\/\//.test(card.baseUrl)
+        ) {
+          return { ok: false, message: "baseUrl 形态不合法" };
+        }
+        // 可达性探测（非语义级验证）：任何 HTTP 应答即端点可达；5s 超时
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        try {
+          const res = await fetch(card.baseUrl, { method: "GET", signal: ctrl.signal });
+          return { ok: true, message: `HTTP ${res.status}（端点可达）` };
+        } catch (e) {
+          return { ok: false, message: e instanceof Error ? e.message : String(e) };
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      default:
+        return { ok: false, error: `未知操作：${op}` };
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /** IDB 打不开时的降级空库（评审轮 1 [13]：skill 是可选增强，存储故障不得
@@ -214,6 +319,7 @@ async function boot(): Promise<Booted> {
     hello: () => runManager.hello(),
     onUiMessage: (message) => runManager.handleUiMessage(message),
     onAllPortsDisconnected: () => runManager.onAllPortsDisconnected(),
+    pendingCards: () => runManager.pendingCards(),
   });
   chromeOnInstalled().addListener((details: unknown) => {
     const reason = (details as { reason?: unknown } | null)?.reason;
@@ -239,7 +345,11 @@ async function boot(): Promise<Booted> {
   if (dbOk) skillRefs.ready = refreshBuiltins(store);
 
   log("SW booted (segment D runtime)");
-  return { runManager, skillStore: store };
+  return {
+    runManager,
+    skillStore: store,
+    options: { settingsStore, grantStore, skillStore: store },
+  };
 }
 
 /** built-in 刷新（fetch 打包清单 → upsert；失败只记日志——skill 是可选增强） */

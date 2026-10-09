@@ -117,6 +117,8 @@ export class RunManager {
         return;
       case "settings-changed":
         return; // 热读面：每次 start 前 load——运行中不换卡（run 装配一次性）
+      case "options":
+        return; // options 是 sendMessage 单发应答面（message-router 分发）——Port 不受理
       case "diag":
         return;
     }
@@ -222,6 +224,12 @@ export class RunManager {
       task: assembled.taskText,
       attachments: this.deps.attachments.list(),
     });
+    // 起始快照广播（评审轮 1 [6]）：journal.begin 重置 seq——不广播则保持连接的
+    // UI 侧 seq 去重把新 run 事件全部判为旧 run 补发重复而丢弃
+    const startSnapshot = this.deps.journal.current();
+    if (startSnapshot !== null) {
+      this.deps.broadcast({ kind: "journal-snapshot", snapshot: startSnapshot });
+    }
     const forwarder = new EventForwarder(assembled.bus, this.deps.journal, this.deps.broadcast);
     forwarder.start();
 
@@ -312,6 +320,11 @@ export class RunManager {
   /** 全部端口断连（port-server 回调——活跃桥收口未决确认 fail-closed） */
   onAllPortsDisconnected(): void {
     this.active?.bridge.onAllPortsDisconnected();
+  }
+
+  /** 未决确认卡（port-server 重连补发面） */
+  pendingCards(): SwToUiMessage[] {
+    return this.active?.bridge.pendingCards() ?? [];
   }
 
   /** SW 重启恢复：非终态快照且无活 run → interrupted（SW 被杀即终态——不续跑） */

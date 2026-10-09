@@ -2,11 +2,15 @@
 // broadcast 多副本 / UI 消息路由分发 / 断连全断回调 / 非信封消息忽略 /
 // sendMessage 单发 diag（echo + 异步）/settings-changed 分发。
 
-import type { UiToSwMessage } from "@tw/protocol";
-import { describe, expect, it } from "vitest";
+import type { SwToUiMessage, UiToSwMessage } from "@tw/protocol";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OnConnectApi, RuntimePort } from "../src/host/chrome-apis.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
-import { PortServer } from "../src/runtime/port-server.js";
+import { PortServer, RECONNECT_GRACE_MS } from "../src/runtime/port-server.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function fakePort(): RuntimePort & {
   inbox: unknown[];
@@ -79,26 +83,74 @@ function makeServer() {
 }
 
 describe("PortServer", () => {
-  it("连接 → hello（runId + snapshot）；多副本 broadcast；断连全断回调一次", () => {
-    const { onConnect, received, disconnected, server } = makeServer();
-    const p1 = fakePort();
-    onConnect.connect(p1);
-    expect(p1.inbox[0]).toMatchObject({ kind: "hello", runId: "run_1" });
-    expect(server.hasPorts).toBe(true);
+  it("连接 → hello（runId + snapshot）；多副本 broadcast；全断宽限窗后才收口回调", () => {
+    vi.useFakeTimers();
+    try {
+      const { onConnect, received, disconnected, server } = makeServer();
+      const p1 = fakePort();
+      onConnect.connect(p1);
+      expect(p1.inbox[0]).toMatchObject({ kind: "hello", runId: "run_1" });
+      expect(server.hasPorts).toBe(true);
 
+      const p2 = fakePort();
+      onConnect.connect(p2);
+      server.broadcast({ kind: "attachments", items: [] });
+      expect(p1.inbox[1]).toEqual({ kind: "attachments", items: [] });
+      expect(p2.inbox[1]).toEqual({ kind: "attachments", items: [] });
+
+      p1.disconnect();
+      expect(server.hasPorts).toBe(true);
+      expect(disconnected).toEqual([]);
+      p2.disconnect();
+      expect(server.hasPorts).toBe(false);
+      expect(disconnected).toEqual([]); // 宽限窗内不收口（评审轮 1 [11]）
+      vi.advanceTimersByTime(RECONNECT_GRACE_MS);
+      expect(disconnected).toHaveLength(1);
+      void received;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("宽限窗内重连 → 待收口撤销（重开面板补发链路可达）；再全断重新计窗", () => {
+    vi.useFakeTimers();
+    try {
+      const { onConnect, disconnected } = makeServer();
+      const p1 = fakePort();
+      onConnect.connect(p1);
+      p1.disconnect();
+      vi.advanceTimersByTime(RECONNECT_GRACE_MS - 1);
+      const p2 = fakePort();
+      onConnect.connect(p2); // 窗内重连：撤销待收口
+      vi.advanceTimersByTime(RECONNECT_GRACE_MS * 2);
+      expect(disconnected).toEqual([]); // 有端口在线永不收口
+      p2.disconnect();
+      vi.advanceTimersByTime(RECONNECT_GRACE_MS);
+      expect(disconnected).toHaveLength(1); // 再全断重新计窗后收口
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("重连补发挂起卡：accept → hello 后原样重放 pendingCards（m5/05 §2）", () => {
+    const onConnect = fakeOnConnect();
+    const pending: SwToUiMessage[] = [];
+    new PortServer(onConnect.api, {
+      hello: () => ({ runId: null, snapshot: null }),
+      onUiMessage: () => {},
+      onAllPortsDisconnected: () => {},
+      pendingCards: () => pending,
+    });
+    const card: SwToUiMessage = { kind: "permission-request", token: "tok_1", req: null as never };
+    pending.push(card);
+    const port = fakePort();
+    onConnect.connect(port);
+    expect(port.inbox).toEqual([{ kind: "hello", runId: null, snapshot: null }, card]);
+    // deps.pendingCards 缺省：零补发
+    const bare = makeServer();
     const p2 = fakePort();
-    onConnect.connect(p2);
-    server.broadcast({ kind: "attachments", items: [] });
-    expect(p1.inbox[1]).toEqual({ kind: "attachments", items: [] });
-    expect(p2.inbox[1]).toEqual({ kind: "attachments", items: [] });
-
-    p1.disconnect();
-    expect(server.hasPorts).toBe(true);
-    expect(disconnected).toEqual([]);
-    p2.disconnect();
-    expect(server.hasPorts).toBe(false);
-    expect(disconnected).toHaveLength(1);
-    void received;
+    bare.onConnect.connect(p2);
+    expect(p2.inbox).toHaveLength(1);
   });
 
   it("UI 消息路由：信封消息分发（薄委托——diag 也转发，run-manager 侧忽略）、非信封忽略", () => {
