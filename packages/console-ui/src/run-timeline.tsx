@@ -68,8 +68,12 @@ function EventLine({ event }: { event: JournalEvent }) {
       );
     }
     case "tool_result": {
-      const ok = d.success === true;
+      // core 三值语义（views.ts:59-64 核实）：success=true 仅 done 动作、常规成功
+      // 恒 null（构造器强制）——判 ok 不能用 success===true（全部常规成功会被渲染
+      // 成失败）；失败 = error 非空（act.ts 同款判据）或 success===false（denied/
+      // submit 拒绝路径显式置 false）
       const error = str(d.error);
+      const ok = error === null && d.success !== false;
       const secs = num(d.durationSeconds);
       if (ok) {
         return <div className="tc-ev-ok">✓ 动作成功{secs !== null ? `（${secs}s）` : ""}</div>;

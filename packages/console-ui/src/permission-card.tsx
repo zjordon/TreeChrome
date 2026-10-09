@@ -6,6 +6,10 @@ import type { PermissionCardPayload, PermissionVerdict } from "@tw/protocol";
 import { useEffect, useState } from "react";
 import { Button } from "./primitives.js";
 
+/** 模块级稳定引用（评审轮 1 [1]）：内联缺省箭头每渲染新引用 → useEffect 依赖
+ *  [now] 每次父渲染重建 interval——事件密集推送时倒计时冻结在初始值 */
+const wallClock = (): number => Date.now();
+
 export interface PermissionCardProps {
   req: PermissionCardPayload;
   onResolve: (verdict: PermissionVerdict) => void;
@@ -21,7 +25,7 @@ export function PermissionCard({
   onResolve,
   expiresAt,
   totalMs = 300_000,
-  now = () => Date.now(),
+  now = wallClock,
 }: PermissionCardProps) {
   const [remaining, setRemaining] = useState(() => Math.max(0, expiresAt - now()));
   useEffect(() => {

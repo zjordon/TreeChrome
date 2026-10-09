@@ -185,6 +185,10 @@ describe("RunManager 状态机", () => {
       status: "running",
       task: "task text",
     });
+    // 起始快照广播（评审轮 1 [6]）：begin 重置 seq 后必须广播——否则 UI 的
+    // seq 去重把新 run 事件判为旧 run 重复而丢弃
+    const startSnap = m.broadcasts.find((b) => b.kind === "journal-snapshot");
+    expect(startSnap).toMatchObject({ snapshot: { runId: "run_test", status: "running" } });
     m.stub.finish(doneHistory());
     await new Promise((r) => setTimeout(r, 10)); // drive() 微任务收口
     expect(m.journal.current()).toMatchObject({

@@ -56,16 +56,19 @@ describe("RunTimeline", () => {
             outputTokens: 30,
           }),
           ev(4, "tool_call", 1, { actionName: "click", elementIndex: 5 }),
+          // 三值语义：done 的 success=true / 常规成功 success=null（core 构造器
+          // 强制——评审轮 1 [10]）/ 失败 success=false+error
           ev(5, "tool_result", 1, { success: true, durationSeconds: 0.4 }),
           ev(6, "tool_result", 1, { success: false, error: "元素不可见" }),
-          ev(7, "skill_active", 1, { host: "douyin.com", taskSlug: "upload", skillLoaded: true }),
-          ev(8, "anomaly", 1, {
+          ev(7, "tool_result", 1, { success: null, durationSeconds: 1.1 }),
+          ev(8, "skill_active", 1, { host: "douyin.com", taskSlug: "upload", skillLoaded: true }),
+          ev(9, "anomaly", 1, {
             rule: "action_loop",
             severity: "warning",
             description: "重复动作",
           }),
-          ev(9, "step_end", 1, { durationSeconds: 2.1 }),
-          ev(10, "session_end", 1, { totalSteps: 1, summary: "完成上传" }),
+          ev(10, "step_end", 1, { durationSeconds: 2.1 }),
+          ev(11, "session_end", 1, { totalSteps: 1, summary: "完成上传" }),
         ]}
         stepCount={1}
       />,
@@ -78,6 +81,7 @@ describe("RunTimeline", () => {
     expect(screen.getByText("▸ click #5")).toBeDefined();
     expect(screen.getByText("✓ 动作成功（0.4s）")).toBeDefined();
     expect(screen.getByText("✗ 元素不可见")).toBeDefined();
+    expect(screen.getByText("✓ 动作成功（1.1s）")).toBeDefined(); // 常规成功（null）不得误报失败
     expect(screen.getByText(/✚ skill douyin\.com\/upload 命中/)).toBeDefined();
     expect(screen.getByText(/⚠ \[action_loop\]\(warning\) 重复动作/)).toBeDefined();
     expect(screen.getByText("第 1 步完成（2.1s）")).toBeDefined();
@@ -118,7 +122,8 @@ describe("RunTimeline", () => {
         ]}
       />,
     );
-    expect(screen.getByText("✗ 动作失败")).toBeDefined();
+    // 无 error 且无 success=false → 按成功渲染（core 判据：失败 ⇔ error 非空）
+    expect(screen.getByText("✓ 动作成功")).toBeDefined();
     expect(screen.getByText("unknown_future_type")).toBeDefined();
   });
 });

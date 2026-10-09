@@ -36,6 +36,7 @@ import {
 } from "../src/host/skill-store.js";
 import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
+import { createMutationQueue } from "../src/runtime/mutation-queue.js";
 import { PortServer } from "../src/runtime/port-server.js";
 import { RunManager } from "../src/runtime/run-manager.js";
 
@@ -169,6 +170,8 @@ interface OptionsFace {
 }
 
 /** options 请求处理（全路径 fail-soft：异常/坏载荷回 {ok:false,error} 不炸通道） */
+const grantsMutation = createMutationQueue();
+
 async function handleOptionsRequest(
   op: OptionsOp,
   payload: unknown,
@@ -195,10 +198,19 @@ async function handleOptionsRequest(
         ) {
           return { ok: false, error: "revoke-grant 需要 {capability, host}" };
         }
-        const grants = await face.grantStore.loadAlways();
-        const kept = grants.filter((g) => !(g.capability === p.capability && g.host === p.host));
-        await face.grantStore.saveAlways(kept);
-        return { ok: true, removed: grants.length - kept.length };
+        // 读-改-写串行化（评审轮 1 [12]）：两条 revoke 在 await 点交错时后写者
+        // 以陈旧全量覆盖回——已撤销的授权复活且不再弹权限卡
+        const removed = await grantsMutation(() =>
+          (async () => {
+            const grants = await face.grantStore.loadAlways();
+            const kept = grants.filter(
+              (g) => !(g.capability === p.capability && g.host === p.host),
+            );
+            await face.grantStore.saveAlways(kept);
+            return grants.length - kept.length;
+          })(),
+        );
+        return { ok: true, removed };
       }
       case "list-skills": {
         const cards = await face.skillStore.listAll();

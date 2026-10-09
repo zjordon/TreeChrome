@@ -49,19 +49,37 @@ export function ingestSidepanel(
   now = (): number => Date.now(),
 ): { state: SidepanelState; ack: number | null } {
   switch (action.kind) {
-    case "hello":
+    case "hello": {
+      // journal.ack 已把渲染过的事件从 SW 快照释放——hello 只带未 ack 尾巴，
+      // 不得整表替换本地时间线（重连会销毁唯一副本，评审轮 1 [13]）；仅换 run
+      // 才全量重建
+      const snap = action.snapshot;
+      const sameRun = snap !== null && state.snapshot?.runId === snap.runId;
+      const tail = snap?.events ?? [];
       return {
         state: {
           ...state,
-          snapshot: action.snapshot,
-          events: action.snapshot?.events ?? [],
-          // hello 后紧跟挂起卡补发——权限/提交卡不在此重建，交由补发消息
-          attachments: action.snapshot?.attachments ?? [],
+          snapshot: snap,
+          events: sameRun
+            ? [...state.events, ...tail.filter((t) => !state.events.some((e) => e.seq === t.seq))]
+            : tail,
+          attachments: snap?.attachments ?? [],
         },
         ack: null,
       };
-    case "journal-snapshot":
-      return { state: { ...state, snapshot: action.snapshot }, ack: null };
+    }
+    case "journal-snapshot": {
+      // run 切换（SW 在 begin 后广播起始快照——seq 已重置）→ 全量重建；同 run
+      // 终态快照只更新视图字段（评审轮 1 [6]：不重建则新 run 事件被 seq 去重
+      // 全部丢弃、时间线显示旧 run）
+      const runChanged = state.snapshot?.runId !== action.snapshot.runId;
+      return {
+        state: runChanged
+          ? { ...state, snapshot: action.snapshot, events: action.snapshot.events }
+          : { ...state, snapshot: action.snapshot },
+        ack: null,
+      };
+    }
     case "event": {
       if (state.events.some((e) => e.seq >= action.seq)) return { state, ack: null };
       return {

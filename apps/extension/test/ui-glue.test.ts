@@ -92,9 +92,9 @@ describe("PortClient 重连", () => {
 });
 
 describe("sidepanel reducer", () => {
-  const snap = (seq: number): never =>
+  const snap = (seq: number, runId = "r1"): never =>
     ({
-      runId: "r",
+      runId,
       tabId: 1,
       status: "running",
       seq,
@@ -112,10 +112,10 @@ describe("sidepanel reducer", () => {
       attachments: [],
     }) as never;
 
-  it("hello 全量重建（快照事件/附件）；journal-snapshot 只更新快照", () => {
+  it("hello 建立基线（快照事件/附件）；同 run journal-snapshot 只更新视图", () => {
     let { state } = ingestSidepanel(initialSidepanelState, {
       kind: "hello",
-      runId: "r",
+      runId: "r1",
       snapshot: {
         ...snap(3),
         events: [{ seq: 1, type: "step_start", step: 1, ts: 1, data: {} }],
@@ -127,6 +127,46 @@ describe("sidepanel reducer", () => {
     state = ingestSidepanel(state, { kind: "journal-snapshot", snapshot: snap(4) }).state;
     expect(state.snapshot?.seq).toBe(4);
     expect(state.events).toHaveLength(1); // live 流不清
+  });
+
+  it("hello 同 run 重连：未 ack 尾巴合入（SW 裁剪快照不销毁本地时间线）", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "hello",
+      runId: "r1",
+      snapshot: {
+        ...snap(2),
+        events: [
+          { seq: 1, type: "step_start", step: 1, ts: 1, data: {} },
+          { seq: 2, type: "tool_call", step: 1, ts: 2, data: {} },
+        ],
+      },
+    }).state;
+    // SW 死亡重连：hello 只带 ack 剪剩的尾巴（seq 2）——本地 1..2 必须保留
+    state = ingestSidepanel(state, {
+      kind: "hello",
+      runId: "r1",
+      snapshot: { ...snap(2), events: [{ seq: 2, type: "tool_call", step: 1, ts: 2, data: {} }] },
+    }).state;
+    expect(state.events.map((e) => e.seq)).toEqual([1, 2]);
+    // 换 run：全量重建（新 run 起始快照 events 为空）
+    state = ingestSidepanel(state, { kind: "hello", runId: "r2", snapshot: snap(0, "r2") }).state;
+    expect(state.events).toEqual([]);
+    expect(state.snapshot?.runId).toBe("r2");
+  });
+
+  it("journal-snapshot 换 run 全量重建（begin 重置 seq——旧 run 不得吞新事件）", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "hello",
+      runId: "r1",
+      snapshot: {
+        ...snap(2),
+        events: [{ seq: 2, type: "tool_call", step: 1, ts: 2, data: {} }],
+      },
+    }).state;
+    // 新 run 起始快照（begin 后广播，runId 不同）→ 重建空时间线
+    state = ingestSidepanel(state, { kind: "journal-snapshot", snapshot: snap(0, "r2") }).state;
+    expect(state.events).toEqual([]);
+    expect(state.snapshot?.runId).toBe("r2");
   });
 
   it("live event 投影 + ack 序号 + seq 去重（重连补发窗口）", () => {
@@ -252,5 +292,37 @@ describe("message-router options 分支", () => {
       },
     );
     expect(listeners2[0]({ kind: "options", op: "get-settings" }, null, () => {})).toBe(false);
+  });
+});
+
+describe("createMutationQueue（revoke 读-改-写串行化，评审轮 1 [12]）", () => {
+  it("并发变更排队执行（无交错）；前序失败不阻塞后续", async () => {
+    const { createMutationQueue } = await import("../src/runtime/mutation-queue.js");
+    const enq = createMutationQueue();
+    const order: string[] = [];
+    const job = (name: string, ms: number, fail = false): Promise<string> =>
+      enq(
+        () =>
+          new Promise<string>((resolve, reject) => {
+            setTimeout(() => {
+              order.push(name);
+              if (fail) reject(new Error(`${name} failed`));
+              else resolve(name);
+            }, ms);
+          }),
+      );
+    const results = await Promise.allSettled([
+      job("a", 20),
+      job("b", 1),
+      job("boom", 1, true),
+      job("c", 1),
+    ]);
+    expect(order).toEqual(["a", "b", "boom", "c"]); // 无交错、失败不堵队
+    expect(results.map((r) => r.status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "rejected",
+      "fulfilled",
+    ]);
   });
 });

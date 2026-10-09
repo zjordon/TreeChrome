@@ -61,10 +61,32 @@ export function validateCardForm(v: CardFormState): CardFormErrors {
 
 export interface ProviderCardFormProps {
   card?: ProviderCardDto;
-  onSave: (card: ProviderCardDto) => void;
+  /** 第二参=被编辑卡的原名（null=新增）——宿主按原名替换：改名走先删旧卡再
+   *  追加，否则旧卡（含密钥）残留/撞名静默覆盖既有卡（评审轮 1 [2][3]） */
+  onSave: (card: ProviderCardDto, originalName: string | null) => void;
   onCancel: () => void;
   onTest: (card: ProviderCardDto) => Promise<{ ok: boolean; message: string }>;
   onDelete?: (name: string) => void;
+}
+
+/** 表单不承载的高级字段（评审轮 1 [9]：编辑保存若整卡重建会静默剥离——
+ *  maxTokensField/temperatureSuppressed 丢失即端点 400、fallback/能力声明丢失
+ *  改变滤图行为）；编辑时原样透传 */
+const ADVANCED_KEYS = [
+  "capabilities",
+  "contextWindow",
+  "outputMode",
+  "thinkingEffort",
+  "maxTokensField",
+  "temperatureSuppressed",
+  "extraHeaders",
+  "fallback",
+] as const;
+
+function advancedFieldsOf(card: ProviderCardDto): Partial<ProviderCardDto> {
+  return Object.fromEntries(
+    ADVANCED_KEYS.filter((k) => card[k] !== undefined).map((k) => [k, card[k]]),
+  ) as Partial<ProviderCardDto>;
 }
 
 export function ProviderCardForm({
@@ -84,6 +106,7 @@ export function ProviderCardForm({
   };
 
   const buildCard = (): ProviderCardDto => ({
+    ...(card !== undefined ? advancedFieldsOf(card) : {}),
     name: form.name.trim(),
     protocol: form.protocol,
     baseUrl: form.baseUrl.trim(),
@@ -96,7 +119,7 @@ export function ProviderCardForm({
   const submit = (): void => {
     const found = validateCardForm(form);
     setErrors(found);
-    if (Object.keys(found).length === 0) onSave(buildCard());
+    if (Object.keys(found).length === 0) onSave(buildCard(), card?.name ?? null);
   };
 
   const runTest = (): void => {
@@ -140,7 +163,14 @@ export function ProviderCardForm({
           <input value={form.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
         </Field>
         <Field label="API Key" error={errors.apiKey}>
-          <input value={form.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
+          {/* 遮挡展示（评审轮 1 [4]）：屏幕共享/旁观/录屏下的凭据泄露面——明文
+           *  存储已另行裁决，展示层遮挡是独立面 */}
+          <input
+            type="password"
+            autoComplete="off"
+            value={form.apiKey}
+            onChange={(e) => set({ apiKey: e.target.value })}
+          />
         </Field>
         <Field label="模型" error={errors.model}>
           <input value={form.model} onChange={(e) => set({ model: e.target.value })} />

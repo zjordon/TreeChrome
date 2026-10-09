@@ -53,11 +53,11 @@ describe("validateCardForm（纯函数）", () => {
 });
 
 describe("ProviderCardForm", () => {
-  it("合法输入 → onSave 收完整卡（trim + 数值化 + 可选温度省键）", () => {
-    const saved: ProviderCardDto[] = [];
+  it("合法输入 → onSave 收完整卡（trim + 数值化 + 可选温度省键 + 原名 null）", () => {
+    const saved: Array<[ProviderCardDto, string | null]> = [];
     render(
       <ProviderCardForm
-        onSave={(c) => saved.push(c)}
+        onSave={(c, orig) => saved.push([c, orig])}
         onCancel={() => {}}
         onTest={async () => ({ ok: true, message: "" })}
       />,
@@ -68,22 +68,56 @@ describe("ProviderCardForm", () => {
     fireEvent.change(screen.getByLabelText("模型"), { target: { value: " glm-5 " } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(saved).toEqual([
-      {
-        name: "glm",
-        protocol: "openai-completions",
-        baseUrl: "https://api",
-        apiKey: "k",
-        model: "glm-5",
-        maxTokens: 16384,
-      },
+      [
+        {
+          name: "glm",
+          protocol: "openai-completions",
+          baseUrl: "https://api",
+          apiKey: "k",
+          model: "glm-5",
+          maxTokens: 16384,
+        },
+        null,
+      ],
     ]);
   });
 
-  it("非法输入 → 错误文案 + 不 onSave", () => {
-    const saved: ProviderCardDto[] = [];
+  it("编辑保存：onSave 带原卡名 + 高级字段原样透传（不剥离）+ apiKey 遮挡输入", () => {
+    const saved: Array<[ProviderCardDto, string | null]> = [];
+    const advanced: ProviderCardDto = {
+      ...CARD,
+      maxTokensField: "max_completion_tokens",
+      temperatureSuppressed: true,
+      capabilities: { supportsVision: true },
+      fallback: { ...CARD, name: "backup" },
+    };
     render(
       <ProviderCardForm
-        onSave={(c) => saved.push(c)}
+        card={advanced}
+        onSave={(c, orig) => saved.push([c, orig])}
+        onCancel={() => {}}
+        onTest={async () => ({ ok: true, message: "" })}
+      />,
+    );
+    // apiKey 输入遮挡（屏幕共享泄露面）
+    expect((screen.getByLabelText("API Key") as HTMLInputElement).type).toBe("password");
+    fireEvent.change(screen.getByLabelText("模型"), { target: { value: "gpt-5" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(saved).toHaveLength(1);
+    const [card, orig] = saved[0];
+    expect(orig).toBe("main"); // 原名回传（宿主按原名替换）
+    expect(card.model).toBe("gpt-5");
+    expect(card.maxTokensField).toBe("max_completion_tokens");
+    expect(card.temperatureSuppressed).toBe(true);
+    expect(card.capabilities).toEqual({ supportsVision: true });
+    expect(card.fallback).toMatchObject({ name: "backup" });
+  });
+
+  it("非法输入 → 错误文案 + 不 onSave", () => {
+    const saved: Array<[ProviderCardDto, string | null]> = [];
+    render(
+      <ProviderCardForm
+        onSave={(c, orig) => saved.push([c, orig])}
         onCancel={() => {}}
         onTest={async () => ({ ok: true, message: "" })}
       />,

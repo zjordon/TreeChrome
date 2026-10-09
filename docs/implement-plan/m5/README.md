@@ -273,3 +273,44 @@ agent 的 navigate 自行跳起始页（任务文本含「起始页: URL」时�
   累计：2 轮，意见 17 / 采纳 17 / 驳回 0 / stale 0（P3 全部顺手实施，backlog 空）；
   extension 60→70 例、core 1340→1341 例；分支 2 提交（c79bc80 + 86bf9d4）待授权合并。
 
+### 段 E `feat/m5-ui`
+
+- **轮 1（2026-10-09，diffBase=main，34 文件，17m41s）**：意见 13（high×4/medium×8/
+  low×1）→ **采纳 13**（P2 实施 12 + low 顺手 1），驳回 0 / stale 0。
+  - **[10] tool_result 三值语义反转（high）**：core views.ts:59-64 核实——success=true
+    仅 done 动作、常规成功恒 null（构造器强制），`success === true` 判 ok 会把全部
+    常规成功渲染成红字失败。修复：ok = error 非空为败（act.ts 同款判据）∨
+    success===false（denied/submit 拒绝）；畸形 data 无 error 按成功（语义一致）。
+  - **[6][13] 时间线跨 run 吞事件 / 重连销毁历史（high×2，同根两症状）**：
+    journal.begin 重置 seq 且不广播 → 同面板第二 run 事件被 seq 去重全部判为旧 run
+    补发重复；journal.ack 使 SW 快照只带未 ack 尾巴 → hello 整表替换会清掉 UI 唯一
+    事件副本（SW 死亡重连后 40 条历史消失）。修复：run-manager begin 后广播起始
+    快照；reducer journal-snapshot 按 runId 换 run 重建/同 run 只更新视图；hello
+    同 run 合尾巴（seq 去重）、换 run 重建。
+  - **[9] 编辑剥离高级字段（high）**：buildCard 只回填 7 个基础字段——
+    maxTokensField/temperatureSuppressed/capabilities/fallback 等 8 个可选字段
+    （core ProviderConfig 全量核实）在编辑保存时静默丢失（o 系模型丢
+    maxTokensField 即端点 400）。修复：advancedFieldsOf 编辑透传。
+  - **[11] 重开面板补发不可达（medium）**：全断即 bridge.cancelAll deny——重开时
+    pendingCards 已空，补发链路只剩多副本语义。修复：port-server 全断收口延迟
+    RECONNECT_GRACE_MS=2000 宽限窗（≥ PortClient 首轮退避 1s+SW 冷启动余量），
+    窗内重连撤销待收口；fail-closed 边界不变（只推迟时点）。
+  - **[2][3] 编辑改名残留/撞名覆盖（medium×2）**：onSave 增第二参 originalName
+    （宿主按原名替换）；options-app mutateCard 撞名守卫（占用即报错）+ 改名时
+    activeCard/附属卡指针重定向。
+  - **[12] revoke 读-改-写竞态（medium）**：两条 revoke 在 await 点交错时后写者复活
+    已撤销授权。修复：createMutationQueue promise 链串行化（前序失败不堵队）。
+  - **[1] 倒计时冻结（medium）**：now 缺省内联箭头每渲染新引用 → interval 随父渲染
+    重建、事件密集时永不 tick。修复：模块级 wallClock 稳定引用。
+  - **[7][8] options 面（medium×2）**：maxSteps 清空失效（条件展开 {} 保留旧值——
+    显式置 undefined 恢复缺省 + ≥1 校验）；refresh/saveSettings/revoke 裸 await 的
+    未处理 rejection 与卡死读态（try/catch + ok:false 错误呈现）。
+  - **[4][5] low 顺手**：apiKey 输入 type=password 遮挡（屏幕共享泄露面——明文
+    存储已另行裁决，展示层独立）；submit 字段行 key 加序号（probe 兜底链可产出
+    同名字段——React 重复 key 错配；biome noArrayIndexKey 按实证抑制）。
+  测试：console-ui 36→37（三值/高级透传/原名双参/遮挡）；extension 81→85（hello
+  尾巴合并/快照换 run 重建/宽限窗×2/mutation-queue/起始快照广播）。
+  全仓 1795 绿；门禁 exit 0；wxt build 后双 smoke 复跑 PASS（ui + sw-runtime）。
+  本轮 P1/P2：12（已实施）｜P3：1（顺手实施，backlog 空）。
+
+

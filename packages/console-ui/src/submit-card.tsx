@@ -25,8 +25,12 @@ export function SubmitCard({ req, fields, onConfirm, onCancel }: SubmitCardProps
       </p>
       {fields.length > 0 ? (
         <Table head={["字段", "值"]}>
-          {fields.map((f) => (
-            <tr key={f.name}>
+          {/* key 加序号（评审轮 1 [5]）：probe 兜底链可产出同名字段（无 name/id 的
+           *  变更输入均兜底为标签名）——纯 name key 会触发 React 重复子警告/错配；
+           *  字段行无稳定唯一 id 且单卡载荷不可变，序号复合 key 安全 */}
+          {fields.map((f, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: 见上——name 复合序号是防重复 key 的务实解
+            <tr key={`${f.name}#${i}`}>
               <td>{f.name}</td>
               <td>{clipValue(f.value)}</td>
             </tr>
