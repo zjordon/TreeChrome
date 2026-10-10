@@ -1,6 +1,6 @@
 {
   "name": "@tw/cdp-chrome",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "chrome.debugger CDP transport（扩展宿主；架构 §4 CdpTransport 双实现的扩展侧）。实现 core CdpTransport 契约；chrome.debugger 经 DebuggerApi 注入接口收口（Node 单测可 mock）",

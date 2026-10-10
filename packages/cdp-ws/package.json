@@ -1,6 +1,6 @@
 {
   "name": "@tw/cdp-ws",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Node 宿主 WebSocket CDP transport（Python cdp-use 的 TS 对等物）。纯 TS：禁 chrome.* / process.*，零运行时依赖（Node ≥22 原生 WebSocket）",

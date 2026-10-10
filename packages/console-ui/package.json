@@ -1,6 +1,6 @@
 {
   "name": "@tw/console-ui",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "React 控制台组件包（架构 §2/§8：RunView/步骤流/控制条/权限卡/设置件）。禁 chrome.*（biome 强制）——chrome 交互留在宿主粘合层，扩展侧边栏与 M6 web-console 共用",

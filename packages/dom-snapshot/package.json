@@ -1,6 +1,6 @@
 {
   "name": "@tw/dom-snapshot",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "CDP 三源融合 DOM 快照（移植自 dom-snapshot Python 库）。纯 TS：禁 chrome.* / process.*，仅依赖 Web 标准全局（TextEncoder）",

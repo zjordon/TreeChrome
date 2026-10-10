@@ -1,6 +1,6 @@
 {
   "name": "extension",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "TreeChrome 扩展宿主（WXT：SW 壳 + sidepanel + options + run journal；架构 §2 apps/extension）",
