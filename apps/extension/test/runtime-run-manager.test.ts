@@ -434,3 +434,60 @@ describe("RunManager 状态机", () => {
     m.stub.finish(new AgentHistoryList());
   });
 });
+
+describe("start 绑定可驱动页（段 F 验收：chrome:// 附着被拒）", () => {
+  it("currentWindow 活动页是 chrome:// → 跳过取同查询中的 http 页；url 缺失不判形态（旧行为）", async () => {
+    const m1 = makeDeps();
+    (m1.manager as unknown as { deps: { tabsQuery: unknown } }).deps.tabsQuery = {
+      query: async () => [
+        { id: 11, url: "chrome://extensions" },
+        { id: 22, url: "https://www.google.com" },
+      ],
+    };
+    expect(await m1.manager.control("start", "t")).toEqual({ ok: true });
+    expect(m1.journal.current()).toMatchObject({ tabId: 22 });
+    m1.stub.finish(new AgentHistoryList());
+
+    const m2 = makeDeps(); // url 不可读（无 tabs 权限/注入形态）→ 首个即可
+    (m2.manager as unknown as { deps: { tabsQuery: unknown } }).deps.tabsQuery = {
+      query: async () => [{ id: 33 }],
+    };
+    expect(await m2.manager.control("start", "t")).toEqual({ ok: true });
+    expect(m2.journal.current()).toMatchObject({ tabId: 33 });
+    m2.stub.finish(new AgentHistoryList());
+  });
+
+  it("全受限 → 用户可行动文案；无任何标签页 → 原文案", async () => {
+    const m1 = makeDeps();
+    (m1.manager as unknown as { deps: { tabsQuery: unknown } }).deps.tabsQuery = {
+      query: async () => [{ id: 5, url: "chrome://newtab" }],
+    };
+    expect(await m1.manager.control("start", "t")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("浏览器内部页面"),
+    });
+
+    const m2 = makeDeps({ tabId: undefined });
+    expect(await m2.manager.control("start", "t")).toMatchObject({
+      ok: false,
+      error: "找不到活动标签页",
+    });
+  });
+
+  it("drive 附着失败（Chrome 原生 chrome:// 拒绝）→ lastError 换用户可行动文案", async () => {
+    const attach = makeDeps({
+      agent: {
+        run: () => Promise.reject(new Error("Cannot access a chrome:// URL")),
+        stop: () => void 0,
+        pause: () => void 0,
+        resume: () => void 0,
+      },
+    });
+    await attach.manager.control("start", "t");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(attach.journal.current()).toMatchObject({
+      status: "error",
+      lastError: "无法驱动浏览器内部页面（chrome://）——请切换到普通网页标签页后重试",
+    });
+  });
+});

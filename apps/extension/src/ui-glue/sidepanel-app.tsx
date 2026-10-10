@@ -132,6 +132,7 @@ export function SidepanelApp({ connect }: SidepanelAppProps) {
             finalResult={snap.finalResult}
             isSuccessful={snap.isSuccessful}
             attachments={snap.attachments}
+            lastError={snap.lastError}
           />
         ) : null}
       </main>

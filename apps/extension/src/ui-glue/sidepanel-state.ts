@@ -50,12 +50,18 @@ export function ingestSidepanel(
 ): { state: SidepanelState; ack: number | null } {
   switch (action.kind) {
     case "hello": {
+      // SW 空闲被杀后重连：hello 无活 run（null）——保留上一 run 的终态视图
+      //（段 F 验收：整表重建为空 = 「任务成功后一段时间消息自动清空」；新 run
+      // 的重置点是 begin 后的 journal-snapshot 起始快照，不是 SW 唤醒）
+      const snap = action.snapshot;
+      if (snap === null) {
+        return { state, ack: null };
+      }
       // journal.ack 已把渲染过的事件从 SW 快照释放——hello 只带未 ack 尾巴，
       // 不得整表替换本地时间线（重连会销毁唯一副本，评审轮 1 [13]）；仅换 run
       // 才全量重建
-      const snap = action.snapshot;
-      const sameRun = snap !== null && state.snapshot?.runId === snap.runId;
-      const tail = snap?.events ?? [];
+      const sameRun = state.snapshot?.runId === snap.runId;
+      const tail = snap.events;
       return {
         state: {
           ...state,
@@ -63,7 +69,7 @@ export function ingestSidepanel(
           events: sameRun
             ? [...state.events, ...tail.filter((t) => !state.events.some((e) => e.seq === t.seq))]
             : tail,
-          attachments: snap?.attachments ?? [],
+          attachments: snap.attachments,
         },
         ack: null,
       };

@@ -326,3 +326,44 @@ describe("createMutationQueue（revoke 读-改-写串行化，评审轮 1 [12]�
     ]);
   });
 });
+
+describe("hello 空载荷保留终态视图（段 F 验收：SW 休眠重连不清空）", () => {
+  const snapAt = (seq: number, runId = "r1"): never =>
+    ({
+      runId,
+      tabId: 1,
+      status: "done",
+      seq,
+      ackedSeq: 0,
+      discardedBeforeSeq: 0,
+      events: [],
+      task: "t",
+      startedAt: 1,
+      endedAt: 9,
+      finalResult: "完成",
+      isDone: true,
+      isSuccessful: true,
+      stepCount: 1,
+      lastError: null,
+      attachments: [],
+    }) as never;
+
+  it("run 终态后 SW 被杀重连（hello null）——事件/快照/附件全保留", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "hello",
+      runId: "r1",
+      snapshot: {
+        ...snapAt(2),
+        events: [{ seq: 1, type: "session_end", step: 1, ts: 1, data: { summary: "完成" } }],
+        attachments: [],
+      },
+    }).state;
+    const before = state;
+    state = ingestSidepanel(state, { kind: "hello", runId: null, snapshot: null }).state;
+    expect(state).toEqual(before); // 一字不改
+    // 新 run 起跑：起始快照（换 runId）才是重置点
+    state = ingestSidepanel(state, { kind: "journal-snapshot", snapshot: snapAt(0, "r2") }).state;
+    expect(state.events).toEqual([]);
+    expect(state.snapshot?.runId).toBe("r2");
+  });
+});

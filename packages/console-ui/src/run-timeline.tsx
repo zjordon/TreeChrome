@@ -144,6 +144,27 @@ function EventLine({ event }: { event: JournalEvent }) {
   }
 }
 
+/**
+ * 连续重复 skill_active 的展示去重（段 F 验收反馈：未命中站点每步一行是噪音）。
+ * 数据层不动（每步一条是 Python 同款可观测契约——host 随导航变化须逐步解析），
+ * 仅显示层折叠：与上一条 skill_active 同 host 且同命中态 → 不渲染。
+ */
+export function repeatedSkillSeqs(events: JournalEvent[]): Set<number> {
+  const hidden = new Set<number>();
+  let prev: { host: string | null; loaded: boolean } | null = null;
+  for (const e of events) {
+    if (e.type !== "skill_active") continue;
+    const d = isRecord(e.data) ? e.data : {};
+    const host = str(d.host);
+    const loaded = d.skillLoaded === true;
+    if (prev !== null && prev.host === host && prev.loaded === loaded) {
+      hidden.add(e.seq);
+    }
+    prev = { host, loaded };
+  }
+  return hidden;
+}
+
 export interface RunTimelineProps {
   events: JournalEvent[];
   /** 环淘汰提示（seq 之前有被丢弃事件时 UI 留痕） */
@@ -156,6 +177,7 @@ export function RunTimeline({ events, discardedBeforeSeq = 0, stepCount }: RunTi
     return <p className="tc-ev-muted">（尚无事件）</p>;
   }
   const groups = groupByStep(events);
+  const hidden = repeatedSkillSeqs(events);
   return (
     <div className="tc-timeline" data-testid="run-timeline">
       {discardedBeforeSeq > 0 ? (
@@ -168,9 +190,7 @@ export function RunTimeline({ events, discardedBeforeSeq = 0, stepCount }: RunTi
             {stepCount !== undefined ? ` / 共 ${stepCount} 步` : ""}
           </summary>
           <div className="tc-timeline-body">
-            {g.events.map((e) => (
-              <EventLine key={e.seq} event={e} />
-            ))}
+            {g.events.map((e) => (hidden.has(e.seq) ? null : <EventLine key={e.seq} event={e} />))}
           </div>
         </details>
       ))}

@@ -59,3 +59,25 @@ describe("FinalResult", () => {
     expect(screen.getByText(/v\.mp4（2\.5 MB）/)).toBeDefined();
   });
 });
+
+describe("FinalResult.lastError（段 F 验收反馈：错误原因可见性）", () => {
+  it("error/interrupted 终态：lastError 红字渲染 + 失败徽章（无 finalResult 也渲染）", () => {
+    const { container } = render(
+      <FinalResult
+        finalResult={null}
+        isSuccessful={null}
+        attachments={[]}
+        lastError="LLM 401 unauthorized"
+      />,
+    );
+    expect(container.querySelector("[data-testid='final-result']")).not.toBeNull();
+    expect(screen.getByText("✗ 失败原因")).toBeDefined();
+    expect(screen.getByText("LLM 401 unauthorized").className).toContain("tc-ev-err");
+  });
+
+  it("done 终态无 lastError：维持原三态渲染不受影响", () => {
+    render(<FinalResult finalResult="ok" isSuccessful attachments={[]} lastError={null} />);
+    expect(screen.getByText("✓ 成功")).toBeDefined();
+    expect(screen.queryByText("✗ 失败原因")).toBeNull();
+  });
+});

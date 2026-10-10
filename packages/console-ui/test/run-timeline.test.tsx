@@ -3,7 +3,7 @@
 import { render, screen } from "@testing-library/react";
 import type { JournalEvent } from "@tw/protocol";
 import { describe, expect, it } from "vitest";
-import { groupByStep, RunTimeline } from "../src/index.js";
+import { groupByStep, RunTimeline, repeatedSkillSeqs } from "../src/index.js";
 
 /** JournalEvent 构造：step 并入 data（压缩投影形态——顶层无 step 字段）；畸形 data 原样透传 */
 const ev = (
@@ -125,5 +125,33 @@ describe("RunTimeline", () => {
     // 无 error 且无 success=false → 按成功渲染（core 判据：失败 ⇔ error 非空）
     expect(screen.getByText("✓ 动作成功")).toBeDefined();
     expect(screen.getByText("unknown_future_type")).toBeDefined();
+  });
+});
+
+describe("skill_active 展示去重（段 F 验收：未命中每步一行是噪音）", () => {
+  it("同 host 同命中态连续 → 只渲染首条；host 变化/命中态翻转 → 重新显示", () => {
+    render(
+      <RunTimeline
+        events={[
+          ev(1, "step_start", 1, {}),
+          ev(2, "skill_active", 1, { host: "www.google.com", skillLoaded: false }),
+          ev(3, "tool_call", 1, { actionName: "click" }),
+          ev(4, "skill_active", 1, { host: "www.google.com", skillLoaded: false }),
+          ev(5, "skill_active", 1, { host: "www.google.com", skillLoaded: false }),
+          ev(6, "skill_active", 1, { host: "douyin.com", skillLoaded: true }),
+          ev(7, "skill_active", 1, { host: "douyin.com", skillLoaded: true }),
+        ]}
+      />,
+    );
+    expect(screen.getAllByText(/✚ skill www\.google\.com 未命中/)).toHaveLength(1);
+    expect(screen.getAllByText(/✚ skill douyin\.com 命中/)).toHaveLength(1);
+    // 数据层 helper 语义：隐藏的是 4、5、7
+    expect(
+      repeatedSkillSeqs([
+        ev(2, "skill_active", 1, { host: "a", skillLoaded: false }),
+        ev(3, "skill_active", 1, { host: "a", skillLoaded: false }),
+        ev(4, "skill_active", 1, { host: "a", skillLoaded: true }),
+      ]),
+    ).toEqual(new Set([3]));
   });
 });

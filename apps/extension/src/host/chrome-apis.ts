@@ -39,13 +39,13 @@ export interface TabsOnRemovedApi {
   removeListener(callback: (tabId: number) => void): void;
 }
 
-/** chrome.tabs.query 同形（start 绑定活动 tab） */
+/** chrome.tabs.query 同形（start 绑定活动 tab；url 需 "tabs" 权限——manifest 已声明） */
 export interface TabsQueryApi {
   query(info: {
     active: boolean;
     currentWindow?: boolean;
     lastFocusedWindow?: boolean;
-  }): Promise<Array<{ id: number | undefined }>>;
+  }): Promise<Array<{ id: number | undefined; url?: string }>>;
 }
 
 /** chrome.runtime.onInstalled/onMessage 同形（message-router 消费） */

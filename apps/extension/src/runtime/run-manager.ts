@@ -174,20 +174,34 @@ export class RunManager {
       return { ok: false, error: "任务不能为空" };
     }
     let tabId: number | undefined;
+    let sawRestricted = false;
     try {
       // headless/SW 语境 currentWindow 可能为空（无聚焦窗口）——降级链：
-      // currentWindow → lastFocusedWindow → 任意窗口的 active tab
+      // currentWindow → lastFocusedWindow → 任意窗口的 active tab；每级先取可
+      // 驱动页（http/https）——chrome:// 等内部页面 chrome.debugger 拒绝附着
+      // （段 F 验收：在 chrome://extensions 重载扩展后直接开跑即
+      // "Cannot access a chrome:// URL"）。url 不可读（权限缺失/注入测试）时
+      // 保持原行为（不判形态）
       let tabs = await this.deps.tabsQuery.query({ active: true, currentWindow: true });
-      if (tabs.length === 0) {
+      let pick = drivableOf(tabs);
+      if (pick === undefined) {
         tabs = await this.deps.tabsQuery.query({ active: true, lastFocusedWindow: true });
+        pick = drivableOf(tabs);
       }
-      if (tabs.length === 0) tabs = await this.deps.tabsQuery.query({ active: true });
-      tabId = tabs[0]?.id;
+      if (pick === undefined) tabs = await this.deps.tabsQuery.query({ active: true });
+      sawRestricted = tabs.some((t) => t.url !== undefined && !isDrivableUrl(t.url));
+      tabId = pick?.id ?? drivableOf(tabs)?.id;
     } catch {
       tabId = undefined;
     }
     if (tabId === undefined) {
-      return { ok: false, error: "找不到活动标签页" };
+      return sawRestricted
+        ? {
+            ok: false,
+            error:
+              "当前活动标签页是浏览器内部页面（chrome:// 等）无法被驱动——请切换到普通网页标签页后再开始",
+          }
+        : { ok: false, error: "找不到活动标签页" };
     }
     const settings = await this.deps.settingsStore.load();
     const runId = this.deps.newRunId?.() ?? `run_${Date.now().toString(16)}`;
@@ -283,9 +297,13 @@ export class RunManager {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const interrupted = active.interruptReason !== null || isConnectionLost(e);
+      // Chrome 原生拒绝附着内部页面——换用户可行动文案（段 F 验收反馈）
+      const userFacing = message.includes("Cannot access a chrome:// URL")
+        ? "无法驱动浏览器内部页面（chrome://）——请切换到普通网页标签页后重试"
+        : message;
       journal.setStatus(interrupted ? "interrupted" : "error", {
         endedAt: this.now(),
-        lastError: active.interruptReason ?? message,
+        lastError: active.interruptReason ?? userFacing,
       });
     } finally {
       // 兜底收口（agent 异常路径可能残留未决确认——deny 后 promise 才不泄漏）
@@ -314,6 +332,13 @@ export class RunManager {
       const snapshot = journal.current();
       if (snapshot !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot });
       this.deps.log?.(`run ended: ${active.runId} (${journal.status ?? "?"})`);
+      // 失败原因进 SW 控制台（段 F 验收反馈：lastError 原先只在 storage 快照里）
+      if (
+        journal.status === "error" ||
+        (journal.status === "interrupted" && snapshot?.lastError !== null)
+      ) {
+        this.deps.log?.(`run failed: ${snapshot?.lastError ?? "unknown"}`);
+      }
     }
   }
 
@@ -340,6 +365,18 @@ export class RunManager {
     const updated = this.deps.journal.current();
     if (updated !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot: updated });
   }
+}
+
+/** 可驱动 URL 判定：http/https（chrome://、edge://、about:、devtools:// 等
+ *  内部页面 chrome.debugger 拒绝附着）；url 未知（undefined）不判形态 */
+function isDrivableUrl(url: string): boolean {
+  return url.startsWith("http://") || url.startsWith("https://");
+}
+
+function drivableOf(
+  tabs: Array<{ id: number | undefined; url?: string }>,
+): { id: number | undefined; url?: string } | undefined {
+  return tabs.find((t) => t.url === undefined || isDrivableUrl(t.url));
 }
 
 function isConnectionLost(e: unknown): boolean {
