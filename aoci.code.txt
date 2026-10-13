@@ -1,0 +1,879 @@
+#AOCI-CODE-VOLUME: 1
+
+===D:/dev/git/z_jordon/TreeChrome/===
+.gitattributes[FG5T]: F:声明文本检出恒 LF——AOCI 基线锚定原始字节，Windows autocrlf 重写会致全树 stale | R:- | A:- | S:-
+.gitignore[FG5T]: F:Git 忽略清单：依赖/构建/覆盖率产物、.env 密钥、golden 抓取临时目录、WXT 生成物、扩展生成资产与 AOCI 宿主配置 | R:- | A:- | S:aoci.txt/aoci.meta.txt/aoci.code.txt 与 AGENTS.md 不得加入忽略——被忽略的认知资产会被 AOCI scan 静默跳过
+AGENTS.md[SG9M]: F:项目规范基准：架构铁律、设计模式映射、代码风格、测试与验收门禁、目录约定、新功能/评审工作流与 Git 提交规则 | R:code:docs/architecture.md,code:scripts/gate.mjs | A:- | S:与 docs/architecture.md 冲突时以后者为准；核心包 src/ 禁 chrome.*/process.*；element_tree_text 等输出格式是对 LLM prompt 的契约须逐字节一致
+CHANGELOG.md[SV4T]: F:Keep a Changelog 风格变更记录：v0.1.0 首版全量清单（工程基座/dom-snapshot/LLM 客户端/agent 主体/扩展 M5） | R:- | A:- | S:版本号格式 [X.Y.Z] 不带 v（git tag 才带 v）
+CLAUDE.md[SG3T]: F:Claude Code 项目指令入口，单行 @AGENTS.md 引用——不重复维护规范 | R:code:AGENTS.md | A:- | S:-
+README.md[SG6T]: F:仓库总览：平台无关核心包+多宿主 monorepo 设计原则、快速开始命令与包布局状态表 | R:code:docs/architecture.md | A:- | S:布局表状态标记滞后于实际进度（如 core 已实现仍标规划）——权威以 docs/architecture.md 为准
+biome.json[FG8S]: F:Biome lint/format 配置：2 空格/双引号/分号/行宽 100/trailingCommas all；核心四包 overrides 禁 chrome/node:process/process 全局 | R:code:scripts/gate.mjs,code:AGENTS.md | A:- | S:overrides 按路径生效（dom-snapshot|core|cdp-ws|console-ui 的 src/）——AST 级权威，gate.mjs 正则只是即时反馈；测试文件关 noNonNullAssertion
+package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、prepare 装 git hooks、test 先跑 gate 测试再递归各包 | R:code:scripts/gate.mjs,code:.githooks/pre-commit | A:- | S:根版本号即发布版本（CHANGELOG 不带 v/git tag 带 v）
+pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
+pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
+tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/.githooks/===
+pre-commit[OQ7T]: F:版本化 git pre-commit 钩子：校验 node≥22 后 exec scripts/gate.mjs pre-commit，人工提交与 agent 提交走同一道门 | R:code:scripts/gate.mjs | A:- | S:启用需每克隆一次 git config core.hooksPath .githooks（pnpm install 的 prepare 自动执行）
+
+===D:/dev/git/z_jordon/TreeChrome/.opencodereview/===
+rule.json[FQ6T]: F:open-code-review 扫描规则：include 真实代码、exclude docs/运行时产物，全局严重度边界——只报有失效场景的必改问题 | R:- | A:- | S:改顶层目录结构时须同步维护 include/exclude，否则新目录逃逸评审扫描
+
+===D:/dev/git/z_jordon/TreeChrome/.zcode/commands/===
+finish-issue.md[XW6S]: F:/finish-issue 斜杠命令：issue 四步收尾（总结评论→建 PR→squash 合并→删分支），先展示计划等确认再执行写操作 | R:- | A:- | S:中文标题/body 必须走 gh api --input UTF-8 JSON 文件（PowerShell 传参乱码）；commit message 用 git commit -F UTF-8 文件
+release.md[XV6T]: F:/release 斜杠命令：按提交前缀判定 SemVer→typecheck/test 全绿→changelog 草稿→确认后 bump/tag/push/GitHub Release | R:- | A:- | S:CHANGELOG 版本号不带 v、git tag 带 v 且须显式 push；release notes 走 --notes-file UTF-8 文件
+review-loop.md[XQ7S]: F:/review-loop 评审-修复自动循环：ocr 后台评审→dump→P1/P2 实施、P3 backlog→修复提交→增量 diff 续轮，连续两轮无 P1/P2 收敛 | R:code:scripts/review-dump.mjs,code:.opencodereview/rule.json | A:- | S:评审 JSON 含大块 thinking 禁止直接 Read（先 review-dump 转 dump）；收敛判据是严重度门控，零意见不是可达出口
+
+===D:/dev/git/z_jordon/TreeChrome/.zcode/===
+config.json[FQ6T]: F:ZCode workspace hooks 配置：PreToolUse 拦 git commit 走 gate.mjs hook-commit；PostToolUse 对 Edit/Write 跑架构边界检查 | R:code:scripts/gate.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/e2e/===
+lib-harness.mjs[TQ7S]: F:e2e 公共 harness：零依赖驱动 headless chromium+未打包扩展；SW 唤醒链（profile 读扩展 id→组件 SW 开页→页面 sendMessage 唤醒）与 CDP 连接封装 | R:- | A:launchChrome, connectOurServiceWorker, ensureSidepanelPage, readExtensionIdFromProfile, connect, listTargets | S:/json/list 混组件扩展 SW 须按 id 前缀挑绝不取首个；CDP 连接本身吊住 SW 不休眠；sendMessage 不能从 SW 发给自身
+probe-debugger.mjs[TN4S]: F:B1 真机探针：在扩展 SW 实测 chrome.debugger 握手/路由语义（P1-P6 问题面），输出 JSON 供原生直通/拦截合成定案 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:-
+probe-debugger2.mjs[TN4S]: F:B1 探针 v2：收口 v1 悬念——getTargets 全键、createTarget 真 targetId 附着、Debuggee 路由形状矩阵与子会话事件流 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:-
+smoke-cdp-chrome.mjs[TN7S]: F:B4 跨通道对拍 smoke：同一 headless chrome 活页上 chrome.debugger 与 cdp-ws 通道各跑 BrowserSession get_state，断言 element_tree_text 逐字节一致 | R:code:apps/extension/e2e/lib-harness.mjs,code:packages/node-host/boot.mjs | A:- | S:前置 npx wxt build；驱动上下文必须是扩展页面（sendMessage 不回投发送者）
+smoke-sw-runtime.mjs[TB7M]: F:D5 SW 运行时全链 smoke：mock LLM 剧本三步（navigate/click/done）→权限卡 Port 代答→journal 落盘终态+点击副作用断言 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:click 索引从请求状态文本解析（盲填固定 index 必错）；mock 解析失败回 500 落 error 终态（回调 throw 崩进程残留端口）
+smoke-ui.mjs[TU6M]: F:E5 真 UI smoke：CDP DOM 驱动真侧边栏页面——输入任务→开始→权限卡 DOM 代答→时间线→done 终态与 FinalResult 可见 | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/e2e/smoke-sw-runtime.mjs | A:- | S:React 受控组件输入须 native setter + input 事件
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/===
+background.ts[EW9M]: F:MV3 SW 壳：消息路由先注册再 boot 装配全套件（settings/grant/skills/attachments/journal/keepalive/run-manager/port-server）；diag smoke 通道、options 请求面、SW 被杀恢复 | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/message-router.ts,code:apps/extension/src/runtime/port-server.ts,code:apps/extension/src/runtime/journal.ts,code:apps/extension/src/host/skill-store.ts,code:apps/extension/src/host/settings-store.ts,code:apps/extension/src/host/chrome-apis.ts | A:defineBackground, boot, handleOptionsRequest, runSmokeAttach, recoverInterruptedRuns, refreshBuiltins | S:MV3 纪律：全部事件监听器须在首个 await 前同步注册（晚注册丢事件无自愈）；openSkillDb 是 boot 唯一 await 点置于尾部；IDB 打不开降级内存空库不拖垮 run
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/options/===
+App.tsx[EU5T]: F:options 页粘合层：chrome 交互只在此——sendMessage 单发请求工厂注入 OptionsApp（settings 读写全走 SW 单一写者） | R:code:apps/extension/src/ui-glue/options-app.tsx | A:App, request | S:request 须模块级稳定引用——内联箭头每渲染重建，refresh 依赖其身份
+index.html[EU3T]: F:options 页 HTML 壳（zh-CN，#root 挂载点+main.tsx 模块入口） | R:code:apps/extension/entrypoints/options/main.tsx | A:- | S:-
+main.tsx[EU4T]: F:options 页 React 挂载入口（StrictMode+console-ui theme.css） | R:code:apps/extension/entrypoints/options/App.tsx | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/sidepanel/===
+App.tsx[EU5T]: F:侧边栏粘合层：chrome 交互只在此——runtime.connect 工厂注入 SidepanelApp（组件与状态机零 chrome 可单测） | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx,code:apps/extension/src/ui-glue/port-client.ts | A:App, connect | S:-
+index.html[EU3T]: F:侧边栏页 HTML 壳（zh-CN，#root+main.tsx 入口） | R:code:apps/extension/entrypoints/sidepanel/main.tsx | A:- | S:-
+main.tsx[EU4T]: F:侧边栏 React 挂载入口（theme.css+sidepanel.css 页面 reset） | R:code:apps/extension/entrypoints/sidepanel/App.tsx | A:- | S:-
+sidepanel.css[FU2T]: F:侧边栏页面级样式 reset（html/body/#root 满高；组件样式在 console-ui theme.css） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/===
+package.json[FE6T]: F:扩展宿主包定义：WXT 构建、workspace 依赖（core/protocol/cdp-chrome/console-ui）与 e2e 脚本面（smoke/probe/runtime/ui） | R:- | A:- | S:typecheck 先 wxt prepare 生成 .wxt 类型再 tsc --noEmit
+tsconfig.json[FG3T]: F:扩展 TS 配置：extends 基座+.wxt 生成配置，jsx react-jsx，include entrypoints/src | R:- | A:- | S:-
+vitest.config.ts[FQ5T]: F:扩展单测配置：runtime 全件 fake chrome 注入单测；覆盖率 85% 阈值，排除 chrome-apis 真绑定与 *-app.tsx 组态薄层 | R:- | A:- | S:ui-glue *-app.tsx 组态薄层不入覆盖率（真机 smoke 覆盖）；纯适配器 port-client/sidepanel-state 全测
+wxt.config.ts[FE7T]: F:WXT 配置：React 插件+关 auto-import+manifest 权限面（sidePanel/storage/tabs/debugger/downloads/alarms+all_urls）；buildStart 钩子跑 embed-skills | R:code:apps/extension/scripts/embed-skills.mjs | A:- | S:resolve.alias 显式收口 wxt/browser——core 进 bundle 后 WXT 虚拟模块解析在 pnpm 严格隔离下找不到 wxt（rollup 归因是虚警）
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/scripts/===
+embed-skills.mjs[OV6S]: F:构建期打包脚本：domain-skills/ 三套 185 文件→public/domain-skills.json 内嵌清单；--check 校验产物与源同步（CI/门禁可挂） | R:code:apps/extension/src/host/skill-store.ts | A:- | S:产物 domain-skills.json 在 .gitignore（生成物）；--check 比对两侧剥除 generatedAt（生成时刻非内容函数）
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/src/host/===
+attachment-registry.ts[MD6S]: F:SW 内存附件注册表：base64→bytes 入表（单件 100MB/总量 200MB 硬限）、attachment:<id> 引用解析、run 结束清表 | R:code:apps/extension/src/runtime/assemble.ts,code:apps/extension/src/runtime/run-manager.ts | A:AttachmentRegistry, base64ToBytes, MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES | S:SW 被杀即丢字节（有意不持久化——chrome.storage 塞大视频不合理）；journal 只留元信息，恢复呈现时 UI 提示重选
+chrome-apis.ts[IG8S]: F:chrome API 注入面：storage/alarms/runtime/tabs 依赖收口为窄接口+globalThis.chrome 结构化收窄真绑定（单测注 fake 即可全覆盖） | R:code:apps/extension/entrypoints/background.ts,code:apps/extension/src/host/settings-store.ts,code:apps/extension/src/host/grant-store.ts,code:apps/extension/src/host/keepalive.ts,code:apps/extension/src/runtime/port-server.ts,code:apps/extension/src/runtime/run-manager.ts | A:chromeStorageLocal, chromeAlarms, chromeOnConnect, chromeTabsQuery, chromeTabsOnRemoved, chromeOnInstalled | S:chrome.tabs 须返回原生对象不解构方法（receiver 检查，裸方法换 this 抛 Illegal invocation）；src/host/ 与 entrypoints/ 是扩展内唯一合法 chrome.* 区域
+debugger-api.ts[IN6T]: F:cdp-chrome 工厂绑定：对绑定 tabId 构造 ChromeDebuggerTransport 工厂（run 装配消费；SW 内存态无复用价值） | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/assemble.ts | A:makeDebuggerTransportFactory, DebuggerTransportDeps | S:-
+grant-store.ts[PI6T]: F:GrantStore 的 chrome.storage 实现：tc_permissions 键直存 always 授权数组（once 在 PolicyGate 内存不落盘），读侧 isGrantLike 过滤 | R:code:apps/extension/src/host/chrome-apis.ts,code:apps/extension/entrypoints/background.ts | A:ChromeGrantStore, PERMISSIONS_KEY | S:存储不可读时抛——由 PolicyGate.loadAlways 的 try/catch 按空授权降级
+keepalive.ts[RR5T]: F:SW 存活兜底：run 启动创建 30s 周期 alarms 唤醒、结束清除；主通道是 debugger 事件流持续重置 idle timer | R:code:apps/extension/src/runtime/run-manager.ts | A:KeepaliveController, KEEPALIVE_ALARM, KEEPALIVE_PERIOD_MINUTES | S:-
+opfs-fs.ts[PG7S]: F:OPFS FileSystemProvider：navigator.storage.getDirectory() 根为虚拟工作区，读写/追加（keepExistingData+seek）/stat/readHead 全链，路径 OPFS 名空间归一 | R:code:apps/extension/src/runtime/assemble.ts | A:OpfsFs, DirHandleLike, FileHandleLike, WritableLike | S:readTextFile 严格 utf-8（fatal decode；File.text() 是 lenient 不用）；readAttachment 不实现——附件走注册表装饰
+settings-store.ts[PC8S]: F:扩展配置存取：tc_settings 键⇄ExtensionSettings（providerCards/activeCard/附属卡/sensitiveData/agent 覆盖），宽松收窄坏形态回缺省不抛 | R:code:apps/extension/src/runtime/assemble.ts,code:apps/extension/entrypoints/background.ts,code:apps/extension/src/host/chrome-apis.ts | A:SettingsStore, parseExtensionSettings, findCard, sensitiveSpecsOf, ExtensionSettings | S:apiKey 明文存 local（扩展边界内不做 OS 级加密，登记偏离）；热读面——每次 start 前 load，运行中不换卡（run 装配一次性）
+skill-source.ts[IA6T]: F:core SkillSource 的 IndexedDB 实现：站点三件套/任务卡目录/任务卡全文读取，带缓存与 ready gate（首装空库窗口期不固化负缓存） | R:code:apps/extension/src/host/skill-store.ts,code:apps/extension/src/runtime/assemble.ts | A:ExtensionSkillSource, ExtensionTaskCardMeta | S:任务卡全文 strip 后 \\n\\n 直拼无分段头（core renderTaskCard 带头版是站点级渲染形态，不得用于此面）
+skill-store.ts[PA6M]: F:skill 存储：IndexedDB treewalker-skills/cards（键 host::slug）；built-in 刷新幂等 upsert+清单外 built-in 残留 prune（import/distilled 不碰） | R:code:apps/extension/src/host/skill-source.ts,code:apps/extension/entrypoints/background.ts,code:apps/extension/scripts/embed-skills.mjs | A:SkillStore, openSkillDb, SkillCardData, BuiltinsManifest, cardKey | S:upsert 只覆盖 provenance.sourceType==="built-in" 的卡且内容未变不重写；openSkillDb 真 IDB 绑定不进 node 单测（e2e 覆盖）
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/src/runtime/===
+assemble.ts[AB8S]: F:Agent 装配（node-host agent-boot 的扩展同构体）：activeCard 解析→LLM/附属卡→BrowserSession/PolicyGate/EventBus→Agent（submitConfirm/skill 注入恒开） | R:code:apps/extension/src/host/settings-store.ts,code:apps/extension/src/host/opfs-fs.ts,code:apps/extension/src/host/attachment-registry.ts,code:apps/extension/src/runtime/task-text.ts,code:apps/extension/src/runtime/run-manager.ts | A:assembleRun, activeProviderCard, decoratedFs, attachTaskText, AssembleDeps, AssembledRun | S:maxAttachmentBytes 对齐注册表 100MB（core 缺省 32MB，33-100MB 附件 upload 必被拒）；downloadsPath 不设——扩展不开 trackDownloads（Chrome 自管落盘，登记偏离）
+event-forwarder.ts[MM5T]: F:事件转发：EventBus "*" 订阅→journal.record（seq 编号）→Port 广播 {kind:"event"}；单事件超 1MB 换截断标记形态 | R:code:apps/extension/src/runtime/journal.ts,code:apps/extension/src/runtime/port-server.ts | A:EventForwarder, EventSink | S:订阅不可退（EventBus 无 unsubscribe——bus 随 run 生命周期丢弃）；断连不中断 run
+journal.ts[PM8M]: F:run journal：事件环 256+seq/ack 释放+真实淘汰记账+200ms debounce 落盘（512KB/128KB 预算裁剪）+压缩投影（字段级截断） | R:code:apps/extension/src/runtime/event-forwarder.ts,code:apps/extension/src/runtime/policy-bridge.ts,code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/entrypoints/background.ts | A:RunJournal, DebounceScheduler, compactEventData, JournalPersistScheduler, JOURNAL_EVENT_LIMIT | S:落盘键 tc_runUi:<tabId>；awaiting-*/终态立即 flush 不等 debounce；model_result 投影不带 thinking
+message-router.ts[MM6T]: F:runtime.sendMessage 单发路由：diag 命令（echo/smoke:attach）、options 请求-应答（返回 true 保持异步通道）、UI 消息转发 run-manager | R:code:apps/extension/entrypoints/background.ts,code:apps/extension/src/runtime/port-server.ts | A:registerMessageRouter, MessageRouterDeps | S:options 页无 Port——options 请求走此单发面；Port 信封消息不走此通道
+mutation-queue.ts[CG4T]: F:互斥变更队列：promise 链串行化 await 点交错的读-改-写（后写者陈旧覆盖），前序失败不阻塞后续 | R:code:apps/extension/entrypoints/background.ts | A:createMutationQueue | S:-
+policy-bridge.ts[MS8M]: F:PolicyInteraction 侧边栏桥：请求→journal 置 awaiting-*→Port 广播确认卡（token）→挂起 Promise；UI resolve/超时自兜底/断连收口 | R:code:apps/extension/src/runtime/journal.ts,code:apps/extension/src/runtime/port-server.ts,code:apps/extension/src/runtime/run-manager.ts | A:SidepanelPolicyBridge, toCardPayload, Broadcast, HasPorts | S:fail-closed：无 Port 连接立即 deny（无人确认=拒绝）；core gate race 超时不 settle——桥层超时+grace 后自兜底删条目+deny；重连补发用原始消息（expiresAt 不漂移）
+port-server.ts[MM7T]: F:runtime.onConnect 监听+protocol 信封路由：多 sidepanel 副本广播、hello 快照、挂起卡补发、全断 2s 宽限窗后 fail-closed 收口 | R:code:apps/extension/src/runtime/policy-bridge.ts,code:apps/extension/src/runtime/run-manager.ts | A:PortServer, isUiToSwMessage, RECONNECT_GRACE_MS | S:全断收口延迟 2s 宽限（面板关闭→重开是 awaiting-* 重弹卡主路径）；宽限内重连撤销待收口——只推迟时点，无人确认=拒绝不变
+run-manager.ts[AW9M]: F:run 生命周期状态机：单飞互斥（starting 同步占位）→绑活动 tab（可驱动 URL 判定）→装配→agent.run 驱动→终态收口（done/error/interrupted） | R:code:apps/extension/src/runtime/assemble.ts,code:apps/extension/src/runtime/journal.ts,code:apps/extension/src/runtime/policy-bridge.ts,code:apps/extension/src/runtime/event-forwarder.ts,code:apps/extension/src/host/settings-store.ts,code:apps/extension/src/host/keepalive.ts,code:apps/extension/src/host/attachment-registry.ts | A:RunManager, ControlResult, RunManagerDeps | S:chrome:// 内部页 debugger 拒附着——start 前可驱动 URL 判定换可行动文案；agent.stop() 只置标志，挂起确认须 bridge.cancelAll 同步 deny；SW 被杀非终态恢复 interrupted 不续跑（决策 5）
+task-text.ts[CG5T]: F:任务文本附件清单拼接：[Attachments] 段+attachment:<id> 用法说明（写给模型的 prompt 契约面）+humanSize 可读字节量 | R:code:apps/extension/src/runtime/assemble.ts,code:apps/extension/src/host/attachment-registry.ts | A:attachTaskText, humanSize, attachmentLine | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/apps/extension/src/ui-glue/===
+attachment-file.ts[CU4T]: F:File→base64 分块编码（0x8000 展开上限——整块 String.fromCharCode 炸调用栈） | R:- | A:fileToBase64 | S:-
+card-mutation.ts[DC6T]: F:卡片保存变更计划纯函数：撞名统一判定（新增路径 originalName=null）、activeCard 单点计算（自动激活+改名指针重定向合一防互覆） | R:code:apps/extension/src/ui-glue/options-app.tsx,code:apps/extension/src/host/settings-store.ts | A:planCardMutation, CardMutationPlan | S:对象展开后者胜——activeCard 自动激活与改名重定向须单点合一计算，拆回两个条件展开会互覆
+options-app.tsx[AU6M]: F:options 组态组件：ProviderList/CardForm+附属卡选择+agent 覆盖+always 授权与技能库视图，全部经注入的 request 单发读写（零 chrome） | R:code:apps/extension/src/ui-glue/card-mutation.ts,code:apps/extension/entrypoints/options/App.tsx | A:OptionsApp, OptionsAppProps | S:SW 被杀 sendMessage reject 须 try/catch（裸 await 页面永停读态）；maxSteps 清空显式置 undefined（条件展开 {} 保留旧值致清空静默失败）
+port-client.ts[IU6S]: F:Port 客户端封装：断线指数退避重连（1s·2^n 封顶 30s）、onMessage 分发、send 无连接返 false；connect 工厂注入零 chrome | R:code:apps/extension/src/runtime/port-server.ts,code:apps/extension/entrypoints/sidepanel/App.tsx | A:PortClient, UiPort, defaultBackoff, PortStatus | S:MV3 SW idle 被杀断 Port 是常态——重连后 hello 恢复快照+挂起卡补发；旧端口迟到断连按 port 身份比对忽略
+sidepanel-app.tsx[AU7S]: F:侧边栏组态：PortClient+console-ui 全量装配（TaskBar/确认卡浮层/StatusLine/RunTimeline/FinalResult），事件逐条 ack 回发 | R:code:apps/extension/src/ui-glue/port-client.ts,code:apps/extension/src/ui-glue/sidepanel-state.ts,code:apps/extension/src/ui-glue/attachment-file.ts,code:apps/extension/entrypoints/sidepanel/App.tsx | A:SidepanelApp, SidepanelAppProps | S:确认卡同时至多一张（core 守卫链串行语义）；connect 工厂注入——组件层零 chrome
+sidepanel-state.ts[DU7S]: F:sidepanel 状态机：SwToUiMessage→UI 态纯 reducer——hello 同 run 尾部合并、live event 投影+seq 去重、ack 序号随 ingest 返回 | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx,code:apps/extension/src/runtime/journal.ts | A:ingestSidepanel, initialSidepanelState, liveEventToJournal, SidepanelState | S:hello 无活 run 保留上一 run 终态视图（重置点是新 run 起始快照非 SW 唤醒）；重连不得整表替换时间线——已 ack 事件只存本地副本
+
+===D:/dev/git/z_jordon/TreeChrome/docs/===
+architecture.md[SG9M]: F:架构基准：三条原则、包布局、agent loop 五阶段移植表、五宿主接口（CDPTransport/PolicyInteraction/Storage/Secret/FileSystem）、权限门 capability 映射、skill 双层、里程碑与移植对照索引 | R:code:AGENTS.md | A:- | S:修改架构决策必须先改本文件；SR parity=Python TreeWalker 退役验收门槛；Python 行为断言以 TreeWalker 640d52a 为行号锚点基准
+implementation-plan.md[SG5T]: F:实施计划索引：里程碑 M1-M7 战术排序与逐项验收细则入口 | R:code:docs/architecture.md | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/docs/code-review/===
+_r12c1.md[SQ3S]: F:p1.2-collector 评审轮 1 dump：11 条意见（glm-5.3，16m46s），覆盖 dom-snapshot collector 等 8 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r12c2.md[SQ2T]: F:p1.2-collector 评审轮 2 dump：2 条意见，覆盖 9 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r12c3.md[SQ3T]: F:p1.2-collector 评审轮 3 dump：4 条意见，覆盖 9 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r12c4.md[SQ3S]: F:p1.2-collector 评审轮 4 dump：8 条意见，覆盖 10 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r12c5.md[SQ2T]: F:p1.2-collector 评审轮 5 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r13c1.md[SQ3M]: F:p1.3-serializer 评审轮 1 dump：18 条意见，覆盖 dom-snapshot serializer/interactive 等 12 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r13c2.md[SQ2T]: F:p1.3-serializer 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r14.md[SQ3T]: F:fourteen-review dump：2 条意见，覆盖 scripts/gate.mjs 与其测试 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r15.md[SQ2T]: F:fifteen-review dump：零意见（gate 收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r15p1.md[SQ3T]: F:p1.5-build-dom-state 评审轮 1 dump：5 条意见，覆盖 dom-state 组合入口与测试 5 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r15p2.md[SQ2T]: F:p1.5-build-dom-state 评审轮 2 dump：1 条意见（golden-fixture） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r15p3.md[SQ2T]: F:p1.5-build-dom-state 评审轮 3 dump：1 条意见（dom-state 测试） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r15p4.md[SQ2T]: F:p1.5-build-dom-state 评审轮 4 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_examples_1.md[SQ2T]: F:examples 评审轮 1 dump：零意见，覆盖 23 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_examples_2.md[SQ3T]: F:examples 评审轮 2 dump：2 条意见（high:1——core/llm/client.ts），覆盖 39 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_examples_3.md[SQ2T]: F:examples 评审轮 3 dump：零意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_examples_4.md[SQ2T]: F:examples 评审轮 4 dump：零意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_examples_5.md[SQ2T]: F:examples 评审轮 5 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-cdp-chrome_1.md[SQ3S]: F:m5-cdp-chrome 评审轮 1 dump：6 条意见（high:3），覆盖 chrome.debugger transport 15 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-cdp-chrome_2.md[SQ2T]: F:m5-cdp-chrome 评审轮 2 dump：2 条意见（high:1） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-cdp-chrome_3.md[SQ2T]: F:m5-cdp-chrome 评审轮 3 dump：1 条意见（medium） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-cdp-chrome_4.md[SQ2T]: F:m5-cdp-chrome 评审轮 4 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-core-seams_1.md[SQ2T]: F:m5-core-seams 评审轮 1 dump：2 条意见，覆盖 core 两缝（upload/submit）18 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-core-seams_2.md[SQ2T]: F:m5-core-seams 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-foundation_1.md[SQ2T]: F:m5-foundation 评审轮 1 dump：1 条意见（high），覆盖扩展基座 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-foundation_2.md[SQ2T]: F:m5-foundation 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-sw-runtime_1.md[SQ3L]: F:m5-sw-runtime 评审轮 1 dump：17 条意见（high:5/medium:10），覆盖 SW 运行时 25 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-sw-runtime_2.md[SQ2T]: F:m5-sw-runtime 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-ui_1.md[SQ3M]: F:m5-ui 评审轮 1 dump：13 条意见（high:4/medium:8），覆盖 console-ui 与粘合层 34 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-ui_2.md[SQ3T]: F:m5-ui 评审轮 2 dump：3 条意见（high:2） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_m5-ui_3.md[SQ2T]: F:m5-ui 评审轮 3 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_node-host_1.md[SQ2T]: F:node-host 评审轮 1 dump：零意见，覆盖 19 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_node-host_2.md[SQ2T]: F:node-host 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_1.md[SQ3L]: F:p2-llm-client 评审轮 1 dump：35 条意见，覆盖 LLM 多协议客户端 27 文件（47 轮不收敛教训的起点轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_10.md[SQ3S]: F:p2-llm-client 评审轮 10 dump：9 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_11.md[SQ3M]: F:p2-llm-client 评审轮 11 dump：11 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_12.md[SQ3M]: F:p2-llm-client 评审轮 12 dump：15 条意见，覆盖 30 文件（管道掩码退出码教训轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_13.md[SQ3M]: F:p2-llm-client 评审轮 13 dump：15 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_14.md[SQ3M]: F:p2-llm-client 评审轮 14 dump：12 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_15.md[SQ3M]: F:p2-llm-client 评审轮 15 dump：17 条意见，覆盖 30 文件（minLength 类型口径轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_16.md[SQ3M]: F:p2-llm-client 评审轮 16 dump：14 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_17.md[SQ3M]: F:p2-llm-client 评审轮 17 dump：16 条意见，覆盖 30 文件（undefined 不能 .slice 轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_18.md[SQ3M]: F:p2-llm-client 评审轮 18 dump：13 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_2.md[SQ3M]: F:p2-llm-client 评审轮 2 dump：17 条意见，覆盖 29 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_3.md[SQ3M]: F:p2-llm-client 评审轮 3 dump：13 条意见，覆盖 29 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_4.md[SQ3M]: F:p2-llm-client 评审轮 4 dump：18 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_5.md[SQ3L]: F:p2-llm-client 评审轮 5 dump：19 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_6.md[SQ3M]: F:p2-llm-client 评审轮 6 dump：19 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_7.md[SQ3M]: F:p2-llm-client 评审轮 7 dump：12 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_8.md[SQ3M]: F:p2-llm-client 评审轮 8 dump：12 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_9.md[SQ3M]: F:p2-llm-client 评审轮 9 dump：18 条意见，覆盖 30 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_19.md[SQ3S]: F:p2-llm-client 评审轮 19 dump：6 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_20.md[SQ3M]: F:p2-llm-client 评审轮 20 dump：15 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_21.md[SQ3M]: F:p2-llm-client 评审轮 21 dump：15 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_22.md[SQ3S]: F:p2-llm-client 评审轮 22 dump：8 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_23.md[SQ3S]: F:p2-llm-client 评审轮 23 dump：5 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_24.md[SQ3S]: F:p2-llm-client 评审轮 24 dump：7 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_25.md[SQ3S]: F:p2-llm-client 评审轮 25 dump：7 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_26.md[SQ3S]: F:p2-llm-client 评审轮 26 dump：5 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_27.md[SQ3M]: F:p2-llm-client 评审轮 27 dump：11 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_28.md[SQ3S]: F:p2-llm-client 评审轮 28 dump：5 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_29.md[SQ3M]: F:p2-llm-client 评审轮 29 dump：10 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_30.md[SQ3M]: F:p2-llm-client 评审轮 30 dump：10 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_31.md[SQ3M]: F:p2-llm-client 评审轮 31 dump：14 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_32.md[SQ3M]: F:p2-llm-client 评审轮 32 dump：12 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_33.md[SQ3S]: F:p2-llm-client 评审轮 33 dump：6 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_34.md[SQ3M]: F:p2-llm-client 评审轮 34 dump：10 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_35.md[SQ3M]: F:p2-llm-client 评审轮 35 dump：14 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_36.md[SQ3M]: F:p2-llm-client 评审轮 36 dump：12 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_37.md[SQ3M]: F:p2-llm-client 评审轮 37 dump：14 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_38.md[SQ3L]: F:p2-llm-client 评审轮 38 dump：22 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_39.md[SQ3L]: F:p2-llm-client 评审轮 39 dump：21 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_40.md[SQ3L]: F:p2-llm-client 评审轮 40 dump：17 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_41.md[SQ3S]: F:p2-llm-client 评审轮 41 dump：8 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_42.md[SQ3L]: F:p2-llm-client 评审轮 42 dump：28 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_43.md[SQ3M]: F:p2-llm-client 评审轮 43 dump：14 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_44.md[SQ3L]: F:p2-llm-client 评审轮 44 dump：21 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_45.md[SQ3M]: F:p2-llm-client 评审轮 45 dump：9 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_46.md[SQ3L]: F:p2-llm-client 评审轮 46 dump：19 条意见 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p2_47.md[SQ3M]: F:p2-llm-client 评审轮 47 dump：17 条意见（47 轮不收敛的收尾轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p3_cdp_ws_1.md[SQ2T]: F:p3-cdp-ws 评审轮 1 dump：零意见（cdp-ws 首轮即收敛） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4-agent_1.md[SQ3S]: F:p4-agent 评审轮 1 dump：7 条意见（critical:1/high:4） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4-policy-smoke_1.md[SQ2T]: F:p4-policy-smoke 评审轮 1 dump：1 条意见（medium） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4-tools_1.md[SQ3M]: F:p4-tools 评审轮 1 dump：10 条意见，覆盖动作注册面 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4_browser_1.md[SQ3M]: F:p4-browser 评审轮 1 dump：12 条意见（high:5），覆盖 browser 层 16 模块 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4_browser_2.md[SQ2T]: F:p4-browser 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4_foundation_1.md[SQ2T]: F:p4-foundation 评审轮 1 dump：2 条意见（low:2） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4_foundation_2.md[SQ2T]: F:p4-foundation 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4b-actions-a_1.md[SQ3M]: F:p4b-actions-a 评审轮 1 dump：11 条意见（high:4），覆盖动作 a 组 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4b-actions-b_1.md[SQ2T]: F:p4b-actions-b 评审轮 1 dump：1 条意见（medium） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p4b-grid-eval_1.md[SQ2T]: F:p4b-grid-eval 评审轮 1 dump：零意见（read_grid 评测首收敛） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p5-skill-face_1.md[SQ2T]: F:p5-skill-face 评审轮 1 dump：2 条意见（medium:1/low:1） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p5-skill-face_2.md[SQ2T]: F:p5-skill-face 评审轮 2 dump：零意见（循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r_p5-skill-face_3.md[SQ2T]: F:p5-skill-face 评审轮 3 dump：1 条意见（low）——skill 面收尾轮 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+review-examples-1.json[ZQ2M]: F:open-code-review 原始输出（examples，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-examples-2.json[ZQ2L]: F:open-code-review 原始输出（examples，2 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-examples-3.json[ZQ2S]: F:open-code-review 原始输出（examples，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-examples-4.json[ZQ2T]: F:open-code-review 原始输出（examples，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-examples-5.json[ZQ2S]: F:open-code-review 原始输出（examples，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-cdp-chrome-1.json[ZQ2M]: F:open-code-review 原始输出（m5-cdp-chrome，6 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-cdp-chrome-2.json[ZQ2M]: F:open-code-review 原始输出（m5-cdp-chrome，2 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-cdp-chrome-3.json[ZQ2S]: F:open-code-review 原始输出（m5-cdp-chrome，1 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-cdp-chrome-4.json[ZQ2T]: F:open-code-review 原始输出（m5-cdp-chrome，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-core-seams-1.json[ZQ2M]: F:open-code-review 原始输出（m5-core-seams，2 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-core-seams-2.json[ZQ2S]: F:open-code-review 原始输出（m5-core-seams，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-foundation-1.json[ZQ2L]: F:open-code-review 原始输出（m5-foundation，1 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-foundation-2.json[ZQ2T]: F:open-code-review 原始输出（m5-foundation，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-sw-runtime-1.json[ZQ2L]: F:open-code-review 原始输出（m5-sw-runtime，17 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-sw-runtime-2.json[ZQ2M]: F:open-code-review 原始输出（m5-sw-runtime，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-ui-1.json[ZQ2L]: F:open-code-review 原始输出（m5-ui，13 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-ui-2.json[ZQ2M]: F:open-code-review 原始输出（m5-ui，3 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-m5-ui-3.json[ZQ2S]: F:open-code-review 原始输出（m5-ui，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-node-host-1.json[ZQ2M]: F:open-code-review 原始输出（node-host，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-node-host-2.json[ZQ2S]: F:open-code-review 原始输出（node-host，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-35.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，14 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-36.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，12 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-37.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，14 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-38.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，22 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-39.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，21 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-40.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，17 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-41.json[ZQ2M]: F:open-code-review 原始输出（p2-llm-client，8 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-42.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，28 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-43.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，14 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-44.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，21 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-45.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，9 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-46.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，19 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p2-llm-client-47.json[ZQ2L]: F:open-code-review 原始输出（p2-llm-client，17 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p3-cdp-ws-1.json[ZQ2M]: F:open-code-review 原始输出（p3-cdp-ws，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4-agent-1.json[ZQ2L]: F:open-code-review 原始输出（p4-agent，7 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4-browser-1.json[ZQ2M]: F:open-code-review 原始输出（p4-browser，12 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4-browser-2.json[ZQ2T]: F:open-code-review 原始输出（p4-browser，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4-foundation-1.json[ZQ2M]: F:open-code-review 原始输出（p4-foundation，2 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4-foundation-2.json[ZQ2T]: F:open-code-review 原始输出（p4-foundation，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4-policy-smoke-1.json[ZQ2M]: F:open-code-review 原始输出（p4-policy-smoke，1 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4-tools-1.json[ZQ2L]: F:open-code-review 原始输出（p4-tools，10 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4b-actions-a-1.json[ZQ2M]: F:open-code-review 原始输出（p4b-actions-a，11 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4b-actions-b-1.json[ZQ2M]: F:open-code-review 原始输出（p4b-actions-b，1 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p4b-grid-eval-1.json[ZQ2M]: F:open-code-review 原始输出（p4b-grid-eval，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p5-skill-face-1.json[ZQ2L]: F:open-code-review 原始输出（p5-skill-face，2 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p5-skill-face-2.json[ZQ2S]: F:open-code-review 原始输出（p5-skill-face，0 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+review-p5-skill-face-3.json[ZQ2S]: F:open-code-review 原始输出（p5-skill-face，1 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
+README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/m5/===
+01-foundation.md[SG5S]: F:M5 段 A 基座计划：四包骨架+WXT 脚手架+protocol 类型面；含实施结果与 7 条教训（@wxt-dev/react 不存在、noUncheckedIndexedAccess、注册顺序等） | R:code:apps/extension/wxt.config.ts,code:apps/extension/tsconfig.json | A:- | S:headless 冒烟方法论——扩展页不能外部导航、sendMessage 不回投发送者（页面↔SW 往返才是有效验证）；e2e 每跑用新 profile 目录
+02-cdp-chrome.md[SG5S]: F:M5 段 B 计划：@tw/cdp-chrome chrome.debugger transport——B1 探针定案（原生直通/拦截合成）与跨通道对拍验收 | R:code:apps/extension/e2e/probe-debugger.mjs,code:apps/extension/e2e/smoke-cdp-chrome.mjs | A:- | S:-
+03-core-seams.md[SG5S]: F:M5 段 C 计划：core 两缝——upload attachmentId 页面内注入二态 + submit 预确认（缺省关） | R:code:apps/extension/src/runtime/assemble.ts | A:- | S:-
+04-sw-runtime.md[SG6S]: F:M5 段 D 计划：SW 运行时——agent 装配+五接口扩展实现（storage/grant/skills/OPFS/attachments）+run journal+权限确认卡 | R:code:apps/extension/entrypoints/background.ts | A:- | S:-
+05-ui.md[SG5T]: F:M5 段 E 计划：@tw/console-ui 组件包+sidepanel/options 组态（React 组件平台无关+MV3 粘合层） | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx | A:- | S:-
+06-acceptance.md[SG5T]: F:M5 段 F 验收计划：抖音全链路+真机 e2e+门禁收口；含验收期四组热修记录 | R:- | A:- | S:-
+README.md[SG6M]: F:M5 extension 实施计划总纲：段 A-F 拆分、状态与 §7 评审轮登记 | R:code:docs/implement-plan/m5/01-foundation.md | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/node-host/===
+README.md[SG6S]: F:node-host 包实施计划（已确认冻结）：Node 宿主共享件——NodeFs/env→配置/控制台观测/Agent 装配/boot.mjs 引导 | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/p2/===
+01-types-and-api.md[SG5M]: F:P2-01 计划：LLM 客户端规范类型与公共 API（契约冻结稿）——内部中立消息格式与三协议适配边界 | R:- | A:- | S:-
+02-adapters.md[SG5M]: F:P2-02 计划：三协议适配器 wire 规格（openai-completions/anthropic-messages/gemini 双向归一化） | R:- | A:- | S:-
+03-client-behaviors.md[SG5S]: F:P2-03 计划：LLMClient 行为层——client.py 移植语义（URL 缩写/敏感值占位/fallback 链/畸形兜底） | R:- | A:- | S:-
+04-testing.md[SG5S]: F:P2-04 计划：测试策略——mock 三协议单测不发真网络 | R:- | A:- | S:-
+README.md[SG6L]: F:P2 实施计划总纲：LLM 多协议客户端（含 47 轮评审循环史与决策记录） | R:- | A:- | S:47 轮评审不收敛的教训沉淀于此——收敛判据演进为严重度门控（/review-loop 收敛规则的实证来源）
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/p3/===
+01-transport.md[SG5S]: F:P3-01 计划：WebSocket transport（CdpWsClient——cdp-use 对等物） | R:- | A:- | S:-
+02-session-primitives.md[SG5T]: F:P3-02 计划：会话原语与 cookie 注入（storage_state→Network.setCookie；localhost 必须 url 参数坑） | R:- | A:- | S:-
+03-testing-and-smoke.md[SG5T]: F:P3-03 计划：测试策略与真机对拍 smoke | R:- | A:- | S:-
+README.md[SG5S]: F:P3 cdp-ws transport 实施计划总纲 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/p4/===
+01-browser-session.md[SG5S]: F:P4-01 计划：BrowserSession（browser 层 16 模块拆分——session.py 移植） | R:- | A:- | S:-
+02-tools-actions.md[SG5T]: F:P4-02 计划：tools 层 models/registry/actions + llm 扩面（四元组加 capability） | R:- | A:- | S:-
+03-agent-loop.md[SG5S]: F:P4-03 计划：agent 层五阶段 pipeline/prompts/skills/judge | R:- | A:- | S:-
+04-policy-and-events.md[SG5T]: F:P4-04 计划：权限门 policy 与事件 events（webbrain 设计照搬） | R:- | A:- | S:-
+05-testing-and-smoke.md[SG5T]: F:P4-05 计划：测试与 smoke | R:- | A:- | S:-
+README.md[SG6M]: F:P4 实施计划总纲：core 主体移植（前置检查点 TreeWalker 稳定） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/p4b/===
+01-actions-a.md[SG5T]: F:P4b-01 计划：轻族十动作（search/find 族/截图导出/tab/文件族） | R:- | A:- | S:-
+02-actions-b.md[SG5T]: F:P4b-02 计划：下拉族+上传族（重 session 侧） | R:- | A:- | S:-
+03-grid-eval.md[SG5T]: F:P4b-03 计划：read_grid 三通道+evaluate 增强（评测 Tier1 前置） | R:- | A:- | S:-
+README.md[SG6M]: F:P4b 实施计划总纲：batch2 十五动作（冻结契约） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/p5/===
+01-skill-face.md[SG5S]: F:P5.5 计划：skill 面——FsSkillSource 装载层+domain-skills 185 文件+taskSkillLlm 专用匹配模型 | R:code:apps/extension/src/host/skill-source.ts | A:- | S:-
+02-task-skill-regression.md[SG5S]: F:P5.5 续计划：任务级 skill 匹配离线回归 harness（TS/Python 匹配器全量对拍指标一致） | R:- | A:- | S:-
+03-rerun-examples.md[SG5T]: F:P7 计划：轨迹重跑三示例移植 | R:- | A:- | S:-
+README.md[SG5T]: F:P5 实施计划总纲：评测仓 TS 后继+SR parity 闸门（M4） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/===
+README.md[SA6T]: F:domain-skills 内容库说明：双层结构（站点级三件套/任务级+meta）、host 键形态（localhost_7780 含端口）与上游来源登记 | R:code:apps/extension/scripts/embed-skills.mjs | A:- | S:来源 TreeWalker @640d52a 于 2026-10-07 拷入（185 文件 SHA-256 清单逐字节核对）；上游演进不自动跟进
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/creator.douyin.com/===
+_sop.md[SD4T]: F:抖音创作者中心视频上传 SOP：URL 入口/上传初始化/表单填写流程 | R:- | A:- | S:-
+quirks.md[SD5T]: F:抖音站点坑：文件上传必须 upload_file 直接注入（OS 对话框不可控）、SPA 跳转后表单延迟加载须 wait 到「基础信息」出现 | R:- | A:- | S:-
+selectors.md[SD4T]: F:抖音元素指纹表：视频/封面上传 input 按 accept 类型区分 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/===
+_sop.md[SD5T]: F:Magento 2.4.6 管理后台站点卡片：功能地图（Dashboard 标签/Top Search Terms 面板即答案源等） | R:- | A:- | S:-
+quirks.md[SD5T]: F:Magento 站点坑：后台改前台须刷缓存、Short Desc 是 TinyMCE 而 Desc 是 Page Builder、表单 id 随机只能靠 name 定位 | R:- | A:- | S:-
+selectors.md[SD3T]: F:Magento 元素指纹补充表（多数元素已就地描述） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/add-phoebe-brown-color-option/===
+_sop.md[SD3T]: F:任务卡：为 Phoebe Zipper Sweatshirt 指定尺码新增 brown 颜色配置（可配置产品三步向导） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Generate 按笛卡尔积生成（要单码须只勾该码）、矩阵行 price/qty/weight 必须手填、保存是 AJAX 以「You saved」确认 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：搜索框/Configurable 行 Edit 入口（aria-label 精确匹配不带后缀名）/矩阵输入框 name | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/add-simple-product/===
+_sop.md[SD3T]: F:任务卡：新增 Simple Product——先按商品类型选属性集（Top/Gear/Bag 分流）再填字段 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：Energy-Bulk Women Shirt 新增（中英混合关键词） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：属性集切 Top 才有 Size/Color（切换重排表单 index 失效）；保存是整页跳转以 URL 变化判断 | R:- | A:- | S:-
+selectors.md[SD2T]: F:任务指纹：全部就地描述无补充 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/antonia-racer-tank-negatives/===
+_sop.md[SD3T]: F:任务卡：查 Antonia Racer Tank 差评——Marketing>All Reviews 按产品名过滤逐条进 Edit 页读全文 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：列表 Review 列截断须进详情读 id=detail；DOM 文本可能显示空但 value 有全文；返回列表保留筛选 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：筛选框 reviewGrid_filter_name/搜索与重置按钮（重置 id 随机勿依赖）/全文 textarea id=detail | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/antonia-racer-tank-positives/===
+_sop.md[SD3T]: F:任务卡：查客户喜欢 Antonia Racer Tank 的原因——Reviews 按产品过滤逐条进 Edit 页读全文后正面总结 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：列表 Review 列截断须进详情读 id=detail；筛选状态保存在 URL（base64 filter 参数） | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：筛选框 reviewGrid_filter_name 等 grid 控件指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/approve-positive-reviews/===
+_sop.md[SD3T]: F:任务卡：批量批准 Pending 正面评论（仅正面——人工读 Title/Review 判断情感） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：状态过滤 select 值是数字（1/2/3）；Save Review 整页跳转以「You saved the review.」确认；批准后行从 Pending 过滤消失勿误判失败 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：全部就地描述无需指纹（id/aria-label 可定位） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/bestsellers-report-custom-range/===
+_sop.md[SD3T]: F:任务卡：创建自定义日期区间 Bestsellers 报表（Reports>Bestsellers 填 from/to 后 Show Report） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：日期框带日历控件但直接 input_text M/D/YY 即可；Show Report 是整页跳转须等待 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：报表过滤字段指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/cancel-order-302/===
+_sop.md[SD3T]: F:任务卡：取消订单 302（Sales>Orders 按 increment_id 筛选进详情点 Cancel） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：筛选填短号 302 即命中（页面显示补零 #000000302）；筛选面板的 Cancel 按钮是关面板与取消订单无关 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：订单筛选与取消按钮指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/change-404-page-title/===
+_sop.md[SD3T]: F:任务卡：修改 404 Not Found CMS 页面标题（Content>Pages 编辑 Page Title 后保存） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Action 列 Edit 链接非每行默认展开；进编辑页 DOM 可能延迟渲染 Title 输入框 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：CMS 列表与编辑页指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/count-pending-reviews/===
+_sop.md[SD3T]: F:任务卡：统计 Pending 状态评论总数（Reviews 状态过滤后读 records found） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：计数读分页条 records found 前的数值非数行；过滤后 DOM id 不变 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：状态过滤框 reviewGrid_filter_status | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/count-total-reviews/===
+_sop.md[SD3T]: F:任务卡：统计评论总数——直接读网格工具栏 N records found（勿数每页 20 行） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：总数读 records found 文本；旧过滤残留先 Reset Filter 恢复全量 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：Reset Filter 按钮指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/create-spring-sale-price-rule/===
+_sop.md[SD3T]: F:任务卡：创建全站 20% 折扣 Cart Price Rule（Marketing>Promotions 新建规则） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：元素 id 每次加载随机只能靠 name；customer_group_ids 多选须一次传全组（每次调用整组替换）；Actions 区块须先展开否则 invalid data | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：name 属性定位为主；Actions 折叠区块靠可见文本展开 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/delete-pending-negative-circe-reviews/===
+_sop.md[SD3T]: F:任务卡：删除 Circe fleece 全部 Pending 负面评论 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Delete Review 弹 aside role=dialog 确认框须确认；逐条进 Edit 页操作 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：删除按钮 id=delete 与确认框指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/disable-teton-pullover-hoodie/===
+_sop.md[SD3T]: F:任务卡：下架（禁用）Teton Pullover Hoodie——产品列表搜索后取消 Enable 勾选保存 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：「Enable Product」checked=false 才是 Disabled（语义反直觉）；只禁用父产品即整体下架（15 变体不必逐个）；搜索前先 Clear all 过滤器 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：fulltext 搜索框/父产品 Edit 链接（aria-label 不带后缀）/status 复选框 name=product[status] value=2 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/dissatisfied-circe-fleece-reviewers/===
+_sop.md[SD3T]: F:任务卡：查找对 Circe fleece 不满的客户——Reviews 过滤 Circe 后逐条读全文识别不满者 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：grid 控件 id 每次刷新随机；列表 Review 列截断须进 Edit 页 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：grid 控件与详情页指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/edit-order-299-address/===
+_sop.md[SD3T]: F:任务卡：修改订单 #299 收货地址——Orders 筛选进详情分别编辑地址后保存 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Billing 与 Shipping 须分别编辑；改地址不重算金额（页面有提示） | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：订单筛选与地址编辑表单指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/find-customer-by-phone/===
+_sop.md[SD3T]: F:任务卡：按电话号码过滤客户列表读 Name/Email（Customers>All Customers） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：英文描述+关键词（轨迹来源与蒸馏时间） | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：过滤框 id 随机须靠 name=billing_telephone；电话须去 +1 前缀纯 10 位数字否则空结果；Apply Filters 整页刷新 index 全失效 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：billing_telephone 过滤框 name 定位与 Filters 展开按钮 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/find-products-by-quantity-name/===
+_sop.md[SD3T]: F:任务卡：按库存 0 查产品名——产品列表 qty 筛选 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：进产品页可能残留上次筛选（Active filters 标签）须先清；qty 筛选直接 input_text 0 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：qty 筛选框指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/find-products-by-quantity-sku/===
+_sop.md[SD3T]: F:任务卡：按库存数量查产品 SKU——qty 筛选后读 SKU 列 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：筛选面板 id 每次加载随机；面板点 Filters 前不在 DOM 中 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：多数就地描述（SKU 列等） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/invoice-grand-total-lookup/===
+_sop.md[SD3T]: F:任务卡：查发票 Grand Total（Sales>Invoices 搜发票号进详情） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：详情页很长 Grand Total 不在同屏须 scroll；列表行内 Base/Purchased 两列也是来源 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：全部就地描述（fulltext 搜索框/发票号列/Grand Total 列） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/latest-cancelled-order-customer/===
+_sop.md[SD3T]: F:任务卡：查最近取消订单的客户名——Status 筛选 Canceled 后第一行即最近 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：默认按 Purchase Date 降序——筛选后首行即答案；Status 是 12 选项 select | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：name=status 下拉与结果行就地描述 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/lookup-completed-orders/===
+_sop.md[SD3T]: F:任务卡：查 Complete 状态订单列表 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：残留筛选状态须先清；select_dropdown 直接传可见文本一步完成 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：菜单与按钮靠可见文本唯一定位 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/lookup-suspected-fraud-orders/===
+_sop.md[SD3T]: F:任务卡：查疑似欺诈（Suspected Fraud）订单 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：筛选面板元素 id 随机生成；Apply Filters 是 AJAX 刷新无页面跳转 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：筛选面板各元素有可见标签 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/mark-hollister-shirts-on-sale/===
+_sop.md[SD3T]: F:任务卡：将所有 Hollister 衬衫勾选 Sale 属性——搜索后逐个编辑保存 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Sale 复选框 id 不稳定（name=product[sale]）；搜索前先 Clear all | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：Sale 复选框 name 定位 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/monthly-orders-may-dec-2022/===
+_sop.md[SD3T]: F:任务卡：查 2022 年 5-12 月每月 Complete 订单数（MM:COUNT）——Sales 报表按月聚合 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：状态多选下拉依赖先选日期范围才渲染；结果表部分行 Orders 列为空洞（真 0） | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：全部以 id/name 唯一描述无需指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/oldest-complete-order-billing-name/===
+_sop.md[SD3T]: F:任务卡：查最早 Complete 订单的账单名——Status 筛选后翻到最后一页 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：网格默认降序——最早在末页；筛选残留先清 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：name=status 与翻页控件就地描述 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/orders-report-custom-range/===
+_sop.md[SD3T]: F:任务卡：生成自定义日期范围订单报表（Reports>Sales 填 from/to） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：日期框带 JS 日历控件但直接 input_text 即可；Show Report 整页跳转须等待 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：sales_report_from/to 等 id 唯一标识 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/preview-blank-theme/===
+_sop.md[SD3T]: F:任务卡：预览 Magento Blank 主题（Content>Themes 行内 View） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：多行主题需按行内可见文本定位 Blank 行；View 后 URL 形似列表页实为详情 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：菜单/View 链接/Back 按钮就地描述 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/reduce-product-price/===
+_sop.md[SD3T]: F:任务卡：将产品所有尺寸变体降价 $5——逐个编辑 Simple Product | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：可配置产品每个尺寸是独立 Simple 须逐个编辑（无父级批量）；只搜关键词会混入其他变体须加过滤 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：变体行定位与价格输入框指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/refund-report-q1/===
+_sop.md[SD3T]: F:任务卡：生成 Q1 退款报表（Reports>Refunds 填日期范围） | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：日期框点击注入日历控件但直接填文本即可；Show Report 整页跳转 base64 filter URL | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：报表日期字段指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/sales-order-report-last-month/===
+_sop.md[SD3T]: F:任务卡：生成上个月销售订单报表 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：日期输入带日历控件；filter_form_submit 是整页导航 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：sales_report 日期字段指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/ship-order-tracking-number/===
+_sop.md[SD3T]: F:任务卡：为订单创建 Shipment 并填承运商跟踪号 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：跟踪号行是动态模板（选承运商后渲染）；选非 custom 承运商自动填 Title | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：New Shipment 页动态行指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/taurus-shell-out-of-stock/===
+_sop.md[SD3T]: F:任务卡：将 Taurus Elements Shell 设为 Out of Stock | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：只改父商品（Configurable ID 350）即可整体生效；表单元素 id 随机须靠 name | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：Stock Status select 的 name 定位 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/top-3-bestsellers-jan-2023/===
+_sop.md[SD3T]: F:任务卡：查 2023 年 1 月 top-3 畅销产品 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：结果表 Order Quantity 列 td 数值可能为空（DOM 渲染缺陷）——以行序/其他列辅助判断 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：报表过滤与结果表指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/top-bestseller-2022/===
+_sop.md[SD3T]: F:任务卡：查 2022 年销量第一商品 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：筛选提交整页跳转；结果表数量列可能延迟/滚动后才可见 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：报表字段指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/top-bestseller-q1-2022/===
+_sop.md[SD3T]: F:任务卡：查 2022 Q1 热卖品牌/产品 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Order Quantity 在 DOM 快照可能为空；「品牌」实为具体产品（SKU 变体） | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：报表字段指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/top-cancellations-customer/===
+_sop.md[SD3T]: F:任务卡：查取消订单最多的客户 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：筛选结果单页懒加载（显示 142 条实际只渲染部分）；列表天然按 Bill-to Name 分组排序——同组行数即该客户取消数 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：Status 筛选与分组行指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/top-completed-orders-customer/===
+_sop.md[SD3T]: F:任务卡：查完成订单最多的客户 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：筛选后默认按 Bill-to Name 分组；Apply Filters 整页刷新 record count 变化 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：Status 筛选与分组行指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/top-search-term/===
+_sop.md[SD3T]: F:任务卡：查排名第一的搜索词——Dashboard 底部 Top Search Terms 面板第一行即答案 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Dashboard 有两个易混淆相邻表（Last Search Terms 在上/Top 在下）；表格在页底可能需滚动渲染 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：两表区分与行定位指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/top-search-terms-brands/===
+_sop.md[SD3T]: F:任务卡：分析 Top Search Terms 中最频繁品牌 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：两表单元格文本偏移易串列；直接滚到底部找 Top Search Terms 忽略页首 Revenue 区块 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：面板行结构指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/total-items-last-2-orders/===
+_sop.md[SD3T]: F:任务卡：统计最近 2 笔订单售出总件数——逐订单读 Items Ordered 的 Qty | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Qty 列经常为空文本（嵌套 tr 结构）；Items Ordered 表不在首屏须滚动 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：Qty 单元格嵌套结构指纹 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/total-last-2-completed-orders/===
+_sop.md[SD3T]: F:任务卡：获取最近 2 笔 Complete 订单支付总额 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：Status 原生 select 一次 select_dropdown 即可；筛选面板默认收起先点 Filters | R:- | A:- | S:-
+selectors.md[SD2T]: F:任务指纹：name=status 与结果行就地描述 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/update-antonia-description-reviews/===
+_sop.md[SD3T]: F:任务卡：把正面评价引用写进 Antonia Racer Tank 商品描述 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：列表正文截断；产品编辑页 Content tab 有校验拦截提示须处理 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：Content tab 与描述字段的定位 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/update-product-stock/===
+_sop.md[SD3T]: F:任务卡：到货更新库存——每尺码 Simple Product 各改 Quantity | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：变体是独立 Simple Product 须逐个改；到货是增加非覆盖——Save 写绝对值须先读原值相加 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：qty 输入框与变体行定位 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/localhost_7780/tasks/worst-review-customer-email/===
+_sop.md[SD3T]: F:任务卡：找对 Circe fleece 最不满客户的邮箱——Reviews 过滤后进详情读邮箱 | R:code:domain-skills/localhost_7780/_sop.md | A:- | S:-
+_task.json[FD3T]: F:任务 meta：描述/关键词/轨迹来源/蒸馏时间 | R:- | A:- | S:-
+quirks.md[SD3T]: F:任务坑：邮箱不在列表中须进 Edit 详情页；「最不满」按评分判断非按标题 | R:- | A:- | S:-
+selectors.md[SD3T]: F:任务指纹：详情页邮箱字段定位 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/domain-skills/member.bilibili.com/===
+_sop.md[SD4S]: F:B 站投稿与存草稿流程：创作中心首页→视频上传→表单填写 | R:- | A:- | S:-
+quirks.md[SD4T]: F:B 站站点坑：多文件输入陷阱（上传 input 与全局残留 name=buploader 区分）；标签提交方式特殊 | R:- | A:- | S:-
+selectors.md[SD4T]: F:B 站元素指纹：上传 input 按 accept 扩展名、标题/创作声明/标签按 placeholder、简介 contenteditable | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/cdp-chrome/===
+package.json[FE5T]: F:cdp-chrome 包定义：main 直指 src/index.ts（源码直引无构建产物）、@tw/core workspace 依赖 | R:code:packages/cdp-chrome/src/index.ts | A:- | S:-
+tsconfig.json[FG2T]: F:cdp-chrome TS 配置（extends 基座） | R:- | A:- | S:-
+vitest.config.ts[FQ3T]: F:cdp-chrome 测试配置（fake 注入面单测，85% 阈值） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/cdp-chrome/src/===
+adapter.ts[IG8T]: F:全局 chrome 适配件（本包唯一接触 globalThis.chrome 的文件）：chrome.debugger/tabs 结构化收窄为 DebuggerApi/TabsApi 注入接口 | R:code:packages/cdp-chrome/src/index.ts,code:apps/extension/src/host/debugger-api.ts | A:chromeDebuggerApi, chromeTabsApi | S:Node 单测永不 import 本文件（注入 fake）；MV3 Promise 形态要求 Chrome 116+
+index.ts[LE6T]: F:cdp-chrome 包入口：导出 transport/adapter/root-session；头部注释含三轮探针定案（协议 Target.* 被拒→拦截合成方案 S） | R:code:packages/cdp-chrome/src/adapter.ts | A:ChromeDebuggerTransport, createChromeDebuggerTransport | S:-
+root-session.ts[DN7T]: F:根会话标记（方案 S）：attachToTarget 经 chrome.debugger 被拒 Not allowed——transport 拦截握手返回本标记，send 侧省略 sessionId 即路由根会话 | R:code:packages/cdp-chrome/src/transport.ts | A:ROOT_SESSION_ID, isRootSessionId | S:Debuggee 省略 sessionId 即根会话；undefined/null 也算根（bindSend 的 sessionId ?? undefined 形态）
+transport.ts[IN8M]: F:ChromeDebuggerTransport：core CdpTransport 的 chrome.debugger 实现（方案 S——握手/tabs 命令拦截合成，事件按锚定 tab 过滤，detach 分罪与在途拒绝收口） | R:code:packages/cdp-chrome/src/root-session.ts,code:packages/cdp-chrome/src/types.ts,code:apps/extension/src/host/debugger-api.ts | A:ChromeDebuggerTransport, createChromeDebuggerTransport, ChromeDebuggerTransportOptions, TabsApi | S:事件源过滤只放行当前锚定 tab（switch 重叠窗残留不得污染 recentEvents/networkIdle/fileChooser）；预期内 target_close 经 suppressDetachForTab 抑制；detach 错误原文透传——core 错误分罪按文本匹配
+types.ts[FN6T]: F:chrome.debugger 注入接口的最小签名面（Debuggee/DebuggerApi/TargetInfoDto——探针实证形状） | R:code:packages/cdp-chrome/src/adapter.ts | A:Debuggee, DebuggerApi, TargetInfoDto | S:API getTargets 的 targetId 字段名是 id（探针实证）
+
+===D:/dev/git/z_jordon/TreeChrome/examples/===
+basic-agent.mjs[EG3T]: F:示例：简单搜索任务跑通 agent（getting_started 首例） | R:code:packages/node-host/boot.mjs | A:- | S:-
+p7-rerun-vision-no-skill.mjs[EG3T]: F:示例：P7 轨迹重跑·视觉开+skill 关版（issue #197 验收） | R:code:packages/node-host/boot.mjs | A:- | S:-
+p7-rerun-webarena-task.mjs[EG3S]: F:示例：P7 轨迹重跑 base——Agent 重跑单个 WebArena 任务（轨迹分析用） | R:code:packages/node-host/boot.mjs | A:- | S:-
+p7-rerun-with-task-skill.mjs[EG3T]: F:示例：P7 轨迹重跑·任务级 skill 注入版（口径 C 冒烟） | R:code:packages/node-host/boot.mjs | A:- | S:-
+p7-task-skill-match-regression.mjs[EG4L]: F:示例：P7 任务级 skill 匹配离线回归 harness（TS/Python 匹配器全量对拍，issue #182） | R:code:packages/node-host/boot.mjs | A:- | S:-
+upload-file-bilibili.mjs[EG3T]: F:示例：B 站创作者中心发视频存草稿（allowedUploadPaths 白名单） | R:code:packages/node-host/boot.mjs | A:- | S:-
+upload-file-vision.mjs[EG3T]: F:示例：抖音上传视觉对照变体（vision ON/skill OFF） | R:code:packages/node-host/boot.mjs | A:- | S:-
+upload-file.mjs[EG3T]: F:示例：抖音创作者中心发视频存草稿（upload_file+allowedUploadPaths） | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/examples/custom-functions/===
+custom-action.mjs[EG3T]: F:示例：自定义动作注册范式（Registry 扩展） | R:code:packages/node-host/boot.mjs | A:- | S:-
+parallel-agents.mjs[EG3T]: F:示例：并发多 agent（Promise.all——asyncio.gather 等价） | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/examples/features/===
+csv-generation.mjs[EG3T]: F:示例：生成 CSV 文件 | R:code:packages/node-host/boot.mjs | A:- | S:-
+download-file.mjs[EG3T]: F:示例：下载文件（track_downloads 语义） | R:code:packages/node-host/boot.mjs | A:- | S:-
+extraction-small-model.mjs[EG3T]: F:示例：抽取专用小模型（附属卡分工） | R:code:packages/node-host/boot.mjs | A:- | S:-
+fallback-model.mjs[EG3T]: F:示例：fallback 模型单向切换链 | R:code:packages/node-host/boot.mjs | A:- | S:-
+multi-tab.mjs[EG3T]: F:示例：多标签操作 | R:code:packages/node-host/boot.mjs | A:- | S:-
+save-as-pdf.mjs[EG3T]: F:示例：把网页存成 PDF | R:code:packages/node-host/boot.mjs | A:- | S:-
+scrolling-page.mjs[EG3T]: F:示例：滚动长页面 | R:code:packages/node-host/boot.mjs | A:- | S:-
+sensitive-data.mjs[EG3T]: F:示例：敏感数据占位符（扁平 sensitive_data） | R:code:packages/node-host/boot.mjs | A:- | S:-
+structured-output.mjs[EG3T]: F:示例：结构化输出（outputModel 变体 B） | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/examples/file-system/===
+README.md[EG3T]: F:示例：file-system 组说明：本地文件工具与浏览器自动化结合；含与 browser-use 原版关键差异表 | R:code:packages/node-host/boot.mjs | A:- | S:-
+alphabet-earnings.mjs[EG3T]: F:示例：网页数据抽取落盘（字母表财报） | R:code:packages/node-host/boot.mjs | A:- | S:-
+excel-sheet.mjs[EG3T]: F:示例：网页数据生成 CSV（Excel 表格） | R:code:packages/node-host/boot.mjs | A:- | S:-
+file-system.mjs[EG3T]: F:示例：本地文件读写回路（read/write/replace_file） | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/examples/getting-started/===
+data-extraction.mjs[EG3T]: F:示例：数据抽取（任务驱动首例） | R:code:packages/node-host/boot.mjs | A:- | S:-
+fast-agent.mjs[EG3T]: F:示例：flash 快速模式 | R:code:packages/node-host/boot.mjs | A:- | S:-
+form-filling.mjs[EG3T]: F:示例：表单填写（多字段+提交） | R:code:packages/node-host/boot.mjs | A:- | S:-
+multi-step-task.mjs[EG3T]: F:示例：多步任务（搜索→进结果→抽取→汇报） | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/examples/use-cases/===
+phone-price-comparison.mjs[EG3T]: F:示例：跨站结构化价格对比（outputModel 变体 B） | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/cdp-ws/===
+package.json[FE5T]: F:cdp-ws 包定义：零 workspace 运行时依赖（契约由类型断言锁定） | R:- | A:- | S:-
+tsconfig.json[FG2T]: F:cdp-ws TS 配置（extends 基座） | R:- | A:- | S:-
+vitest.config.ts[FQ3T]: F:cdp-ws 测试配置（FakeWebSocket 注入面，85% 阈值） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/cdp-ws/src/===
+discovery.ts[DN5T]: F:ws_url 发现：GET /json/version → webSocketDebuggerUrl（config._fetch_ws_url 公共化） | R:- | A:discoverWebSocketUrl, DiscoveryDeps | S:-
+errors.ts[CN6T]: F:CDP 错误家族：结构化替代 cdp-use 的 RuntimeError(error_dict)+describeError 单行化 | R:- | A:CdpCommandError, CdpNavigationError, describeError | S:-
+index.ts[LN6T]: F:cdp-ws 公共入口：transport（CdpWsClient/discover/错误家族）+会话原语（CdpPageSession） | R:code:packages/cdp-ws/src/transport.ts,code:packages/cdp-ws/src/session-primitives.ts | A:CdpWsClient, discoverWebSocketUrl, CdpPageSession | S:零 workspace 运行时依赖——CdpLikeClient 契约由 test/contract.test.ts 类型断言锁定
+session-primitives.ts[DN6S]: F:会话原语最小集：attach page target/navigate/getTabs/switchTab/cookie 注入（BrowserSession 语义属 P4） | R:code:packages/cdp-ws/src/transport.ts | A:CdpPageSession | S:cookie 注入 localhost 必须用 url 参数（Network.setCookie 坑——架构 §3.2 登记）
+transport.ts[IN7S]: F:WebSocket CDP transport（cdp-use client.py 对等物）：单连接 flat 协议、命令信封带 sessionId、响应按 id 归位、事件分发、opt-in 超时与泵加固 | R:code:packages/cdp-ws/src/types.ts,code:packages/cdp-ws/src/errors.ts | A:CdpWsClient, CdpWsOptions, SocketLike | S:connect 工厂注入（Node≥22 原生 WebSocket 缺省）；onClosed 暴露给上层——有意偏离清单见 p3/01 §6
+types.ts[CN4T]: F:共享类型与谓词：CdpWsOptions/transport 消费的最小 socket 面/isRecord | R:- | A:CdpWsOptions, SocketLike, isRecord | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/cdp-ws/test/===
+fake-websocket.ts[TQ4S]: F:测试假件：脚本化 FakeWebSocket（响应规则/事件注入/坏帧/关闭）实现 SocketLike 面 | R:code:packages/cdp-ws/src/types.ts | A:FakeWebSocket | S:open 走 queueMicrotask 复刻异步事件语义——同步 open 会丢事件（transport 构造后才挂监听器）
+
+===D:/dev/git/z_jordon/TreeChrome/packages/cdp-ws/tools/===
+page-parity-smoke.mjs[TN5M]: F:P1.6 真机对拍 smoke：Python gen_fixtures 抓页→TS cdp-ws+dom-snapshot 抓同页→产物对拍（手动跑不入 CI，exitCode 非 0 即失败） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/console-ui/===
+package.json[FE5T]: F:console-ui 包定义：平台无关 React 组件包（peer react；本包禁 chrome.*） | R:- | A:- | S:-
+tsconfig.json[FG2T]: F:console-ui TS 配置（extends 基座，jsx） | R:- | A:- | S:-
+vitest.config.ts[FQ3T]: F:console-ui 测试配置（组件纯函数面，85% 阈值） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/console-ui/src/===
+bytes.ts[CG3T]: F:字节数格式化（1000 进制短写——组件展示面，与 SW 侧 humanSize 分工） | R:- | A:formatBytes | S:-
+final-result.tsx[AU5T]: F:FinalResult 组件：done 终态展示（is_successful 着色+附件清单）；error/interrupted 渲染 lastError | R:- | A:FinalResult | S:-
+grants-view.tsx[IU4T]: F:GrantsView：always 授权表（capability/host/时间）+撤销回调 | R:- | A:GrantsView | S:-
+index.ts[LU6T]: F:console-ui 公共导出面：任务条/时间线/状态行/终态/确认卡/options 三件+基础件全量 | R:- | A:- | S:本包禁 chrome.*（biome overrides 强制）——宿主交互经 props/回调注入
+permission-card.tsx[AU5T]: F:PermissionCard：权限确认卡（capability 标签+参数表+元素定位+三按钮+倒计时条 expiresAt 线性收敛） | R:- | A:PermissionCard | S:-
+primitives.tsx[CU5T]: F:极简基础件：Button/Badge/Field/Table（不引组件库——语义类名+可访问性，视觉全在 theme.css） | R:- | A:Button, Badge, Field, Table | S:-
+provider-card-form.tsx[AU5S]: F:ProviderCardForm：provider 卡表单（协议必选/URL http(s) 前缀/maxTokens 正整数/temperature 0-2 校验；onTest 宿主注入） | R:- | A:ProviderCardForm | S:-
+provider-list.tsx[AU4T]: F:ProviderList：卡列表+active 选择+编辑入口（只管主卡面——附属卡在宿主组态） | R:- | A:ProviderList | S:-
+run-timeline.tsx[AU6S]: F:RunTimeline：journal 事件流渲染——step 分组折叠体、按 type 分色、data 逐字段防御收窄、长文本折叠（参数 500/结果 1000 字符） | R:- | A:RunTimeline | S:-
+skill-list-view.tsx[AU4T]: F:SkillListView：技能卡列表只读（host/slug/来源/时间；M5 无编辑面——M7） | R:- | A:SkillListView | S:-
+status-line.tsx[AU4T]: F:StatusLine：run 状态徽章+步数+耗时（snapshot 概要投影） | R:- | A:StatusLine | S:-
+submit-card.tsx[AU4T]: F:SubmitCard：submit 预确认卡（字段摘要≤8 行、password 已打码、超 40 字符防御性折叠） | R:- | A:SubmitCard | S:-
+task-bar.tsx[AU5S]: F:TaskBar：任务输入+附件选择/清单+起跑/停止（File 对象交宿主消费——组件零 IO） | R:- | A:TaskBar | S:-
+theme.css[FU4M]: F:控制台主题变量：单 CSS 变量骨架，亮/暗两套；.tc-root[data-tc-theme] 作用域根，auto 跟随系统 | R:- | A:- | S:-
+themed-root.tsx[AU3T]: F:主题容器 ThemedRoot：CSS 变量作用域根（显式 light/dark 覆盖，auto 跟随系统） | R:- | A:ThemedRoot | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/===
+package.json[FE7T]: F:core 包定义：平台无关核心（agent/browser/tools/llm/policy/skills/judge/events——禁 chrome/process 由 biome 强制） | R:- | A:- | S:-
+tsconfig.json[FG2T]: F:core TS 配置（extends 基座） | R:- | A:- | S:-
+vitest.config.ts[FQ4S]: F:core 测试配置：85% 阈值、fake 注入面全覆盖（不测真网络/真 LLM/真 CDP） | R:- | A:- | S:fixtures/python-anchors 不计入覆盖率统计（纯数据）
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/agent/===
+action-shape.ts[DB7S]: F:动作形态共享工具：畸形动作归一化与安全访问（actionsOf/nameOf/paramsOf——无依赖叶子模块，action_shape.py 全量） | R:code:packages/core/src/agent/agent.ts | A:actionsOf, nameOf, paramsOf, isRecord | S:日志只记类型不记值——畸形 params 可能含已还原的敏感真值
+actionability.ts[KB6S]: F:actionability 判定与探索侧 index 等待（actionability.py 纯函数部分） | R:- | A:waitForActionability, ACTIONABILITY_ACTIONS, isFileInput | S:降级原则：超时/拿不到 node/index 漂移→照常执行，永不引入新失败
+agent.ts[AB9L]: F:Agent 主编排（agent.py :55-705 P4 面）：run 外层三预算破环+任务级 skill 匹配一次+judge+finalize 降级熔断；stop/pause/resume；sensitive 归一化与 <agent_history> 滑窗 | R:code:packages/core/src/agent/step/pipeline.ts,code:packages/core/src/agent/judge.ts,code:packages/core/src/agent/skills/task-matcher.ts,code:packages/core/src/agent/settings.ts | A:Agent, AgentOptions, summarizeStepResult, extractUrl | S:三预算 maxSteps/maxFailures/infraFailures（#194 infra 步不递增 n_steps）；pause 幂等短路（重复 pause 覆盖 gate 会永久挂起）；judge/extract/taskSkill 三 LLM 注入口 null=复用主 llm；SIGINT/stdin 与 rerun 族不移植（偏离 2/3）
+constants.ts[FB5S]: F:step 层常量与纯文本辅助（Python 散落常量收拢；数值文案对照 640d52a） | R:- | A:InterruptedError | S:字节锚定 fixtures/python-anchors/agent.json
+judge.ts[AB6S]: F:独立 LLM Judge：执行后轨迹复核（judge.py 全量）——两轮尝试、trace 保留全部步、done 步带 Page excerpt、尾部截断对齐 Step 边界 | R:code:packages/core/src/agent/prompt-consts.ts | A:JudgeEvaluator | S:-
+loop-detector.ts[KB7M]: F:软循环检测：动作重复滑窗语义哈希+页面停滞三维指纹→nudge；FailureStreakTracker（2/4 分档止损）与 ZeroResultStreakTracker（零结果降级） | R:- | A:ActionLoopDetector, FailureStreakTracker, ZeroResultStreakTracker | S:nudge 文案字节锚定 agent.json
+message-compactor.ts[DB6S]: F:长对话压缩：双门（步间隔+字符量）→[first,summary,tail N]；压缩输入丢图留文；可配独立压缩 LLM | R:- | A:MessageCompactor | S:compactor 启用时 history 滑窗降到 5（避免双重占用 token）
+plan-manager.ts[DB5T]: F:无状态计划管理：渲染/整替/前进/replan 探索 nudge（enablePlanning 默认关，纯函数） | R:- | A:PlanManager | S:-
+prompt-consts.ts[FB6T]: F:字节锚定常量：system_prompt/task_matcher/judge 模板（由 gen-agent-prompt-consts.py 实跑生成） | R:- | A:- | S:勿手改——再生成走 evals venv 的 tools/gen-agent-prompt-consts.py；与 Python 逐字节一致的契约面
+py-repr.ts[KB4T]: F:Python repr() 深层等价（f-string {dict}/{params} 渲染用——键序插入序、字符串单引号优先） | R:- | A:pyReprDeep | S:-
+settings.ts[FB7S]: F:AgentSettings/JudgeSettings/MessageCompactionSettings（config.py 字段面；不读 env——rerun/审计族不入 P4） | R:- | A:resolveAgentSettings, AgentSettings, DEFAULT_MESSAGE_COMPACTION_SETTINGS | S:默认值口径=load_settings() 无 env 产出（运营默认，非 dataclass 裸默认）——对拍 fixture settings-defaults.json 锚定
+submit-probe.ts[DB6T]: F:submit 预确认探针（M5 段 C）：判定 click 目标是否 submit 特征+提取变更字段摘要（≤8 行，password 打码） | R:code:packages/core/src/agent/step/act.ts | A:probeSubmitForClick | S:submitConfirmEnabled 缺省关（扩展侧恒开——架构 §6.1）
+url-utils.ts[CB5T]: F:URL host 解析（url_utils.py 全量）：skill 目录 key（含端口形态 localhost_7780）/sensitive URL 过滤/obs host 共用 | R:- | A:extractHostWithPort | S:-
+views.ts[DB7S]: F:agent 数据模型层：ActionResult/AgentState/AgentHistory/AgentHistoryList（isDone/isSuccessful/finalResult 投影） | R:code:packages/core/src/agent/agent.ts | A:ActionResult, AgentState, AgentHistory, AgentHistoryList | S:公共 API 契约面（runner.py 调用形态——架构 §3.2）
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/agent/prompts/===
+system-prompt.ts[DB7S]: F:system prompt 组装与 17 段 state message 构建（system_prompt.py 全量；TS 规范块产出，wire 转换在适配器层） | R:code:packages/core/src/agent/prompt-consts.ts | A:buildSystemPrompt, buildStateBlocks | S:字节锚定 fixtures/python-anchors/agent.json
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/agent/skills/===
+task-matcher.ts[AB7S]: F:任务级 skill 匹配器：模板语义匹配（ENTITY 参数永不拒绝/TEMPLATE 三族全同）经 structuredCall 强制；保守降级 | R:code:packages/core/src/agent/prompt-consts.ts | A:matchTaskSkill, buildTaskSkillText | S:任何失败=不注入（保守降级）；prompts/注入头字节锚定
+types.ts[DB6T]: F:skills 层类型：SkillSource 宿主注入接口（core 不碰 fs）+TaskCardMeta（catalogLine 格式字节锚定） | R:- | A:SkillSource, TaskCardMeta, HostSkill | S:读序与分段格式照搬 loader.py:17-21/:67-106
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/agent/step/===
+act.ts[DB8M]: F:Stage 3 Act——_execute_actions：严格串行+五守卫（done 中段截断/漂移截断等）+per-action 超时分诊+actionability 等待+权限门逐动作过门+submit 预确认二道门 | R:code:packages/core/src/agent/agent.ts,code:packages/core/src/policy/policy.ts | A:executeActions | S:权限 denied 走 error 通道但不计 consecutiveFailures（用户拒绝非失败）；stop/pause 在动作间 raise InterruptedError——partial results 随 raise 丢弃
+context.ts[CB6S]: F:StepPipeline 共享上下文面（Python mixin 注解区 TS 显式化——Agent 实现本接口，五阶段模块收此类型） | R:code:packages/core/src/agent/agent.ts | A:StepCtx | S:信封偏离：Python _type 内部键→显式 kind 字段（getAction 前剥除）
+finalize.ts[DB6S]: F:Stage 5 Finalize——_finalize：stateSummary（仅 done 步带 domExcerpt）与 AgentHistory 收口 | R:code:packages/core/src/agent/step/pipeline.ts | A:- | S:finalize 降级步计数——连续 3 步降级触发 run 熔断（agent.ts 消费）
+pipeline.ts[AB7S]: F:_step 编排器（step.py:216-297）：五阶段骨架调用+消息管理小件+错误四分支（Interrupted/基建/连接/其他） | R:code:packages/core/src/agent/agent.ts,code:packages/core/src/agent/step/sense.ts,code:packages/core/src/agent/step/think.ts,code:packages/core/src/agent/step/act.ts | A:runStep, realTimer | S:错误四分支分罪——LLM 基建失败不烧步数（#194：退避 5/10/20/40/60s+独立 8 次预算）；信封剥除在此（kind 字段 getAction 前剥）
+post.ts[DB5T]: F:Stage 4 Post——_post_process：下载并入 done attachments/plan 更新/失败计数（仅单动作步 error 计 consecutiveFailures） | R:code:packages/core/src/agent/step/pipeline.ts | A:- | S:deny 不计 consecutiveFailures（post 与 act 双处口径）
+sense.ts[DB7M]: F:Stage 1 Sense——_prepare_context：状态采集/循环检测/nudge 汇编/state message 组装（替换式保留 2 份）/vision 门（visionGateOpen=useVision&&modelSupportsVision） | R:code:packages/core/src/agent/step/pipeline.ts,code:packages/core/src/agent/prompts/system-prompt.ts | A:visionGateOpen | S:state message 是替换式非追加（保留最近 2 份）；步数预算警告与 done-only schema 降级在此
+think.ts[DB7M]: F:Stage 2 Think——_get_next_action+畸形动作双梯（#197 外梯澄清 2 次且第 2 次去图/内梯参数校验 3 次共用预算→fallback done）+消息裁剪 20 条硬限+决策日志脱敏 | R:code:packages/core/src/agent/step/pipeline.ts,code:packages/core/src/llm/client.ts | A:- | S:每步最多 5 个动作；LLM 调用 120s 超时；redactParamsForLog/sensitiveMapForLog 决策日志脱敏面在此
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/browser/===
+circuit-breaker.ts[RB5T]: F:DOM 管线 CDP 调用熔断器：closed→open→half_open 三态（circuit_breaker.py 全量移植） | R:- | A:CircuitBreaker | S:-
+connection.ts[IN7M]: F:连接/生命周期/事件态：_connect 握手与域 enable 序列、dialog 自动处理、下载追踪、file-chooser 事件态 | R:code:packages/core/src/browser/session.ts,code:packages/core/src/browser/transport.ts | A:- | S:trackDownloads=true 时 start 需显式 downloadsPath（核心包不读 env/home——宿主解析注入）
+dom-access.ts[DB4T]: F:页面 HTML 获取（extract 前置；session.py:3690-3712 移植） | R:- | A:- | S:-
+dropdown-js.ts[KB6M]: F:下拉族 17 个 JS 常量+_CUSTOM_SCROLL_CAP（session.py :904-1535 逐字节锚定） | R:code:packages/core/src/browser/dropdown.ts | A:- | S:JS 体逐字节锚定 batch2c.json——与 Python 对拍契约，勿改写
+dropdown.ts[DB7M]: F:下拉族 25 方法（session.py :4344-5014）：native select 读写（懒加载 G11 重试）/自定义下拉（scroll cap/多选 values 整组替换） | R:code:packages/core/src/browser/dropdown-js.ts | A:- | S:多选 select_dropdown 传 values=[...] 是整组替换语义——逐次单选只剩最后一个（任务卡已废止旧教法）
+element-pointer.ts[KB6S]: F:元素指针：坐标三级回退、遮挡判定、真实/JS 点击 | R:- | A:- | S:-
+evaluate-basic.ts[KB6S]: F:JS 通道基础版：executeJs/evalFunctionOnNode+evaluateScript 单发路径+LLM JS 包装 | R:code:packages/core/src/browser/evaluate-enhanced.ts | A:- | S:-
+evaluate-enhanced.ts[KB6S]: F:evaluate 增强（session.py :3735-3940）：args/elements 走 Runtime.callFunctionOn（评测 Tier1 CDPPageAdapter 依赖） | R:code:packages/core/src/browser/evaluate-basic.ts | A:- | S:-
+grid-meta.ts[KB5T]: F:UI 网格元信息（get_state 附带 [Grid] 段的来源；session.py 移植） | R:code:packages/core/src/browser/grid-read.ts | A:- | S:-
+grid-read-js.ts[KB6S]: F:网格四通道 JS 体（batch2c.json js 节逐字节锚定——venv 实跑生成） | R:code:packages/core/src/browser/grid-read.ts | A:- | S:JS 体逐字节锚定——勿手改，再生成走 gen-batch2c-anchors.py
+grid-read.ts[DB6T]: F:网格读取通道（read_ui_grid：可见文本/属性/表头/JS 求值四通道） | R:code:packages/core/src/browser/grid-read-js.ts,code:packages/core/src/browser/grid-meta.ts | A:- | S:-
+highlight.ts[DB5S]: F:视觉高亮管理：CDP Overlay.highlightNode+JS 注入点击反馈/调试序号标签（highlight.py 移植） | R:- | A:- | S:-
+html-source.ts[KB5S]: F:CDP DOM.getDocument 树→干净 HTML 重建（extract 的 markdown 路径前置；html_source.py 移植） | R:- | A:- | S:-
+index.ts[LB6T]: F:browser 层公共入口（p4/01 §7 导出面；Batch2 槽位续扩） | R:- | A:- | S:-
+keyboard.ts[IB6S]: F:键盘发送：组合键/命名特殊键/纯文本三路由（session.py:343x 移植） | R:- | A:- | S:-
+navigation.ts[DN6S]: F:导航与页面稳定：navigate/go_back、readyState settle、requirejs 稳定等待 | R:code:packages/core/src/browser/session.ts | A:- | S:-
+network-idle.ts[IN5S]: F:Network 域 inflight 请求追踪（可选 networkidle 等待；network_idle.py 全量移植） | R:- | A:- | S:-
+screenshot.ts[KB5S]: F:截图与 PDF：takeScreenshot（单请求超时护栏）与 printToPdf | R:- | A:- | S:-
+search-find.ts[KB7M]: F:页内搜索/查找族：find_text（3 查询 XPath 链+可见性优先+高亮三模式）/find_elements/search 755 行全量 | R:- | A:- | S:-
+session.ts[FB8M]: F:BrowserSession Facade：组装 16 个功能模块，持有会话状态（连接态/两层 selector map），对外 start/stop/navigate/getState/switchTab（ws_url 直连改 transportFactory 注入——架构 §4） | R:code:packages/core/src/browser/connection.ts,code:packages/core/src/browser/transport.ts,code:packages/core/src/browser/navigation.ts,code:packages/core/src/browser/tabs.ts,code:packages/core/src/browser/dropdown.ts | A:BrowserSession | S:keepAlive 一等公民（评测判分需活浏览器；finally 只 stop 自建连接）；公共 API 契约（架构 §3.2 runner.py 形态）
+tabs.ts[DN5T]: F:Tab 管理：getTabs/switchTab/closeTab/createTab（session.py 移植；switchTab 全套域重发） | R:code:packages/core/src/browser/session.ts | A:- | S:switchTab 后全套域重发（F9 实测坑）
+text-input.ts[IB7M]: F:文本输入：逐字符键事件、三层清空、原生 setter 强写、框架事件派发（React 受控组件兼容） | R:- | A:- | S:三层清空与框架事件派发是 React/Vue 受控组件兼容的承重面
+transport.ts[FN8S]: F:CdpTransport 接口：core 侧宿主中立 CDP 通道契约（架构 §4——cdp-ws/cdp-chrome 双实现） | R:code:packages/cdp-ws/src/transport.ts,code:packages/cdp-chrome/src/transport.ts | A:CdpTransport, CdpEventListener | S:on 返回解订函数——dialog/下载/network-idle/file-chooser 事件态需要
+upload.ts[IB6S]: F:上传族 session 侧：setFileInput（attachmentId 二态：注入页面内引用→DOM.setFileInputFiles；session.py:5015-5101 移植） | R:code:packages/core/src/browser/session.ts | A:- | S:attachmentId 模式——agent 只能引用用户亲选文件句柄（权限模型：不碰 OS 路径）
+views.ts[FB5S]: F:browser 层聚合类型：设置面+TabInfo/BrowserEvent/BrowserStateSummary+storage_state | R:- | A:BrowserStateSummary, TabInfo | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/events/===
+event-bus.ts[MB6S]: F:同步事件总线：进程内轻量 pub/sub（event_bus.py 移植） | R:code:packages/core/src/events/events.ts | A:EventBus | S:无 unsubscribe——bus 随 run 生命周期丢弃（event-forwarder 依赖此语义）
+events.ts[FB6S]: F:观测事件类型：9 类事件 discriminated union（判别值保 Python event_type 原字面——events.py 移植）+事件构造器 | R:code:packages/core/src/events/event-bus.ts | A:toolCallEvent, toolResultEvent, sessionEndEvent | S:判别值保 Python 原字面——评测口径对齐
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/===
+index.ts[LB7S]: F:core 公共导出面（Agent/BrowserSession/LLMClient/Tools/PolicyGate/EventBus 全量——p2/01 §7 契约） | R:- | A:- | S:公共 API 稳定是评测仓唯一义务（架构 §7）
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/llm/===
+client.ts[AB8L]: F:LLMClient 行为层：getAction 状态机（解析梯子 R4/R1、URL 缩写/敏感值往返、fallback 链、action→actions 物化）——client.py 移植 | R:code:packages/core/src/llm/transforms.ts,code:packages/core/src/llm/provider.ts,code:packages/core/src/llm/errors.ts,code:packages/core/src/llm/sensitive-observability.ts | A:LLMClient | S:无 setter——sensitiveMap 每次 getAction 显式传（Python 写 _sensitive_map 的等价面）；action→actions 物化缺口是真实模型运行时崩溃面（已修）；>1000 行软门槛已拆 sensitive-observability
+config.ts[FB5T]: F:Provider 卡片（ProviderConfig）与能力解析：TreeWalker 视觉白名单的泛化（supportsTools/supportsVision 声明） | R:- | A:ProviderConfig | S:-
+deps.ts[FB4T]: F:LLMDeps：I/O 注入（fetch/退避时钟/观测日志——测试零真网络） | R:- | A:LLMDeps | S:-
+errors.ts[CB6S]: F:LLM 错误分类（分罪服务：isInfraError 退避谓词+step 按类型分罪） | R:code:packages/core/src/agent/step/pipeline.ts | A:isInfraError, LLMError | S:错误分类冻结——P4 step 分罪按类不按文本
+index.ts[LB3T]: F:src/llm 桶导出（仅类型） | R:- | A:- | S:-
+provider.ts[FB4T]: F:LLMProvider 接口：一协议一适配器（Strategy——架构 §3.4）纯类型 | R:code:packages/core/src/llm/adapters/anthropic-messages.ts | A:LLMProvider | S:-
+sensitive-observability.ts[SB7S]: F:敏感值观测单源（轮 43 #8 从 client.ts 拆出）：占位/还原/URL 限定过滤 | R:code:packages/core/src/llm/client.ts | A:- | S:单源拆分是 client.ts >1000 行软门槛处置——改动须回看 client 消费面
+transforms.ts[KB6M]: F:请求/响应侧变换：URL 缩写/还原（≥100 字符→[uN]）、敏感值占位/还原、JSON 兜底解析（_try_parse_json 语义）、滤图 | R:code:packages/core/src/llm/client.ts | A:- | S:JSON 兜底解析是开源兼容端点不支持 forced tool_choice 的承重墙（架构 §3.4）
+types.ts[FB6S]: F:规范消息/工具/请求/响应类型（协议中立——core 内部自由形状，适配器做双向归一化） | R:code:packages/core/src/llm/provider.ts | A:- | S:冻结契约见 p2/01——改类型须过契约测试
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/llm/adapters/===
+anthropic-messages.ts[IA7M]: F:anthropic-messages 协议适配器（parity 主通道——TreeWalker 现役默认智谱 Anthropic 兼容端点）：规范⇄wire 双向归一化、tool_choice:{type:tool} | R:code:packages/core/src/llm/adapters/common.ts,code:packages/core/src/llm/adapters/http.ts | A:AnthropicMessagesAdapter | S:-
+common.ts[CB6S]: F:三适配器共享小件：isRecord/stripTrailingSlash/defaultTestConnection 等 | R:- | A:- | S:-
+gemini.ts[IA6L]: F:gemini 协议适配器（generateContent；无内部参考纯按官方规格）：functionConfig mode=ANY 强制工具 | R:code:packages/core/src/llm/adapters/schema-sanitize.ts,code:packages/core/src/llm/adapters/common.ts | A:GeminiAdapter | S:-
+http.ts[IA6S]: F:共享 HTTP 发送层：POST JSON+状态→错误类+Retry-After+超时/取消合并 | R:code:packages/core/src/llm/errors.ts | A:postJson | S:超时与 AbortController 取消合并——测试冻结时钟经 LLMDeps
+openai-completions.ts[IA7M]: F:openai-completions 协议适配器（/v1/chat/completions——覆盖 OpenAI/GLM/DeepSeek/Kimi/Qwen/Groq/vLLM 事实标准）：tools+tool_choice function | R:code:packages/core/src/llm/adapters/common.ts,code:packages/core/src/llm/adapters/http.ts | A:OpenAICompletionsAdapter | S:一个适配器覆盖最广（架构 §3.4 表）
+schema-sanitize.ts[KB6S]: F:gemini 专用：functionDeclarations.parameters 只收 OpenAPI Schema 子集（不支持 JSON Schema 全集——剥离多余键） | R:code:packages/core/src/llm/adapters/gemini.ts | A:sanitizeSchema | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/policy/===
+auto-allow.ts[DI4T]: F:评测策略 AutoAllowPolicy：无人值守无条件放行+记账（评测对权限层零阻塞） | R:code:packages/core/src/policy/policy.ts | A:AutoAllowPolicy | S:-
+capability.ts[DI6S]: F:capability 解析：动作+参数→门控行为（CLICK/TYPE/NAVIGATE/UPLOAD/EXECUTE_JS/FS；host 计费——navigate 按目标 URL/click 按当前页/iframe 按帧 host） | R:code:packages/core/src/policy/policy.ts | A:resolveCapability, hostForAction | S:host 识别不出→fail-closed 拒绝；page_patterns 只影响 LLM 可见性不拦截执行（不能当权限用）
+gate.ts[DI5T]: F:决策表纯函数：(capability,host,可见授权)→allow/deny/prompt | R:code:packages/core/src/policy/policy.ts | A:decide | S:不读页面内容、不问 LLM——确定性映射（人是信任锚）
+grants.ts[DI5T]: F:授权记录与存储接口：once 绑 tab（回合结束清）、always 经 GrantStore 持久化 | R:code:packages/core/src/policy/policy.ts | A:Grant, GrantStore | S:-
+index.ts[LI5T]: F:policy 门面导出（五模块） | R:- | A:- | S:-
+policy.ts[DI7S]: F:PolicyGate：组合 decide 决策表+PolicyInteraction 交互+GrantStore 持久（webbrain 设计照搬代码重写）；拒绝回流给模型且不计 consecutiveFailures | R:code:packages/core/src/agent/step/act.ts,code:apps/extension/src/runtime/policy-bridge.ts,code:packages/core/src/policy/capability.ts | A:PolicyGate | S:deny 回流文案「不要重试，可改道或询问」；任何确认卡超时/异常一律按 deny（fail-closed）；loadAlways 读失败按空授权降级
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/tools/actions/===
+click.ts[DU6S]: F:click 动作（actions.py :949-1077）：聚焦+真实点击+点击证据探针 | R:code:packages/core/src/tools/actions/shared/click-evidence.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:-
+close-tab.ts[DU4T]: F:close_tab 动作：tab_id 后缀匹配+撞车检测 | R:code:packages/core/src/tools/actions/index.ts | A:- | S:-
+context.ts[DB6T]: F:Tools 实例上下文：handler 闭包依赖的显式形态（Python self 的 TS 化） | R:code:packages/core/src/tools/actions/index.ts | A:ToolsContext | S:extractClient/extractionSchema 在 Agent 构造接线（专用 LLM 缺省复用主 llm）
+done.ts[DB5T]: F:done 动作：success 默认推导（text/data 存在才 true）+files_to_display 附件回执 | R:code:packages/core/src/tools/actions/index.ts | A:- | S:done 只允许单动作（act.ts Guard #1 中段截断）
+dropdown.ts[DU6S]: F:dropdown_options+select_dropdown 动作（native/自定义双路由） | R:code:packages/core/src/browser/dropdown.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:多选 values 整组替换语义（与 browser/dropdown.ts 同口径）
+evaluate.ts[DU5S]: F:evaluate 动作：参数守卫（registry 不校验 execute 路径）+基础/增强双路由 | R:code:packages/core/src/browser/evaluate-enhanced.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:EXECUTE_JS capability 过权限门
+extract.ts[AB6S]: F:extract 动作：getPageHtml（降级 outerHTML）→干净 markdown（专用 extractLlm） | R:code:packages/core/src/tools/extract-markdown.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:不过门（只读动作）
+file-actions.ts[DB7M]: F:文件三动作：write_file/read_file（含嗅探）/replace_file——白名单路径校验+编码探测 | R:code:packages/core/src/tools/fs.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:FS/DOWNLOAD capability 过门；路径白名单 allowedWritePaths/ReadPaths 校验
+find-elements.ts[DU5S]: F:find_elements 动作：CSS 查询+两 formatter | R:code:packages/core/src/tools/actions/index.ts | A:- | S:不过门（只读）
+find-text.ts[DU4T]: F:find_text 动作：滚动到第 n 个可见匹配并高亮 | R:code:packages/core/src/tools/actions/index.ts | A:- | S:-
+go-back.ts[DU3T]: F:go_back 动作+轻量健康检查接线 | R:code:packages/core/src/tools/actions/index.ts | A:- | S:NAVIGATE capability
+grid.ts[DB7M]: F:read_grid 动作（actions.py :2816-3139）：参数守卫→三通道降级链（uiRegistry/表头/JS 求值） | R:code:packages/core/src/browser/grid-read.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:不过门（只读）
+index.ts[AB7S]: F:Tools 编排器：注册表持有+execute 分发（查名→_flatten_params→handler→截断） | R:code:packages/core/src/tools/registry.ts,code:packages/core/src/tools/actions/context.ts | A:Tools | S:applyPageFilters 只影响可见性；attachmentId 上传消费 readAttachment 装饰面
+input-text.ts[DU5S]: F:input_text 动作：exactly-one 守卫→highlight+click 聚焦→逐字符输入 | R:code:packages/core/src/browser/text-input.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:TYPE capability
+navigate.ts[DU4T]: F:navigate 动作：URL 补 https→browser.navigate→健康检查 | R:code:packages/core/src/tools/actions/index.ts | A:- | S:NAVIGATE capability 按**目标 URL** host 计费
+screenshot.ts[DU5S]: F:screenshot 与 save_as_pdf 动作：参数透传+落盘/回显 | R:code:packages/core/src/browser/screenshot.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:screenshot 不过门；save_as_pdf 过 FS/DOWNLOAD 门
+scroll.ts[DU4T]: F:scroll/wait/send_keys 三小动作合件 | R:code:packages/core/src/tools/actions/index.ts | A:- | S:send_keys 含 Enter→CLICK 门、普通键→TYPE 门
+search-page.ts[AB5S]: F:search_page 动作：grep 式页内搜索+formatter 落盘 | R:code:packages/core/src/tools/actions/shared/format.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:不过门（只读）
+search.ts[DU3T]: F:search 动作：引擎 URL 模板直导航（URL 表 :360-365 移植） | R:code:packages/core/src/tools/actions/index.ts | A:- | S:NAVIGATE capability
+switch-tab.ts[DU3T]: F:switch_tab 动作：get_tabs 后缀匹配（targetId 后 4 位） | R:code:packages/core/src/tools/actions/index.ts | A:- | S:NAVIGATE capability
+upload-file.ts[DU7M]: F:upload_file 动作（最大 handler）：白名单+存在性校验→多 input 选择策略→attachmentId 二态（OS 路径/注册表句柄） | R:code:packages/core/src/tools/actions/upload-identity.ts,code:packages/core/src/browser/upload.ts,code:packages/core/src/tools/actions/index.ts | A:- | S:UPLOAD capability；attachmentId 模式读 readAttachment 装饰面（扩展侧注册表）；maxAttachmentBytes 上限校验
+upload-identity.ts[KB6S]: F:upload file input 的站点无关身份（upload_identity.py 全量）：识别目标 input 的稳定指纹 JS | R:code:packages/core/src/tools/actions/upload-file.ts | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/tools/actions/shared/===
+click-evidence.ts[KB5S]: F:点击证据族 JS 探针：页面指纹/表单值摘要/验证标记/页面消息 | R:- | A:- | S:-
+element-lookup.ts[KB6S]: F:元素定位族+回显族：_get_element_by_index/_find_node_by_backend_id 等 | R:- | A:- | S:-
+format.ts[KB5S]: F:查询落盘族三格式化器（search_page/find_elements/node_ids） | R:- | A:- | S:-
+nav-health.ts[KB5S]: F:导航健康族：_dom_appears_empty/导航后/go_back 后健康检查 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/src/tools/===
+extract-markdown.ts[KB6S]: F:HTML→干净 markdown+结构感知分块（extract 两段纯函数；markdownify→turndown 转换器偏离登记） | R:code:packages/core/src/tools/actions/extract.ts | A:- | S:turndown 与 Python markdownify 的差异是登记偏离（分块算法保真）
+fs.ts[FI5T]: F:宿主文件系统能力接口（架构 §4 五接口之一——核心包禁 fs，NodeFs/OpfsFs 双实现） | R:code:packages/node-host/src/fs.ts,code:apps/extension/src/host/opfs-fs.ts | A:FileSystemProvider | S:readAttachment 是扩展附件缝的装饰扩展点（本体可不实现）
+models.ts[FB8L]: F:tools 层参数模型：25 个动作的参数规格+手写校验器+ACTION_DEFINITIONS 四元组（params/描述/terminates/capability） | R:code:packages/core/src/tools/registry.ts | A:ACTION_DEFINITIONS | S:1523 行是既有拆分后的聚合面（规格表性质）；parse_template 与 float() 语义与 Python 逐字节对齐
+py-json.ts[KB4T]: F:json.dumps(ensure_ascii=False) 的 TS 等价（分隔符/indent 语义） | R:- | A:pyJson | S:-
+registry.ts[RB7S]: F:动作注册表（Python ActionRegistry 的移植形态）：registryVersion 指签/agent_response tool schema 生成/动作描述文本 | R:code:packages/core/src/tools/models.ts,code:packages/core/src/tools/actions/index.ts | A:ActionRegistry | S:page_patterns 过滤只影响 LLM 可见性（getActionDescriptionsText）不拦截执行
+settings.ts[FB5T]: F:Tools 层截断/落盘阈值设置（TruncationSettings 默认值照搬 config.py:92-111） | R:- | A:TruncationSettings | S:-
+types.ts[FB5T]: F:tools 层公共类型：handler 签名+browser 结构面（纯类型） | R:- | A:ToolsBrowser | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/test/agent/===
+fixtures.ts[TB5S]: F:agent 层测试夹具：FakeAgentLLM（getAction 脚本化回放+调用记录+sensitiveMap 断言面） | R:- | A:FakeAgentLLM | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/test/browser/===
+fake-transport.ts[TB5S]: F:browser 层测试假件：FakeCdpTransport（脚本化规则+事件发射）与 makeInternalState | R:- | A:FakeCdpTransport | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/test/helpers/===
+scripted-llm.ts[TA5T]: F:ScriptedLLMProvider：实现 P2 LLMProvider——预编 chat() 应答序列 | R:- | A:ScriptedLLMProvider | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/test/llm/===
+fixtures.ts[TA4T]: F:llm 测试共享夹具（AGENT_TOOL 与 stubDeps） | R:- | A:- | S:-
+mock-fetch.ts[TA5S]: F:测试注入夹具：MockFetch（按序回放+调用记录）与 FakeClock（冻结时钟） | R:- | A:MockFetch, FakeClock | S:测试零真网络纪律的落地面
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/test/tools/===
+fake-browser.ts[TB5S]: F:tools 层测试夹具：FakeBrowser（ToolsBrowser 可编程轻量实现）+makeNode | R:- | A:FakeBrowser | S:-
+fake-fs.ts[TB4T]: F:测试公共内存 FileSystemProvider（文件三动作需要 stat/readHead/text 全链） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/core/tools/===
+agent-loop-smoke.mjs[TA5M]: F:agent loop 真机 smoke 脚本（手动跑不入 CI） | R:- | A:- | S:-
+gen-agent-anchors.py[XA4S]: F:Python 参考值锚点生成器（venv 实跑产出 fixtures/python-anchors/agent.json） | R:- | A:- | S:测试期望值必须锚定本脚本实跑结果——不是「看起来对」
+gen-agent-prompt-consts.py[XA4S]: F:prompt-consts.ts 生成器（Python 实跑生成字节锚定模板常量） | R:code:packages/core/src/agent/prompt-consts.ts | A:- | S:prompt-consts.ts 勿手改——由本脚本再生成
+gen-anchors.py[XA5S]: F:P4 Python 锚定值生成（agent 层实跑参考值→fixtures/python-anchors/） | R:code:packages/core/test/agent/fixtures.ts | A:- | S:期望值必须锚定本脚本实跑结果（venv）——不是「看起来对」
+gen-batch2-anchors.py[XA5S]: F:P4 batch2 动作族锚点生成器（Python 实跑参考值） | R:- | A:- | S:同 gen-anchors 惯例——venv 实跑
+gen-batch2b-anchors.py[XA5S]: F:P4b batch2b 动作族锚点生成器（下拉/上传族参考值） | R:- | A:- | S:同 gen-anchors 惯例——venv 实跑
+gen-batch2c-anchors.py[XA5S]: F:P4b batch2c 网格 JS 锚点生成器（grid-read-js.ts 的逐字节来源） | R:code:packages/core/src/browser/grid-read-js.ts | A:- | S:grid-read-js.ts 的 JS 体由本脚本生成——勿手改
+gen-settings-defaults.py[XA4T]: F:settings-defaults.json 生成器（load_settings 无 env 产出的运营默认对拍 fixture） | R:code:packages/core/src/agent/settings.ts | A:- | S:默认值口径的权威来源——AgentSettings 对拍锚点
+gen-tools-anchors.py[XA5S]: F:P4.3 锚点生成器：tools 层（models/registry/extract_markdown）Python 实跑参考值 | R:- | A:- | S:同 gen-anchors 惯例——venv 实跑
+llm-smoke.mjs[TB5M]: F:P2 真机 smoke：对智谱 OpenAI+Anthropic 双端点实跑三协议适配器（手动跑不入 CI） | R:- | A:- | S:手动真机验证——测试纪律不发真网络与此不冲突
+
+===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/===
+package.json[FE5T]: F:dom-snapshot 包定义：@tw/dom-snapshot（models.py 等全量移植包） | R:- | A:- | S:-
+tsconfig.json[FG2T]: F:dom-snapshot TS 配置（extends 基座） | R:- | A:- | S:-
+vitest.config.ts[FQ4S]: F:dom-snapshot 测试配置：golden 对拍+85% 阈值；fixtures 数据不计覆盖 | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/src/===
+cdp-batch.ts[KB5S]: F:CDP 并行批调用两阶段超时+选择性重试（cdp_timeout.py 移植）：Phase1 全源并发统一截止，Phase2 仅超时源重试 | R:code:packages/dom-snapshot/src/collector.ts | A:- | S:-
+collector.ts[KB8M]: F:三源并行 CDP 采集与融合（collector.py P1.2 移植）+组合入口 buildDomState（采集+序列化+prev_map 轮转，对齐 :911-969） | R:code:packages/dom-snapshot/src/cdp-batch.ts,code:packages/dom-snapshot/src/serializer.ts,code:packages/dom-snapshot/src/protocol.ts | A:buildDomState | S:golden fixture 逐字节对拍的主链路；三源降级链（任一源失败仍可融合）
+index.ts[LB5T]: F:dom-snapshot 公共入口（types/protocol/collector/cdp-batch/interactive/paint-order/serializer/sha256 导出） | R:- | A:- | S:-
+interactive.ts[KB6S]: F:可交互元素检测（interactive.py 移植）：14 条规则决策瀑布——JS 点击监听/AX 角色/HTML 标签/cursor/关键词，命中即短路 | R:- | A:- | S:-
+paint-order.ts[KB5S]: F:绘制顺序过滤（paint_order.py 移植）：维护已遮挡矩形合集，从最高 paintOrder 到最低判定完全覆盖 | R:- | A:- | S:-
+protocol.ts[FN5S]: F:CDP 三源采集线格式类型（消费子集——容忍未知字段，字段名保持 CDP 协议原文） | R:- | A:CdpLikeClient | S:不用 exhaustive 校验——CDP 响应有更多字段；这是 cdp-ws 实现的契约面
+serializer.ts[KB8L]: F:DOM 序列化管线（serializer.py 忠实移植）：五步管线（简化树/编号/selector_map/interactive/paint_order）——element_tree_text 是 LLM prompt 契约 | R:code:packages/dom-snapshot/src/interactive.ts,code:packages/dom-snapshot/src/paint-order.ts,code:packages/dom-snapshot/src/types.ts | A:serializeDom | S:element_tree_text 输出格式与 LLM prompt 逐字节契约——golden fixture 对拍的主体；改格式=改协议
+sha256.ts[KB4S]: F:同步 SHA-256 纯 TS 实现（无平台依赖——Node/扩展 SW 两端同步算元素哈希） | R:- | A:sha256Hex | S:不用 node:crypto/crypto.subtle 的原因：平台无关+同步语义（对齐 Python 同步 hashlib）
+types.ts[FB8L]: F:DOM 数据模型（models.py 忠实 TS 移植）：831 行——stable_hash bigint（Python 64 位超 JS 安全整数）/toJson snake_case 键名 | R:code:packages/dom-snapshot/src/serializer.ts | A:DomNode 等 | S:toJson 键名保持 Python __json__ snake_case——golden fixture 逐字节对拍依赖
+
+===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/test/===
+fake-cdp.ts[TB4T]: F:测试假 CDP 客户端：按方法名分发固定响应+记录调用序列（fixture input 即 Python 录的真实 CDP 响应原样回放） | R:code:packages/dom-snapshot/src/protocol.ts | A:- | S:-
+golden-fixture.ts[TB5S]: F:golden fixture schema 与加载器（gen_fixtures.py 产物形状单一来源）+expectByteEqual 逐字节对拍 | R:code:packages/dom-snapshot/tools/gen_fixtures.py | A:expectByteEqual | S:三处共用（golden.test/collector.test/fake-cdp）防口径漂移
+
+===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/tools/===
+gen_fixtures.py[XA5S]: F:golden fixture 生成器：Python dom-snapshot 三源原始输入+序列化产物落盘（借用 evals venv 运行） | R:code:packages/dom-snapshot/test/golden-fixture.ts | A:- | S:只在实际页面变化时刻意重生成；提交信息注明原因（AGENTS 纪律）
+
+===D:/dev/git/z_jordon/TreeChrome/packages/node-host/===
+boot.mjs[OB4T]: F:全仓唯一一份散脚本 esbuild 引导：把 src/boot-entry 打包给 examples 散脚本复用（node-host 方案 §4 决策 3） | R:code:packages/node-host/src/boot-entry.ts | A:loadKit | S:loadKit 是 27 个示例的共享入口（smoke/p7 系都经它）
+package.json[FE5T]: F:node-host 包定义（Node 宿主共享件；esbuild 依赖） | R:- | A:- | S:-
+tsconfig.json[FG2T]: F:node-host TS 配置（extends 基座） | R:- | A:- | S:-
+vitest.config.ts[FQ4T]: F:node-host 测试配置（85% 阈值） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/node-host/src/===
+agent-boot.ts[AB7S]: F:Agent 装配与 one-shot 运行（扩展 assemble.ts 的同构体）：LLMClient+transportFactory+NodeFs+FsSkillSource+AutoAllow | R:code:packages/core/src/agent/agent.ts,code:packages/node-host/src/settings.ts | A:assembleAgent, runAgent | S:env→配置映射在宿主侧完成（铁律 2 的宿主半边）
+boot-entry.ts[EB3T]: F:散脚本打包入口：本包 kit+core/cdp-ws 的 example 导出面 | R:code:packages/node-host/boot.mjs | A:- | S:-
+console.ts[OB4T]: F:控制台观测：EventBus 事件逐行打印+截断助手 | R:code:packages/core/src/events/event-bus.ts | A:- | S:-
+index.ts[LB5T]: F:node-host 公共导出面（NodeFs/settings/console/agent-boot/boot） | R:- | A:- | S:-
+node-fs.ts[PB5T]: F:NodeFs：FileSystemProvider 的 node:fs 实现（架构 §4 五接口的 Node 宿主半边） | R:code:packages/core/src/tools/fs.ts | A:NodeFs | S:-
+settings.ts[FB7S]: F:env→类型化配置（config.py load_settings 的宿主侧移植）：.env 读取+ws_url 发现+mergeHostSettings definedOnly 合并 | R:code:packages/core/src/agent/settings.ts | A:loadSettings, mergeHostSettings | S:教训教训面：TreeWalker runner.py issue #1——口径开关曾因新建默认 settings 从未生效（显式传入而非全局单例的根因）
+skill-source.ts[PB6S]: F:skill 宿主装载层：SkillLoader+TaskSkillLoader（loader.py/task_loader.py 读序与分段格式照搬；任务卡 \\n\\n 无头拼接口径） | R:code:packages/core/src/agent/skills/types.ts | A:FsSkillSource | S:任务卡全文 strip 后 \\n\\n 直拼（P5.5 冻结口径）——与扩展 skill-source.ts 同一契约
+
+===D:/dev/git/z_jordon/TreeChrome/packages/node-host/test/===
+agent-boot-helpers.ts[TA4T]: F:agent-boot 系测试共享件：settings fixture/假 transport/死端点 LLMClient | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/protocol/===
+package.json[FE5T]: F:protocol 包定义：纯类型包零运行时（type-only 依赖 @tw/core） | R:- | A:- | S:-
+tsconfig.json[FG2T]: F:protocol TS 配置（extends 基座） | R:- | A:- | S:-
+vitest.config.ts[FQ3T]: F:protocol 测试配置（纯类型包——骨架测试） | R:- | A:- | S:纯类型文件不参与覆盖率统计
+
+===D:/dev/git/z_jordon/TreeChrome/packages/protocol/src/===
+index.ts[LM6S]: F:事件协议类型包（core 事件类型 re-export 单一来源+SW/UI 信封消息类型：UiToSw/SwToUi/JournalEvent/RunJournalSnapshot/OptionsOp） | R:code:packages/core/src/events/events.ts | A:- | S:信封消息判别——UI_TO_SW_KINDS 是 Port 面的路由白名单
+
+===D:/dev/git/z_jordon/TreeChrome/scripts/===
+gate.mjs[XQ8M]: F:共用门禁脚本（ZCode hooks+git pre-commit 双消费）：biome/typecheck/test/覆盖率 85%/行数≤3000/staged 边界（_ 前缀/.env/产物） | R:code:.zcode/config.json,code:.githooks/pre-commit,code:package.json | A:- | S:退出码必须真实（不接管道——review-loop 轮 12 教训）；AST 检查在 biome.json（本脚本的 chrome 正则是快而粗的即时反馈）
+gate.test.mjs[TQ4S]: F:gate.mjs 单测（node --test）：isGitCommit/matchStagedForbidden/parseStatus 等纯函数面 | R:code:scripts/gate.mjs | A:- | S:-
+review-dump.mjs[XQ4S]: F:评审 JSON→markdown dump 转换器（含 --min-severity 滤；review-loop 的读前必经通道） | R:code:.zcode/commands/review-loop.md | A:- | S:评审 JSON 含大体积 thinking——本脚本是唯一合法读取路径

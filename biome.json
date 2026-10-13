@@ -16,7 +16,8 @@
       "**/*.json",
       "!**/test/fixtures",
       "!docs",
-      "!domain-skills"
+      "!domain-skills",
+      "!.aoci"
     ]
   },
   "formatter": {

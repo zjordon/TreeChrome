@@ -5,6 +5,8 @@ coverage/
 .idea/
 # 编辑器个人配置不共享；如需共享 extensions.json 再改用取反规则
 .vscode/
+# Claude Code 本地权限配置（个人会话产物，不入库）
+.claude/settings.local.json
 .DS_Store
 Thumbs.db
 # 敏感配置：密钥/环境变量不入库（提交门兜底，.gitignore 是第一道防线）
@@ -25,3 +27,7 @@ rerun-history/
 
 # M5 extension generated artifacts
 apps/extension/public/domain-skills.json
+
+# AOCI agent host integration (machine-bound; do not commit)
+.mcp.json
+.mcp.json.backup.*
