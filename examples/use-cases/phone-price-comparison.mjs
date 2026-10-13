@@ -30,7 +30,7 @@ const PriceComparison = {
 // 任务文本逐字保留 Python 版
 const TASK =
   "Compare the price of 'iPhone 16 Pro 256GB' across at least 2 shopping sites " +
-  "(e.g. Amazon, Best Buy). Return structured data with the model name and a " +
+  "(e.g. jd, taobao, pinduoduo). Return structured data with the model name and a " +
   "list of per-site prices.";
 
 try {
