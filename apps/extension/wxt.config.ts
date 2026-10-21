@@ -33,7 +33,13 @@ export default defineConfig({
         },
       },
     ],
-    resolve: { alias: { "wxt/browser": wxtBrowser } },
+    resolve: {
+      alias: { "wxt/browser": wxtBrowser },
+      // peer 依赖（react）禁止爬出仓库解析：pnpm 严格隔离下根 node_modules 无
+      // react，vite 会沿父目录向上，命中兄弟仓 TreeChromeAgent 的 react@19.3.1 →
+      // 与本仓 react-dom@19.3.0 双实例（hooks dispatcher null → 侧边栏白屏）
+      dedupe: ["react", "react-dom"],
+    },
   }),
   imports: false,
   manifest: {
