@@ -305,7 +305,7 @@ describe("uploadAttachment（分块二进制传输编排）", () => {
     },
   });
 
-  const harness = (begunSignal: BegunSignal) => {
+  const harness = (begunSignal: BegunSignal, failSend?: (m: UiToSwMessage) => boolean) => {
     const sent: UiToSwMessage[] = [];
     const progress: Array<{ transferId: string; sent: number }> = [];
     const rejections: AttachmentRejection[] = [];
@@ -313,7 +313,10 @@ describe("uploadAttachment（分块二进制传输编排）", () => {
       sent,
       rejections,
       deps: {
-        send: (m: UiToSwMessage) => void sent.push(m),
+        send: (m: UiToSwMessage) => {
+          sent.push(m);
+          return failSend?.(m) ?? true;
+        },
         waitForBegun: vi.fn(async () => begunSignal),
         onProgress: (transferId: string, s: number) => void progress.push({ transferId, sent: s }),
         onLocalRejection: (r: AttachmentRejection) => void rejections.push(r),
@@ -379,6 +382,44 @@ describe("uploadAttachment（分块二进制传输编排）", () => {
     ]);
     expect(h.rejections).toHaveLength(1);
     expect(h.rejections[0]).toMatchObject({ name: "a.bin", reason: "lost" });
+  });
+
+  it("断连收口（send 返 false 不抛）：begin/chunk/commit 各阶段本地 lost + abort 尝试", async () => {
+    // begin 阶段断连：SW 未收 begin——立即本地拒绝，不进 waitForBegun 等待
+    const hb = harness("begun", () => false);
+    await uploadAttachment(fakeFile(new Uint8Array(8)), hb.deps);
+    expect(hb.deps.waitForBegun).not.toHaveBeenCalled();
+    expect(hb.sent.map((m) => m.kind)).toEqual(["attachment-begin"]);
+    expect(hb.rejections).toHaveLength(1);
+    // chunk 阶段断连（首块失败）：本地 lost + abort 尽力发
+    const hc = harness("begun", (m) => m.kind !== "attachment-chunk");
+    await uploadAttachment(fakeFile(new Uint8Array(8)), hc.deps);
+    expect(hc.sent.map((m) => m.kind)).toEqual([
+      "attachment-begin",
+      "attachment-chunk",
+      "attachment-abort",
+    ]);
+    expect(hc.rejections).toHaveLength(1);
+    // commit 阶段断连：本地 lost + abort 尽力发（SW 侧 pending 由 60s 超时兜底）
+    const hm = harness("begun", (m) => m.kind !== "attachment-commit");
+    await uploadAttachment(fakeFile(new Uint8Array(8)), hm.deps);
+    expect(hm.sent.map((m) => m.kind)).toEqual([
+      "attachment-begin",
+      "attachment-chunk",
+      "attachment-chunk",
+      "attachment-commit",
+      "attachment-abort",
+    ]);
+    expect(hm.rejections).toHaveLength(1);
+  });
+
+  it("空 MIME 规范化：File.type 为空串（.md/.log/无扩展名）→ begin 带缺省 MIME 不被 registry 判 invalid", async () => {
+    const h = harness("rejected");
+    const file = { ...fakeFile(new Uint8Array(8)), mimeType: "" };
+    await uploadAttachment(file, h.deps);
+    const begin = h.sent[0] as { kind: string; mimeType: string };
+    expect(begin.kind).toBe("attachment-begin");
+    expect(begin.mimeType).toBe("application/octet-stream");
   });
 });
 

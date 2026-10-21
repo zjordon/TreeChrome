@@ -90,3 +90,11 @@ SW: attachments {items, budget}（成功）或 attachment-rejected（失败明�
 
 - 2026-10-21 计划初稿（用户审核通过）
 - 2026-10-21 实施完成（步骤 1-8）；C 档实证修订：ArrayBuffer 克隆不可用（通道 JSON 序列化）→ 块载荷改 base64，详见 §1 修订块
+- 2026-10-21 实现提交 9c367ae（17 文件，+1464/−157，门禁全绿）
+
+## 7. 评审轮登记（/review-loop，base=main）
+
+| 轮 | 意见（自评分布） | 采纳/驳回/stale | P1/P2/P3 | 要点 |
+|---|---|---|---|---|
+| 1 | 3（high:2 medium:1） | 3/0/0 | 0/3/0 | ①+② send 契约改 boolean 并逐阶段检查断连（PortClient.send 断连返 false 不抛——chunk/commit 静默丢传输违反失败面契约；sidepanel-app 透传返回值）；③ 空 MIME（.md/.log/无扩展名 File.type==""）在 uploadAttachment 规范化为 application/octet-stream（否则 registry 判 invalid 永久不可附加）。修复前新测试对旧实现验证必红（双向验证）。测试 105→107 |
+

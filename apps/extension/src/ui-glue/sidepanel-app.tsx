@@ -68,9 +68,9 @@ export function SidepanelApp({ connect }: SidepanelAppProps) {
     };
   }, [connect]);
 
-  const send = (message: UiToSwMessage): void => {
-    clientRef.current?.send(message);
-  };
+  /** 透传 PortClient.send 的送达语义（评审轮 1 [2]）：断连/端口竞态返 false 不抛——
+   *  附件传输靠它显式收口；其余调用方忽略返回值 */
+  const send = (message: UiToSwMessage): boolean => clientRef.current?.send(message) ?? false;
 
   const waitForBegun = useCallback(
     (transferId: string, timeoutMs: number) =>

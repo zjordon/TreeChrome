@@ -39,7 +39,9 @@ export interface UploadFile {
 }
 
 export interface UploadDeps {
-  send: (message: UiToSwMessage) => void;
+  /** 发送面返回是否送达（PortClient.send 语义：断连/postMessage 抛错返 false 不抛）——
+   *  false 即断连，调用方须显式收口（评审轮 1 [1][2]：静默丢传输违背失败面契约） */
+  send: (message: UiToSwMessage) => boolean;
   waitForBegun: (transferId: string, timeoutMs: number) => Promise<BegunSignal>;
   onProgress: (transferId: string, sent: number) => void;
   onLocalRejection: (rejection: AttachmentRejection) => void;
@@ -51,24 +53,33 @@ export interface UploadDeps {
 export async function uploadAttachment(file: UploadFile, deps: UploadDeps): Promise<void> {
   const chunkBytes = deps.chunkBytes ?? ATTACHMENT_CHUNK_BYTES;
   const transferId = deps.generateTransferId?.() ?? crypto.randomUUID();
+  // 空 MIME 规范化（评审轮 1 [3]）：Chrome 对 .md/.log/无扩展名返回 File.type===""
+  // ——原样透传会被 registry.begin 判 invalid，该文件在任何重试下都不可附加
+  const mimeType = file.mimeType === "" ? "application/octet-stream" : file.mimeType;
   const failLocal = (): void => {
     deps.onLocalRejection({
       transferId,
       name: file.name,
-      mimeType: file.mimeType,
+      mimeType,
       size: file.size,
       reason: "lost",
       limit: 0,
     });
   };
 
-  deps.send({
-    kind: "attachment-begin",
-    transferId,
-    name: file.name,
-    mimeType: file.mimeType,
-    size: file.size,
-  });
+  if (
+    !deps.send({
+      kind: "attachment-begin",
+      transferId,
+      name: file.name,
+      mimeType,
+      size: file.size,
+    })
+  ) {
+    // SW 未收 begin（断连）——立即本地拒绝，不等 begun 超时
+    failLocal();
+    return;
+  }
   const signal = await deps.waitForBegun(transferId, deps.begunTimeoutMs ?? BEGUN_TIMEOUT_MS);
   if (signal !== "begun") {
     if (signal === "timeout") {
@@ -82,12 +93,19 @@ export async function uploadAttachment(file: UploadFile, deps: UploadDeps): Prom
   try {
     for (let off = 0; off < file.size; off += chunkBytes) {
       const end = Math.min(off + chunkBytes, file.size);
-      deps.send({
-        kind: "attachment-chunk",
-        transferId,
-        offset: off,
-        data: bytesToBase64(new Uint8Array(await file.slice(off, end))),
-      });
+      if (
+        !deps.send({
+          kind: "attachment-chunk",
+          transferId,
+          offset: off,
+          data: bytesToBase64(new Uint8Array(await file.slice(off, end))),
+        })
+      ) {
+        // 断连：chunk 不可达——本地拒绝 + abort 尽力发（连接恢复则清 SW 侧残留）
+        failLocal();
+        deps.send({ kind: "attachment-abort", transferId });
+        return;
+      }
       deps.onProgress(transferId, end);
     }
   } catch {
@@ -95,5 +113,9 @@ export async function uploadAttachment(file: UploadFile, deps: UploadDeps): Prom
     deps.send({ kind: "attachment-abort", transferId });
     return;
   }
-  deps.send({ kind: "attachment-commit", transferId });
+  if (!deps.send({ kind: "attachment-commit", transferId })) {
+    // commit 未达：SW 侧 pending 由 60s 无活动超时兜底；本地立即显式收口
+    failLocal();
+    deps.send({ kind: "attachment-abort", transferId });
+  }
 }
