@@ -1,7 +1,9 @@
 // TaskBar 测试：空任务禁用开始/起跑回调/运行态切换（停止 + 输入锁定）/附件挑选与
-// 移除（File 对象经 onPickFiles 原样出组件——零 IO）。
+// 移除（File 对象经 onPickFiles 原样出组件——零 IO）/上传进度条目/预算行（警色
+// 阈值）/拒绝明细（reason 文案映射 + 逐条清除）——issue #2。
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { AttachmentBudget, AttachmentRejection } from "@tw/protocol";
 import { describe, expect, it } from "vitest";
 import { TaskBar } from "../src/index.js";
 
@@ -74,5 +76,112 @@ describe("TaskBar", () => {
     expect((screen.getByRole("button", { name: "▶ 开始" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it("上传中：进度条目渲染 + 开始禁用（起跑会丢在途字节）；收尾后恢复", () => {
+    const { rerender } = render(
+      <TaskBar
+        task="t"
+        onTaskChange={() => {}}
+        attachments={[ATT]}
+        onPickFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        runStatus={null}
+        onStart={() => {}}
+        onStop={() => {}}
+        uploads={[{ transferId: "t1", name: "v.mp4", size: 100, sent: 40 }]}
+      />,
+    );
+    expect(screen.getByText(/v\.mp4（上传中 40%）/)).toBeDefined();
+    expect((screen.getByRole("button", { name: "▶ 开始" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    rerender(
+      <TaskBar
+        task="t"
+        onTaskChange={() => {}}
+        attachments={[ATT]}
+        onPickFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        runStatus={null}
+        onStart={() => {}}
+        onStop={() => {}}
+        uploads={[]}
+      />,
+    );
+    expect((screen.getByRole("button", { name: "▶ 开始" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("预算行：usedBytes>0 显示余量；≥90% 警色（余量紧张）", () => {
+    const budget = (used: number, max: number): AttachmentBudget => ({
+      usedBytes: used,
+      pendingBytes: 0,
+      maxBytes: 100,
+      maxTotalBytes: max,
+    });
+    const { rerender } = render(
+      <TaskBar
+        task="t"
+        onTaskChange={() => {}}
+        attachments={[ATT]}
+        onPickFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        runStatus={null}
+        onStart={() => {}}
+        onStop={() => {}}
+        budget={budget(50, 200)}
+      />,
+    );
+    expect(screen.getByText(/附件 50 B \/ 200 B/)).toBeDefined();
+    expect(screen.getByText(/附件 50 B/).className).toContain("tc-ev-muted");
+    rerender(
+      <TaskBar
+        task="t"
+        onTaskChange={() => {}}
+        attachments={[ATT]}
+        onPickFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        runStatus={null}
+        onStart={() => {}}
+        onStop={() => {}}
+        budget={budget(190, 200)}
+      />,
+    );
+    expect(screen.getByText(/附件 190 B/).className).toContain("tc-ev-warn");
+  });
+
+  it("拒绝明细：reason 文案映射 + 逐条 × 清除回调带序号", () => {
+    const dismissed: number[] = [];
+    const rejections: AttachmentRejection[] = [
+      {
+        transferId: "t1",
+        name: "big.mp4",
+        mimeType: "video/mp4",
+        size: 120000000,
+        reason: "too-large",
+        limit: 104857600,
+      },
+      { name: "b.bin", mimeType: "m", size: 0, reason: "lost", limit: 0 },
+    ];
+    render(
+      <TaskBar
+        task="t"
+        onTaskChange={() => {}}
+        attachments={[]}
+        onPickFiles={() => {}}
+        onRemoveAttachment={() => {}}
+        runStatus={null}
+        onStart={() => {}}
+        onStop={() => {}}
+        rejections={rejections}
+        onDismissRejection={(i) => dismissed.push(i)}
+      />,
+    );
+    expect(screen.getByText(/⚠ big\.mp4（120\.0 MB） — 超单件上限 104\.9 MB/)).toBeDefined();
+    expect(screen.getByText(/⚠ b\.bin — 传输中断，请重新选择/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "清除附件提示 b.bin" }));
+    expect(dismissed).toEqual([1]);
   });
 });

@@ -61,10 +61,12 @@ function makeDeps(
     queryGate?: Promise<void>;
     /** 装配时捕获 policyInteraction（桥 pending 收口测试） */
     captureInteraction?: (i: unknown) => void;
+    /** 注入小上限 registry（拒绝面测试——不造百兆载荷） */
+    attachments?: AttachmentRegistry;
   } = {},
 ) {
   const journal = new RunJournal({ now: () => 1234 });
-  const attachments = new AttachmentRegistry();
+  const attachments = options.attachments ?? new AttachmentRegistry();
   const broadcasts: SwToUiMessage[] = [];
   const keepalive = {
     onStartRun: () => void 0,
@@ -203,9 +205,13 @@ describe("RunManager 状态机", () => {
     expect(m.tabRemovedListeners).toHaveLength(0);
     const last = m.broadcasts.at(-1);
     expect(last).toMatchObject({ kind: "journal-snapshot" });
-    // 清表广播（评审轮 1 [16]）：add/remove 均广播，clear 不得静默
+    // 清表广播（评审轮 1 [16]）：add/remove 均广播，clear 不得静默（budget 随清表归零）
     expect(m.broadcasts.filter((b) => b.kind === "attachments")).toEqual([
-      { kind: "attachments", items: [] },
+      {
+        kind: "attachments",
+        items: [],
+        budget: { usedBytes: 0, pendingBytes: 0, maxBytes: 104857600, maxTotalBytes: 209715200 },
+      },
     ]);
     expect(m.manager.busy).toBe(false);
   });
@@ -356,8 +362,27 @@ describe("RunManager 状态机", () => {
     m.manager.handleUiMessage({ kind: "settings-changed" });
     // options 是 sendMessage 单发应答面——Port 携带时静默忽略
     m.manager.handleUiMessage({ kind: "options", op: "get-settings" });
-    // 无效附件（空名）→ 拒绝不广播
-    m.manager.handleUiMessage({ kind: "attachment-add", name: "", mimeType: "m", base64: "eA==" });
+    // 无效附件（空名）→ attachment-rejected 明细广播（issue #2：拒绝不再静默）
+    m.manager.handleUiMessage({
+      kind: "attachment-begin",
+      transferId: "t1",
+      name: "",
+      mimeType: "m",
+      size: 1,
+    });
+    expect(m.broadcasts.filter((b) => b.kind === "attachment-rejected")).toEqual([
+      {
+        kind: "attachment-rejected",
+        rejection: {
+          transferId: "t1",
+          name: "",
+          mimeType: "m",
+          size: 1,
+          reason: "invalid",
+          limit: 0,
+        },
+      },
+    ]);
     expect(m.broadcasts.filter((b) => b.kind === "attachments")).toEqual([]);
     // 无活 run 的确认 resolve——静默
     m.manager.handleUiMessage({ kind: "permission-resolve", token: "t", verdict: "deny" });
@@ -376,25 +401,128 @@ describe("RunManager 状态机", () => {
     });
   });
 
-  it("handleUiMessage：attachment-add/remove 广播回 attachments；ack 进 journal", async () => {
+  it("handleUiMessage：attachment begin/chunk/commit/remove 全链广播；ack 进 journal", async () => {
     const m = makeDeps();
     m.journal.begin({ runId: "r", tabId: 1, task: "t", attachments: [] });
     m.journal.record({ eventType: "step_start", step: 1, sessionId: "s" });
     m.manager.handleUiMessage({ kind: "journal-ack", seq: 1 });
     expect(m.journal.current()?.ackedSeq).toBe(1);
+    const data = btoa("x");
+    // begin → begun 回执（UI 收到才开始发块）
     m.manager.handleUiMessage({
-      kind: "attachment-add",
+      kind: "attachment-begin",
+      transferId: "t1",
       name: "a",
       mimeType: "text/plain",
-      base64: btoa("x"),
+      size: 1,
     });
-    const last = m.broadcasts.at(-1);
-    expect(last).toMatchObject({
+    expect(m.broadcasts.at(-1)).toEqual({ kind: "attachment-begun", transferId: "t1" });
+    // chunk 静默（中间态不广播——广播数停在 begun 那 1 条）
+    m.manager.handleUiMessage({ kind: "attachment-chunk", transferId: "t1", offset: 0, data });
+    expect(m.broadcasts).toHaveLength(1);
+    // commit → attachments + budget 投影
+    m.manager.handleUiMessage({ kind: "attachment-commit", transferId: "t1" });
+    expect(m.broadcasts.at(-1)).toMatchObject({
       kind: "attachments",
       items: [{ attachmentId: "att_1", name: "a", size: 1 }],
+      budget: { usedBytes: 1, pendingBytes: 0, maxBytes: 104857600, maxTotalBytes: 209715200 },
     });
+    // remove → 空清单 + 预算归零
     m.manager.handleUiMessage({ kind: "attachment-remove", attachmentId: "att_1" });
-    expect(m.broadcasts.at(-1)).toMatchObject({ kind: "attachments", items: [] });
+    expect(m.broadcasts.at(-1)).toMatchObject({
+      kind: "attachments",
+      items: [],
+      budget: { usedBytes: 0, pendingBytes: 0 },
+    });
+  });
+
+  it("handleUiMessage：begin 超限拒绝明细广播（too-large / total-exceeded；小上限注入）", () => {
+    const m = makeDeps({
+      attachments: new AttachmentRegistry({ maxBytes: 10, maxTotalBytes: 15 }),
+    });
+    m.manager.handleUiMessage({
+      kind: "attachment-begin",
+      transferId: "t1",
+      name: "big.mp4",
+      mimeType: "video/mp4",
+      size: 11,
+    });
+    expect(m.broadcasts.at(-1)).toEqual({
+      kind: "attachment-rejected",
+      rejection: {
+        transferId: "t1",
+        name: "big.mp4",
+        mimeType: "video/mp4",
+        size: 11,
+        reason: "too-large",
+        limit: 10,
+      },
+    });
+    m.manager.handleUiMessage({
+      kind: "attachment-begin",
+      transferId: "t2",
+      name: "a",
+      mimeType: "m",
+      size: 8,
+    });
+    m.manager.handleUiMessage({
+      kind: "attachment-begin",
+      transferId: "t3",
+      name: "b",
+      mimeType: "m",
+      size: 8,
+    });
+    expect(m.broadcasts.at(-1)).toMatchObject({
+      kind: "attachment-rejected",
+      rejection: { transferId: "t3", name: "b", size: 8, reason: "total-exceeded", limit: 15 },
+    });
+  });
+
+  it("handleUiMessage：commit 半传 → lost 拒绝（带 pending meta）；彻底未知 → 占位名；abort 静默", () => {
+    const m = makeDeps();
+    m.manager.handleUiMessage({
+      kind: "attachment-begin",
+      transferId: "t1",
+      name: "a",
+      mimeType: "m",
+      size: 4,
+    });
+    m.manager.handleUiMessage({
+      kind: "attachment-chunk",
+      transferId: "t1",
+      offset: 0,
+      data: btoa("01"),
+    });
+    m.manager.handleUiMessage({ kind: "attachment-commit", transferId: "t1" });
+    expect(m.broadcasts.filter((b) => b.kind === "attachment-rejected")).toEqual([
+      {
+        kind: "attachment-rejected",
+        rejection: {
+          transferId: "t1",
+          name: "a",
+          mimeType: "m",
+          size: 4,
+          reason: "lost",
+          limit: 0,
+        },
+      },
+    ]);
+    // 彻底未知（pending 已不存在）→ 占位名
+    m.manager.handleUiMessage({ kind: "attachment-commit", transferId: "tX" });
+    expect(m.broadcasts.at(-1)).toMatchObject({
+      kind: "attachment-rejected",
+      rejection: { name: "（未知附件）", reason: "lost" },
+    });
+    // abort 静默清理（无广播）
+    m.manager.handleUiMessage({
+      kind: "attachment-begin",
+      transferId: "t2",
+      name: "b",
+      mimeType: "m",
+      size: 2,
+    });
+    m.manager.handleUiMessage({ kind: "attachment-abort", transferId: "t2" });
+    expect(m.broadcasts.filter((b) => b.kind === "attachments")).toEqual([]);
   });
 
   it("recoverInterrupted：非终态 → interrupted（SW 被杀文案）+ 广播；终态/活 run 不动", async () => {
