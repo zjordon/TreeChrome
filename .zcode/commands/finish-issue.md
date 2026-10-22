@@ -6,6 +6,8 @@ allowed-tools: Bash(git:*), Bash(gh:*), Bash(node:*), Bash(pnpm:*), Read, Edit, 
 
 # Issue 收尾（评论 + PR + 合并 + 删分支）
 
+与本仓 `.claude/commands/finish-issue.md`（Claude Code 副本，移植自 TreeWalker）同源双栖，改动任一份时同步另一份。
+
 帮用户完成 issue 的 4 步收尾流程：
 
 1. 更新 issue 状态（发总结评论）

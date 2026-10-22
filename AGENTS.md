@@ -90,7 +90,7 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
 
 ## 新功能与重构工作流
 
-新功能开发或大规模重构必须按序推进：**写方案存 `docs/implement-plan/<功能名或里程碑名>/` → 人工确认方案 → 自 main 开独立功能分支实施（测试全绿 + 提交门过）→ code review（`/review-loop`）→ 用户授权后合并**。方案未确认不开分支、不写实现代码；未过评审不申请合并。
+新功能开发或大规模重构按正规流程推进：**提 issue → 自 main 开独立功能分支 → 实施计划写入草稿 `SCRATCHPAD.md`（随实施持续更新）→ 人工审核实施计划 → 同意后实施（测试全绿 + 提交门过）→ `/review-loop` 做 code review → `/finish-issue` 收尾（更新 issue 状态、关联 PR、合并、删分支）**。实施计划未过人工审核不写实现代码；未过评审不申请合并。历史正式方案归档在 `docs/implement-plan/`（旧流程产物，新流程不再要求写入）。
 
 ## 代码评审工作流
 

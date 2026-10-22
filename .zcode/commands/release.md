@@ -6,6 +6,8 @@ allowed-tools: Bash(git:*), Bash(gh:*), Bash(pnpm:*), Read, Edit, Write, Grep, G
 
 # 发布新版本
 
+与本仓 `.claude/commands/release.md`（Claude Code 副本，移植自 TreeWalker）同源双栖，改动任一份时同步另一份。
+
 你要帮用户发布 TreeChrome 的新版本。**严格遵守"先展示计划、等用户确认、再执行写操作"的原则**——本项目约定不主动提交，任何 tag / commit / push / release 动作都必须在用户明确确认后才执行。
 
 ## 参数

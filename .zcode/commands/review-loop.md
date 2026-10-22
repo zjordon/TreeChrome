@@ -8,6 +8,9 @@ allowed-tools: Bash(git:*), Bash(node:*), Bash(pnpm:*), Bash(ocr:*), Bash(which:
 
 把「人工跑 code review → 把结果文件贴回来 → 修复 → 提交 → 再跑」固化为一轮自动循环。
 前置：某计划已在分支上实现完毕（分支创建与实现不在本命令范围）。
+与本仓 `.claude/commands/review-loop.md`（Claude Code 副本，移植自 TreeWalker）同源双栖，改动任一份时同步另一份。
+
+**无人值守授权**（用户已显式认可）：用户启动本循环即授权循环内**每轮一次修复提交**——这是 AGENTS.md「不主动 git commit」规则的显式例外，且仅限这一类提交；除此之外不产生任何提交，不 push。
 
 ## 收敛规则（P2 实测 47 轮不收敛的教训，必读）
 
@@ -39,7 +42,7 @@ allowed-tools: Bash(git:*), Bash(node:*), Bash(pnpm:*), Bash(ocr:*), Bash(which:
 1. `which ocr`：不在 PATH 则停（open-code-review fork 需另装）。
 2. `git status --short`：工作区必须干净——未提交改动会混进本轮修复提交；不干净则停下让用户先处理。
 3. 当前分支与 `--to` 一致（不一致时先 `git checkout` 过去或让用户确认）。
-4. `git log --oneline <base>..<branch> -- | head -5`：确认分支上确有待评审的实现。
+4. `git log --oneline <base>..<branch> | head -5`：确认分支上确有待评审的实现（**ocr 只审已提交 range**——无提交时跑出 skipped 空档）。
 
 ## 状态持久化与上下文管理（长循环的生存机制）
 
@@ -84,6 +87,8 @@ ocr review --from <diffBase> --to <branch> -B .git/ocr-background.md --format js
 - dump 头部 `意见数: 0` → 本轮零意见，跳到第 6 步收尾。
 - 意见数为 0 但存在异常（状态非 complete 等）→ 按失败处置。
 - dump 默认**不滤**（全量 + 每条带 `[severity/category]` 标签 + 头部分布）——评审自评严重度只当**先验**不当裁决（P2 轮 47 实证：2 条 high 是 stale、3 条 low 是真 P2，双向误标）；用户明说「只要高严重度」或上下文紧张时才加 `--min-severity medium`（滤除是体量闸门，滤后仍需逐条核验）。
+- **range 是已提交 range**（ocr 只 diff 已提交的提交，range 在 JSON 的 `manifest.input`）——修复未提交时跑新一轮会重复报已修 findings；处置前核对评审 range 头与当前分支最新提交。
+- 个别意见可能缺 `severity` 键——dump 标 `未知档`、头部分布计 `(无)`（过滤时按 low 计），按意见正文自判严重度，不当垃圾丢弃。
 
 ### 3. 逐条 triage（P1/P2 实施 / P3 backlog / 驳回 / stale）
 
