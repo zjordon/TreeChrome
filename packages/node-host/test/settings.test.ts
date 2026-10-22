@@ -53,6 +53,7 @@ describe("loadHostSettings", () => {
       AGENT_SKILLS_DIR: "D:/skills",
       AGENT_ENABLE_SKILL_INJECTION: "false",
       AGENT_ENABLE_TASK_SKILL_INJECTION: "true",
+      AGENT_ENABLE_PLANNING: "true",
     });
     expect(s.llm.apiKey).toBe("k");
     expect(s.llm.model).toBe("glm-4v");
@@ -69,6 +70,7 @@ describe("loadHostSettings", () => {
       useVision: true,
       enableSkillInjection: false,
       enableTaskSkillInjection: true,
+      enablePlanning: true,
     });
     expect(s.skillsDir).toBe("D:/skills");
   });
@@ -82,6 +84,17 @@ describe("loadHostSettings", () => {
 
   test("AGENT_USE_VISION=false 显式 false 也进覆盖（与缺省等价但键出现）", () => {
     expect(loadHostSettings({ AGENT_USE_VISION: "false" }).agent).toEqual({ useVision: false });
+  });
+
+  test("AGENT_ENABLE_PLANNING：未设不进覆盖（core 默认 false 生效）/ true / 显式 false", () => {
+    // issue #1：缺省不传 = 键不出现——核心 DEFAULT（false）生效，单源纪律
+    expect(loadHostSettings({}).agent).toEqual({});
+    expect(loadHostSettings({ AGENT_ENABLE_PLANNING: "true" }).agent).toEqual({
+      enablePlanning: true,
+    });
+    expect(loadHostSettings({ AGENT_ENABLE_PLANNING: "false" }).agent).toEqual({
+      enablePlanning: false,
+    });
   });
 
   test("非法整数：告警 + 忽略（缺省生效）", () => {

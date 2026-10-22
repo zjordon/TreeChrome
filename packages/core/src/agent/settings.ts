@@ -3,8 +3,10 @@
 // 审计族不入 P4）。默认值口径 = load_settings() 无 env 时的产出（运营默认——
 // examples/runner 实跑口径），不等于 dataclass 裸默认；对拍 fixture 见
 // test/fixtures/python-anchors/settings-defaults.json（node-host 方案 §5.1）。
-// 已知运营≠dataclass 的分歧键：enable_planning（dataclass :163 False / env 缺省
-// "true" :501）——按运营默认取 true。
+// 原「运营≠dataclass 分歧键」enable_planning 已裁定回归 dataclass 语义 false
+//（issue #1：env 缺省 "true" 的运营默认是评测步数税根因——贴限 28 vs 基线 11-16，
+// B/C 口径各 −5~9pp；上游 browser-use 亦默认关。opt-in 走 node-host
+// AGENT_ENABLE_PLANNING 或显式传参）。
 
 import type { ParamModel } from "../tools/models.js";
 import type { ToolsTruncationSettings } from "../tools/settings.js";
@@ -158,9 +160,10 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
     evalOutputDir: "evaluate_output",
     doneAttachmentMaxChars: 2000,
   },
-  // 运营默认 true（config.py:501 env 缺省 "true"；dataclass :163 为 False——Python
-  // examples/runner 实跑即开着 PlanManager，初始规划 + replan nudge）
-  enablePlanning: true,
+  // dataclass 语义默认关（config.py:163；issue #1：config.py:501 env 缺省 "true" 的
+  // 运营默认是评测步数税根因，已裁定回归 false；上游 browser-use 同为 opt-in。
+  // 按场景开走 node-host AGENT_ENABLE_PLANNING 或显式传参）
+  enablePlanning: false,
   explorationThreshold: 5,
   replanFailureThreshold: 3,
   enableDecisionAttribution: false,

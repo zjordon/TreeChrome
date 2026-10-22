@@ -15,7 +15,9 @@
 // 的 env 半边）。P5.5（skill 面）追加：AGENT_SKILLS_DIR（config.py:191/:516，缺省
 // "domain-skills"——CWD 相对解析；**偏离登记：Python 的 repo-root 回退不移植**，link:
 // 消费者显式传路径）/ AGENT_ENABLE_SKILL_INJECTION / AGENT_ENABLE_TASK_SKILL_INJECTION
-// （config.py:390/:427 评测口径 B/C 开关）。扩展点（随对应 example 移植进入）：
+// （config.py:390/:427 评测口径 B/C 开关）。issue #1 追加：AGENT_ENABLE_PLANNING
+//（config.py:501 的 env 名——env 缺省不传 = core 默认 false 生效，显式设置按场景
+// opt-in）。扩展点（随对应 example 移植进入）：
 // AGENT_JUDGE_MODEL / AGENT_LLM_SCREENSHOT_SIZE / AGENT_EXTRACT_* / SENSITIVE_DATA 等。
 
 import { existsSync, readFileSync } from "node:fs";
@@ -188,6 +190,12 @@ export function loadHostSettings(
   const enableTaskSkillInjection = envBool(env, "AGENT_ENABLE_TASK_SKILL_INJECTION");
   if (enableTaskSkillInjection !== undefined) {
     agent.enableTaskSkillInjection = enableTaskSkillInjection;
+  }
+  // planning 开关（config.py:501 的 env 名；issue #1：core 默认已回归 dataclass 语义
+  // false，env 缺省不传——显式 true 按场景 opt-in）
+  const enablePlanning = envBool(env, "AGENT_ENABLE_PLANNING");
+  if (enablePlanning !== undefined) {
+    agent.enablePlanning = enablePlanning;
   }
 
   // fallback 卡（config.py:588-600：FALLBACK_LLM_MODEL 空 = 无；key/baseUrl 缺省链）

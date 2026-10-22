@@ -37,7 +37,6 @@ const FLAT_MAP: Record<string, string> = {
   enable_recent_events: "enableRecentEvents",
   use_vision: "useVision",
   llm_screenshot_size: "llmScreenshotSize",
-  enable_planning: "enablePlanning",
   exploration_threshold: "explorationThreshold",
   replan_failure_threshold: "replanFailureThreshold",
   enable_decision_attribution: "enableDecisionAttribution",
@@ -92,11 +91,14 @@ const JUDGE_MAP: Record<string, string> = {
 };
 
 /**
- * py agent 键 → 不入 TS AgentSettings 的登记清单（键→理由）。改动此清单须在
- * 对应 implement-plan 文档登记。基线：偏离 5/7（观测与重放/审计族）、P4b 结构
- * 决策（upload_verify 移居 Tools 构造默认）。
+ * py agent 键 → 不参与逐键值对拍的登记清单（键→理由）。两类形态：键不入 TS
+ * AgentSettings（偏离/移居），或键存在但值**故意分叉**（登记分叉依据，值的权威
+ * 断言在漂移回归锁）。改动此清单须在对应 implement-plan 文档或 issue 登记。基线：
+ * 偏离 5/7（观测与重放/审计族）、P4b 结构决策（upload_verify 移居 Tools 构造默认）。
  */
 const EXCLUDED: Record<string, string> = {
+  enable_planning:
+    "issue #1：值故意分叉——TS 默认回归 dataclass 语义 false（运营默认 true 是评测步数税根因）；漂移锁断言 false",
   enable_observability: "偏离 5：obs 装配在宿主（EventBus 事件已就位）",
   observability_log_dir: "偏离 5：同上",
   upload_verify_enabled: "P4b：位于 Tools 构造默认（tools 层 settings），不随 AgentSettings",
@@ -176,9 +178,10 @@ describe("DEFAULT_AGENT_SETTINGS ↔ Python load_settings() 运营默认对拍",
     expect(Object.keys(py).length).toBe(Object.keys(JUDGE_MAP).length);
   });
 
-  test("已知运营≠dataclass 分歧键按运营默认（漂移回归锁）", () => {
-    // config.py:501 env 缺省 "true"（dataclass :163 为 False）——examples/runner 实跑口径
-    expect(DEFAULT_AGENT_SETTINGS.enablePlanning).toBe(true);
+  test("enablePlanning 按 dataclass 语义默认关 + actionability 运营默认（漂移回归锁）", () => {
+    // issue #1：config.py:501 env 缺省 "true" 的运营默认是评测步数税根因（贴限 28 vs
+    // 基线 11-16），裁定回归 dataclass :163 的 False；opt-in 走 env 键/显式传参
+    expect(DEFAULT_AGENT_SETTINGS.enablePlanning).toBe(false);
     // config.py:538/:540；此前 TS 误为 2.0/false（node-host 方案 §5.1 对账修正）
     expect(DEFAULT_AGENT_SETTINGS.explorationActionabilityTimeout).toBe(1.5);
     expect(DEFAULT_AGENT_SETTINGS.explorationActionabilityReceivesEvents).toBe(true);
