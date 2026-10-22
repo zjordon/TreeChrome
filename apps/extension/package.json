@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "e2e:runtime": "node e2e/smoke-sw-runtime.mjs",
-    "e2e:ui": "node e2e/smoke-ui.mjs"
+    "e2e:ui": "node e2e/smoke-ui.mjs",
+    "e2e:attachments": "node e2e/smoke-attachments.mjs"
   },
   "dependencies": {
     "@tw/cdp-chrome": "workspace:*",

@@ -22,6 +22,19 @@ const CARD: ProviderConfig = {
 };
 const SUB_CARD: ProviderConfig = { ...CARD, name: "sub", model: "glm-mini" };
 
+/** 分块传输三步入表（issue #2 C 档——块载荷 base64，替换旧整串 add 的用例路径） */
+function putAttachment(
+  reg: AttachmentRegistry,
+  content: string,
+  name: string,
+  mimeType: string,
+): void {
+  const bytes = new TextEncoder().encode(content);
+  expect(reg.begin("t_test", name, mimeType, bytes.length).ok).toBe(true);
+  expect(reg.append("t_test", 0, btoa(content))).toBe(true);
+  expect(reg.commit("t_test").ok).toBe(true);
+}
+
 /** 内存 OPFS 假根（decoratedFs 透传链用——与 host-opfs-fs.test 同构的精简版） */
 function makeFakeOpfsRoot(): DirHandleLike {
   const files = new Map<string, Uint8Array>();
@@ -163,12 +176,12 @@ describe("assembleRun", () => {
   it("附件注册表有附件 → taskText 拼接 [Attachments] 段；无附件原样", () => {
     const { deps, attachments } = makeDeps();
     const settings = parseExtensionSettings({ providerCards: [CARD], activeCard: "main" });
-    attachments.add(btoa("xyz"), "v.mp4", "video/mp4");
+    putAttachment(attachments, "xyz", "v.mp4", "video/mp4");
     const assembled = assembleRun({ task: "做任务", tabId: 1, settings }, deps);
     expect(assembled.taskText).toContain("做任务\n\n[Attachments]");
     expect(assembled.taskText).toContain("- att_1: v.mp4 (3 B, video/mp4)");
     expect(assembled.taskText).toContain('"attachment:<id>"');
-    // 清表后零附件 → 原样（注册表共享 deps——上一 add 不应串场）
+    // 清表后零附件 → 原样（注册表共享 deps——上一传输不应串场）
     attachments.clearForRun();
     const empty = assembleRun({ task: "做任务", tabId: 1, settings }, deps);
     expect(empty.taskText).toBe("做任务");
@@ -178,7 +191,7 @@ describe("assembleRun", () => {
 describe("decoratedFs（附件缝消费）", () => {
   it("readAttachment 装饰：attachment: 前缀走注册表，其余透传 opfs（全方法透传链）", async () => {
     const { attachments } = makeDeps();
-    attachments.add(btoa("bin"), "a.bin", "application/octet-stream");
+    putAttachment(attachments, "bin", "a.bin", "application/octet-stream");
     // 真 OPFS 假根（透传链全方法走一遍；单根复用——getRoot 每调用返回同一根）
     const root = makeFakeOpfsRoot();
     const real = new OpfsFs(async () => root);

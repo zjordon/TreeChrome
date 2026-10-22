@@ -1,12 +1,17 @@
-// ui-glue 适配器单测（m5/05 §4）：PortClient 断线重连指数退避/在线态/send 竞态、
-// sidepanel reducer（hello 全量重建/live event 投影去重/ack 回发序号/确认卡对
-// token 的 cancelled 匹配与乐观清除）、attachment-file 分块 base64（>0x8000 路
-// 径）、message-router options 分支（异步应答通道）。
+// ui-glue 适配器单测（m5/05 §4；issue #2 C 档改传输编排）：PortClient 断线重连
+// 指数退避/在线态/send 竞态、sidepanel reducer（hello 全量重建/live event 投影
+// 去重/ack 回发序号/确认卡对 token 的 cancelled 匹配与乐观清除/附件预算与拒绝
+// 明细）、attachment-upload 分块传输（begin→begun→chunk→commit 全路径与失败面）、
+// message-router options 分支（异步应答通道）。
 
-import type { SwToUiMessage, UiToSwMessage } from "@tw/protocol";
+import type { AttachmentRejection, SwToUiMessage, UiToSwMessage } from "@tw/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
-import { fileToBase64 } from "../src/ui-glue/attachment-file.js";
+import {
+  type BegunSignal,
+  type UploadFile,
+  uploadAttachment,
+} from "../src/ui-glue/attachment-upload.js";
 import { PortClient, type UiPort } from "../src/ui-glue/port-client.js";
 import {
   ingestSidepanel,
@@ -220,6 +225,53 @@ describe("sidepanel reducer", () => {
     expect(state.submit).toBeNull();
   });
 
+  it("attachments 广播吸收预算投影；attachment-rejected 入列；本地拒绝同位展示；begun 无状态变化", () => {
+    let { state } = ingestSidepanel(initialSidepanelState, {
+      kind: "attachments",
+      items: [{ attachmentId: "att_1", name: "a", mimeType: "m", size: 4 }],
+      budget: { usedBytes: 4, pendingBytes: 0, maxBytes: 10, maxTotalBytes: 20 },
+    });
+    expect(state.attachmentBudget).toEqual({
+      usedBytes: 4,
+      pendingBytes: 0,
+      maxBytes: 10,
+      maxTotalBytes: 20,
+    });
+    state = ingestSidepanel(state, { kind: "attachment-begun", transferId: "t0" }).state;
+    expect(state.attachments).toHaveLength(1); // begun 只供传输编排消费
+    state = ingestSidepanel(state, {
+      kind: "attachment-rejected",
+      rejection: {
+        transferId: "t1",
+        name: "big.mp4",
+        mimeType: "video/mp4",
+        size: 11,
+        reason: "too-large",
+        limit: 10,
+      },
+    }).state;
+    state = ingestSidepanel(state, {
+      kind: "attachment-rejected-local",
+      rejection: { name: "bad.txt", mimeType: "text/plain", size: 0, reason: "invalid", limit: 0 },
+    }).state;
+    expect(state.attachmentRejections.map((r) => r.name)).toEqual(["big.mp4", "bad.txt"]);
+  });
+
+  it("拒绝明细：上限 5 挤掉最早；× 逐条清；起跑整表清", () => {
+    let st = initialSidepanelState;
+    for (let i = 0; i < 7; i++) {
+      st = ingestSidepanel(st, {
+        kind: "attachment-rejected",
+        rejection: { name: `f${i}`, mimeType: "m", size: 1, reason: "too-large", limit: 2 },
+      }).state;
+    }
+    expect(st.attachmentRejections.map((r) => r.name)).toEqual(["f2", "f3", "f4", "f5", "f6"]);
+    st = ingestSidepanel(st, { kind: "attachment-rejection-dismissed", index: 1 }).state;
+    expect(st.attachmentRejections.map((r) => r.name)).toEqual(["f2", "f4", "f5", "f6"]);
+    st = ingestSidepanel(st, { kind: "attachment-rejections-cleared" }).state;
+    expect(st.attachmentRejections).toEqual([]);
+  });
+
   it("liveEventToJournal：压缩投影形态（与 journal 快照同一渲染面）", () => {
     const entry = liveEventToJournal(
       9,
@@ -241,15 +293,133 @@ describe("sidepanel reducer", () => {
   });
 });
 
-describe("fileToBase64", () => {
-  it("分块编码（>0x8000 路径不炸调用栈）+ 往返", async () => {
-    const n = 0x8000 + 100;
-    const bytes = new Uint8Array(n);
-    for (let i = 0; i < n; i++) bytes[i] = i % 251;
-    const file = new File([bytes], "big.bin", { type: "application/octet-stream" });
-    const b64 = await fileToBase64(file);
-    const back = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    expect(back).toEqual(bytes);
+describe("uploadAttachment（分块二进制传输编排）", () => {
+  /** 假文件：字节串按块切片回放；可注入 slice 抛错 */
+  const fakeFile = (bytes: Uint8Array, opts: { failAt?: number } = {}): UploadFile => ({
+    name: "a.bin",
+    mimeType: "application/octet-stream",
+    size: bytes.length,
+    slice: async (off, end) => {
+      if (opts.failAt !== undefined && off >= opts.failAt) throw new Error("read failed");
+      return bytes.slice(off, end).slice().buffer as ArrayBuffer;
+    },
+  });
+
+  const harness = (begunSignal: BegunSignal, failSend?: (m: UiToSwMessage) => boolean) => {
+    const sent: UiToSwMessage[] = [];
+    const progress: Array<{ transferId: string; sent: number }> = [];
+    const rejections: AttachmentRejection[] = [];
+    return {
+      sent,
+      rejections,
+      deps: {
+        send: (m: UiToSwMessage) => {
+          sent.push(m);
+          return failSend?.(m) ?? true;
+        },
+        waitForBegun: vi.fn(async () => begunSignal),
+        onProgress: (transferId: string, s: number) => void progress.push({ transferId, sent: s }),
+        onLocalRejection: (r: AttachmentRejection) => void rejections.push(r),
+        generateTransferId: () => "t1",
+        chunkBytes: 4,
+        begunTimeoutMs: 50,
+      },
+      progress,
+    };
+  };
+
+  it("成功路径：begin → begun → 多块顺序 chunk（跨块边界）→ commit + 进度递增", async () => {
+    const bytes = new Uint8Array(10);
+    for (let i = 0; i < 10; i++) bytes[i] = i;
+    const h = harness("begun");
+    await uploadAttachment(fakeFile(bytes), h.deps);
+    expect(h.sent.map((m) => m.kind)).toEqual([
+      "attachment-begin",
+      "attachment-chunk",
+      "attachment-chunk",
+      "attachment-chunk",
+      "attachment-commit",
+    ]);
+    const chunks = h.sent.filter((m) => m.kind === "attachment-chunk");
+    expect(chunks.map((c) => (c as { offset: number }).offset)).toEqual([0, 4, 8]);
+    const tail = atob((chunks[2] as { data: string }).data); // 尾块（2 字节，内容 8/9）
+    expect(tail.length).toBe(2);
+    expect(tail.charCodeAt(0)).toBe(8);
+    expect(h.progress.map((p) => p.sent)).toEqual([4, 8, 10]);
+    expect(h.rejections).toEqual([]);
+  });
+
+  it("begin 被拒（SW 已广播拒绝）：不发 chunk、不本地重复拒绝", async () => {
+    const h = harness("rejected");
+    await uploadAttachment(fakeFile(new Uint8Array(8)), h.deps);
+    expect(h.sent.map((m) => m.kind)).toEqual(["attachment-begin"]);
+    expect(h.rejections).toEqual([]);
+  });
+
+  it("begun 超时：本地 lost 拒绝 + abort 兜底", async () => {
+    const h = harness("timeout");
+    await uploadAttachment(fakeFile(new Uint8Array(8)), h.deps);
+    expect(h.sent.map((m) => m.kind)).toEqual(["attachment-begin", "attachment-abort"]);
+    expect(h.rejections).toEqual([
+      {
+        transferId: "t1",
+        name: "a.bin",
+        mimeType: "application/octet-stream",
+        size: 8,
+        reason: "lost",
+        limit: 0,
+      },
+    ]);
+  });
+
+  it("读文件失败（slice 抛错）：本地 lost 拒绝 + abort，不静默", async () => {
+    const h = harness("begun");
+    await uploadAttachment(fakeFile(new Uint8Array(10), { failAt: 4 }), h.deps);
+    expect(h.sent.map((m) => m.kind)).toEqual([
+      "attachment-begin",
+      "attachment-chunk",
+      "attachment-abort",
+    ]);
+    expect(h.rejections).toHaveLength(1);
+    expect(h.rejections[0]).toMatchObject({ name: "a.bin", reason: "lost" });
+  });
+
+  it("断连收口（send 返 false 不抛）：begin/chunk/commit 各阶段本地 lost + abort 尝试", async () => {
+    // begin 阶段断连：SW 未收 begin——立即本地拒绝，不进 waitForBegun 等待
+    const hb = harness("begun", () => false);
+    await uploadAttachment(fakeFile(new Uint8Array(8)), hb.deps);
+    expect(hb.deps.waitForBegun).not.toHaveBeenCalled();
+    expect(hb.sent.map((m) => m.kind)).toEqual(["attachment-begin"]);
+    expect(hb.rejections).toHaveLength(1);
+    // chunk 阶段断连（首块失败）：本地 lost + abort 尽力发
+    const hc = harness("begun", (m) => m.kind !== "attachment-chunk");
+    await uploadAttachment(fakeFile(new Uint8Array(8)), hc.deps);
+    expect(hc.sent.map((m) => m.kind)).toEqual([
+      "attachment-begin",
+      "attachment-chunk",
+      "attachment-abort",
+    ]);
+    expect(hc.rejections).toHaveLength(1);
+    // commit 阶段断连：本地 lost + abort 尽力发（SW 侧 pending 由 60s 超时兜底）
+    const hm = harness("begun", (m) => m.kind !== "attachment-commit");
+    await uploadAttachment(fakeFile(new Uint8Array(8)), hm.deps);
+    expect(hm.sent.map((m) => m.kind)).toEqual([
+      "attachment-begin",
+      "attachment-chunk",
+      "attachment-chunk",
+      "attachment-commit",
+      "attachment-abort",
+    ]);
+    expect(hm.rejections).toHaveLength(1);
+  });
+
+  it("空 MIME 规范化：File.type 为空串（.md/.log/无扩展名）→ begin 带缺省 MIME 不被 registry 判 invalid", async () => {
+    const h = harness("rejected");
+    const file = { ...fakeFile(new Uint8Array(8)), mimeType: "" };
+    await uploadAttachment(file, h.deps);
+    const begin = h.sent[0] as { kind: string; mimeType: string };
+    expect(begin.kind).toBe("attachment-begin");
+    expect(begin.mimeType).toBe("application/octet-stream");
   });
 });
 

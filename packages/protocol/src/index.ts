@@ -39,6 +39,8 @@ export const SW_TO_UI_KINDS = [
   "permission-cancelled",
   "submit-request",
   "attachments",
+  "attachment-begun",
+  "attachment-rejected",
 ] as const;
 
 export const UI_TO_SW_KINDS = [
@@ -46,7 +48,10 @@ export const UI_TO_SW_KINDS = [
   "permission-resolve",
   "submit-resolve",
   "control",
-  "attachment-add",
+  "attachment-begin",
+  "attachment-chunk",
+  "attachment-commit",
+  "attachment-abort",
   "attachment-remove",
   "settings-changed",
   "options",
@@ -64,6 +69,26 @@ export interface AttachmentInfo {
   name: string;
   mimeType: string;
   size: number;
+}
+
+/** 附件预算投影（registry.budget() 填充；usedBytes 已含在途 pending） */
+export interface AttachmentBudget {
+  usedBytes: number;
+  pendingBytes: number;
+  maxBytes: number;
+  maxTotalBytes: number;
+}
+
+/** 附件拒绝明细（begin/commit 阶段回传 UI 展示；lost = 传输中断/未知 transferId） */
+export interface AttachmentRejection {
+  /** lost/commit 阶段缺失时无值 */
+  transferId?: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  reason: "invalid" | "too-large" | "total-exceeded" | "lost";
+  /** reason 对应的上限（invalid 时为 0） */
+  limit: number;
 }
 
 /** submit 预确认的字段摘要行（core SubmitProbe 产出；password 值已在 probe 侧打码） */
@@ -205,6 +230,18 @@ export interface SwSubmitRequestMessage {
 export interface SwAttachmentsMessage {
   kind: "attachments";
   items: AttachmentInfo[];
+  budget: AttachmentBudget;
+}
+
+/** attachment-begin 预检通过回执——UI 收到才开始发 chunk（限流 + 预检反馈面） */
+export interface SwAttachmentBegunMessage {
+  kind: "attachment-begun";
+  transferId: string;
+}
+
+export interface SwAttachmentRejectedMessage {
+  kind: "attachment-rejected";
+  rejection: AttachmentRejection;
 }
 
 export type SwToUiMessage =
@@ -214,7 +251,9 @@ export type SwToUiMessage =
   | SwPermissionRequestMessage
   | SwPermissionCancelledMessage
   | SwSubmitRequestMessage
-  | SwAttachmentsMessage;
+  | SwAttachmentsMessage
+  | SwAttachmentBegunMessage
+  | SwAttachmentRejectedMessage;
 
 // —— UI → SW 消息（Port 发送 + options 页 sendMessage 单发共用）——
 
@@ -242,12 +281,40 @@ export interface UiControlMessage {
   task?: string;
 }
 
-export interface UiAttachmentAddMessage {
-  kind: "attachment-add";
+/**
+ * 分块传输（issue #2 C 档，替换旧 base64 单条 attachment-add）：begin（预检+
+ * 预分配）→ begun 回执 → chunk×N → commit（转正 att_N）/ abort（丢弃）。
+ * 块载荷是 base64 字符串——e2e 实证（diag echo 探针）chrome.runtime 消息通道为
+ * JSON 序列化，ArrayBuffer 克隆不可用；分块把单条消息压到块级（≈5.3MB 字符串），
+ * 整串大消息撞限值与瞬时双份内存的风险一并消除。
+ */
+export interface UiAttachmentBeginMessage {
+  kind: "attachment-begin";
+  /** UI 侧生成（crypto.randomUUID()）；一次传输全周期唯一 */
+  transferId: string;
   name: string;
   mimeType: string;
-  /** 附件字节（file.arrayBuffer() → base64；上限校验在 SW 注册表） */
-  base64: string;
+  /** 声明字节数（预检与预分配依据；append 越界即废） */
+  size: number;
+}
+
+export interface UiAttachmentChunkMessage {
+  kind: "attachment-chunk";
+  transferId: string;
+  /** 本块首字节偏移；SW 侧越界校验 */
+  offset: number;
+  /** 块字节（≈4MB 源数据的 base64——JSON 通道唯一可用的紧凑二进制编码） */
+  data: string;
+}
+
+export interface UiAttachmentCommitMessage {
+  kind: "attachment-commit";
+  transferId: string;
+}
+
+export interface UiAttachmentAbortMessage {
+  kind: "attachment-abort";
+  transferId: string;
 }
 
 export interface UiAttachmentRemoveMessage {
@@ -278,7 +345,10 @@ export type UiToSwMessage =
   | UiPermissionResolveMessage
   | UiSubmitResolveMessage
   | UiControlMessage
-  | UiAttachmentAddMessage
+  | UiAttachmentBeginMessage
+  | UiAttachmentChunkMessage
+  | UiAttachmentCommitMessage
+  | UiAttachmentAbortMessage
   | UiAttachmentRemoveMessage
   | UiSettingsChangedMessage
   | UiOptionsRequestMessage

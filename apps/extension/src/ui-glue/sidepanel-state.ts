@@ -4,7 +4,9 @@
 // ack 回发序号随 ingest 返回（调用方发 journal-ack 释放环）。
 
 import type {
+  AttachmentBudget,
   AttachmentInfo,
+  AttachmentRejection,
   JournalEvent,
   RunJournalSnapshot,
   SwPermissionRequestMessage,
@@ -14,10 +16,17 @@ import type {
 } from "@tw/protocol";
 import { compactEventData } from "../runtime/journal.js";
 
+/** 拒绝明细展示上限（防多文件连续被拒刷屏；最早的先被挤掉） */
+export const ATTACHMENT_REJECTIONS_LIMIT = 5;
+
 export interface SidepanelState {
   snapshot: RunJournalSnapshot | null;
   events: JournalEvent[];
   attachments: AttachmentInfo[];
+  /** attachments 广播携带的预算投影（无广播前为 null——UI 不自行假定上限） */
+  attachmentBudget: AttachmentBudget | null;
+  /** 被拒附件明细（SW 拒绝广播 + 本地读文件失败汇入同一展示位） */
+  attachmentRejections: AttachmentRejection[];
   permission: SwPermissionRequestMessage | null;
   submit: SwSubmitRequestMessage | null;
 }
@@ -26,15 +35,22 @@ export const initialSidepanelState: SidepanelState = {
   snapshot: null,
   events: [],
   attachments: [],
+  attachmentBudget: null,
+  attachmentRejections: [],
   permission: null,
   submit: null,
 };
 
-/** 本地动作（确认卡 resolve 后乐观清除——SW 不广播 resolve 回执） */
+/** 本地动作（确认卡 resolve 后乐观清除——SW 不广播 resolve 回执；拒绝明细的
+ *  清除同理：× 逐条Dismiss、起跑时整表清——SW 不回执 UI 本地动作） */
 export type SidepanelAction =
   | SwToUiMessage
   | { kind: "permission-resolved" }
-  | { kind: "submit-resolved" };
+  | { kind: "submit-resolved" }
+  | { kind: "attachment-rejection-dismissed"; index: number }
+  | { kind: "attachment-rejections-cleared" }
+  /** 本地组装的拒绝（读文件失败等无 SW 广播的失败面——与 SW 拒绝同形同位展示） */
+  | { kind: "attachment-rejected-local"; rejection: AttachmentRejection };
 
 /** live TwEvent → journal 条目形态（ts 取接收时刻墙上钟——展示序不参与协议；
  *  step 已随 compactEventData 进 data——JournalEvent 顶层无 step 字段） */
@@ -105,7 +121,44 @@ export function ingestSidepanel(
     case "submit-request":
       return { state: { ...state, submit: action }, ack: null };
     case "attachments":
-      return { state: { ...state, attachments: action.items }, ack: null };
+      return {
+        state: { ...state, attachments: action.items, attachmentBudget: action.budget },
+        ack: null,
+      };
+    case "attachment-rejected":
+      return {
+        state: {
+          ...state,
+          attachmentRejections: [...state.attachmentRejections, action.rejection].slice(
+            -ATTACHMENT_REJECTIONS_LIMIT,
+          ),
+        },
+        ack: null,
+      };
+    case "attachment-rejected-local":
+      return {
+        state: {
+          ...state,
+          attachmentRejections: [...state.attachmentRejections, action.rejection].slice(
+            -ATTACHMENT_REJECTIONS_LIMIT,
+          ),
+        },
+        ack: null,
+      };
+    case "attachment-rejection-dismissed":
+      return {
+        state: {
+          ...state,
+          attachmentRejections: state.attachmentRejections.filter((_, i) => i !== action.index),
+        },
+        ack: null,
+      };
+    case "attachment-rejections-cleared":
+      return {
+        state:
+          state.attachmentRejections.length === 0 ? state : { ...state, attachmentRejections: [] },
+        ack: null,
+      };
     case "permission-resolved":
       return { state: { ...state, permission: null }, ack: null };
     case "submit-resolved":

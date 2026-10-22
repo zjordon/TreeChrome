@@ -63,6 +63,10 @@ interface ActiveRun {
 /** 终态集合（awaiting-* 是挂起态可回 running） */
 const TERMINAL: readonly string[] = ["done", "error", "interrupted"];
 
+/** commit 彻底未知（pending 已被超时/错位清理）时的 lost 拒绝占位——UI 按
+ *  transferId 用本地传输记录补全展示 */
+const LOST_PLACEHOLDER = { name: "（未知附件）", mimeType: "", size: 0 } as const;
+
 export class RunManager {
   private readonly deps: RunManagerDeps;
   private active: ActiveRun | null = null;
@@ -108,12 +112,39 @@ export class RunManager {
             );
           });
         return;
-      case "attachment-add":
-        this.addAttachment(message.name, message.mimeType, message.base64);
+      case "attachment-begin":
+        this.beginAttachment(message.transferId, message.name, message.mimeType, message.size);
+        return;
+      case "attachment-chunk":
+        // 错位/越界/未知 transferId → registry 废整条 pending；此处只留痕不广播
+        //（UI 侧靠 commit 的 lost 拒绝收口，避免中间态噪音）
+        if (!this.deps.attachments.append(message.transferId, message.offset, message.data)) {
+          this.deps.log?.(`attachment chunk dropped: ${message.transferId}@${message.offset}`);
+        }
+        return;
+      case "attachment-commit": {
+        const r = this.deps.attachments.commit(message.transferId);
+        if (r.ok) {
+          this.broadcastAttachments();
+        } else {
+          this.deps.broadcast({
+            kind: "attachment-rejected",
+            rejection: {
+              transferId: message.transferId,
+              ...(r.meta ?? LOST_PLACEHOLDER),
+              reason: "lost",
+              limit: 0,
+            },
+          });
+        }
+        return;
+      }
+      case "attachment-abort":
+        this.deps.attachments.abort(message.transferId);
         return;
       case "attachment-remove":
         this.deps.attachments.remove(message.attachmentId);
-        this.deps.broadcast({ kind: "attachments", items: this.deps.attachments.list() });
+        this.broadcastAttachments();
         return;
       case "settings-changed":
         return; // 热读面：每次 start 前 load——运行中不换卡（run 装配一次性）
@@ -124,13 +155,35 @@ export class RunManager {
     }
   }
 
-  private addAttachment(name: string, mimeType: string, base64: string): void {
-    const result = this.deps.attachments.add(base64, name, mimeType);
-    if (!result.ok) {
-      this.deps.log?.(`attachment rejected: ${result.reason} (${result.size} > ${result.limit})`);
+  /** begin 预检：通过 → begun 回执（UI 才开始发块）；拒绝 → 明细广播 UI 展示 */
+  private beginAttachment(transferId: string, name: string, mimeType: string, size: number): void {
+    const result = this.deps.attachments.begin(transferId, name, mimeType, size);
+    if (result.ok) {
+      this.deps.broadcast({ kind: "attachment-begun", transferId });
       return;
     }
-    this.deps.broadcast({ kind: "attachments", items: this.deps.attachments.list() });
+    this.deps.log?.(`attachment rejected: ${result.reason} (${result.size} > ${result.limit})`);
+    this.deps.broadcast({
+      kind: "attachment-rejected",
+      rejection: {
+        transferId,
+        // 信封层只校验 kind——字段以 unknown 形态可达，非数 size 归 0 展示
+        name: typeof name === "string" ? name : "",
+        mimeType: typeof mimeType === "string" ? mimeType : "",
+        size: typeof size === "number" && Number.isSafeInteger(size) && size > 0 ? size : 0,
+        reason: result.reason,
+        limit: result.limit,
+      },
+    });
+  }
+
+  /** attachments 广播（items + budget 预算投影——UI 余量呈现的单一来源） */
+  private broadcastAttachments(): void {
+    this.deps.broadcast({
+      kind: "attachments",
+      items: this.deps.attachments.list(),
+      budget: this.deps.attachments.budget(),
+    });
   }
 
   /** control 面（start/stop/pause/resume）；拒绝文案直回 UI 层呈现 */
@@ -313,7 +366,7 @@ export class RunManager {
       this.deps.attachments.clearForRun();
       // 清表广播（评审轮 1 [16]）：add/remove 均广播，clear 静默会让已连接
       // sidepanel 的附件视图与注册表失同步（下一 run 静默丢附件）
-      this.deps.broadcast({ kind: "attachments", items: this.deps.attachments.list() });
+      this.broadcastAttachments();
       try {
         active.bus.close();
       } catch {
