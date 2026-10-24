@@ -3,9 +3,9 @@
 // 全部步、done 步带 Page excerpt、尾部截断对齐 "Step " 边界。
 
 import type { ToolDefinition } from "../llm/types.js";
-import { pyJsonDumps } from "../tools/py-json.js";
 import { JUDGE_SYSTEM_PROMPT, JUDGE_TOOL_SCHEMA } from "./prompt-consts.js";
 import type { JudgeSettings } from "./settings.js";
+import { serializeTraceForPrompt } from "./skills/trace-serialize.js";
 import type { AgentHistoryList } from "./views.js";
 
 export interface JudgementResult {
@@ -123,44 +123,10 @@ export class JudgeEvaluator {
     return parts.join("\n");
   }
 
-  /** 全步序列化：URL/Title/Goal/Action(原始结果)/Result；done 步附 Page excerpt */
+  /** 全步序列化：URL/Title/Goal/Action(原始结果)/Result；done 步附 Page excerpt
+   *  （方法体提取为 skills/trace-serialize.ts 共享模块——issue #5 S1；judge 与
+   *  distill 共用同一序列化口径，锚定测试经本方法继续对拍，行为不变） */
   serializeHistory(history: AgentHistoryList): string {
-    const allSteps = history.history;
-    if (allSteps.length === 0) return "";
-    const lines: string[] = [];
-    for (const h of allSteps) {
-      const modelOut = h.modelOutput ?? {};
-      const goal = typeof modelOut.next_goal === "string" ? modelOut.next_goal : "";
-      const action = (modelOut.action ?? {}) as Record<string, unknown>;
-      const actionName = String(action.name ?? "");
-      const actionParams = (action.params ?? {}) as Record<string, unknown>;
-      const summary = h.stateSummary ?? {};
-      const url = String(summary.url ?? "");
-      const title = String(summary.title ?? "");
-      const domExcerpt = String(summary.domExcerpt ?? "");
-      const resultParts: string[] = [];
-      for (const r of h.result) {
-        if (r.error) {
-          resultParts.push(`ERROR: ${r.error}`);
-        } else if (r.extractedContent) {
-          resultParts.push(r.extractedContent);
-        } else {
-          resultParts.push(r.render());
-        }
-      }
-      const block = [
-        `Step ${h.stepNumber}:`,
-        `  URL: ${url}`,
-        `  Title: ${title}`,
-        `  Goal: ${goal}`,
-        `  Action: ${actionName}(${pyJsonDumps(actionParams)})`,
-      ];
-      if (domExcerpt) {
-        block.push(`  Page excerpt: ${domExcerpt}`);
-      }
-      block.push(`  Result: ${resultParts.join("; ")}`);
-      lines.push(block.join("\n"));
-    }
-    return lines.join("\n\n");
+    return serializeTraceForPrompt(history);
   }
 }

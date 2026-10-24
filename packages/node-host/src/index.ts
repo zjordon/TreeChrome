@@ -14,6 +14,15 @@ export {
   type TransportFactory,
 } from "./agent-boot.js";
 export { type AttachConsoleOptions, attachConsole, clip, describeEvent } from "./console.js";
+export {
+  bumpDistillStreak,
+  type DistillAfterRunOptions,
+  type DistillRunOptions,
+  distillAfterRun,
+  dominantHostOf,
+  passesDistillGate,
+  writeTaskCard,
+} from "./distill-run.js";
 export { NodeFs } from "./node-fs.js";
 export {
   applyDotEnv,
