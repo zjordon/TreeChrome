@@ -84,3 +84,7 @@ AX getFullAXTree（已在采）
 - **#2（P2 采纳，夹具影响表述有误但契约主张实证成立）**：新字段经 `toJson` 的 `ax_node: {...spread}` 泄入投影——Python `models.py` `EnhancedAXNode` dataclass 无 `value` 字段、`__json__` 用 `asdict`（实测行号 592-613），TS 泄漏即超出唯一获准的 element_tree_text 偏离面（现有 fixture output 不含 ax_node 故潜伏不炸；SimplifiedNode.toJson 嵌套传播）。修复：投影前剔除该键（`types.ts:663-667`），字段注释补「仅限 Step 5 消费」。新测试 1 条（ax_node 投影无 value 键）
 - 驳回 0 / stale 0；dom-snapshot 173→176 全绿（golden 逐字节不受影响——夹具页无「属性种子+AX 空态」组合，无需重生成）；全仓 typecheck+test+biome 绿
 
+### 轮 2（2026-10-24，增量审 88aee16..HEAD 即 2b1315c，耗时 2m，意见数 0 → 收敛）
+
+零意见、状态 complete；无修复提交。累计 2 轮：意见 3 / 采纳 3 / 驳回 0 / stale 0，分支提交 2 个（88aee16 实现 + 2b1315c 评审修复）。P3 backlog 空。
+
