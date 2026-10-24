@@ -1,105 +1,81 @@
 # SCRATCHPAD — 实施计划草稿（随实施持续更新）
 
-> 分支：`feat/issue-2-attachments`（自 main @ 301ec0a）
-> 目标 1：实现 [issue #2](https://github.com/zjordon/TreeChrome/issues/2) — 多附件收尾：被拒附件 UI 明细反馈、预算预检口径、port 通道分块传输（C 档）
-> 状态：**实现完成（步骤 1-8 全绿），待步骤 9 评审收尾**
+> 分支：`feat/issue-6-form-control-state`（自 main @ c07d9a4——**不含 #5 的 bee0f46**：dom-snapshot 层与 #5 无代码耦合，两分支独立合并；dump 工具加开关挪 #5 后续段防撞文件）
+> 目标：实现 [issue #6](https://github.com/zjordon/TreeChrome/issues/6) — 快照表单控件状态可见性（formControlState）：select 选中值 / input 当前值 / checked 进 element_tree_text
+> 状态：**计划初稿，待人工审核（未过审不写实现代码）**
 
-## 0. 背景与结论（调研已完成）
+## 0. 背景与结论（实证已完成，见 issue #6 全文）
 
-多附件主体（multiple 输入、增量消息面、注册表多件）已在 M5 段 E/F 落地。剩余三件事的事实基础：
+模型能看到控件存在、看不到控件状态（Period 当前值 / input 当前文本 / checked）。AX 源每次 get_state 都在送状态（`CdpAxTreeNode.value`，a11y 快照实证 `combobox "Period" … value="Day"`、`textbox "From *" … value="1/1/22"`），融合层投影无槽位丢弃，序列化层 `current=` 渲染槽位现成。a11y 树系（chrome-devtools/Playwright ariaSnapshot）与截图系工具天然显示表单值——DOM 序列化系是唯一缺口家族。参照实现：browser-use fork `serializer.py:230-269`（file input 的 AX→valuenow→current= 接线，注释 "Always shows state"）。
 
-| 事实 | 位置 | 含义 |
+## 1. 方案总览
+
+```
+AX getFullAXTree（已在采）
+  → collector.buildEnhancedAxNode 补提取顶层 value（EnhancedAXNode 新增字段）
+  → serializer 开关 formControlState（缺省关 = 输出与现状逐字节一致）：
+      select         → compound Dropdown Toggle 组件 valuenow = AX value → 现成 current= 渲染
+      text input     → 元素顶层 value=…（password 掩码、长值截断）
+      checkbox/radio → 元素顶层 checked=true/false（AX properties.checked）
+  → buildDomState(opts) / BrowserSession 透传 → node-host 默认开；扩展接线留 #5 S3 段
+```
+
+### 关键设计决策（待审）
+
+| # | 决策 | 理由 |
 |---|---|---|
-| 拒绝只进 SW log，无 UI 反馈 | `run-manager.ts` addAttachment（仅 `deps.log`） | 需新增回传通道 |
-| 注册表无预算访问器 | `attachment-registry.ts`（总量只在 add 内部算） | 需新增 `budget()` |
-| base64 整串单条 port 消息 | `attachment-file.ts` fileToBase64 → `attachment-add` | 100MB→≈133MB 字符串，撞消息上限风险 + 多份拷贝 |
-| core 侧按单 id 消费，多件无关 | `task-text.ts` attachTaskText 已遍历清单；`assemble.ts` readAttachment 装饰 | **core 不动**（已核实） |
-| 既有测试断言「拒绝时不广播」 | `runtime-run-manager.test.ts` | 语义已反转：断言 `attachment-rejected` 广播 |
-| e2e 零附件覆盖 | smoke-sw-runtime / smoke-ui | 已补 smoke-attachments |
+| F1 | ~~开关缺省关，产品宿主开~~ **已推翻（用户裁定 2026-10-24）**：定性为 bug 修复（Step 5「表单当前值」设计本就存在、数据源接错抽屉），**无条件渲染、无开关**。代价：TS 输出与未修的 Python 不再逐字节一致 → 两页受影响 fixture 的 output 经 TS 修复版管线重放原 input 重新生成（选 B：Python 侧同 bug 暂不修，基准以 TS 为准，fixtures README 登记技术债；Python 同修后须重对齐） | 用户：「这明显是一个 bug」——bug 修复不藏在开关后；golden 的 Python 参考语义对这两页暂时破损，登记在案 |
+| F2 | 数据源 = AX 顶层 `value`（select/input 文本）+ AX `properties.checked`（checkbox/radio） | 零额外 CDP 调用（AX 源已在采）；fork file input 已验证同款模式（valuetext/value → valuenow） |
+| F3 | 防护：password 类型掩码（`value=***`）；值截断对齐 compound 截断口径（30 code points + 省略号，实现评审可调）；AX 源失败/字段缺失 → 属性整体缺席不炸（现有降级链语义不变） | 状态泄露（password）与 token 膨胀（长值）两头堵；降级一致性 |
+| F4 | select 走 compound `current=`（复用现成渲染槽位，slider 同款）；input/checked 走元素顶层属性 | 候选 B（全走顶层 `value=`/`checked=`）更直观但 select 需新渲染分支；倾向 A，实现评审定 |
+| F5 | 透传链：`BrowserSession` 构造配置（实例缺省）而非 getState 每次传参 | getState 调用点在 sense 阶段深处（core agent），逐参透传改动面大；构造期一次配置符合"配置显式传入"铁律 |
 
-## 1. 方案总览（含实施期实证修订）
-
-传输语义（begin→begun→chunk×N→commit/abort 状态机全程保留）：
-
-```
-UI: attachment-begin {transferId, name, mimeType, size}   ← SW 预检（单件/总量含 pending）+ 预分配
-SW: attachment-begun  {transferId}                        ← 预检通过回执（UI 才开始发块）
-UI: attachment-chunk  {transferId, offset, data} × N（顺序发，file.slice 流式读）
-UI: attachment-commit {transferId}                        ← 转正 att_N
-SW: attachments {items, budget}（成功）或 attachment-rejected（失败明细）
-```
-
-> **⚠️ 实施期实证修订（2026-10-21，e2e smoke-attachments 的 diag echo 探针）**：
-> 计划原定 chunk 载荷为 ArrayBuffer（假设 port 结构化克隆可行）。实证 chrome.runtime
-> 消息通道为 **JSON 序列化**——ArrayBuffer 回显为 `{}`、Uint8Array 为 `{0:1,2:…}`，
-> 克隆不可用。**chunk 载荷改为 base64 字符串（4MB 源字节/块）**：
-> - 保留的主收益：单条消息压到块级（≈5.3MB 字符串），整串大消息撞限值与瞬时双份内存风险消除；
-> - 未达成项：issue 验收中「port 面不再出现 base64 字符串」——+33% 膨胀保留（块级粒度）；
-> - 替代方案（OPFS 侧信道零 base64）评估为 registry 存储模型重做，改动面过大，未采。
-> - 该修订已写进 protocol 注释与 e2e 头注释留痕。
-
-- `attachment-add`（base64 整串版）已删除；`fileToBase64`、registry `add(base64)`/导出 `base64ToBytes` 退役（编码核以块级粒度活在 `attachment-upload.ts` 的 `bytesToBase64`）。
-- `resolve()` 不动：读取时 bytes→base64 供 core `readAttachment`（core 契约面零变化）。
-
-## 2. 组件改动清单（已实施）
+## 2. 组件改动清单
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| protocol | `packages/protocol/src/index.ts` | `AttachmentBudget`/`AttachmentRejection` 类型；4 个新 Ui 消息（begin/chunk/commit/abort）+ 2 个新 Sw 消息（begun/rejected）；`SwAttachmentsMessage` +`budget`；kind 表 7→9 / 9→12 |
-| registry | `apps/extension/src/host/attachment-registry.ts` | pending→committed 状态机：`begin`（预检+预分配+pending 占位总量）/`append`（严格顺序 base64 块）/`commit`（写满转正，失败带 meta）/`abort`/`budget()`；60s 无活动超时；`clearForRun` 连 pending 清 |
-| run-manager | `apps/extension/src/runtime/run-manager.ts` | 四个新 handler；begin 通过→begun 广播 / 拒绝→attachment-rejected 明细广播；commit 成功→attachments+budget 广播 / 失败→lost（占位名「（未知附件）」）；remove/清表广播带 budget |
-| ui-glue | `apps/extension/src/ui-glue/attachment-upload.ts`（新） | 传输编排纯函数：begin→等 begun（信号三态 begun/rejected/timeout）→chunk→commit；读文件失败/begun 超时→本地拒绝+abort（修复旧 unhandled rejection） |
-| ui-glue | `sidepanel-app.tsx` | begunWaiters 桥（onMessage→传输推进）；uploads 进度本地态；起跑清拒绝明细 |
-| ui-glue | `sidepanel-state.ts` | state +`attachmentBudget`/`attachmentRejections`（上限 5）；reducer 处理 rejected/本地拒绝/逐条清/整表清 |
-| ui-glue | `attachment-file.ts` | **删除**（fileToBase64 退役） |
-| console-ui | `packages/console-ui/src/task-bar.tsx` | 可选 props `budget`/`uploads`/`rejections`/`onDismissRejection`；UI 放置：清单 → 上传中条目（%）→ 预算行（≥90% 警色）→ 拒绝区（reason 文案映射 + × 清除）；上传中禁用开始 |
-| e2e | `apps/extension/e2e/smoke-attachments.mjs`（新）+ package.json | `e2e:attachments` 脚本；diag echo 通道探针（记录不断言） |
-| 不动 | core 全部、final-result、journal | 边界声明见 §2.8（原计划） |
+| dom-snapshot | `src/types.ts` | `EnhancedAXNode` + `value: string \| null` 字段（snake_case 对齐投影惯例；Python 对齐口径登记为 TS 扩展先行） |
+| dom-snapshot | `src/collector.ts` | `buildEnhancedAxNode` 提取 `axNode.value?.value`（string 收窄，非串丢弃） |
+| dom-snapshot | `src/serializer.ts` | `SerializeOptions.formControlState`（缺省 false）：select compound valuenow 填充；input 顶层 value=（password 掩码/截断）；checkbox/radio checked=。**缺省路径零字节漂移** |
+| dom-snapshot | `src/index.ts` | 开关类型导出 |
+| dom-snapshot 测试 | `test/serializer*.test.ts` 扩 | 开关关 = 现有输出不变；开关开 = select/input/checkbox 三类渲染断言（AX value 有/无/password/超长四象限） |
+| core | `src/browser/session.ts` | 构造 options 增 `formControlState`（透传 buildDomState）；getState 不改签名 |
+| core 测试 | session 系测试 | 配置透传断言（fake transport 层面即可，不重测 dom-snapshot） |
+| node-host | `src/agent-boot.ts` | `assembleAgent` 构造 BrowserSession 时默认 `formControlState: true`（产品口径；env 覆盖键后续按需） |
+| node-host 测试 | agent-boot 系 | 默认开断言 |
+| 不动 | golden fixtures、extension、examples | 开关关回归零影响；dump 工具加开关 + 扩展宿主接线登记到 #5 后续段（SCRATCHPAD 跨 issue 依赖） |
 
-## 3. 测试计划（已实施）
+## 3. 测试计划
 
 | 层 | 用例 |
 |---|---|
-| protocol | envelope kind 表 9/12 + 新消息样例 |
-| registry | begin/append/commit/abort 全路径；三拒绝（含 pending 占位竞态）；invalid（size 非正/字段坏/重复 id）；append 错位/重复/越界/非法 base64/非 string；commit 半传带 meta/彻底未知；budget 三态；超时清理；list 不见 pending |
-| run-manager | begin→begun；拒绝→rejected 广播（旧「不广播」断言已反转）；chunk 静默；commit→attachments+budget；remove 带预算；commit 半传→lost+meta |
-| ui-glue | reducer 预算/拒绝/上限 5/清除；uploadAttachment 四路径（成功多块/被拒停发/超时 abort/读失败 abort） |
-| console-ui | 预算行渲染+警色；拒绝文案映射+×；uploads 进度+禁开始 |
-| e2e | 微型单块 / 8MB 两块 / 超限拒绝 / 多件并存 —— **PASS（真 Chrome+SW+Port）** |
+| collector | AX value（string/非 string/缺失）→ EnhancedAXNode.value 收窄正确 |
+| serializer | 开关关：既有 golden/单测逐字节不变；开关开：select 渲染含 `current=Day`（AX value 在）、无 current（AX value 缺、降级缺席）；input `value=01/01/2022`、password 掩码、超长截断；checkbox `checked=true/false`；AX 源整体缺失 → 全部属性缺席不炸 |
+| core session | 构造配置透传到 buildDomState（fake transport） |
+| node-host | assembleAgent 默认开 |
+| 真机验收（登记性） | dump 工具（#5 分支）+ 开关在 Bestsellers 页显示 value=Day/日期值；自进化循环 --fresh 重跑 task 1 记录 Period 决策变化 |
 
 ## 4. 实施进度
 
-- [x] 1. protocol 类型 + kind 表 + envelope 测试
-- [x] 2. registry 状态机 + 测试（10 用例）
-- [x] 3. run-manager handler + 广播 + 测试（含旧断言语义反转）
-- [x] 4. sidepanel-state reducer + 测试
-- [x] 5. sidepanel-app 传输编排 + ui-glue 测试；attachment-file.ts 退役
-- [x] 6. task-bar UI + 测试
-- [x] 7. e2e smoke-attachments.mjs（**含通道实证：ArrayBuffer 不可用 → 块载荷 base64 修订**）
-- [x] 8. 全量验收：`pnpm typecheck` ✅、`pnpm -r test` 8 包 1823 用例 ✅、`pnpm lint` ✅、`node scripts/gate.mjs pre-commit` ✅
-- [ ] 9. `/review-loop` 评审循环 → `/finish-issue` 收尾（待用户启动；前置：实现需先提交成 range）
+- [x] S1 dom-snapshot：types/collector/serializer + 单测（2026-10-24 完成；**实施期发现**：Step 5「表单当前值」/password 保护/白名单 value、checked/Step 8 截断**全部已存在**，唯一断链是数据源——Step 5 扫 properties 而 Chrome 把原生控件状态放 AX 顶层 value。实际改动：EnhancedAXNode 补可选 value（collector string 收窄）+ Step 5 正源分支（顶层优先，properties 回退保持）+ ~~开关穿线~~（后按用户裁定拆除，无条件渲染）。F4 之争消解——既有路径即顶层 value= 形态。dom-snapshot 173 用例全绿含 golden 逐字节（两页 fixture 基准重生成后对拍恢复））
+- [x] S2 ~~core session 透传 + node-host 默认开~~（开关拆除后此步消解：session/agent-boot 的开关接线全部移除，恢复原签名；相关测试同步回退）
+- [x] S3 真机验收（2026-10-24 完成：用户 Chrome 实跑两态对照——开态 `select … value=Day`、`input … value=1/1/22 / value=3/31/22`，与 a11y 视角逐字段一致、行数 87vs87 结构零变化；当时验证的是开关版，开关拆除后行为即该"开态"无条件生效。自进化循环 --fresh 登记性验收仍延期至两分支并 main 后）
+- [ ] S4 全量门禁（绿）→ 提交（fixtures 重生成须注明原因）→ `/review-loop` → `/finish-issue`
 
 ## 5. 风险与已知项
 
-- ~~chrome.runtime port 消息上限~~ → 已实证通道 JSON 序列化，4MB 块 ≈5.3MB 字符串，限值风险消除
-- run 期间新增附件不回写 journal 快照（既有行为，本次不动）
-- 真 100MB 上限跑通属手动验证项（e2e 常态跑 8MB 多块路径已证分块正确性）——建议手动跑一次后回填 issue 备注
-- 本分支工作区还叠着 main 带来的未提交改动（issue #1 实现、.zcode/.claude 命令、AOCI 资产）——本分支提交时须只挑附件相关文件
+- AX 与 DOM 采集时点：AX value 与 DOM 树同批 get_state 内采集，时点一致（无跨批漂移面）
+- 自定义下拉（非原生 select）：AX combobox role 的 value 一般有效，验收时抽验 douyin 站；覆盖不到的走既有 compound options 兜底（不劣于现状）
+- 合并顺序：#6 不碰扩展侧与 examples → 与 #5 分支零文件冲突，任意顺序合并
+- Python 对齐：`EnhancedAXNode.value` 为 TS 先行扩展（缺省关不影响契约）；长期如需 Python 侧同步另议
+- AOCI 认知维护：分支收尾时与 #5 一并评估（两分支各自收尾时点分别触发）
 
 ## 6. 变更记录
 
-- 2026-10-21 计划初稿（用户审核通过）
-- 2026-10-21 实施完成（步骤 1-8）；C 档实证修订：ArrayBuffer 克隆不可用（通道 JSON 序列化）→ 块载荷改 base64，详见 §1 修订块
-- 2026-10-21 实现提交 9c367ae（17 文件，+1464/−157，门禁全绿）
-- 2026-10-21 /review-loop 收敛（2 轮，3 采纳/0 驳回；修复提交 e5078a6）
-- 2026-10-22 手动测试发现侧边栏白屏：vite 解析 peer react 爬出仓库命中兄弟仓 TreeChromeAgent 的 react@19.3.1，与本仓 react-dom@19.3.0 双实例（环境级回归，main 同样复现）；wxt.config.ts 加 resolve.dedupe 修复，无头验证渲染恢复
+- 2026-10-24 计划初稿（issue #6 → 本计划；替换 #5 期 SCRATCHPAD 内容，其历史在 feat/issue-5-self-evolution 分支 bee0f46）
+- 2026-10-24 S1 完成（含实施期重大发现：管线设计本就完整——Step 5/password/白名单/截断皆在，断链仅数据源一处；实际改动远小于计划，F4 消解）。S2 完成（session 构造期配置 + 公开只读面 + node-host 默认开）。全量门禁绿。S3 验收脚本 `_verify-form-state.mjs` 就绪待真机跑
+- 2026-10-24 **用户裁定拆开关**（「这明显是一个 bug」）：无条件渲染，S2 的全部接线移除、测试回退；golden 2/4 红（Python 同 bug 未修）→ 选 B：两页 fixture output 由 TS 修复版重放原 input 重生成（外科手术式保留 input 原文/格式/dpr 浮点形态；selector_map 键序改数值升序），fixtures README 登记技术债（Python 同修后须重对齐）。S3 真机验收通过（value=Day/1/1/22 与 a11y 一致）。dom-snapshot 173 全绿 + 全仓门禁绿
 
 ## 7. 评审轮登记（/review-loop，base=main）
 
-| 轮 | 意见（自评分布） | 采纳/驳回/stale | P1/P2/P3 | 要点 |
-|---|---|---|---|---|
-| 1 | 3（high:2 medium:1） | 3/0/0 | 0/3/0 | ①+② send 契约改 boolean 并逐阶段检查断连（PortClient.send 断连返 false 不抛——chunk/commit 静默丢传输违反失败面契约；sidepanel-app 透传返回值）；③ 空 MIME（.md/.log/无扩展名 File.type==""）在 uploadAttachment 规范化为 application/octet-stream（否则 registry 判 invalid 永久不可附加）。修复前新测试对旧实现验证必红（双向验证）。测试 105→107 |
-| 2 | 0 | —/—/— | 0/0/0 | 增量复核轮 1 修复提交（9c367ae..e5078a6，2 文件面）：零意见，**循环收敛** |
-
-**评审收敛**：2 轮，累计意见 3 / 采纳 3 / 驳回 0 / stale 0；分支提交 2（9c367ae 实现 + e5078a6 修复）；测试 105→107；门禁全绿。
-
+（待实施后登记）

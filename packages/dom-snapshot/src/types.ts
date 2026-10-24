@@ -254,6 +254,10 @@ export interface EnhancedAXNode {
   ignored: boolean;
   role: string | null;
   name: string | null;
+  /** 控件当前状态值（AX 顶层 value：select 选中项 / input 当前文本；issue #6——
+   *  Chrome 把原生控件状态放顶层不放 properties，缺此字段则 serializer Step 5 恒落空）。
+   *  可选：TS 先行扩展（Python 投影无此字段），历史构造点/夹具缺省视为无状态 */
+  value?: string | null;
   description: string | null;
   properties: EnhancedAXProperty[] | null;
   child_ids: string[] | null;
