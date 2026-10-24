@@ -53,6 +53,16 @@ export function SkillDraftReview({ drafts, onAdopt, onDiscard }: SkillDraftRevie
     }));
   };
 
+  /** 采纳/丢弃后清编辑态（同键新草稿不吃残留——评审轮 1 [2]） */
+  const clearEdits = (key: string): void => {
+    setEdits((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   const editsOf = (d: SkillDraftInfo): SkillDraftEdits => {
     const state = edits[draftKey(d.host, d.slug)];
     if (state === undefined) return {};
@@ -88,12 +98,10 @@ export function SkillDraftReview({ drafts, onAdopt, onDiscard }: SkillDraftRevie
                   <td>
                     <Button
                       onClick={() => {
-                        if (!open) {
-                          patch(key, {});
-                          setOpenKey(key);
-                        } else {
-                          setOpenKey(null);
-                        }
+                        // 不在此预建编辑态（评审轮 1 [1]）：patch({}) 会把 keywordsRaw
+                        // 钉成 ""——空串非 nullish，草稿原关键词的回退表达式永远取
+                        // 不到。首次 onChange 才建立编辑态
+                        setOpenKey(open ? null : key);
                       }}
                     >
                       {open ? "收起" : "审阅"}
@@ -163,7 +171,13 @@ export function SkillDraftReview({ drafts, onAdopt, onDiscard }: SkillDraftRevie
                         <Badge tone="accent">{(d.sourceTraces ?? []).length} 条来源轨迹</Badge>{" "}
                         <Button
                           variant="primary"
-                          onClick={() => onAdopt(d.host, d.slug, editsOf(d))}
+                          onClick={() => {
+                            onAdopt(d.host, d.slug, editsOf(d));
+                            // 同键新草稿（增量蒸馏天然同 host|slug）不得吃到旧编辑
+                            // 残留——采纳后清除（评审轮 1 [2]）
+                            clearEdits(key);
+                            setOpenKey(null);
+                          }}
                         >
                           采纳
                         </Button>{" "}
@@ -171,6 +185,7 @@ export function SkillDraftReview({ drafts, onAdopt, onDiscard }: SkillDraftRevie
                           variant="danger"
                           onClick={() => {
                             onDiscard(d.host, d.slug);
+                            clearEdits(key);
                             setOpenKey(null);
                           }}
                         >

@@ -139,18 +139,30 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** promise 链串行面（runtime/mutation-queue 同款实现内联——host 层不得反向
+ *  import runtime；评审轮 1 [3]：缺省直通会让生产装配遗漏注入时静默失去互斥） */
+function makeInternalQueue(): <T>(task: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(task: () => Promise<T>): Promise<T> => {
+    const next = tail.then(task, task);
+    tail = next.catch(() => {});
+    return next;
+  };
+}
+
 export class SkillStore {
   private readonly db: SkillDb;
   private readonly serialize: <T>(task: () => Promise<T>) => Promise<T>;
 
   constructor(
     db: SkillDb,
-    /** 变更串行面（runtime/mutation-queue 注入；缺省直通）——adopt 的读-改-写
-     *  与 built-in 刷新/其它写者不交错（m5/05 轮 1 [12] 同款教训） */
-    serialize: <T>(task: () => Promise<T>) => Promise<T> = (task) => task(),
+    /** 变更串行面（注入可观测——测试计数；缺省内建 promise 链）——全部写路径
+     *  （save/discard/adopt/bump/built-ins 刷新）经此串行，读-改-写不交错
+     *  （m5/05 轮 1 [12] 教训；评审轮 1 [3][4] 收紧为全写者共面） */
+    serialize?: <T>(task: () => Promise<T>) => Promise<T>,
   ) {
     this.db = db;
-    this.serialize = serialize;
+    this.serialize = serialize ?? makeInternalQueue();
   }
 
   async getCard(host: string, slug: string): Promise<SkillCardData | null> {
@@ -221,31 +233,36 @@ export class SkillStore {
       const raw = await this.db.get(key);
       const prov = isRecord(raw) ? raw.provenance : null;
       if (isRecord(prov) && prov.sourceType === "built-in") {
-        await this.db.delete(key);
+        await this.serialize(() => this.db.delete(key));
         written += 1;
       }
     }
     return written;
   }
 
-  /** 单卡 upsert 判定：非 built-in 在位不碰；内容未变不重写 */
+  /** 单卡 upsert 判定：非 built-in 在位不碰；内容未变不重写（经串行面——与
+   *  adopt 的 D14 built-in 检查互斥，评审轮 1 [3]） */
   private async upsertBuiltins(card: SkillCardData): Promise<boolean> {
-    const existing = await this.getCard(card.host, card.slug);
-    if (existing !== null) {
-      if (existing.provenance.sourceType !== "built-in") return false;
-      const { updatedAt: _old, ...oldRest } = existing;
-      const { updatedAt: _new, ...newRest } = card;
-      void _old;
-      void _new;
-      if (JSON.stringify(oldRest) === JSON.stringify(newRest)) return false;
-    }
-    await this.db.put(cardKey(card.host, card.slug), card);
-    return true;
+    return this.serialize(async () => {
+      const existing = await this.getCard(card.host, card.slug);
+      if (existing !== null) {
+        if (existing.provenance.sourceType !== "built-in") return false;
+        const { updatedAt: _old, ...oldRest } = existing;
+        const { updatedAt: _new, ...newRest } = card;
+        void _old;
+        void _new;
+        if (JSON.stringify(oldRest) === JSON.stringify(newRest)) return false;
+      }
+      await this.db.put(cardKey(card.host, card.slug), card);
+      return true;
+    });
   }
 
   // ── 蒸馏草稿（issue #5 D7/D8/D15/D17）────────────────────────────────
 
-  /** 蒸馏产物落草稿键（幂等 upsert；不碰正键——增量草稿与在用卡共存到采纳） */
+  /** 蒸馏产物落草稿键（幂等 upsert；不碰正键——增量草稿与在用卡共存到采纳）。
+   *  经串行面——与 adopt 的读-删窗互斥（评审轮 1 [4]：否则并发 saveDraft 可
+   *  在 adopt 读旧草稿后覆盖写、随后被 adopt 的 delete 吞掉新修订） */
   async saveDraft(draft: SkillCardDraft, now = Date.now()): Promise<void> {
     const card: SkillCardData = {
       host: draft.host,
@@ -261,7 +278,7 @@ export class SkillStore {
       provenance: { sourceType: "distilled", note: `distill:${draft.mode}` },
       updatedAt: now,
     };
-    await this.db.put(draftKey(draft.host, draft.slug), card);
+    await this.serialize(() => this.db.put(draftKey(draft.host, draft.slug), card));
   }
 
   /** 草稿列举（options 审阅面；键序即返回序） */
@@ -320,9 +337,9 @@ export class SkillStore {
     });
   }
 
-  /** 丢弃草稿（只删草稿键，正键永不受影响） */
+  /** 丢弃草稿（只删草稿键，正键永不受影响；经串行面与 saveDraft/adopt 共面） */
   async discardDraft(host: string, slug: string): Promise<void> {
-    await this.db.delete(draftKey(host, slug));
+    await this.serialize(() => this.db.delete(draftKey(host, slug)));
   }
 
   /** D17 收敛计数：unchanged 路径递增在用卡 streak（内容/distilledAt 不动——与

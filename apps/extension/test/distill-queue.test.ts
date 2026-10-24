@@ -92,3 +92,29 @@ describe("DistillQueue", () => {
     expect(await new DistillQueue(nonArray).size()).toBe(0);
   });
 });
+
+// ── 评审轮 1 [8]：并发写者串行化（读改写无互斥会丢更新） ────────────────
+
+describe("DistillQueue 并发写者", () => {
+  it("延迟存储下并发 enqueue×3 无丢失（无串行面时各读空快照只留最后一个）", async () => {
+    const map = new Map<string, unknown>();
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const area = {
+      async get(key: string) {
+        await delay(4); // 放大读改写窗口
+        return map.has(key) ? { [key]: map.get(key) } : {};
+      },
+      async set(items: Record<string, unknown>) {
+        await delay(2);
+        for (const [k, v] of Object.entries(items)) map.set(k, v);
+      },
+    } as unknown as StorageArea;
+    const queue = new DistillQueue(area);
+    await Promise.all([
+      queue.enqueue(job("r1")),
+      queue.enqueue(job("r2")),
+      queue.enqueue(job("r3")),
+    ]);
+    expect(await queue.size()).toBe(3);
+  });
+});

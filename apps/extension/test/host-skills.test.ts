@@ -373,7 +373,7 @@ describe("SkillStore 蒸馏草稿", () => {
     await store.saveDraft(draft(), 100);
     const res = await store.adoptDraft("a.example", "task-one");
     expect(res.ok).toBe(true);
-    expect(entered).toBe(1); // adopt 主体确实包进串行面
+    expect(entered).toBe(2); // saveDraft + adopt 都经串行面（评审轮 1 [4] 后 save 不再绕过）
     expect(ranInside).toBe(true);
   });
 
@@ -431,5 +431,66 @@ describe("ExtensionSkillSource 草稿过滤与缓存失效（issue #5 S3）", ()
     expect(await src.taskCardText({ slug: "new-task", description: "", host: "a.example" })).toBe(
       "S-NEW\n\nSE-NEW\n\nQ-NEW",
     );
+  });
+});
+
+// ── 评审轮 1 [3][4]：全部写路径经串行面 ────────────────────────────────
+
+describe("SkillStore 写路径串行面", () => {
+  const draft = (): import("@tw/core").SkillCardDraft => ({
+    host: "a.example",
+    slug: "task-one",
+    description: "Do one thing v2",
+    keywords: ["one"],
+    sop: "SOP-NEW",
+    selectors: "SEL-NEW",
+    quirks: "Q-NEW",
+    mode: "new",
+    sourceTraces: ["run-9"],
+    distilledAt: "2026-10-24T00:00:00Z",
+  });
+
+  it("save/discard/builtins 刷新全部经注入串行面（计数）", async () => {
+    let entered = 0;
+    const serialize = async <T>(task: () => Promise<T>): Promise<T> => {
+      entered += 1;
+      return task();
+    };
+    const store = new SkillStore(fakeDb(), serialize);
+    await store.saveDraft(draft());
+    expect(entered).toBe(1);
+    await store.discardDraft("a.example", "task-one");
+    expect(entered).toBe(2);
+    await store.refreshBuiltins(MANIFEST, 1000); // a 站点卡 + a 任务卡 + b 站点卡三次 upsert
+    expect(entered).toBe(5); // prune 零删除不经过面
+  });
+
+  it("缺省内建串行面：生产构造不注入也不失互斥（并发写者按序落库）", async () => {
+    // 延迟存储放大读改写窗口：无串行面时后写者以陈旧快照覆盖
+    const map = new Map<string, unknown>();
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const slowDb = {
+      async get(key: string) {
+        await delay(4);
+        return map.get(key) ?? null;
+      },
+      async put(key: string, value: unknown) {
+        await delay(1);
+        map.set(key, value);
+      },
+      async delete(key: string) {
+        await delay(1);
+        map.delete(key);
+      },
+      async getAllKeys() {
+        return [...map.keys()];
+      },
+    } as SkillDb;
+    const store = new SkillStore(slowDb); // 不注入——用内建链
+    await store.saveDraft(draft());
+    await store.saveDraft({ ...draft(), sop: "SOP-B" });
+    const list = await store.listDrafts();
+    expect(list).toHaveLength(1);
+    expect(list[0]?.sop).toBe("SOP-B"); // 后写胜——若并发交错则可能丢此写
   });
 });

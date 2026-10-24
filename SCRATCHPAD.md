@@ -153,4 +153,14 @@
 
 ## 7. 评审轮登记（/review-loop，base=main）
 
-（待实施后登记）
+### 轮 1（2026-10-24，ocr 21m，9 条意见 high:2 medium:5 low:2 → 全采纳，驳回 0）
+
+- **#3（P1）SkillStore 串行面生产失效**：构造缺省直通 + background 未注入——bumpDistillStreak 与 adoptDraft 竞态可静默回退已采纳卡。修复：缺省改内建 promise 链（host 层内联 mutation-queue 同款），且**全部写路径**（saveDraft/discardDraft/adopt/bump/built-ins upsert+prune）共面——#4（save/discard 绕过面）同修
+- **#9（P1）douyin 分析脚本基线污染**：探索轮未显式关 skillSource → runAgent 缺省按 CWD "domain-skills" 注入仓库内置卡（agent-boot.ts 实证）——「无卡基线」实为带内置站点卡。修复：`skillSource: withCard ? FsSkillSource : null`
+- **#7（P2）worker 落库段异常逃逸**：saveDraft/taskCatalog 抛错时 job 既不 ack 也不 fail → alarm 每分钟无限重跑完整 LLM 蒸馏。修复：distillOne 全路径 try/catch → 统一 queue.fail 记账
+- **#8（P2）队列读改写无互斥**：enqueue（run 终态）与 ack/fail（worker）并发交错丢更新（ack 复活/新 job 丢失）。修复：DistillQueue 内建 promise 链串行 RMW
+- **#1（P2）关键词回显被空串遮蔽**：展开时 patch({}) 把 keywordsRaw 钉 ""（非 nullish）→ 草稿原词永不回显。修复：不预建编辑态
+- **#2（P2）编辑态残留**：采纳/丢弃后同键新草稿吃到过期编辑。修复：clearEdits
+- **#5/#6（P2）judgement 字段名**：example 脚本读 snake（impossible_task/failure_reason），core JudgementResult 是 camel——恒 undefined。两个脚本修正
+- 测试 +6（store 串行面计数/内建链、queue 并发无丢失、worker 落库异常记账、组件关键词回显/编辑态清理）；全仓 1923 绿
+

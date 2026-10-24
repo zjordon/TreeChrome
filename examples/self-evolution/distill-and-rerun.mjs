@@ -149,13 +149,13 @@ const printJudgement = (history) => {
     return;
   }
   console.log(
-    `  judgement   : verdict=${String(j.verdict)} impossible_task=${String(j.impossible_task ?? false)} captcha=${String(j.captcha ?? false)}`,
+    `  judgement   : verdict=${String(j.verdict)} impossible_task=${String(j.impossibleTask ?? false)} captcha=${String(j.captcha ?? false)}`,
   );
   if (typeof j.reasoning === "string" && j.reasoning !== "") {
     console.log(`  reasoning   : ${j.reasoning}`);
   }
-  if (typeof j.failure_reason === "string" && j.failure_reason !== "") {
-    console.log(`  failure_reason: ${j.failure_reason}`);
+  if (typeof j.failureReason === "string" && j.failureReason !== "") {
+    console.log(`  failure_reason: ${j.failureReason}`);
   }
 };
 

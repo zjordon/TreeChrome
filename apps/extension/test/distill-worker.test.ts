@@ -270,3 +270,49 @@ describe("DistillWorker", () => {
     expect(usedCards).toEqual([subCard]); // 附属卡优先，主卡兜底面未被调用
   });
 });
+
+// ── 评审轮 1 [7]：落库段异常收口（不无限重跑 LLM） ──────────────────────
+
+describe("DistillWorker 落库异常", () => {
+  it("saveDraft 抛错 → queue.fail 记账（attempts 递增，重跑后丢弃）", async () => {
+    const { llm, distillCalls } = mockLlm({
+      match: { match: null, confidence: "high" },
+      distill: VALID_DRAFT,
+    });
+    const breaking = fakeDb();
+    const origPut = breaking.put.bind(breaking);
+    breaking.put = async (key, value) => {
+      if (key.startsWith("draft::")) throw new Error("QuotaExceeded");
+      return origPut(key, value);
+    };
+    const store = new SkillStore(breaking);
+    const queue = primedQueue(JOB);
+    const worker = new DistillWorker({
+      queue,
+      settingsStore: {
+        load: async () => parseExtensionSettings({ providerCards: [CARD], activeCard: "main" }),
+      } as unknown as SettingsStore,
+      llmFactory: () => llm,
+      makeSkillSource: () => ({
+        loadHostSkill: async () => null,
+        taskCatalog: async () => [],
+        taskCardText: async () => "",
+      }),
+      skillStore: store,
+      keepalive: {
+        hold: () => {},
+        release: () => {},
+        onStartRun: () => {},
+        onEndRun: () => {},
+      } as never,
+      notify: () => {},
+      activeCard: () => CARD,
+    });
+    await worker.drainAll();
+    expect(distillCalls()).toBeGreaterThan(0); // LLM 蒸馏确实跑了
+    expect(await queue.size()).toBe(1); // fail 记账保留 job
+    expect((await queue.peek())?.attempts).toBe(1);
+    await worker.drainAll(); // 第二轮：attempts 达上限 → dropped
+    expect(await queue.size()).toBe(0);
+  });
+});

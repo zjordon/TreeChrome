@@ -61,7 +61,9 @@ export class DistillWorker {
     }
   }
 
-  /** 单条蒸馏。返回 "ack"（移除）/"retry"（保留重试）——caller 据此决定是否继续 */
+  /** 单条蒸馏。返回 "ack"（移除）/"retry"（保留重试）——caller 据此决定是否继续。
+   *  全路径（目录读/编排/落库）异常统一走 queue.fail 记账（评审轮 1 [7]：落库
+   *  段逃逸会让 job 既不 ack 也不 fail——alarm 每分钟无限重跑完整 LLM 蒸馏） */
   private async distillOne(
     job: DistillJob,
     settings: Awaited<ReturnType<SettingsStore["load"]>>,
@@ -76,25 +78,24 @@ export class DistillWorker {
       await this.deps.queue.ack(job.runId);
       return "ack";
     }
-    const source = this.deps.makeSkillSource();
-    const catalog = await source.taskCatalog(job.host);
-    const cardText = async (slug: string): Promise<string | null> => {
-      const meta = catalog.find((c) => c.slug === slug);
-      return meta === undefined ? null : source.taskCardText(meta);
-    };
-    // D14：只增量 distilled 卡——built-in（上游打包物，覆盖会遮蔽刷新）与 import 不碰
-    const isUpdatable = async (slug: string): Promise<boolean> => {
-      const c = await this.deps.skillStore.getCard(job.host, slug);
-      return c?.provenance.sourceType === "distilled";
-    };
-    // D17：streak 判停数据源（core 在蒸馏调用前判停）
-    const cardDistillState = async (slug: string): Promise<{ streak: number } | null> => {
-      const c = await this.deps.skillStore.getCard(job.host, slug);
-      return c === null ? null : { streak: c.distillStreak ?? 0 };
-    };
-    let outcome: Awaited<ReturnType<typeof distillTaskCard>>;
     try {
-      outcome = await distillTaskCard({
+      const source = this.deps.makeSkillSource();
+      const catalog = await source.taskCatalog(job.host);
+      const cardText = async (slug: string): Promise<string | null> => {
+        const meta = catalog.find((c) => c.slug === slug);
+        return meta === undefined ? null : source.taskCardText(meta);
+      };
+      // D14：只增量 distilled 卡——built-in（上游打包物，覆盖会遮蔽刷新）与 import 不碰
+      const isUpdatable = async (slug: string): Promise<boolean> => {
+        const c = await this.deps.skillStore.getCard(job.host, slug);
+        return c?.provenance.sourceType === "distilled";
+      };
+      // D17：streak 判停数据源（core 在蒸馏调用前判停）
+      const cardDistillState = async (slug: string): Promise<{ streak: number } | null> => {
+        const c = await this.deps.skillStore.getCard(job.host, slug);
+        return c === null ? null : { streak: c.distillStreak ?? 0 };
+      };
+      const outcome = await distillTaskCard({
         task: job.task,
         host: job.host,
         runId: job.runId,
@@ -111,30 +112,30 @@ export class DistillWorker {
         sensitiveData: null, // 入队时已整串脱敏（run-manager 侧）
         log,
       });
+      if (outcome.kind === "skip") {
+        log(`distill: ${outcome.reason}——跳过`);
+        await this.deps.queue.ack(job.runId);
+        return "ack";
+      }
+      if (outcome.kind === "error") {
+        log(`distill: 失败（attempts 记账）——${outcome.error}`);
+        return (await this.deps.queue.fail(job.runId)) === "retry" ? "retry" : "ack";
+      }
+      if (outcome.kind === "unchanged") {
+        log(`distill: 无新观察——streak+1（${outcome.slug}）`);
+        await this.deps.skillStore.bumpDistillStreak(job.host, outcome.slug);
+        await this.deps.queue.ack(job.runId);
+        return "ack";
+      }
+      await this.deps.skillStore.saveDraft(outcome.card);
+      const drafts = await this.deps.skillStore.listDrafts();
+      this.deps.notify(drafts.length);
+      await this.deps.queue.ack(job.runId);
+      return "ack";
     } catch (e) {
-      log(`distill: 编排异常——${e instanceof Error ? e.message : String(e)}`);
+      log(`distill: 编排/落库异常（attempts 记账）——${e instanceof Error ? e.message : String(e)}`);
       await this.deps.queue.fail(job.runId);
       return "retry";
     }
-    if (outcome.kind === "skip") {
-      log(`distill: ${outcome.reason}——跳过`);
-      await this.deps.queue.ack(job.runId);
-      return "ack";
-    }
-    if (outcome.kind === "error") {
-      log(`distill: 失败（attempts 记账）——${outcome.error}`);
-      return (await this.deps.queue.fail(job.runId)) === "retry" ? "retry" : "ack";
-    }
-    if (outcome.kind === "unchanged") {
-      log(`distill: 无新观察——streak+1（${outcome.slug}）`);
-      await this.deps.skillStore.bumpDistillStreak(job.host, outcome.slug);
-      await this.deps.queue.ack(job.runId);
-      return "ack";
-    }
-    await this.deps.skillStore.saveDraft(outcome.card);
-    const drafts = await this.deps.skillStore.listDrafts();
-    this.deps.notify(drafts.length);
-    await this.deps.queue.ack(job.runId);
-    return "ack";
   }
 }

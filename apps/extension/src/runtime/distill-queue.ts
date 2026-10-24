@@ -44,6 +44,11 @@ function isJob(v: unknown): v is DistillJob {
 }
 
 export class DistillQueue {
+  /** 读改写串行面（评审轮 1 [8]）：enqueue（run 终态路径）与 ack/fail（worker
+   *  drain 路径）是两组并发写者——LLM 180s 调用窗内交错时后写者以陈旧快照
+   *  整串覆盖（ack 复活/新 job 丢失）。promise 链串行全部 RMW */
+  private chain: Promise<unknown> = Promise.resolve();
+
   constructor(
     private readonly area: StorageArea,
     private readonly log: (message: string) => void = () => {},
@@ -63,16 +68,24 @@ export class DistillQueue {
     await this.area.set({ [DISTILL_QUEUE_KEY]: jobs });
   }
 
-  /** 入队（runId 幂等——同一 run 不重复蒸）；超上限丢最老 */
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.chain.then(task, task);
+    this.chain = next.catch(() => {});
+    return next;
+  }
+
+  /** 入队（runId 幂等——同一 run 不重复蒸）；超上限丢最老（经串行面） */
   async enqueue(job: DistillJobInput, now = Date.now()): Promise<void> {
-    const jobs = await this.read();
-    if (jobs.some((j) => j.runId === job.runId)) {
-      this.log(`distill-queue: runId=${job.runId} 已在队列——幂等跳过`);
-      return;
-    }
-    jobs.push({ ...job, enqueuedAt: now, attempts: 0 });
-    while (jobs.length > DISTILL_QUEUE_MAX) jobs.shift();
-    await this.write(jobs);
+    return this.serialize(async () => {
+      const jobs = await this.read();
+      if (jobs.some((j) => j.runId === job.runId)) {
+        this.log(`distill-queue: runId=${job.runId} 已在队列——幂等跳过`);
+        return;
+      }
+      jobs.push({ ...job, enqueuedAt: now, attempts: 0 });
+      while (jobs.length > DISTILL_QUEUE_MAX) jobs.shift();
+      await this.write(jobs);
+    });
   }
 
   /** 最老一条（drain 起点；不弹出——ack/fail 才改队列） */
@@ -81,24 +94,28 @@ export class DistillQueue {
     return jobs[0] ?? null;
   }
 
-  /** 处理完成移除（skip/unchanged/draft 都算完成） */
+  /** 处理完成移除（skip/unchanged/draft 都算完成；经串行面） */
   async ack(runId: string): Promise<void> {
-    await this.write((await this.read()).filter((j) => j.runId !== runId));
+    return this.serialize(async () => {
+      await this.write((await this.read()).filter((j) => j.runId !== runId));
+    });
   }
 
-  /** 失败记账：attempts+1；达上限丢弃（dropped），否则保留待重试（retry） */
+  /** 失败记账：attempts+1；达上限丢弃（dropped），否则保留待重试（retry）（经串行面） */
   async fail(runId: string): Promise<"retry" | "dropped"> {
-    const jobs = await this.read();
-    const idx = jobs.findIndex((j) => j.runId === runId);
-    if (idx === -1) return "dropped";
-    if (jobs[idx].attempts + 1 >= DISTILL_MAX_ATTEMPTS) {
-      jobs.splice(idx, 1);
+    return this.serialize(async () => {
+      const jobs = await this.read();
+      const idx = jobs.findIndex((j) => j.runId === runId);
+      if (idx === -1) return "dropped" as const;
+      if (jobs[idx].attempts + 1 >= DISTILL_MAX_ATTEMPTS) {
+        jobs.splice(idx, 1);
+        await this.write(jobs);
+        return "dropped" as const;
+      }
+      jobs[idx] = { ...jobs[idx], attempts: jobs[idx].attempts + 1 };
       await this.write(jobs);
-      return "dropped";
-    }
-    jobs[idx] = { ...jobs[idx], attempts: jobs[idx].attempts + 1 };
-    await this.write(jobs);
-    return "retry";
+      return "retry" as const;
+    });
   }
 
   async size(): Promise<number> {

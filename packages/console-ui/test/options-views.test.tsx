@@ -397,3 +397,50 @@ describe("SkillListView 状态列（issue #5 S5）", () => {
     expect(screen.getByText("正式")).toBeDefined();
   });
 });
+
+// ── 评审轮 1 [1][2]：关键词回显 + 编辑态清理 ────────────────────────────
+
+describe("SkillDraftReview 评审轮 1 回归", () => {
+  const DRAFT = {
+    host: "a.example",
+    slug: "task-one",
+    description: "做一件事",
+    keywords: ["one", "一"],
+    sop: "SOP-1",
+    selectors: "SEL-1",
+    quirks: "Q-1",
+    distilledAt: "2026-10-24T00:00:00Z",
+    sourceTraces: ["run-1"],
+    updatedAt: 1,
+  };
+
+  it("展开即回显草稿原关键词（不预建空编辑态遮蔽）", () => {
+    render(<SkillDraftReview drafts={[DRAFT]} onAdopt={() => {}} onDiscard={() => {}} />);
+    fireEvent.click(screen.getByText("审阅"));
+    const input = screen.getByTestId("draft-keywords-a.example|task-one") as HTMLInputElement;
+    expect(input.value).toBe("one, 一"); // 草稿原词——非空白
+  });
+
+  it("采纳后清编辑态：同键新草稿不吃残留编辑", () => {
+    const adopts: Array<[string, string, SkillDraftEdits]> = [];
+    const props = (drafts: (typeof DRAFT)[]) => ({
+      drafts,
+      onAdopt: (host: string, slug: string, edits: SkillDraftEdits) =>
+        void adopts.push([host, slug, edits]),
+      onDiscard: () => {},
+    });
+    const { rerender } = render(<SkillDraftReview {...props([DRAFT])} />);
+    fireEvent.click(screen.getByText("审阅"));
+    fireEvent.change(screen.getByTestId("draft-desc-a.example|task-one"), {
+      target: { value: "过期编辑" },
+    });
+    fireEvent.click(screen.getByText("采纳"));
+    expect(adopts[0]?.[2]).toMatchObject({ description: "过期编辑" }); // 本次采纳带编辑
+    // 同键新草稿到达（options refresh 重渲染）——展开不得回填过期编辑
+    rerender(<SkillDraftReview {...props([{ ...DRAFT, description: "新草稿内容" }])} />);
+    fireEvent.click(screen.getByText("审阅"));
+    expect((screen.getByTestId("draft-desc-a.example|task-one") as HTMLInputElement).value).toBe(
+      "新草稿内容",
+    );
+  });
+});

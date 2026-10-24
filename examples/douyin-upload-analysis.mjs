@@ -247,7 +247,7 @@ const printJudgement = (history) => {
     return;
   }
   log(
-    `  judgement   : verdict=${String(j.verdict)} impossible=${String(j.impossible_task ?? false)} captcha=${String(j.captcha ?? false)}`,
+    `  judgement   : verdict=${String(j.verdict)} impossible=${String(j.impossibleTask ?? false)} captcha=${String(j.captcha ?? false)}`,
   );
   if (typeof j.reasoning === "string" && j.reasoning !== "") log(`  reasoning   : ${j.reasoning}`);
 };
@@ -275,12 +275,12 @@ for (let r = 1; r <= args.runs; r++) {
         task: TASK,
         log,
         eventBus: collector.bus,
-        // 沙箱有卡即注入（distill-and-rerun 同款面）——上一轮蒸馏产物本轮生效
-        ...(withCard
-          ? {
-              skillSource: new kit.FsSkillSource(args.sandbox, (m) => log(`[skill] ${m}`)),
-            }
-          : {}),
+        // 沙箱有卡即注入（distill-and-rerun 同款面）——上一轮蒸馏产物本轮生效；
+        // 无卡时显式 null 关闭缺省装配（评审轮 1 [9]：缺省按 CWD "domain-skills"
+        // 注入仓库内置卡，探索基线被污染）
+        skillSource: withCard
+          ? new kit.FsSkillSource(args.sandbox, (m) => log(`[skill] ${m}`))
+          : null,
         overrides: {
           agent: {
             maxSteps: args.maxSteps,
