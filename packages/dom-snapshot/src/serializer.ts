@@ -317,6 +317,16 @@ export function buildAttributesString(
   if (node.tagName === "input" || node.tagName === "textarea" || node.tagName === "select") {
     if (isPassword) {
       attrsToInclude.delete("value");
+    } else if (typeof node.axNode?.value === "string") {
+      // issue #6 bug 修复：AX 顶层 value 是原生控件当前状态的正源（select 选中项 /
+      // input 当前文本——Chrome 放顶层不放 properties，旧实现只扫 properties 故恒
+      // 落空——Step 5 设计本就要显示表单当前值，此为数据源接错的无条件修复）。
+      // 空白折叠防 textarea 多行破单行格式；截断沿 Step 8 的 100 码点口径。
+      // typeof 显式收空串（评审轮 1）：AX 报空态时须清掉 Step 1 从 DOM value 属性
+      // 种入的初始值，否则清空后的字段仍渲染陈旧旧值；折叠后为空同理（全空白输入）
+      const v = node.axNode.value.trim().replace(/\s+/g, " ");
+      if (v) attrsToInclude.set("value", v);
+      else attrsToInclude.delete("value");
     } else if (node.axNode?.properties) {
       for (const prop of node.axNode.properties) {
         if (prop.name === "valuetext" && prop.value) {

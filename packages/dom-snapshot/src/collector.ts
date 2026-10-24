@@ -123,6 +123,8 @@ export function buildEnhancedAxNode(axNode: CdpAxTreeNode): EnhancedAXNode {
     // CdpAxValue.value 为 unknown：Python 注解 str|None 与 wire 实际可出 bool/数值，原样透传
     role: (axNode.role?.value ?? null) as string | null,
     name: (axNode.name?.value ?? null) as string | null,
+    // issue #6：顶层 value 仅 string 收窄（bool/数值形态非表单状态语义，丢弃）
+    value: typeof axNode.value?.value === "string" ? axNode.value.value : null,
     description: (axNode.description?.value ?? null) as string | null,
     properties,
     child_ids: axNode.childIds ?? null,

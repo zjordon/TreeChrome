@@ -242,6 +242,24 @@ describe("toJson snake_case 形态", () => {
     (n as unknown as { nodeType: number }).nodeType = 0;
     expect(n.toJson().node_type).toBe("0");
   });
+
+  it("ax_node 投影剔除 issue #6 value 键（Python asdict 无此字段，对拍形状；评审轮 1）", () => {
+    const n = el("INPUT", { type: "text" }, 7, 107, {
+      axNode: {
+        ax_node_id: "ax7",
+        ignored: false,
+        role: "textbox",
+        name: "From",
+        value: "1/1/22",
+        description: null,
+        properties: null,
+        child_ids: null,
+      },
+    });
+    const ax = n.toJson().ax_node as Record<string, unknown>;
+    expect(ax).not.toHaveProperty("value");
+    expect(ax).toMatchObject({ role: "textbox", name: "From" });
+  });
 });
 
 // ── 多分组 SHA-256 向量（NIST，Python hashlib 实跑取值） ────────────────

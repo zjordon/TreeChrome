@@ -27,3 +27,12 @@ D:/dev/git/z_jordon/evals/webarena/.venv/Scripts/python.exe \
    `output.element_tree_text` 必须逐字节一致；`selector_map` 的键集合与投影字段全等。
 
 > 重新生成会使基准随 Chrome 版本/页面变化漂移——仅在刻意更新基准时重抓，并在提交信息里注明原因。
+
+## 基准变更登记（issue #6，2026-10-24）
+
+`basic-html` 与 `iframe-html` 两页的 `output` 由 **TS 修复版管线重放原 input** 重新生成
+（外科手术式：input 原文与格式逐字节保留，仅换 output 块与 meta.generated_at）。原因：
+serializer Step 5「表单当前值」数据源 bug 修复——原生 select/input 的当前值经 AX 顶层
+`value` 渲染为 `value=`（此前只扫 properties 故恒落空）。**Python 库存在同一 bug 未修**
+（用户裁定暂不动 Python，选 B）：在 Python 侧同修并重生成前，这两页基准以 TS 修复版
+为准；其余两页（interactive/shadow-dom）仍为 Python 原产物（内容本就一致）。

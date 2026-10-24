@@ -1,7 +1,7 @@
 {
  "meta": {
   "url": "http://localhost:18765/iframe.html",
-  "generated_at": "2026-09-20T04:15:25.345022+00:00",
+  "generated_at": "2026-10-24T04:19:24.296Z",
   "degradation": "full",
   "source_statuses": {
    "snapshot": "ok",
@@ -6965,23 +6965,43 @@
   "dpr": 1.0
  },
  "output": {
-  "element_tree_text": "iframe 梯度页\n覆盖：同源 iframe、iframe 内嵌 iframe、frame 内交互元素与链接。\n[332]<iframe title=第一个 frame id=frame-a />\n\tFrame A\n\t[324]<a />\n\t\tFrame A 链接一\n\t[326]<a />\n\t\tFrame A 链接二\n\t[328]<button />\n\t\tFrame A 按钮\n\t[311]<input type=text placeholder=Frame A 输入 />\n[347]<iframe title=第二个 frame id=frame-b />\n\tFrame B\n\t*[313]<select expanded=false compound_components=(name=Dropdown Toggle,role=button),(name=Options,role=listbox,count=2,options=X|Y) />\n\t|IFRAME|<iframe title=嵌套 frame id=frame-b-inner />\n\t\tFrame A\n\t\t[338]<a />\n\t\t\tFrame A 链接一\n\t\t[340]<a />\n\t\t\tFrame A 链接二\n\t\t[342]<button />\n\t\t\tFrame A 按钮\n\t\t[316]<input type=text placeholder=Frame A 输入 />\n主文档的普通链接：\n[350]<a />\n\t主文档锚点",
+  "element_tree_text": "iframe 梯度页\n覆盖：同源 iframe、iframe 内嵌 iframe、frame 内交互元素与链接。\n[332]<iframe title=第一个 frame id=frame-a />\n\tFrame A\n\t[324]<a />\n\t\tFrame A 链接一\n\t[326]<a />\n\t\tFrame A 链接二\n\t[328]<button />\n\t\tFrame A 按钮\n\t[311]<input type=text placeholder=Frame A 输入 />\n[347]<iframe title=第二个 frame id=frame-b />\n\tFrame B\n\t*[313]<select value=Y expanded=false compound_components=(name=Dropdown Toggle,role=button),(name=Options,role=listbox,count=2,options=X|Y) />\n\t|IFRAME|<iframe title=嵌套 frame id=frame-b-inner />\n\t\tFrame A\n\t\t[338]<a />\n\t\t\tFrame A 链接一\n\t\t[340]<a />\n\t\t\tFrame A 链接二\n\t\t[342]<button />\n\t\t\tFrame A 按钮\n\t\t[316]<input type=text placeholder=Frame A 输入 />\n主文档的普通链接：\n[350]<a />\n\t主文档锚点",
   "selector_map": {
-   "332": {
-    "backend_node_id": 332,
-    "node_name": "IFRAME",
+   "311": {
+    "backend_node_id": 311,
+    "node_name": "INPUT",
     "node_value": "",
     "attributes": {
-     "id": "frame-a",
-     "src": "/iframe-inner.html",
-     "title": "第一个 frame",
-     "width": "360",
-     "height": "160"
+     "type": "text",
+     "placeholder": "Frame A 输入"
     },
     "is_visible": true,
     "is_scrollable": null,
     "has_js_click_listener": false,
-    "xpath": "html/body/iframe[1]"
+    "xpath": "html/body/input"
+   },
+   "313": {
+    "backend_node_id": 313,
+    "node_name": "SELECT",
+    "node_value": "",
+    "attributes": {},
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/select"
+   },
+   "316": {
+    "backend_node_id": 316,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "type": "text",
+     "placeholder": "Frame A 输入"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/input"
    },
    "324": {
     "backend_node_id": 324,
@@ -7019,44 +7039,21 @@
     "has_js_click_listener": false,
     "xpath": "html/body/button"
    },
-   "311": {
-    "backend_node_id": 311,
-    "node_name": "INPUT",
-    "node_value": "",
-    "attributes": {
-     "type": "text",
-     "placeholder": "Frame A 输入"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/input"
-   },
-   "347": {
-    "backend_node_id": 347,
+   "332": {
+    "backend_node_id": 332,
     "node_name": "IFRAME",
     "node_value": "",
     "attributes": {
-     "id": "frame-b",
-     "src": "/iframe-nested.html",
-     "title": "第二个 frame",
+     "id": "frame-a",
+     "src": "/iframe-inner.html",
+     "title": "第一个 frame",
      "width": "360",
      "height": "160"
     },
     "is_visible": true,
     "is_scrollable": null,
     "has_js_click_listener": false,
-    "xpath": "html/body/iframe[2]"
-   },
-   "313": {
-    "backend_node_id": 313,
-    "node_name": "SELECT",
-    "node_value": "",
-    "attributes": {},
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/select"
+    "xpath": "html/body/iframe[1]"
    },
    "338": {
     "backend_node_id": 338,
@@ -7094,18 +7091,21 @@
     "has_js_click_listener": false,
     "xpath": "html/body/button"
    },
-   "316": {
-    "backend_node_id": 316,
-    "node_name": "INPUT",
+   "347": {
+    "backend_node_id": 347,
+    "node_name": "IFRAME",
     "node_value": "",
     "attributes": {
-     "type": "text",
-     "placeholder": "Frame A 输入"
+     "id": "frame-b",
+     "src": "/iframe-nested.html",
+     "title": "第二个 frame",
+     "width": "360",
+     "height": "160"
     },
     "is_visible": true,
     "is_scrollable": null,
     "has_js_click_listener": false,
-    "xpath": "html/body/input"
+    "xpath": "html/body/iframe[2]"
    },
    "350": {
     "backend_node_id": 350,
