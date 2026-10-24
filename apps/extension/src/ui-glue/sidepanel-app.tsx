@@ -187,6 +187,12 @@ export function SidepanelApp({ connect }: SidepanelAppProps) {
           </p>
         )}
 
+        {(state.draftCount ?? 0) > 0 ? (
+          <p style={{ margin: "4px 0" }} className="tc-ev-muted">
+            📝 {state.draftCount} 张蒸馏草稿待审——去设置页（options）审阅采纳。
+          </p>
+        ) : null}
+
         <RunTimeline
           events={state.events}
           discardedBeforeSeq={snap?.discardedBeforeSeq ?? 0}

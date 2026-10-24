@@ -10,6 +10,8 @@ import {
   GrantsView,
   ProviderCardForm,
   ProviderList,
+  type SkillDraftEdits,
+  SkillDraftReview,
   SkillListView,
   validateCardForm,
 } from "../src/index.js";
@@ -271,5 +273,127 @@ describe("SkillListView", () => {
     expect(screen.getByText("蒸馏")).toBeDefined();
     render(<SkillListView cards={[]} />);
     expect(screen.getByText(/内置技能在扩展安装\/更新时自动装载/)).toBeDefined();
+  });
+});
+
+// ── issue #5 S5：草稿审阅面 + 列表状态列 ────────────────────────────────
+
+describe("SkillDraftReview（issue #5 S5）", () => {
+  const DRAFT = {
+    host: "a.example",
+    slug: "task-one",
+    description: "做一件事",
+    keywords: ["one", "一"],
+    sop: "SOP-1",
+    selectors: "SEL-1",
+    quirks: "Q-1",
+    distilledAt: "2026-10-24T00:00:00Z",
+    sourceTraces: ["run-1", "run-2"],
+    updatedAt: 1,
+  };
+
+  it("空态文案；列表行（host/slug/distilledAt）+ 来源轨迹徽章", () => {
+    render(<SkillDraftReview drafts={[]} onAdopt={() => {}} onDiscard={() => {}} />);
+    expect(screen.getByText(/任务成功且 Judge 复核通过后自动蒸馏/)).toBeDefined();
+    const adopts: unknown[] = [];
+    const { unmount } = render(
+      <SkillDraftReview
+        drafts={[DRAFT]}
+        onAdopt={(...a) => void adopts.push(a)}
+        onDiscard={() => {}}
+      />,
+    );
+    unmount();
+    render(<SkillDraftReview drafts={[DRAFT]} onAdopt={() => {}} onDiscard={() => {}} />);
+    expect(screen.getByText("a.example")).toBeDefined();
+    expect(screen.getByText("task-one")).toBeDefined();
+    fireEvent.click(screen.getByText("审阅"));
+    expect(screen.getByText("2 条来源轨迹")).toBeDefined();
+    expect(screen.getByTestId("draft-sop-a.example|task-one").textContent).toContain("SOP-1");
+  });
+
+  it("编辑后采纳带 edits 覆盖（keywords 逗号拆分）；未编辑字段不上抛", () => {
+    const adopts: Array<[string, string, SkillDraftEdits]> = [];
+    render(
+      <SkillDraftReview
+        drafts={[DRAFT]}
+        onAdopt={(host, slug, edits) => void adopts.push([host, slug, edits])}
+        onDiscard={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("审阅"));
+    fireEvent.change(screen.getByTestId("draft-sop-a.example|task-one"), {
+      target: { value: "SOP-EDITED" },
+    });
+    fireEvent.change(screen.getByTestId("draft-keywords-a.example|task-one"), {
+      target: { value: "新词, second" },
+    });
+    fireEvent.click(screen.getByText("采纳"));
+    expect(adopts).toHaveLength(1);
+    const [host, slug, edits] = adopts[0]!;
+    expect([host, slug]).toEqual(["a.example", "task-one"]);
+    expect(edits).toMatchObject({ sop: "SOP-EDITED", keywords: ["新词", "second"] });
+    expect(edits.selectors).toBeUndefined(); // 未编辑不上抛
+    expect(edits.quirks).toBeUndefined();
+  });
+
+  it("丢弃回调带 host/slug；收起后编辑区隐藏", () => {
+    const discards: Array<[string, string]> = [];
+    render(
+      <SkillDraftReview
+        drafts={[DRAFT]}
+        onAdopt={() => {}}
+        onDiscard={(host, slug) => void discards.push([host, slug])}
+      />,
+    );
+    fireEvent.click(screen.getByText("审阅"));
+    fireEvent.click(screen.getByText("丢弃"));
+    expect(discards).toEqual([["a.example", "task-one"]]);
+    expect(screen.queryByTestId("draft-sop-a.example|task-one")).toBeNull();
+  });
+
+  it("收起按钮切换编辑区；描述/selectors/quirks 全字段可编辑并随采纳上抛", () => {
+    const adopts: Array<[string, string, SkillDraftEdits]> = [];
+    render(
+      <SkillDraftReview
+        drafts={[DRAFT]}
+        onAdopt={(host, slug, edits) => void adopts.push([host, slug, edits])}
+        onDiscard={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("审阅"));
+    fireEvent.click(screen.getByText("收起")); // 切换分支：open→收起
+    expect(screen.queryByTestId("draft-sop-a.example|task-one")).toBeNull();
+    fireEvent.click(screen.getByText("审阅")); // 再展开
+    fireEvent.change(screen.getByTestId("draft-desc-a.example|task-one"), {
+      target: { value: "新描述" },
+    });
+    fireEvent.change(screen.getByTestId("draft-selectors-a.example|task-one"), {
+      target: { value: "SEL-E" },
+    });
+    fireEvent.change(screen.getByTestId("draft-quirks-a.example|task-one"), {
+      target: { value: "Q-E" },
+    });
+    fireEvent.click(screen.getByText("采纳"));
+    expect(adopts[0]?.[2]).toMatchObject({
+      description: "新描述",
+      selectors: "SEL-E",
+      quirks: "Q-E",
+    });
+  });
+});
+
+describe("SkillListView 状态列（issue #5 S5）", () => {
+  it("draft 徽章 vs 正式", () => {
+    render(
+      <SkillListView
+        cards={[
+          { host: "a.example", slug: "t1", sourceType: "distilled", updatedAt: 1, status: "draft" },
+          { host: "a.example", slug: "t2", sourceType: "built-in", updatedAt: 2 },
+        ]}
+      />,
+    );
+    expect(screen.getByText("草稿")).toBeDefined();
+    expect(screen.getByText("正式")).toBeDefined();
   });
 });

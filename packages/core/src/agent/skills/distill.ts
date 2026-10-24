@@ -99,14 +99,20 @@ export interface DistillTaskInput {
   host: string;
   /** 来源 run 的 id（进 sourceTraces） */
   runId: string;
-  history: AgentHistoryList;
+  /** 进程内完整轨迹（node-host 钩子路径——core 在此序列化+脱敏） */
+  history?: AgentHistoryList;
+  /** 预序列化轨迹（扩展队列路径——入队时已序列化+脱敏，SW 重启后仍可蒸馏）。
+   *  与 history 二选一；两者皆缺 → error */
+  traceText?: string;
+  /** traceText 路径的步数（prompt 元数据；缺省 0） */
+  stepCount?: number;
   /** 该 host 的既有任务卡目录（matcher 预匹配 + 新卡撞名判定）；空 = 必然新卡 */
   catalog: readonly TaskCardMeta[];
   /** 命中卡的全文（增量 addendum 用）；miss/不可得返回 null */
   cardText?: (slug: string) => Promise<string | null>;
-  /** 命中卡是否可增量更新（D14：扩展侧对 built-in 卡传 () => false → skip）。
-   *  缺省全部可更新（node-host 目录形态无 provenance 面） */
-  isUpdatable?: (slug: string) => boolean;
+  /** 命中卡是否可增量更新（D14：扩展侧对 built-in/import 卡传 false → skip）。
+   *  缺省全部可更新（node-host 目录形态无 provenance 面）；允许异步（查库） */
+  isUpdatable?: (slug: string) => boolean | Promise<boolean>;
   /** 命中卡的收敛状态（D17）：streak ≥ convergeThreshold → 跳过整个蒸馏调用 */
   cardDistillState?: (slug: string) => Promise<{ streak: number } | null>;
   /** 收敛阈值（缺省 DISTILL_CONVERGE_THRESHOLD：连续 N 次成功且无新观察即收敛） */
@@ -133,8 +139,8 @@ function keyToReal(
   return out;
 }
 
-/** 尾部截断对齐 "Step " 边界（judge buildJudgePrompt 同款手法） */
-function clipTraceTail(trace: string, maxChars: number): string {
+/** 尾部截断对齐 "Step " 边界（judge buildJudgePrompt 同款手法；扩展入队侧共用） */
+export function clipTraceTail(trace: string, maxChars: number): string {
   if (trace.length <= maxChars) return trace;
   let clipped = trace.slice(-maxChars);
   const boundary = clipped.indexOf("\nStep ");
@@ -255,7 +261,18 @@ function validateOutput(
 /** 任务级蒸馏编排入口（双宿主共用）。任何失败不抛——以 outcome 分流 */
 export async function distillTaskCard(input: DistillTaskInput): Promise<DistillOutcome> {
   const log = input.log ?? (() => {});
-  const traceRaw = serializeTraceForPrompt(input.history);
+  // 轨迹两入口：traceText（扩展队列——入队时已序列化+脱敏）/ history（node 钩子）
+  let traceRaw: string;
+  let steps: number;
+  if (input.traceText !== undefined) {
+    traceRaw = input.traceText;
+    steps = input.stepCount ?? 0;
+  } else if (input.history !== undefined) {
+    traceRaw = serializeTraceForPrompt(input.history);
+    steps = input.history.history.length;
+  } else {
+    return { kind: "error", error: "no history or traceText" };
+  }
   if (traceRaw === "") return { kind: "error", error: "empty history" };
   const secrets = keyToReal(input.sensitiveData);
   const hasSecrets = Object.keys(secrets).length > 0;
@@ -275,7 +292,7 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
       return { kind: "error", error: `matcher call failed: ${match.reason}` };
     }
     if (match.slug !== null) {
-      if (input.isUpdatable !== undefined && !input.isUpdatable(match.slug)) {
+      if (input.isUpdatable !== undefined && !(await input.isUpdatable(match.slug))) {
         log(`distill: matched card ${match.slug} is not updatable — skip (D14)`);
         return { kind: "skip", reason: `matched protected card: ${match.slug}` };
       }
@@ -304,7 +321,7 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
   const prompt = buildTaskDistillPrompt({
     task,
     host: input.host,
-    stepCount: input.history.history.length,
+    stepCount: steps,
     trace,
     catalog: input.catalog,
     update,

@@ -68,10 +68,15 @@ export type {
   SkillCardDraft,
 } from "./agent/skills/distill.js";
 export {
+  clipTraceTail,
+  DISTILL_ATTEMPTS,
   DISTILL_CONVERGE_THRESHOLD,
+  DISTILL_MAX_TOKENS,
   DISTILL_OUTPUT_SCHEMA,
+  DISTILL_TRACE_MAX_CHARS,
   distillTaskCard,
 } from "./agent/skills/distill.js";
+export { dominantHostOf, passesDistillGate } from "./agent/skills/distill-gate.js";
 export type { MatcherLLM, TaskSkillMatch } from "./agent/skills/task-matcher.js";
 export { buildTaskSkillText, matchTaskSkill } from "./agent/skills/task-matcher.js";
 export { serializeTraceForPrompt } from "./agent/skills/trace-serialize.js";

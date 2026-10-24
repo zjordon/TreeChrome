@@ -5,14 +5,28 @@
 // （interrupted）；SW 被杀 → 初始化时读 journal 非终态且无活 run → interrupted
 // （不做消息历史 checkpoint 续跑——README 决策 5，续跑能力后置登记）。
 
-import type { AgentHistoryList, CdpTransport, EventBus, GrantStore, SkillSource } from "@tw/core";
+import {
+  type AgentHistoryList,
+  type CdpTransport,
+  clipTraceTail,
+  DISTILL_TRACE_MAX_CHARS,
+  dominantHostOf,
+  type EventBus,
+  type GrantStore,
+  passesDistillGate,
+  redactSensitiveString,
+  type SkillSource,
+  serializeTraceForPrompt,
+} from "@tw/core";
 import type { RunJournalSnapshot, SwToUiMessage, UiToSwMessage } from "@tw/protocol";
 import type { AttachmentRegistry } from "../host/attachment-registry.js";
 import type { TabsOnRemovedApi, TabsQueryApi } from "../host/chrome-apis.js";
 import type { KeepaliveController } from "../host/keepalive.js";
 import type { OpfsFs } from "../host/opfs-fs.js";
-import type { SettingsStore } from "../host/settings-store.js";
+import type { ExtensionSettings, SettingsStore } from "../host/settings-store.js";
+import { selfEvolutionOf, sensitiveSpecsOf } from "../host/settings-store.js";
 import { type AssembledRun, assembleRun } from "./assemble.js";
+import type { DistillJobInput } from "./distill-queue.js";
 import { EventForwarder } from "./event-forwarder.js";
 import type { RunJournal } from "./journal.js";
 import { SidepanelPolicyBridge } from "./policy-bridge.js";
@@ -39,6 +53,12 @@ export interface RunManagerDeps {
   llmFactory?: import("./assemble.js").AssembleDeps["llmFactory"];
   /** 装配覆盖缝（缺省 assembleRun；状态机单测注入 stub agent） */
   assemble?: typeof assembleRun;
+  /** 蒸馏入队面（issue #5 S4；不注入 = 不蒸馏——旧装配/单测兼容）。
+   *  enqueue/kick 均在 run 终态收口后调用（D9 异步语义） */
+  distill?: {
+    enqueue: (job: DistillJobInput) => Promise<void>;
+    kick: () => void;
+  };
   now?: () => number;
   newRunId?: () => string;
   log?: (message: string) => void;
@@ -46,6 +66,7 @@ export interface RunManagerDeps {
 interface ActiveRun {
   runId: string;
   tabId: number;
+  task: string;
   agent: {
     run: () => Promise<AgentHistoryList>;
     stop: () => void;
@@ -62,6 +83,19 @@ interface ActiveRun {
 
 /** 终态集合（awaiting-* 是挂起态可回 running） */
 const TERMINAL: readonly string[] = ["done", "error", "interrupted"];
+
+/** sensitiveData 配置 → key→真值映射（core distill keyToReal 同口径——URL 过滤
+ *  条目保守一律脱敏：蒸馏输入宁可过度占位） */
+function secretsMapOf(settings: ExtensionSettings): Record<string, string> {
+  const specs = sensitiveSpecsOf(settings);
+  if (specs === null) return {};
+  const out: Record<string, string> = {};
+  for (const [key, spec] of Object.entries(specs)) {
+    const real = typeof spec === "string" ? spec : (spec.value ?? "");
+    if (real !== "") out[key] = real;
+  }
+  return out;
+}
 
 /** commit 彻底未知（pending 已被超时/错位清理）时的 lost 拒绝占位——UI 按
  *  transferId 用本地传输记录补全展示 */
@@ -305,6 +339,7 @@ export class RunManager {
     const active: ActiveRun = {
       runId,
       tabId,
+      task,
       agent: assembled.agent,
       browser: assembled.browser,
       bus: assembled.bus,
@@ -346,6 +381,9 @@ export class RunManager {
           isDone: history.isDone(),
           isSuccessful: history.isSuccessful(),
         });
+        // issue #5 S4：done 分支门控入队（D1/D9——异步增强，失败/异常均不影响
+        // run 终态已收口的事实）
+        await this.enqueueDistill(active, history);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -392,6 +430,50 @@ export class RunManager {
       ) {
         this.deps.log?.(`run failed: ${snapshot?.lastError ?? "unknown"}`);
       }
+    }
+  }
+
+  /**
+   * 蒸馏门控入队（issue #5 S4，D1/D3/D9）：selfEvolution 开 → 门控（done(success)
+   *  + judge verdict）→ host 多数票 → 序列化+敏感占位脱敏+尾部截断 → 入队 → kick。
+   *  每步不过即静默跳过（日志）——蒸馏是可选增强，任何失败不影响 run 终态。
+   */
+  private async enqueueDistill(active: ActiveRun, history: AgentHistoryList): Promise<void> {
+    const distill = this.deps.distill;
+    if (distill === undefined) return;
+    try {
+      const settings = await this.deps.settingsStore.load();
+      if (!selfEvolutionOf(settings).enabled) return;
+      if (!passesDistillGate(history)) {
+        this.deps.log?.("distill: 门控未过（非成功完成或 Judge 复核未通过）——跳过");
+        return;
+      }
+      const host = dominantHostOf(history);
+      if (host === null) {
+        this.deps.log?.("distill: 轨迹无 http URL，无法判定 host——跳过");
+        return;
+      }
+      const traceRaw = serializeTraceForPrompt(history);
+      if (traceRaw === "") return;
+      const secrets = secretsMapOf(settings);
+      const hasSecrets = Object.keys(secrets).length > 0;
+      const traceText = clipTraceTail(
+        hasSecrets ? redactSensitiveString(traceRaw, secrets) : traceRaw,
+        DISTILL_TRACE_MAX_CHARS,
+      );
+      const task = hasSecrets ? redactSensitiveString(active.task, secrets) : active.task;
+      await distill.enqueue({
+        runId: active.runId,
+        task,
+        host,
+        traceText,
+        stepCount: history.history.length,
+      });
+      distill.kick();
+    } catch (e) {
+      this.deps.log?.(
+        `distill: 入队失败（不影响 run）——${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 

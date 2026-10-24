@@ -41,6 +41,7 @@ export const SW_TO_UI_KINDS = [
   "attachments",
   "attachment-begun",
   "attachment-rejected",
+  "skill-drafts",
 ] as const;
 
 export const UI_TO_SW_KINDS = [
@@ -172,12 +173,32 @@ export interface SkillCardInfo {
   sourceType: "built-in" | "import" | "distilled";
   updatedAt: number;
   distilledAt?: string;
+  /** issue #5：draft = 蒸馏草稿待审（列表状态列；宿主从 SkillCardData.status 映射） */
+  status?: "active" | "draft";
+}
+
+/** 蒸馏草稿全文投影（issue #5：options 审阅面编辑底稿——SkillDraftReview 消费） */
+export interface SkillDraftInfo {
+  host: string;
+  slug: string;
+  description?: string;
+  keywords?: string[];
+  sop: string;
+  selectors: string;
+  quirks: string;
+  distilledAt?: string;
+  /** 来源轨迹 runId 并集 */
+  sourceTraces?: string[];
+  updatedAt: number;
 }
 
 /** options 页请求-应答操作集（sendMessage 单发；应答经 sendResponse 原样回——
  *  形态由宿主与粘合层约定，不进本包：get-settings/save-settings 载荷为宿主设置
  *  对象，list-grants 回 Grant[]，revoke-grant 载荷 {capability, host}，
- *  list-skills 回 SkillCardInfo[]，test-card 载荷 ProviderCardDto 回 {ok, message}） */
+ *  list-skills 回 SkillCardInfo[]，test-card 载荷 ProviderCardDto 回 {ok, message}，
+ *  list-skill-drafts 回 SkillDraftInfo[]，adopt-skill-draft 载荷 {host, slug,
+ *  edits?}（edits 为三件套/描述/关键词的可选覆盖），discard-skill-draft 载荷
+ *  {host, slug}——均回 {ok, error?}） */
 export const OPTIONS_OPS = [
   "get-settings",
   "save-settings",
@@ -185,6 +206,9 @@ export const OPTIONS_OPS = [
   "revoke-grant",
   "list-skills",
   "test-card",
+  "list-skill-drafts",
+  "adopt-skill-draft",
+  "discard-skill-draft",
 ] as const;
 
 export type OptionsOp = (typeof OPTIONS_OPS)[number];
@@ -244,6 +268,13 @@ export interface SwAttachmentRejectedMessage {
   rejection: AttachmentRejection;
 }
 
+/** 蒸馏草稿待审广播（issue #5 D11：sidepanel 轻提示；options 是审阅面） */
+export interface SwSkillDraftsMessage {
+  kind: "skill-drafts";
+  /** 当前待审草稿总数（宿主 SkillStore.listDrafts().length） */
+  count: number;
+}
+
 export type SwToUiMessage =
   | SwHelloMessage
   | SwJournalSnapshotMessage
@@ -253,7 +284,8 @@ export type SwToUiMessage =
   | SwSubmitRequestMessage
   | SwAttachmentsMessage
   | SwAttachmentBegunMessage
-  | SwAttachmentRejectedMessage;
+  | SwAttachmentRejectedMessage
+  | SwSkillDraftsMessage;
 
 // —— UI → SW 消息（Port 发送 + options 页 sendMessage 单发共用）——
 

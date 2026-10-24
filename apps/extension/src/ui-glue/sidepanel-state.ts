@@ -29,6 +29,8 @@ export interface SidepanelState {
   attachmentRejections: AttachmentRejection[];
   permission: SwPermissionRequestMessage | null;
   submit: SwSubmitRequestMessage | null;
+  /** skill-drafts 广播的待审草稿数（issue #5 D11 轻提示；null = 未收到过） */
+  draftCount: number | null;
 }
 
 export const initialSidepanelState: SidepanelState = {
@@ -39,6 +41,7 @@ export const initialSidepanelState: SidepanelState = {
   attachmentRejections: [],
   permission: null,
   submit: null,
+  draftCount: null,
 };
 
 /** 本地动作（确认卡 resolve 后乐观清除——SW 不广播 resolve 回执；拒绝明细的
@@ -89,6 +92,10 @@ export function ingestSidepanel(
         },
         ack: null,
       };
+    }
+    case "skill-drafts": {
+      // D11 轻提示：sidepanel 只显示待审数——审阅面在 options 页
+      return { state: { ...state, draftCount: action.count }, ack: null };
     }
     case "journal-snapshot": {
       // run 切换（SW 在 begin 后广播起始快照——seq 已重置）→ 全量重建；同 run
