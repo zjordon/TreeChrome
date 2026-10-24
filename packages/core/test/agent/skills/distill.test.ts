@@ -514,4 +514,27 @@ describe("distillTaskCard", () => {
     expect(outcome.kind).toBe("draft");
     expect(llm.distillCalls.length).toBe(1);
   });
+
+  it("callTimeoutMs 覆盖透传；缺省 60s（长轨迹 thinking 模型实测需放宽——扩展传 180s）", async () => {
+    const seen: Array<{ callTimeoutMs?: number | null } | undefined> = [];
+    const llm: import("../../../src/agent/skills/distill.js").DistillLLM = {
+      async structuredCall(_s, _p, schema, opts) {
+        const props = (schema.properties ?? {}) as Record<string, unknown>;
+        if ("match" in props) return MATCH_UPLOAD;
+        seen.push(opts);
+        return VALID_CARD;
+      },
+    };
+    const overridden = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      llm,
+      callTimeoutMs: 180_000,
+    });
+    expect(overridden.kind).toBe("draft");
+    expect(seen.at(-1)?.callTimeoutMs).toBe(180_000);
+    const defaulted = await distillTaskCard({ ...BASE_INPUT, catalog: [], llm });
+    expect(defaulted.kind).toBe("draft");
+    expect(seen.at(-1)?.callTimeoutMs).toBe(60_000);
+  });
 });

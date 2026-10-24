@@ -666,6 +666,38 @@ describe("RunManager 蒸馏门控入队", () => {
     });
     expect(jobs[0]?.traceText).toContain("https://a.example/reports");
     expect(kicks).toHaveLength(1);
+    // issue #5 可观测性：judge 结论进 journal 快照（收尾后可查「为什么没蒸馏」）
+    expect(m.journal.current()).toMatchObject({
+      judgement: { verdict: true, reasoning: null, failureReason: null },
+    });
+  });
+
+  it("快照持久化 judge 拒绝结论（verdict=false + reasoning 收窄）", async () => {
+    const m = makeDeps();
+    await m.manager.control("start", "查报表");
+    m.stub.finish(
+      new AgentHistoryList({
+        history: [
+          {
+            stepNumber: 1,
+            modelOutput: { next_goal: "查", action: { name: "done", params: {} } },
+            stateSummary: { url: "https://a.example/r" },
+            result: [
+              {
+                isDone: true,
+                success: true,
+                extractedContent: "x",
+                judgement: { verdict: false, reasoning: "无页面证据", failureReason: "证据不足" },
+              },
+            ],
+          } as never,
+        ],
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(m.journal.current()).toMatchObject({
+      judgement: { verdict: false, reasoning: "无页面证据", failureReason: "证据不足" },
+    });
   });
 
   it("verdict false / judgement 缺失（judge 关闭）→ 不入队", async () => {

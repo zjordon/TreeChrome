@@ -120,6 +120,9 @@ export interface DistillTaskInput {
   llm: DistillLLM;
   /** 敏感数据（与 Agent 同一配置形态）——序列化后整串占位脱敏 */
   sensitiveData?: Record<string, SensitiveDataSpec> | null;
+  /** 蒸馏调用超时（缺省 DISTILL_CALL_TIMEOUT_MS=60s）。长轨迹 + thinking 模型生成
+   *  整卡 8k tokens 实测可超 60s（抖音任务真机 2026-10-24）——扩展 worker 传 180s */
+  callTimeoutMs?: number;
   traceMaxChars?: number;
   maxTokens?: number;
   now?: () => Date;
@@ -339,7 +342,7 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
         DISTILL_OUTPUT_SCHEMA,
         {
           maxTokens: input.maxTokens ?? DISTILL_MAX_TOKENS,
-          callTimeoutMs: DISTILL_CALL_TIMEOUT_MS,
+          callTimeoutMs: input.callTimeoutMs ?? DISTILL_CALL_TIMEOUT_MS,
         },
       );
     } catch (e) {

@@ -97,6 +97,18 @@ function secretsMapOf(settings: ExtensionSettings): Record<string, string> {
   return out;
 }
 
+/** done 步 judgement（core JudgementResult 形态，ActionResult 侧是 unknown）→
+ *  快照持久化投影——收尾后可查证蒸馏门控依据 */
+function narrowJudgement(j: unknown): RunJournalSnapshot["judgement"] {
+  if (typeof j !== "object" || j === null) return null;
+  const r = j as Record<string, unknown>;
+  return {
+    verdict: r.verdict === true,
+    reasoning: typeof r.reasoning === "string" ? r.reasoning : null,
+    failureReason: typeof r.failureReason === "string" ? r.failureReason : null,
+  };
+}
+
 /** commit 彻底未知（pending 已被超时/错位清理）时的 lost 拒绝占位——UI 按
  *  transferId 用本地传输记录补全展示 */
 const LOST_PLACEHOLDER = { name: "（未知附件）", mimeType: "", size: 0 } as const;
@@ -380,6 +392,9 @@ export class RunManager {
           finalResult: history.finalResult(),
           isDone: history.isDone(),
           isSuccessful: history.isSuccessful(),
+          judgement: narrowJudgement(
+            history.history[history.history.length - 1]?.result.find((r) => r.isDone)?.judgement,
+          ),
         });
         // issue #5 S4：done 分支门控入队（D1/D9——异步增强，失败/异常均不影响
         // run 终态已收口的事实）

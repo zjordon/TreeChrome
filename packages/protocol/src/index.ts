@@ -159,6 +159,13 @@ export interface RunJournalSnapshot {
   stepCount: number;
   lastError: string | null;
   attachments: AttachmentInfo[];
+  /** Judge 复核结论（done 步带出；null = judge 未跑/非 done）。蒸馏门控依据——
+   *  持久化供收尾后查证「为什么没蒸馏」（issue #5 可观测性修补） */
+  judgement?: {
+    verdict: boolean;
+    reasoning: string | null;
+    failureReason: string | null;
+  } | null;
 }
 
 /** provider 卡片的存储/表单形态（单一事实源 = core ProviderConfig；扩展 chrome.storage

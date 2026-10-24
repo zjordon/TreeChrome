@@ -146,6 +146,10 @@
 - 2026-10-24 S4 完成：runtime 链路（queue/worker/门控/keepalive hold + background 接线）。要点：①门控/host 判定下放 core（双宿主同源）；②队列携带预序列化+脱敏轨迹文本（core 加 traceText 入口）——持久化边界不再依赖进程内 AgentHistory；③worker 的 D14 保护 = isUpdatable 回调（仅 distilled 卡可增量，built-in/import 命中即 skip）；④unchanged → bumpDistillStreak（skill-store 新增，内容/distilledAt 不动）。notify 面暂为日志——S5 接 protocol 广播与 options 审阅 op
 - 2026-10-24 S5 完成：protocol/UI 审阅面全链（广播轻提示 + options 审阅/编辑/采纳/丢弃）。options 三 op 的 background 处理无单测面（entrypoint 不可 import）——载荷校验经 console-ui/ui-glue 层与 S6 e2e 覆盖（M7 验收句走 e2e）
 - 2026-10-24 S6 完成 + S7 全量验收绿（typecheck 0 错误 / 1902 单测全绿 / biome 净）：e2e smoke-self-evolution 真机 PASS。**扩展侧全链（S3 存储→S4 runtime→S5 审阅面→S6 e2e）实现完毕**，待提交 → /review-loop → /finish-issue
+- 2026-10-24 merge main（5fbbb7f，冲突仅 SCRATCHPAD 取本分支版）→ 全仓 1911 绿（dom-snapshot 176 = #6 修复入树）
+- 2026-10-24 **--fresh 观察性验收完成**（跑 4/5 日志）：①门控拦截幻觉失败实证（Judge 逐条点名无证据断言「全站无数据」，毒卡未入闭环）；②收敛机制全链正常（17 步建卡→4 步→无新观察×2→converged skip）；③最优性盲区定性（Day/Month：成功信号区分不了「正确但笨」与「正确且优」——单轨迹过拟合仍在，危害被掩盖）。观察 + v2 候选（效率信号进闭环：简化机会纳入合法新观察）已登记 issue #5（comment 6384317522）
+- 2026-10-24 **抖音实测 + 卡剧本锚定发现**（`examples/douyin-upload-analysis.mjs` 新脚本：逐段计时 + 收敛可见性）：三轮 45 步✗ / 18 步✓ / 带卡 8 步（-56% 步 -66% 时 -62% token）但**剧本锚定幻觉收尾**（弹层未开即 done 虚构全项完成，Judge 拦下 *"entirely fabricated"*，增量蒸馏被门控阻断）。慢点归因：model 段 76-82% 墙钟（thinking 模型 10-16s/调用 × ~14k input tokens）。已登记 issue #5（comment 6384681538）+ v1.5 缓解方向（防锚定措辞 + done 前自检提示）
+- 2026-10-24 **扩展实测三缺口修复**（用户真机跑扩展暴露）：①journal 快照持久化 judgement（verdict/reasoning/failureReason——收尾后可查「为什么没蒸馏」）+ FinalResult Judge 徽章与折叠判词；②sidepanel 草稿数打开/重连主动查询（广播即发即逝的漏看窗口）；③蒸馏调用超时可配置（core callTimeoutMs 覆盖项）+ 扩展 worker 放宽 180s（长轨迹 thinking 模型 60s 实测不够，真机超时实证）。修复后用户真机全链验证通过：跑任务 → Judge 通过 → 蒸馏出卡 → options 审阅采纳 → 技能库可见 → 二跑 matcher 命中注入 2773 字符。另确认一个移植保真边界：任务卡匹配每任务一次锚定起始 host——起跑页≠目标站则不注入（v1.5 候选）
 
 ## 7. 评审轮登记（/review-loop，base=main）
 

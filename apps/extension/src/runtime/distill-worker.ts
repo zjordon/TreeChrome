@@ -100,6 +100,9 @@ export class DistillWorker {
         runId: job.runId,
         traceText: job.traceText,
         stepCount: job.stepCount,
+        // 长轨迹 + thinking 模型生成整卡 8k tokens：60s 实测不够（2026-10-24 抖音
+        // 真机超时）——放宽到 180s；SW 生命周期由 keepalive hold 兜底
+        callTimeoutMs: 180_000,
         catalog: catalog as TaskCardMeta[],
         cardText,
         isUpdatable,

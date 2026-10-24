@@ -151,12 +151,14 @@ describe("RunJournal 状态与恢复", () => {
       finalResult: "R",
       isDone: true,
       isSuccessful: true,
+      judgement: { verdict: true, reasoning: "ok", failureReason: null },
     });
     expect(flushed.at(-1)?.snapshot).toMatchObject({
       status: "done",
       endedAt: 99,
       finalResult: "R",
       isSuccessful: true,
+      judgement: { verdict: true, reasoning: "ok" }, // issue #5：门控依据进持久层
     });
 
     const revived = new RunJournal();
