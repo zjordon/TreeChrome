@@ -208,7 +208,10 @@ export class RunJournal {
   setStatus(
     status: RunStatus,
     extra: Partial<
-      Pick<RunJournalSnapshot, "endedAt" | "finalResult" | "isDone" | "isSuccessful" | "lastError">
+      Pick<
+        RunJournalSnapshot,
+        "endedAt" | "finalResult" | "isDone" | "isSuccessful" | "lastError" | "judgement"
+      >
     > = {},
   ): void {
     const snap = this.snapshot;

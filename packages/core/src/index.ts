@@ -60,8 +60,26 @@ export {
   DEFAULT_MESSAGE_COMPACTION_SETTINGS,
   resolveAgentSettings,
 } from "./agent/settings.js";
+// —— issue #5 自进化：任务级蒸馏（双宿主同入口——扩展 worker / node-host 钩子）——
+export type {
+  DistillLLM,
+  DistillOutcome,
+  DistillTaskInput,
+  SkillCardDraft,
+} from "./agent/skills/distill.js";
+export {
+  clipTraceTail,
+  DISTILL_ATTEMPTS,
+  DISTILL_CONVERGE_THRESHOLD,
+  DISTILL_MAX_TOKENS,
+  DISTILL_OUTPUT_SCHEMA,
+  DISTILL_TRACE_MAX_CHARS,
+  distillTaskCard,
+} from "./agent/skills/distill.js";
+export { dominantHostOf, passesDistillGate } from "./agent/skills/distill-gate.js";
 export type { MatcherLLM, TaskSkillMatch } from "./agent/skills/task-matcher.js";
 export { buildTaskSkillText, matchTaskSkill } from "./agent/skills/task-matcher.js";
+export { serializeTraceForPrompt } from "./agent/skills/trace-serialize.js";
 export type { HostSkill, SkillSource, TaskCardMeta } from "./agent/skills/types.js";
 export { catalogLine, newestDistilledAt, renderTaskCard } from "./agent/skills/types.js";
 export { extractHost, extractHostWithPort } from "./agent/url-utils.js";

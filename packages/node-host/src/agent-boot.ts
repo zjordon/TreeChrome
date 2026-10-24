@@ -26,6 +26,7 @@ import {
   type Tools,
 } from "@tw/core";
 import { attachConsole } from "./console.js";
+import { type DistillRunOptions, distillAfterRun } from "./distill-run.js";
 import { NodeFs } from "./node-fs.js";
 import {
   applyDotEnv,
@@ -79,6 +80,8 @@ export interface AssembledAgent {
   agent: Agent;
   browser: BrowserSession;
   bus: EventBusType | null;
+  /** 主 LLM 客户端（蒸馏钩子复用——D16：matcher+蒸馏共用主卡；独立卡 env 覆盖留后续） */
+  llm: LLMClient;
   /** 缺省门装配时非 null（runAgent 收尾打记账汇总）；注入自定义 policy 时为 null */
   autoAllow: AutoAllowPolicy | null;
 }
@@ -143,8 +146,9 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
 
   const llm =
     options.llm ??
+    // 客户端内部日志已带 [llm] 前缀——sink 不再包一层（阶段 0 实跑发现双前缀）
     new LLMClient(buildProviderCard(options.settings.llm), {
-      log: (m) => sink(`[llm] ${m}`),
+      log: (m) => sink(m),
     });
 
   const transportFactory =
@@ -214,7 +218,7 @@ export function assembleAgent(options: AssembleAgentOptions): AssembledAgent {
     log: (m) => sink(`[agent] ${m}`),
   });
 
-  return { agent, browser, bus, autoAllow };
+  return { agent, browser, bus, llm, autoAllow };
 }
 
 /** AutoAllow 记账汇总行（独立导出便于单测）；零请求返回 null */
@@ -236,6 +240,9 @@ export interface RunAgentOptions extends Omit<AssembleAgentOptions, "settings" |
   /** env 装载后在 settings 上做程序化覆盖（Python replace(settings.x, ...) 形态；
    *  fast_agent 的 flash/时延收紧走此口） */
   overrides?: HostSettingsOverrides;
+  /** runAgent 收尾蒸馏钩子（issue #5 D16）：门控（成功 + Judge 通过）→ core 蒸馏
+   *  → 目录四文件落盘（skillsDir 指定目标）。不传 = 零副作用（现有示例行为不变） */
+  distill?: DistillRunOptions;
 }
 
 /**
@@ -304,7 +311,21 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentHistoryLi
 
   const assembled = assembleAgent({ ...options, settings, wsUrl });
   try {
-    return await assembled.agent.run();
+    const history = await assembled.agent.run();
+    if (options.distill !== undefined) {
+      // 同步 await（D16）：runAgent 返回前完成蒸馏——阶段 0 二跑对拍依赖产物就位；
+      // distillAfterRun 全路径 fail-soft，蒸馏失败不影响 run 结果
+      const log = options.log ?? ((m: string) => console.log(m));
+      await distillAfterRun({
+        task: options.task,
+        distill: options.distill,
+        llm: assembled.llm,
+        history,
+        sensitiveData: options.sensitiveData ?? null,
+        log: options.console === false ? () => {} : log,
+      });
+    }
+    return history;
   } finally {
     await finalizeAssembled(assembled, options);
   }

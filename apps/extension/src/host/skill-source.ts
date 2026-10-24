@@ -38,7 +38,12 @@ export class ExtensionSkillSource implements SkillSource {
     await this.ready;
     if (this.hostCache.has(host)) return this.hostCache.get(host) ?? null;
     const card = await this.store.getCard(host, "");
-    if (card === null || (card.sop === "" && card.selectors === "" && card.quirks === "")) {
+    // draft 过滤（D7 belt-and-suspenders：草稿本在 draft:: 键空间，此滤兜正键异常形态）
+    if (
+      card === null ||
+      card.status === "draft" ||
+      (card.sop === "" && card.selectors === "" && card.quirks === "")
+    ) {
       this.log(`skill: no card for host=${host}`);
       this.hostCache.set(host, null);
       return null;
@@ -56,7 +61,7 @@ export class ExtensionSkillSource implements SkillSource {
     const metas: ExtensionTaskCardMeta[] = [];
     for (const slug of slugs) {
       const card = await this.store.getCard(hostKey, slug);
-      if (card === null || card.description === undefined) continue;
+      if (card === null || card.status === "draft" || card.description === undefined) continue;
       metas.push({
         slug,
         description: card.description,
@@ -72,8 +77,20 @@ export class ExtensionSkillSource implements SkillSource {
   async taskCardText(meta: TaskCardMeta): Promise<string> {
     const host = (meta as ExtensionTaskCardMeta).host ?? "";
     const card = await this.store.getCard(host, meta.slug);
-    if (card === null) return "";
+    if (card === null || card.status === "draft") return "";
     // task_loader.py:127-140 锚定：三件套 strip 后 "\n\n" 直拼（无分段头）
     return [card.sop, card.selectors, card.quirks].map((s) => s.trim()).join("\n\n");
+  }
+
+  /** 失效缓存（issue #5：采纳/丢弃草稿后正键变化——无失效机制的缓存会继续喂
+   *  采纳前状态；宿主在 adopt/discard 后调用。无参 = 全清） */
+  invalidate(hostKey?: string): void {
+    if (hostKey === undefined) {
+      this.hostCache.clear();
+      this.catalogCache.clear();
+      return;
+    }
+    this.hostCache.delete(hostKey);
+    this.catalogCache.delete(hostKey);
   }
 }

@@ -134,6 +134,23 @@ describe("sidepanel reducer", () => {
     expect(state.events).toHaveLength(1); // live 流不清
   });
 
+  it("skill-drafts 广播（issue #5 D11）：draftCount 更新且不动其他态", () => {
+    const base = ingestSidepanel(initialSidepanelState, {
+      kind: "hello",
+      runId: "r1",
+      snapshot: {
+        ...snap(1),
+        events: [{ seq: 1, type: "step_start", step: 1, ts: 1, data: {} }],
+        attachments: [],
+      },
+    }).state;
+    expect(base.draftCount).toBeNull();
+    const next = ingestSidepanel(base, { kind: "skill-drafts", count: 2 }).state;
+    expect(next.draftCount).toBe(2);
+    expect(next.events).toHaveLength(1); // 时间线不受扰
+    expect(next.snapshot?.runId).toBe("r1");
+  });
+
   it("hello 同 run 重连：未 ack 尾巴合入（SW 裁剪快照不销毁本地时间线）", () => {
     let state = ingestSidepanel(initialSidepanelState, {
       kind: "hello",

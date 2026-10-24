@@ -22,6 +22,8 @@ export interface ExtensionSettings {
     useVision?: boolean;
     maxSteps?: number;
   };
+  /** 自进化闭环开关（issue #5 D10）：enabled 缺省 true；distillCard 空串 = 复用主卡 */
+  selfEvolution?: { enabled: boolean; distillCard: string };
 }
 
 export const SETTINGS_KEY = "tc_settings";
@@ -69,7 +71,22 @@ export function parseExtensionSettings(raw: unknown): ExtensionSettings {
       ...(typeof raw.agent.maxSteps === "number" ? { maxSteps: raw.agent.maxSteps } : {}),
     };
   }
+  if (isRecord(raw.selfEvolution)) {
+    out.selfEvolution = {
+      enabled: typeof raw.selfEvolution.enabled === "boolean" ? raw.selfEvolution.enabled : true,
+      distillCard:
+        typeof raw.selfEvolution.distillCard === "string" ? raw.selfEvolution.distillCard : "",
+    };
+  }
   return out;
+}
+
+/** 自进化配置读取（缺省 enabled=true + 空卡名=复用主卡——D10；S4 门控/worker 消费） */
+export function selfEvolutionOf(settings: ExtensionSettings): {
+  enabled: boolean;
+  distillCard: string;
+} {
+  return settings.selfEvolution ?? { enabled: true, distillCard: "" };
 }
 
 /** 热读（每次 start 前调；缺键/坏形态回缺省空卡——装配层报「无可用卡片」） */

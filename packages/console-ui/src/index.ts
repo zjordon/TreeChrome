@@ -27,6 +27,8 @@ export type { ProviderListProps } from "./provider-list.js";
 export { ProviderList } from "./provider-list.js";
 export type { RunTimelineProps } from "./run-timeline.js";
 export { groupByStep, RunTimeline, repeatedSkillSeqs } from "./run-timeline.js";
+export type { SkillDraftEdits, SkillDraftReviewProps } from "./skill-draft-review.js";
+export { SkillDraftReview } from "./skill-draft-review.js";
 export type { SkillListViewProps } from "./skill-list-view.js";
 export { SkillListView } from "./skill-list-view.js";
 export type { StatusLineProps } from "./status-line.js";

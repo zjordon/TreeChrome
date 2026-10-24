@@ -46,6 +46,30 @@ describe("FinalResult", () => {
     expect(screen.getByText("结束")).toBeDefined();
   });
 
+  it("Judge 结论（issue #5）：通过徽章 / 拒绝徽章 + 折叠判词（蒸馏门控可见）", () => {
+    const { rerender } = render(
+      <FinalResult
+        finalResult="ok"
+        isSuccessful
+        attachments={[]}
+        judgement={{ verdict: true, reasoning: "完成", failureReason: null }}
+      />,
+    );
+    expect(screen.getByText("✓ Judge 通过")).toBeDefined();
+    expect(screen.queryByText(/Judge 判词/)).toBeNull(); // 通过不展开判词
+    rerender(
+      <FinalResult
+        finalResult="ok"
+        isSuccessful
+        attachments={[]}
+        judgement={{ verdict: false, reasoning: "封面弹层从未打开", failureReason: "证据不足" }}
+      />,
+    );
+    expect(screen.getByText("✗ Judge 未通过")).toBeDefined();
+    expect(screen.getByText(/封面弹层从未打开/)).toBeDefined(); // 判词折叠仍在 DOM
+    expect(screen.getByText(/证据不足/)).toBeDefined();
+  });
+
   it("附件清单（名称 + 体积）", () => {
     render(
       <FinalResult

@@ -22,6 +22,9 @@ import { ingestSidepanel, initialSidepanelState, type SidepanelAction } from "./
 
 export interface SidepanelAppProps {
   connect: () => UiPort;
+  /** 草稿数主动查询面（issue #5 可观测性：广播即发即逝——打开/重连时补查一次；
+   *  entrypoints 注入 chrome.runtime.sendMessage options op，测试注入 mock。缺省不查） */
+  fetchDraftCount?: () => Promise<number | null>;
 }
 
 /** TaskBar 的上传进度投影（传输中条目——本地态，不进 protocol） */
@@ -32,7 +35,7 @@ interface UploadProgress {
   sent: number;
 }
 
-export function SidepanelApp({ connect }: SidepanelAppProps) {
+export function SidepanelApp({ connect, fetchDraftCount }: SidepanelAppProps) {
   const [state, dispatch] = useReducer(
     (s: typeof initialSidepanelState, a: SidepanelAction) => ingestSidepanel(s, a).state,
     initialSidepanelState,
@@ -67,6 +70,17 @@ export function SidepanelApp({ connect }: SidepanelAppProps) {
       begunWaiters.current.clear();
     };
   }, [connect]);
+
+  // 草稿数补查（issue #5）：skill-drafts 广播只在蒸馏完成瞬间发给当时在线的端口——
+  // 面板后开/重连会错过。端口上线时主动查一次当前草稿数（广播照旧，双保险）
+  useEffect(() => {
+    if (portStatus !== "online" || fetchDraftCount === undefined) return;
+    void fetchDraftCount()
+      .then((n) => {
+        if (typeof n === "number") dispatch({ kind: "skill-drafts", count: n });
+      })
+      .catch(() => {});
+  }, [portStatus, fetchDraftCount]);
 
   /** 透传 PortClient.send 的送达语义（评审轮 1 [2]）：断连/端口竞态返 false 不抛——
    *  附件传输靠它显式收口；其余调用方忽略返回值 */
@@ -187,6 +201,12 @@ export function SidepanelApp({ connect }: SidepanelAppProps) {
           </p>
         )}
 
+        {(state.draftCount ?? 0) > 0 ? (
+          <p style={{ margin: "4px 0" }} className="tc-ev-muted">
+            📝 {state.draftCount} 张蒸馏草稿待审——去设置页（options）审阅采纳。
+          </p>
+        ) : null}
+
         <RunTimeline
           events={state.events}
           discardedBeforeSeq={snap?.discardedBeforeSeq ?? 0}
@@ -199,6 +219,7 @@ export function SidepanelApp({ connect }: SidepanelAppProps) {
             isSuccessful={snap.isSuccessful}
             attachments={snap.attachments}
             lastError={snap.lastError}
+            judgement={snap.judgement}
           />
         ) : null}
       </main>

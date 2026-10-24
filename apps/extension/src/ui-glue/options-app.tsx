@@ -7,10 +7,17 @@ import {
   GrantsView,
   ProviderCardForm,
   ProviderList,
+  SkillDraftReview,
   SkillListView,
   ThemedRoot,
 } from "@tw/console-ui";
-import type { Grant, OptionsOp, ProviderCardDto, SkillCardInfo } from "@tw/protocol";
+import type {
+  Grant,
+  OptionsOp,
+  ProviderCardDto,
+  SkillCardInfo,
+  SkillDraftInfo,
+} from "@tw/protocol";
 import { useCallback, useEffect, useState } from "react";
 import type { ExtensionSettings } from "../host/settings-store.js";
 import { planCardMutation } from "./card-mutation.js";
@@ -25,6 +32,7 @@ export function OptionsApp({ request }: OptionsAppProps) {
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [skills, setSkills] = useState<SkillCardInfo[]>([]);
+  const [drafts, setDrafts] = useState<SkillDraftInfo[]>([]);
   const [form, setForm] = useState<FormTarget>({ mode: "closed" });
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,18 +41,20 @@ export function OptionsApp({ request }: OptionsAppProps) {
     // fail-soft（评审轮 1 [8]）：SW 被杀/扩展重载时 sendMessage reject——裸 await
     // 是未处理 rejection 且页面永久停留读态；ok:false 信封也走错误呈现
     try {
-      const [s, g, k] = (await Promise.all([
+      const [s, g, k, d] = (await Promise.all([
         request("get-settings"),
         request("list-grants"),
         request("list-skills"),
+        request("list-skill-drafts"),
       ])) as Array<{ ok?: boolean; error?: string }>;
-      if (s.ok !== true || g.ok !== true || k.ok !== true) {
-        setError(s.error ?? g.error ?? k.error ?? "读取配置失败");
+      if (s.ok !== true || g.ok !== true || k.ok !== true || d.ok !== true) {
+        setError(s.error ?? g.error ?? k.error ?? d.error ?? "读取配置失败");
         return;
       }
       setSettings((s as { settings: ExtensionSettings }).settings);
       setGrants((g as { grants: Grant[] }).grants);
       setSkills((k as { cards: SkillCardInfo[] }).cards);
+      setDrafts((d as { drafts: SkillDraftInfo[] }).drafts);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -217,6 +227,27 @@ export function OptionsApp({ request }: OptionsAppProps) {
               capability: grant.capability,
               host: grant.host,
             })
+              .then(() => refresh())
+              .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+          }}
+        />
+        <SkillDraftReview
+          drafts={drafts}
+          onAdopt={(host, slug, edits) => {
+            void request("adopt-skill-draft", { host, slug, edits })
+              .then((res) => {
+                const r = res as { ok?: boolean; error?: string };
+                if (r.ok === true) {
+                  setNotice(`已采纳草稿：${host} / ${slug}`);
+                } else {
+                  setError(r.error ?? "采纳失败");
+                }
+                return refresh();
+              })
+              .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+          }}
+          onDiscard={(host, slug) => {
+            void request("discard-skill-draft", { host, slug })
               .then(() => refresh())
               .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
           }}

@@ -3,6 +3,7 @@
 // ExtensionSkillSource 三件套读序/缓存/miss=null/taskCatalog 前缀过滤/
 // ready gate（刷新落定前不固化负缓存）+ taskCardText 无头 "\n\n" join——fake SkillDb。
 
+import type { SkillCardDraft } from "@tw/core";
 import { describe, expect, it } from "vitest";
 import { ExtensionSkillSource } from "../src/host/skill-source.js";
 import {
@@ -255,5 +256,241 @@ describe("ExtensionSkillSource", () => {
     expect(await src.taskCatalog("a.example")).toMatchObject([{ slug: "task-one" }]);
     expect(hostResult).not.toBe(null);
     expect(catalogResult).not.toBe("pending");
+  });
+});
+
+// ── 蒸馏草稿（issue #5 S3：D7/D8/D14/D15/D17）──────────────────────────
+
+describe("SkillStore 蒸馏草稿", () => {
+  const draft = (over: Partial<SkillCardDraft> = {}): SkillCardDraft => ({
+    host: "a.example",
+    slug: "task-one",
+    description: "Do one thing v2",
+    keywords: ["one", "v2"],
+    sop: "SOP-NEW",
+    selectors: "SEL-NEW",
+    quirks: "Q-NEW",
+    mode: "update",
+    sourceTraces: ["run-9"],
+    distilledAt: "2026-10-24T00:00:00Z",
+    ...over,
+  });
+
+  it("saveDraft 落草稿键空间不占正键；listDrafts 只列草稿；幂等 upsert", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    await store.saveDraft(draft(), 100);
+    expect([...db.map.keys()]).toEqual(["draft::a.example::task-one"]); // 正键零占用
+    await store.saveDraft(draft({ sop: "SOP-NEW2" }), 200); // 幂等 upsert 同键
+    const list = await store.listDrafts();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ sop: "SOP-NEW2", status: "draft", updatedAt: 200 });
+    expect(await store.getCard("a.example", "task-one")).toBeNull(); // 正键仍是 miss
+  });
+
+  it("增量草稿与在用卡共存：正键 built-in 卡照常服务，草稿待审不遮蔽", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    await store.refreshBuiltins(MANIFEST, 1000);
+    await store.saveDraft(draft(), 2000);
+    const active = await store.getCard("a.example", "task-one");
+    expect(active?.provenance.sourceType).toBe("built-in"); // 在用卡未被碰
+    expect(await store.listTaskSlugs("a.example")).toEqual(["task-one"]); // 草稿键不进任务列举
+  });
+
+  it("built-in 刷新/prune 不动草稿键（provenance=distilled）", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    await store.saveDraft(draft(), 100);
+    await store.refreshBuiltins(MANIFEST, 200); // prune 轮会扫全部键
+    expect([...db.map.keys()]).toContain("draft::a.example::task-one");
+  });
+
+  it("adoptDraft：edits 应用 + 整卡替换正键 + sourceTraces 并集（旧在前）+ streak 归 0 + 草稿键清除", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    // 既有 distilled active 卡（sourceTraces 带旧 run）
+    db.map.set("a.example::task-one", {
+      host: "a.example",
+      slug: "task-one",
+      sop: "SOP-OLD",
+      selectors: "SEL-OLD",
+      quirks: "Q-OLD",
+      description: "Do one thing",
+      distilledAt: "2026-09-01T00:00:00Z",
+      sourceTraces: ["run-1", "run-2"],
+      distillStreak: 2,
+      provenance: { sourceType: "distilled" },
+      updatedAt: 1,
+    });
+    await store.saveDraft(draft(), 100);
+    const res = await store.adoptDraft("a.example", "task-one", { quirks: "Q-EDITED" }, 300);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.card).toMatchObject({
+      sop: "SOP-NEW", // 未编辑字段取草稿
+      quirks: "Q-EDITED", // edits 覆盖
+      distilledAt: "2026-10-24T00:00:00Z",
+      sourceTraces: ["run-1", "run-2", "run-9"], // 并集旧在前（node writeTaskCard 同口径）
+      distillStreak: 0, // D17：写内容即归 0
+      provenance: { sourceType: "distilled", note: "adopted" },
+      updatedAt: 300,
+    });
+    expect(res.card.status).toBeUndefined(); // 采纳后无 status 键 = active（D7 缺省）
+    expect([...db.map.keys()]).toEqual(["a.example::task-one"]); // 草稿键已清
+  });
+
+  it("adoptDraft 防御拒绝：草稿不存在 / 非 draft 状态 / 正键 built-in 占用（D14）", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    const missing = await store.adoptDraft("a.example", "ghost");
+    expect(missing).toMatchObject({ ok: false });
+    // 非 draft 状态记录占着草稿键
+    db.map.set("draft::a.example::task-one", { junk: true });
+    const notDraft = await store.adoptDraft("a.example", "task-one");
+    expect(notDraft).toMatchObject({ ok: false, error: expect.stringContaining("draft") });
+    // 正键是 built-in：采纳会遮蔽 built-in 刷新 → 拒
+    const db2 = fakeDb();
+    const store2 = new SkillStore(db2);
+    await store2.refreshBuiltins(MANIFEST, 1000);
+    await store2.saveDraft(draft({ slug: "task-one" }), 100);
+    const clash = await store2.adoptDraft("a.example", "task-one");
+    expect(clash).toMatchObject({ ok: false, error: expect.stringContaining("built-in") });
+  });
+
+  it("adoptDraft 经注入串行面执行（读-改-写不与其它写者交错）", async () => {
+    const db = fakeDb();
+    let entered = 0;
+    let ranInside = false;
+    const serialize = async <T>(task: () => Promise<T>): Promise<T> => {
+      entered += 1;
+      return task().then((v) => {
+        ranInside = true;
+        return v;
+      });
+    };
+    const store = new SkillStore(db, serialize);
+    await store.saveDraft(draft(), 100);
+    const res = await store.adoptDraft("a.example", "task-one");
+    expect(res.ok).toBe(true);
+    expect(entered).toBe(2); // saveDraft + adopt 都经串行面（评审轮 1 [4] 后 save 不再绕过）
+    expect(ranInside).toBe(true);
+  });
+
+  it("discardDraft：删草稿键，正键永不受影响", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    await store.refreshBuiltins(MANIFEST, 1000);
+    await store.saveDraft(draft(), 100);
+    await store.discardDraft("a.example", "task-one");
+    expect([...db.map.keys()]).toEqual(["a.example::", "a.example::task-one", "b.example::"]); // 仅草稿键消失
+  });
+});
+
+describe("ExtensionSkillSource 草稿过滤与缓存失效（issue #5 S3）", () => {
+  it("三面过滤：正键异常 draft 形态不出现在 loadHostSkill/taskCatalog/taskCardText", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    await store.refreshBuiltins(MANIFEST, 1000);
+    // 兜底形态：draft 状态卡占正键（草稿本应只在 draft:: 键空间——belt-and-suspenders）
+    const hijacked = await store.getCard("a.example", "task-one");
+    db.map.set("a.example::task-one", { ...hijacked!, status: "draft" });
+    const src = new ExtensionSkillSource(store);
+    const catalog = await src.taskCatalog("a.example");
+    expect(catalog).toEqual([]); // taskCatalog 不含 draft
+    expect(await src.taskCardText({ slug: "task-one", description: "", host: "a.example" })).toBe(
+      "",
+    ); // 全文不吐
+    expect(await src.loadHostSkill("a.example")).not.toBeNull(); // 站点级卡不受任务卡影响
+  });
+
+  it("invalidate：采纳后缓存重读见新卡（无失效机制缓存会喂旧状态）", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    await store.saveDraft(
+      {
+        host: "a.example",
+        slug: "new-task",
+        description: "New task",
+        keywords: ["new"],
+        sop: "S-NEW",
+        selectors: "SE-NEW",
+        quirks: "Q-NEW",
+        mode: "new",
+        sourceTraces: ["run-1"],
+        distilledAt: "2026-10-24T00:00:00Z",
+      },
+      100,
+    );
+    const src = new ExtensionSkillSource(store);
+    expect(await src.taskCatalog("a.example")).toEqual([]); // 采纳前：catalog 缓存空
+    await store.adoptDraft("a.example", "new-task");
+    expect(await src.taskCatalog("a.example")).toEqual([]); // 缓存未失效：仍是旧状态
+    src.invalidate("a.example");
+    expect(await src.taskCatalog("a.example")).toMatchObject([{ slug: "new-task" }]); // 失效后见新卡
+    expect(await src.taskCardText({ slug: "new-task", description: "", host: "a.example" })).toBe(
+      "S-NEW\n\nSE-NEW\n\nQ-NEW",
+    );
+  });
+});
+
+// ── 评审轮 1 [3][4]：全部写路径经串行面 ────────────────────────────────
+
+describe("SkillStore 写路径串行面", () => {
+  const draft = (): import("@tw/core").SkillCardDraft => ({
+    host: "a.example",
+    slug: "task-one",
+    description: "Do one thing v2",
+    keywords: ["one"],
+    sop: "SOP-NEW",
+    selectors: "SEL-NEW",
+    quirks: "Q-NEW",
+    mode: "new",
+    sourceTraces: ["run-9"],
+    distilledAt: "2026-10-24T00:00:00Z",
+  });
+
+  it("save/discard/builtins 刷新全部经注入串行面（计数）", async () => {
+    let entered = 0;
+    const serialize = async <T>(task: () => Promise<T>): Promise<T> => {
+      entered += 1;
+      return task();
+    };
+    const store = new SkillStore(fakeDb(), serialize);
+    await store.saveDraft(draft());
+    expect(entered).toBe(1);
+    await store.discardDraft("a.example", "task-one");
+    expect(entered).toBe(2);
+    await store.refreshBuiltins(MANIFEST, 1000); // a 站点卡 + a 任务卡 + b 站点卡三次 upsert
+    expect(entered).toBe(5); // prune 零删除不经过面
+  });
+
+  it("缺省内建串行面：生产构造不注入也不失互斥（并发写者按序落库）", async () => {
+    // 延迟存储放大读改写窗口：无串行面时后写者以陈旧快照覆盖
+    const map = new Map<string, unknown>();
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const slowDb = {
+      async get(key: string) {
+        await delay(4);
+        return map.get(key) ?? null;
+      },
+      async put(key: string, value: unknown) {
+        await delay(1);
+        map.set(key, value);
+      },
+      async delete(key: string) {
+        await delay(1);
+        map.delete(key);
+      },
+      async getAllKeys() {
+        return [...map.keys()];
+      },
+    } as SkillDb;
+    const store = new SkillStore(slowDb); // 不注入——用内建链
+    await store.saveDraft(draft());
+    await store.saveDraft({ ...draft(), sop: "SOP-B" });
+    const list = await store.listDrafts();
+    expect(list).toHaveLength(1);
+    expect(list[0]?.sop).toBe("SOP-B"); // 后写胜——若并发交错则可能丢此写
   });
 });

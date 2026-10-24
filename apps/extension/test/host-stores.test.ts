@@ -11,6 +11,7 @@ import {
   parseExtensionSettings,
   SETTINGS_KEY,
   SettingsStore,
+  selfEvolutionOf,
   sensitiveSpecsOf,
 } from "../src/host/settings-store.js";
 
@@ -65,6 +66,32 @@ describe("parseExtensionSettings", () => {
     });
     expect(s).toMatchObject({ activeCard: "main", taskSkillCard: "ts", judgeCard: "j" });
     expect(s.agent).toEqual({ useVision: true });
+  });
+
+  it("selfEvolution 宽松收窄（issue #5 D10）：好形态直映 / 坏字段回缺省 / 非对象丢弃", () => {
+    const good = parseExtensionSettings({
+      providerCards: [CARD],
+      activeCard: "main",
+      selfEvolution: { enabled: false, distillCard: "sub" },
+    });
+    expect(good.selfEvolution).toEqual({ enabled: false, distillCard: "sub" });
+    const partial = parseExtensionSettings({
+      selfEvolution: { enabled: "yes", distillCard: 9 },
+    });
+    expect(partial.selfEvolution).toEqual({ enabled: true, distillCard: "" });
+    expect(parseExtensionSettings({ selfEvolution: "off" }).selfEvolution).toBeUndefined();
+  });
+
+  it("selfEvolutionOf：缺省 enabled=true + 空卡名=复用主卡（S4 门控/worker 消费面）", () => {
+    expect(selfEvolutionOf(parseExtensionSettings(null))).toEqual({
+      enabled: true,
+      distillCard: "",
+    });
+    expect(
+      selfEvolutionOf(
+        parseExtensionSettings({ selfEvolution: { enabled: false, distillCard: "" } }),
+      ),
+    ).toEqual({ enabled: false, distillCard: "" });
   });
 });
 

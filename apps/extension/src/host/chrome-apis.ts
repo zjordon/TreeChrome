@@ -13,6 +13,10 @@ export interface StorageArea {
 export interface AlarmsApi {
   create(name: string, info: { periodInMinutes: number }): void;
   clear(name: string): Promise<boolean>;
+  /** issue #5 S4：蒸馏兜底唤醒（tc_distill 周期 alarm 触发 drain） */
+  onAlarm?: {
+    addListener(callback: (alarm: { name: string }) => void): void;
+  };
 }
 
 /** chrome.runtime.Port 同形（port-server 广播与双向消息） */

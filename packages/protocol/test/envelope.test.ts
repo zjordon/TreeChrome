@@ -17,6 +17,7 @@ function swKindOf(msg: SwToUiMessage): SwToUiKind {
     case "attachments":
     case "attachment-begun":
     case "attachment-rejected":
+    case "skill-drafts":
       return msg.kind;
     default: {
       const unreachable: never = msg;
@@ -49,7 +50,6 @@ function uiKindOf(msg: UiToSwMessage): UiToSwKind {
 
 describe("@tw/protocol 信封", () => {
   it("SW→UI kind 常量表与判别联合一致（逐 kind 构造样例可被路由）", () => {
-    expect([...SW_TO_UI_KINDS]).toHaveLength(9);
     const samples: SwToUiMessage[] = [
       { kind: "hello", runId: null, snapshot: null },
       { kind: "journal-snapshot", snapshot: null as never },
@@ -67,7 +67,9 @@ describe("@tw/protocol 信封", () => {
         kind: "attachment-rejected",
         rejection: { name: "a.mp4", mimeType: "video/mp4", size: 3, reason: "too-large", limit: 2 },
       },
+      { kind: "skill-drafts", count: 1 },
     ];
+    expect([...SW_TO_UI_KINDS]).toHaveLength(10);
     expect(samples.map(swKindOf)).toEqual([...SW_TO_UI_KINDS]);
   });
 

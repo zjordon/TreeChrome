@@ -55,6 +55,8 @@ function makeDeps(
   options: {
     settings?: ReturnType<typeof parseExtensionSettings>;
     tabId?: number;
+    /** 蒸馏入队面注入（issue #5 S4 门控测试） */
+    distill?: RunManagerDeps["distill"];
     /** assemble 覆盖（抛错/连接断类场景注入特殊 stub） */
     agent?: ReturnType<typeof stubAgent> | { run: () => Promise<AgentHistoryList> };
     /** tabsQuery 闸门（starting 互斥竞态测试：挂住首查直到放行） */
@@ -133,6 +135,7 @@ function makeDeps(
     broadcast: (m) => void broadcasts.push(m),
     hasPorts: () => true,
     assemble: assembleOverride,
+    ...(options.distill !== undefined ? { distill: options.distill } : {}),
     newRunId: () => "run_test",
     now: () => 1234,
     log: () => {},
@@ -617,5 +620,160 @@ describe("start 绑定可驱动页（段 F 验收：chrome:// 附着被拒）", 
       status: "error",
       lastError: "无法驱动浏览器内部页面（chrome://）——请切换到普通网页标签页后重试",
     });
+  });
+});
+
+// ── 蒸馏门控入队（issue #5 S4：D1 门控 / D3 脱敏 / D9 异步收口后）────────
+
+describe("RunManager 蒸馏门控入队", () => {
+  const distillHistory = (verdict: boolean | null) =>
+    new AgentHistoryList({
+      history: [
+        {
+          stepNumber: 1,
+          modelOutput: { next_goal: "查报表", action: { name: "done", params: {} } },
+          stateSummary: { url: "https://a.example/reports", title: "报表" },
+          result: [
+            {
+              isDone: true,
+              success: true,
+              extractedContent: "全部完成",
+              ...(verdict === null ? {} : { judgement: { verdict } }),
+            },
+          ],
+        } as never,
+      ],
+    });
+
+  it("门控过（success + verdict true）→ enqueue + kick；task/host/stepCount/traceText 正确", async () => {
+    const jobs: import("../src/runtime/distill-queue.js").DistillJobInput[] = [];
+    const kicks: number[] = [];
+    const m = makeDeps({
+      distill: {
+        enqueue: async (job) => void jobs.push(job),
+        kick: () => void kicks.push(1),
+      },
+    });
+    await m.manager.control("start", "查报表");
+    m.stub.finish(distillHistory(true));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      runId: "run_test",
+      task: "查报表",
+      host: "a.example",
+      stepCount: 1,
+    });
+    expect(jobs[0]?.traceText).toContain("https://a.example/reports");
+    expect(kicks).toHaveLength(1);
+    // issue #5 可观测性：judge 结论进 journal 快照（收尾后可查「为什么没蒸馏」）
+    expect(m.journal.current()).toMatchObject({
+      judgement: { verdict: true, reasoning: null, failureReason: null },
+    });
+  });
+
+  it("快照持久化 judge 拒绝结论（verdict=false + reasoning 收窄）", async () => {
+    const m = makeDeps();
+    await m.manager.control("start", "查报表");
+    m.stub.finish(
+      new AgentHistoryList({
+        history: [
+          {
+            stepNumber: 1,
+            modelOutput: { next_goal: "查", action: { name: "done", params: {} } },
+            stateSummary: { url: "https://a.example/r" },
+            result: [
+              {
+                isDone: true,
+                success: true,
+                extractedContent: "x",
+                judgement: { verdict: false, reasoning: "无页面证据", failureReason: "证据不足" },
+              },
+            ],
+          } as never,
+        ],
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(m.journal.current()).toMatchObject({
+      judgement: { verdict: false, reasoning: "无页面证据", failureReason: "证据不足" },
+    });
+  });
+
+  it("verdict false / judgement 缺失（judge 关闭）→ 不入队", async () => {
+    for (const verdict of [false, null]) {
+      const jobs: unknown[] = [];
+      const m = makeDeps({
+        distill: { enqueue: async (job) => void jobs.push(job), kick: () => {} },
+      });
+      await m.manager.control("start", "查报表");
+      m.stub.finish(distillHistory(verdict));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(jobs).toHaveLength(0); // D1 严格读法：judgement 缺失 = 不蒸馏
+    }
+  });
+
+  it("interrupted → 不入队", async () => {
+    const jobs: unknown[] = [];
+    const m = makeDeps({
+      distill: { enqueue: async (job) => void jobs.push(job), kick: () => {} },
+    });
+    await m.manager.control("start", "查报表");
+    await m.manager.control("stop");
+    m.stub.finish(distillHistory(true));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("selfEvolution.enabled=false → 短路不入队", async () => {
+    const jobs: unknown[] = [];
+    const m = makeDeps({
+      settings: {
+        ...SETTINGS,
+        selfEvolution: { enabled: false, distillCard: "" },
+      },
+      distill: { enqueue: async (job) => void jobs.push(job), kick: () => {} },
+    });
+    await m.manager.control("start", "查报表");
+    m.stub.finish(distillHistory(true));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("脱敏（D3）：敏感真值不出现在入队的 task/traceText（占位替换）", async () => {
+    const jobs: import("../src/runtime/distill-queue.js").DistillJobInput[] = [];
+    const m = makeDeps({
+      settings: {
+        ...SETTINGS,
+        sensitiveData: { ADMIN_TOKEN: { value: "hunter2secret", urls: null } },
+      },
+      distill: { enqueue: async (job) => void jobs.push(job), kick: () => {} },
+    });
+    await m.manager.control("start", "用 hunter2secret 登录后查报表");
+    const hist = new AgentHistoryList({
+      history: [
+        {
+          stepNumber: 1,
+          modelOutput: {
+            next_goal: "登录",
+            action: { name: "input_text", params: { text: "hunter2secret" } },
+          },
+          stateSummary: { url: "https://a.example/login", title: "登录" },
+          result: [
+            {
+              isDone: true,
+              success: true,
+              extractedContent: "全部完成 hunter2secret",
+              judgement: { verdict: true },
+            },
+          ],
+        } as never,
+      ],
+    });
+    m.stub.finish(hist);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobs).toHaveLength(1); // 门控过——入队
+    expect(jobs[0]?.task).not.toContain("hunter2secret"); // task 脱敏
+    expect(jobs[0]?.traceText).not.toContain("hunter2secret"); // Action/Result 行脱敏
   });
 });

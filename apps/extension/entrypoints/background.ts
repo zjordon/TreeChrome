@@ -10,6 +10,7 @@ import {
   chromeTabsApi,
   createChromeDebuggerTransport,
 } from "@tw/cdp-chrome";
+import { LLMClient } from "@tw/core";
 import type { OptionsOp, ProviderCardDto, RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
@@ -34,6 +35,9 @@ import {
   type SkillDb,
   SkillStore,
 } from "../src/host/skill-store.js";
+import { activeProviderCard } from "../src/runtime/assemble.js";
+import { DISTILL_ALARM_NAME, DistillQueue } from "../src/runtime/distill-queue.js";
+import { DistillWorker } from "../src/runtime/distill-worker.js";
 import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
 import { createMutationQueue } from "../src/runtime/mutation-queue.js";
@@ -222,8 +226,67 @@ async function handleOptionsRequest(
             sourceType: c.provenance.sourceType,
             updatedAt: c.updatedAt,
             ...(c.distilledAt !== undefined ? { distilledAt: c.distilledAt } : {}),
+            ...(c.status !== undefined ? { status: c.status } : {}),
           })),
         };
+      }
+      case "list-skill-drafts": {
+        // 草稿全文（options 审阅面编辑底稿）——draft:: 键空间专用列举
+        const drafts = await face.skillStore.listDrafts();
+        return {
+          ok: true,
+          drafts: drafts.map((d) => ({
+            host: d.host,
+            slug: d.slug,
+            ...(d.description !== undefined ? { description: d.description } : {}),
+            ...(d.keywords !== undefined ? { keywords: d.keywords } : {}),
+            sop: d.sop,
+            selectors: d.selectors,
+            quirks: d.quirks,
+            ...(d.distilledAt !== undefined ? { distilledAt: d.distilledAt } : {}),
+            ...(d.sourceTraces !== undefined ? { sourceTraces: d.sourceTraces } : {}),
+            updatedAt: d.updatedAt,
+          })),
+        };
+      }
+      case "adopt-skill-draft": {
+        const p = payload as { host?: unknown; slug?: unknown; edits?: unknown } | null;
+        if (
+          p === null ||
+          typeof p.host !== "string" ||
+          typeof p.slug !== "string" ||
+          p.host === "" ||
+          p.slug === ""
+        ) {
+          return { ok: false, error: "adopt-skill-draft 需要 {host, slug}" };
+        }
+        // edits 宽松收窄（三件套/描述可编辑；空串=不覆盖——与 store 层语义一致）
+        const rawEdits = (p.edits ?? {}) as Record<string, unknown>;
+        const edits: Record<string, string | string[]> = {};
+        for (const key of ["sop", "selectors", "quirks", "description"] as const) {
+          if (typeof rawEdits[key] === "string") edits[key] = rawEdits[key] as string;
+        }
+        if (Array.isArray(rawEdits.keywords)) {
+          edits.keywords = (rawEdits.keywords as unknown[]).filter(
+            (k): k is string => typeof k === "string",
+          );
+        }
+        const res = await face.skillStore.adoptDraft(p.host, p.slug, edits);
+        return res.ok ? { ok: true } : { ok: false, error: res.error };
+      }
+      case "discard-skill-draft": {
+        const p = payload as { host?: unknown; slug?: unknown } | null;
+        if (
+          p === null ||
+          typeof p.host !== "string" ||
+          typeof p.slug !== "string" ||
+          p.host === "" ||
+          p.slug === ""
+        ) {
+          return { ok: false, error: "discard-skill-draft 需要 {host, slug}" };
+        }
+        await face.skillStore.discardDraft(p.host, p.slug);
+        return { ok: true };
       }
       case "test-card": {
         const card = payload as ProviderCardDto | null;
@@ -292,6 +355,35 @@ async function boot(): Promise<Booted> {
   const refreshSkills = (): Promise<void> =>
     skillRefs.store !== null ? refreshBuiltins(skillRefs.store) : Promise.resolve();
 
+  // —— 蒸馏队列/worker（issue #5 S4，D9）：worker 晚绑定（skill store 就位后构造）；
+  //    alarm 队列非空时建 1min 周期、清空即除；boot 兜底 drain（SW 被杀后重启续跑）——
+  const distillQueue = new DistillQueue(storage, log);
+  let distillWorkerRef: DistillWorker | null = null;
+  const alarmsApi = chromeAlarms();
+  const syncDistillAlarm = (): void => {
+    void distillQueue
+      .size()
+      .then((n) =>
+        n > 0
+          ? alarmsApi.create(DISTILL_ALARM_NAME, { periodInMinutes: 1 })
+          : void alarmsApi.clear(DISTILL_ALARM_NAME),
+      )
+      .catch(() => {});
+  };
+  const kickDistill = (): void => {
+    const worker = distillWorkerRef;
+    if (worker === null) return;
+    void worker
+      .drainAll()
+      .catch((e: unknown) =>
+        log(`distill: drain 异常——${e instanceof Error ? e.message : String(e)}`),
+      )
+      .finally(syncDistillAlarm);
+  };
+  alarmsApi.onAlarm?.addListener((alarm) => {
+    if (alarm.name === DISTILL_ALARM_NAME) kickDistill();
+  });
+
   // 广播/端口态闭包晚绑定（portServer 在 runManager 之后构造——双向引用经 holder 收口）
   let portServerRef: PortServer | null = null;
   const runManager = new RunManager({
@@ -313,6 +405,10 @@ async function boot(): Promise<Booted> {
     grantStore,
     broadcast: (m) => portServerRef?.broadcast(m),
     hasPorts: () => portServerRef?.hasPorts ?? false,
+    distill: {
+      enqueue: (job) => distillQueue.enqueue(job),
+      kick: kickDistill,
+    },
     log,
   });
   portServerRef = new PortServer(chromeOnConnect(), {
@@ -343,6 +439,29 @@ async function boot(): Promise<Booted> {
   // built-in 刷新（fetch 打包清单 → upsert；失败只记日志——skill 是可选增强；
   //  内部 try/catch 恒 settle，可安全作 ExtensionSkillSource 的 ready gate）
   if (dbOk) skillRefs.ready = refreshBuiltins(store);
+
+  // 蒸馏 worker 就位（skill store 依赖尾部 await——故此处构造）+ boot 兜底 drain
+  // （SW 被杀时队列里未 ack 的 job 由本次唤醒续跑，D9）
+  distillWorkerRef = new DistillWorker({
+    queue: distillQueue,
+    settingsStore,
+    llmFactory: (card) => new LLMClient(card, { log: (m) => log(`[distill-llm] ${m}`) }) as never,
+    makeSkillSource: () => {
+      const s = skillRefs.store;
+      if (s === null) throw new Error("skill store not ready");
+      return new ExtensionSkillSource(s, log, skillRefs.ready);
+    },
+    skillStore: store,
+    keepalive,
+    // 蒸馏完成广播（D11：sidepanel 轻提示 / options 审阅入口）+ 日志面
+    notify: (count) => {
+      log(`distill: ${count} 张草稿待审（options 审阅）`);
+      portServerRef?.broadcast({ kind: "skill-drafts", count });
+    },
+    activeCard: (settings) => activeProviderCard(settings),
+    log,
+  });
+  kickDistill();
 
   log("SW booted (segment D runtime)");
   return {
