@@ -12,7 +12,10 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：目标/方案/进度/风险/评审轮登记随实施持续更新——issue #2 首例（C 档实证修订、/review-loop 收敛、双 React 白屏环境回归复盘） | R:code:AGENTS.md | A:- | S:入库文档（用户裁定不 gitignore）；随步骤推进勾选并记变更
+SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：目标/方案/进度/风险/评审轮登记随实施持续更新——当前为 issue #6（dom-snapshot 表单控件状态正源修复，两轮评审收敛后经 PR #7 squash 进 main） | R:code:AGENTS.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+_dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
+_issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
+_issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/.githooks/===
 pre-commit[OQ7T]: F:版本化 git pre-commit 钩子：校验 node≥22 后 exec scripts/gate.mjs pre-commit，人工提交与 agent 提交走同一道门 | R:code:scripts/gate.mjs | A:- | S:启用需每克隆一次 git config core.hooksPath .githooks（pnpm install 的 prepare 自动执行）
@@ -240,6 +243,10 @@ _r_issue-2-attachments_1.md[SQ3T]: F:issue-2-attachments 评审轮 1 dump：3 �
 _r_issue-2-attachments_2.md[SQ1T]: F:issue-2-attachments 评审轮 2 dump：零意见（增量复核轮 1 修复提交——循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
 review-issue-2-attachments-1.json[ZQ2M]: F:open-code-review 原始输出（issue-2-attachments 轮 1，3 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
 review-issue-2-attachments-2.json[ZQ2T]: F:open-code-review 原始输出（issue-2-attachments 轮 2，0 条意见——收敛轮）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+_r_issue-6-form-control-state_1.md[SQ3S]: F:issue #6 评审轮 1 摘要（review-dump 产物）：3 条意见——P1×2 同根（Step 5 真值判断漏空态，陈旧初始值不清）+P2（toJson ax_node 投影泄 value 键），全采纳修复于 2b1315c | R:code:docs/code-review/review-issue-6-form-control-state-1.json | A:- | S:-
+_r_issue-6-form-control-state_2.md[SQ2T]: F:issue #6 评审轮 2 摘要（review-dump 产物）：零意见、状态 complete——review-loop 收敛出口；累计 2 轮 3 意见全采纳 | R:code:docs/code-review/review-issue-6-form-control-state-2.json | A:- | S:-
+review-issue-6-form-control-state-1.json[ZQ2L]: F:ocr review 轮 1 原始输出（issue #6，base=main）：3 条意见全文，含评审 thinking 与修复建议片段 | R:code:docs/code-review/_r_issue-6-form-control-state_1.md | A:- | S:含大体积thinking，禁直接Read——消费走review-dump摘要
+review-issue-6-form-control-state-2.json[ZQ2S]: F:ocr review 轮 2 原始输出（issue #6，增量 88aee16..2b1315c）：零意见收敛 | R:code:docs/code-review/_r_issue-6-form-control-state_2.md | A:- | S:含thinking块，禁直接Read——消费走review-dump摘要
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
 README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
@@ -592,6 +599,7 @@ p7-task-skill-match-regression.mjs[EG4L]: F:示例：P7 任务级 skill 匹配�
 upload-file-bilibili.mjs[EG3T]: F:示例：B 站创作者中心发视频存草稿（allowedUploadPaths 白名单） | R:code:packages/node-host/boot.mjs | A:- | S:-
 upload-file-vision.mjs[EG3T]: F:示例：抖音上传视觉对照变体（vision ON/skill OFF） | R:code:packages/node-host/boot.mjs | A:- | S:-
 upload-file.mjs[EG3T]: F:示例：抖音创作者中心发视频存草稿（upload_file+allowedUploadPaths） | R:code:packages/node-host/boot.mjs | A:- | S:-
+dump-model-page-view.mjs[TN4S]: F:把当前页「发给模型的 DOM 树」（element_tree_text）原样写文件——TreeWalker dump_model_page_view.py 移植；感知质量核查/自进化卡核验用（issue #5/#6） | R:code:packages/node-host/boot.mjs | A:- | S:属主是 feat/issue-5-self-evolution 分支，main 侧为未跟踪临时态，勿提交或删除
 
 ===D:/dev/git/z_jordon/TreeChrome/examples/custom-functions/===
 custom-action.mjs[EG3T]: F:示例：自定义动作注册范式（Registry 扩展） | R:code:packages/node-host/boot.mjs | A:- | S:-
@@ -837,14 +845,14 @@ vitest.config.ts[FQ4S]: F:dom-snapshot 测试配置：golden 对拍+85% 阈值�
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/src/===
 cdp-batch.ts[KB5S]: F:CDP 并行批调用两阶段超时+选择性重试（cdp_timeout.py 移植）：Phase1 全源并发统一截止，Phase2 仅超时源重试 | R:code:packages/dom-snapshot/src/collector.ts | A:- | S:-
-collector.ts[KB8M]: F:三源并行 CDP 采集与融合（collector.py P1.2 移植）+组合入口 buildDomState（采集+序列化+prev_map 轮转，对齐 :911-969） | R:code:packages/dom-snapshot/src/cdp-batch.ts,code:packages/dom-snapshot/src/serializer.ts,code:packages/dom-snapshot/src/protocol.ts | A:buildDomState | S:golden fixture 逐字节对拍的主链路；三源降级链（任一源失败仍可融合）
+collector.ts[KB8M]: F:三源并行 CDP 采集与融合（collector.py P1.2 移植）+组合入口 buildDomState（采集+序列化+prev_map 轮转）+AX 顶层 value 提取（issue #6：Chrome 原生控件状态在节点顶层 value 不在 properties，string 收窄） | R:code:packages/dom-snapshot/src/cdp-batch.ts,code:packages/dom-snapshot/src/serializer.ts,code:packages/dom-snapshot/src/protocol.ts | A:buildDomState | S:golden fixture 逐字节对拍的主链路；三源降级链（任一源失败仍可融合）
 index.ts[LB5T]: F:dom-snapshot 公共入口（types/protocol/collector/cdp-batch/interactive/paint-order/serializer/sha256 导出） | R:- | A:- | S:-
 interactive.ts[KB6S]: F:可交互元素检测（interactive.py 移植）：14 条规则决策瀑布——JS 点击监听/AX 角色/HTML 标签/cursor/关键词，命中即短路 | R:- | A:- | S:-
 paint-order.ts[KB5S]: F:绘制顺序过滤（paint_order.py 移植）：维护已遮挡矩形合集，从最高 paintOrder 到最低判定完全覆盖 | R:- | A:- | S:-
 protocol.ts[FN5S]: F:CDP 三源采集线格式类型（消费子集——容忍未知字段，字段名保持 CDP 协议原文） | R:- | A:CdpLikeClient | S:不用 exhaustive 校验——CDP 响应有更多字段；这是 cdp-ws 实现的契约面
-serializer.ts[KB8L]: F:DOM 序列化管线（serializer.py 忠实移植）：五步管线（简化树/编号/selector_map/interactive/paint_order）——element_tree_text 是 LLM prompt 契约 | R:code:packages/dom-snapshot/src/interactive.ts,code:packages/dom-snapshot/src/paint-order.ts,code:packages/dom-snapshot/src/types.ts | A:serializeDom | S:element_tree_text 输出格式与 LLM prompt 逐字节契约——golden fixture 对拍的主体；改格式=改协议
+serializer.ts[KB8L]: F:DOM 序列化管线（serializer.py 忠实移植）：五步管线+buildAttributesString 八步属性串；Step 5 表单当前值以 AX 顶层 value 为正源（顶层优先/properties 回退/空态清 DOM 种子——issue #6 无条件修复） | R:code:packages/dom-snapshot/src/interactive.ts,code:packages/dom-snapshot/src/paint-order.ts,code:packages/dom-snapshot/src/types.ts | A:serializeDom | S:element_tree_text 与 LLM prompt 逐字节契约，golden 对拍主体；表单控件状态渲染是有意偏离（Python 同 bug 未修），Python 同修后须重对齐基准
 sha256.ts[KB4S]: F:同步 SHA-256 纯 TS 实现（无平台依赖——Node/扩展 SW 两端同步算元素哈希） | R:- | A:sha256Hex | S:不用 node:crypto/crypto.subtle 的原因：平台无关+同步语义（对齐 Python 同步 hashlib）
-types.ts[FB8L]: F:DOM 数据模型（models.py 忠实 TS 移植）：831 行——stable_hash bigint（Python 64 位超 JS 安全整数）/toJson snake_case 键名 | R:code:packages/dom-snapshot/src/serializer.ts | A:DomNode 等 | S:toJson 键名保持 Python __json__ snake_case——golden fixture 逐字节对拍依赖
+types.ts[FB8L]: F:DOM 数据模型（models.py 忠实 TS 移植）：EnhancedDOMTreeNode/AXNode/SnapshotNode 族+stable_hash bigint+toJson snake_case；issue #6 增 EnhancedAXNode.value（仅 Step 5 消费） | R:code:packages/dom-snapshot/src/serializer.ts | A:DomNode 等 | S:toJson 键名保持 Python __json__ snake_case——golden 逐字节对拍依赖；EnhancedAXNode.value 为 TS 先行扩展，toJson ax_node 投影剔除该键（Python asdict 无此字段），勿在投影回填
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/test/===
 fake-cdp.ts[TB4T]: F:测试假 CDP 客户端：按方法名分发固定响应+记录调用序列（fixture input 即 Python 录的真实 CDP 响应原样回放） | R:code:packages/dom-snapshot/src/protocol.ts | A:- | S:-
@@ -896,3 +904,9 @@ treechrome.html[SG4L]: F:archify 3.1.0 渲染的 TreeChrome 系统架构交互�
 finish-issue.md[XW6S]: F:/finish-issue 的 Claude Code 宿主副本：issue 四步收尾（总结评论→建 PR→squash 合并→删分支），先展示计划等确认再执行写操作 | R:code:.zcode/commands/finish-issue.md | A:- | S:与 .zcode 副本同源双栖——两宿主各读各的目录，改动任一份必须同步另一份
 release.md[XV6T]: F:/release 的 Claude Code 宿主副本：提交前缀判 SemVer→typecheck/test 全绿→changelog 草稿→确认后 bump/tag/push/GitHub Release | R:code:.zcode/commands/release.md | A:- | S:与 .zcode 副本同源双栖——改动任一份必须同步另一份
 review-loop.md[XQ7S]: F:/review-loop 的 Claude Code 宿主副本：评审-修复自动循环——ocr 后台评审→dump→严重度门控 triage→修复提交→增量续轮，连续两轮无 P1/P2 收敛 | R:code:.zcode/commands/review-loop.md,code:scripts/review-dump.mjs | A:- | S:与 .zcode 副本同源双栖须同步改；两副本差异仅宿主适配说明与压缩提示措辞，流程语义必须一致
+
+===D:/dev/git/z_jordon/TreeChrome/_self-evolution-sandbox/domain-skills/localhost_7780/tasks/bestsellers-top-brand-quarter/===
+_sop.md[SD4T]: F:蒸馏卡 SOP（sandbox 产物，task=bestsellers-top-brand-quarter）：直航报表 URL→JS 设值+提交日期过滤→evaluate 按品牌聚合（行错位模式匹配、不去重、footer Total 对账）→done 报告 top-1 品牌 | R:code:_self-evolution-sandbox/domain-skills/localhost_7780/tasks/bestsellers-top-brand-quarter/quirks.md | A:- | S:#6 感知修复前的蒸馏产物：Period 写死 Day 属盲区固化（Month 更优），重跑前须重蒸验证
+_task.json[FD3T]: F:蒸馏卡元数据（bestsellers-top-brand-quarter）：slug/任务描述/关键词、source_traces 三跑并集、distilled_at 与 distill_streak=2（连续两次增量无新观察=收敛） | R:code:_self-evolution-sandbox/domain-skills/localhost_7780/tasks/bestsellers-top-brand-quarter/_sop.md | A:- | S:-
+quirks.md[SD4T]: F:站点 quirks（localhost_7780 Bestsellers）：表格行错位取值规则、日期框须 JS 设值+派发事件、evaluate 转义陷阱、重复行不去重以 footer Total 对账、read_grid 表头原名、直航 URL、全页跳转 | R:code:_self-evolution-sandbox/domain-skills/localhost_7780/tasks/bestsellers-top-brand-quarter/_sop.md | A:- | S:-
+selectors.md[SD3T]: F:选择器登记（localhost_7780）：常规元素（日期框/提交按钮/报表 table/Period 下拉）已在 sop 原位描述无额外指纹，报表菜单全集在 li#menu-magento-reports-report 子树 | R:code:_self-evolution-sandbox/domain-skills/localhost_7780/tasks/bestsellers-top-brand-quarter/_sop.md | A:- | S:-
