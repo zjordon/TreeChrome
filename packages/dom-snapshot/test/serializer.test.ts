@@ -1138,3 +1138,127 @@ describe("collectPageStats", () => {
     expect(state.pageStats).toEqual({ links: 0, interactive: 0, iframes: 0, skeleton: true });
   });
 });
+
+// ── issue #6：表单控件状态（AX 顶层 value → 元素 value 属性，无条件 bug 修复） ──
+
+/** 带顶层 value 的 AX 节点（issue #6 字段；properties 留空隔离正源分支） */
+function axWithValue(value: string | null, role = "textbox"): EnhancedDOMTreeNode["axNode"] {
+  return {
+    ax_node_id: "a",
+    ignored: false,
+    role,
+    name: null,
+    value,
+    description: null,
+    properties: null,
+    child_ids: null,
+  };
+}
+
+describe("issue #6 bug 修复：buildAttributesString Step 5 数据源正源", () => {
+  const inc = DEFAULT_INCLUDE_ATTRIBUTES;
+
+  it("input 当前值 / select 选中项渲染为 value=", () => {
+    const input = el("INPUT", 1, 1, {
+      attributes: { type: "text", placeholder: "mm/dd/yyyy" },
+      axNode: axWithValue("01/01/2022"),
+    });
+    expect(buildAttributesString(input, inc)).toBe(
+      "type=text value=01/01/2022 placeholder=mm/dd/yyyy",
+    );
+    const select = el("SELECT", 2, 2, {
+      attributes: { title: "Period", name: "period_type" },
+      axNode: axWithValue("Day", "combobox"),
+    });
+    expect(buildAttributesString(select, inc)).toBe("title=Period name=period_type value=Day");
+  });
+
+  it("password 仍被 Step 3 保护（顶层 value 也不泄露）", () => {
+    const pwd = el("INPUT", 1, 1, {
+      attributes: { type: "password" },
+      axNode: axWithValue("secret"),
+    });
+    expect(buildAttributesString(pwd, inc)).toBe("type=password");
+  });
+
+  it("textarea 多行值空白折叠；空值/无 AX 降级为属性缺席", () => {
+    const ta = el("TEXTAREA", 1, 1, {
+      attributes: { name: "desc" },
+      axNode: axWithValue("line1\nline2"),
+    });
+    expect(buildAttributesString(ta, inc)).toBe("name=desc value=line1 line2");
+    expect(
+      buildAttributesString(
+        el("TEXTAREA", 2, 2, { attributes: { name: "d" }, axNode: axWithValue("   ") }),
+        inc,
+      ),
+    ).toBe("name=d");
+    expect(buildAttributesString(el("INPUT", 3, 3, { attributes: { type: "text" } }), inc)).toBe(
+      "type=text",
+    );
+  });
+
+  it("顶层 value 优先于 properties valuetext（原生控件正源）", () => {
+    const n = el("INPUT", 1, 1, {
+      attributes: { type: "text" },
+      axNode: {
+        ax_node_id: "a",
+        ignored: false,
+        role: "textbox",
+        name: null,
+        value: "top-level",
+        description: null,
+        properties: [{ name: "valuetext", value: "from-props" }],
+        child_ids: null,
+      },
+    });
+    const out = buildAttributesString(n, inc);
+    // Step 5 的 value= 由顶层正源胜出；properties 的 valuetext 仍经 Step 4 作为
+    // 独立白名单属性渲染（#50 既有行为——byte-parity 路径）
+    expect(out).toContain("value=top-level");
+    expect(out).toContain("valuetext=from-props");
+  });
+
+  it("空态清陈旧种子：AX 顶层空串/全空白清掉 Step 1 的 DOM value 初始值（评审轮 1）", () => {
+    const attrs = { type: "text", value: "初始值" };
+    expect(
+      buildAttributesString(el("INPUT", 1, 1, { attributes: attrs, axNode: axWithValue("") }), inc),
+    ).toBe("type=text");
+    expect(
+      buildAttributesString(
+        el("INPUT", 2, 2, { attributes: attrs, axNode: axWithValue("   ") }),
+        inc,
+      ),
+    ).toBe("type=text");
+  });
+
+  it("AX 无状态（value=null）不清种子：Step 1 初始值保留，降级语义不变", () => {
+    expect(
+      buildAttributesString(
+        el("INPUT", 1, 1, {
+          attributes: { type: "text", value: "初始值" },
+          axNode: axWithValue(null),
+        }),
+        inc,
+      ),
+    ).toContain("value=初始值");
+  });
+});
+
+describe("issue #6 bug 修复：序列化管线端到端", () => {
+  const inputTree = (): EnhancedDOMTreeNode =>
+    docOf([
+      el("INPUT", 10, 10, {
+        attributes: { type: "text", placeholder: "mm/dd/yyyy" },
+        isVisible: true,
+        snapshotNode: snapWithBounds(0, 0, 200, 20),
+        axNode: axWithValue("01/01/2022"),
+      }),
+    ]);
+
+  it("element_tree_text 含表单当前值（无条件渲染）", () => {
+    const { state } = new DOMTreeSerializer(inputTree()).serializeAccessibleElements();
+    expect(state.elementTreeText).toContain("value=01/01/2022");
+    expect(state.elementTreeText).toContain("placeholder=mm/dd/yyyy");
+  });
+});

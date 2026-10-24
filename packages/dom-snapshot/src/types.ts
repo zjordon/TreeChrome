@@ -254,6 +254,11 @@ export interface EnhancedAXNode {
   ignored: boolean;
   role: string | null;
   name: string | null;
+  /** 控件当前状态值（AX 顶层 value：select 选中项 / input 当前文本；issue #6——
+   *  Chrome 把原生控件状态放顶层不放 properties，缺此字段则 serializer Step 5 恒落空）。
+   *  可选：TS 先行扩展（Python 投影无此字段），历史构造点/夹具缺省视为无状态。
+   *  仅限 serializer Step 5 消费：toJson 的 ax_node 投影剔除该键以保 __json__ 对拍形状 */
+  value?: string | null;
   description: string | null;
   properties: EnhancedAXProperty[] | null;
   child_ids: string[] | null;
@@ -657,6 +662,10 @@ export class EnhancedDOMTreeNode {
    * 返回值为只读快照：attributes/ax_node.properties 等嵌套结构按引用共享，调用方不得修改。
    */
   toJson(serializeChildren = true): Record<string, unknown> {
+    // issue #6：axNode.value 仅 serializer Step 5 内部消费，Python __json__（asdict）
+    // 无此键——投影剔除，保 toJson 的 Python 对拍形状（评审轮 1）
+    const axNodeJson = this.axNode ? { ...this.axNode } : null;
+    if (axNodeJson) delete axNodeJson.value;
     const json: Record<string, unknown> = {
       node_id: this.nodeId,
       backend_node_id: this.backendNodeId,
@@ -674,7 +683,7 @@ export class EnhancedDOMTreeNode {
         ? this.contentDocument.toJson(serializeChildren)
         : null,
       shadow_root_type: this.shadowRootType,
-      ax_node: this.axNode ? { ...this.axNode } : null,
+      ax_node: axNodeJson,
       snapshot_node: this.snapshotNode
         ? {
             is_clickable: this.snapshotNode.is_clickable,

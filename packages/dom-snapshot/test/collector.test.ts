@@ -6,12 +6,13 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  buildEnhancedAxNode,
   buildSnapshotLookup,
   collectFileInputs,
   DomCollector,
   parseAttrs,
 } from "../src/collector.js";
-import type { CdpDomNode, CdpGetDocumentResult } from "../src/protocol.js";
+import type { CdpAxTreeNode, CdpDomNode, CdpGetDocumentResult } from "../src/protocol.js";
 import { DOMDegradationLevel, type EnhancedDOMTreeNode } from "../src/types.js";
 import { type CdpHandler, FakeCdpClient, makeGoldenFixtureClient } from "./fake-cdp.js";
 import { loadGoldenFixtures } from "./golden-fixture.js";
@@ -710,5 +711,21 @@ describe("DomCollector 其余分支", () => {
     const body = indexByBackendId(result.root!).get(3)!;
     expect(body.childrenNodes).toHaveLength(2);
     expect(body.childrenNodes![0]).toBe(body.childrenNodes![1]);
+  });
+});
+
+// ── issue #6：EnhancedAXNode 顶层 value 提取 ─────────────────────────────
+
+describe("buildEnhancedAxNode 顶层 value 提取（issue #6）", () => {
+  it("string 收窄；bool/数值/缺失 → null", () => {
+    const mk = (v: unknown): CdpAxTreeNode =>
+      ({
+        nodeId: "n1",
+        value: v === undefined ? undefined : { type: "string", value: v },
+      }) as CdpAxTreeNode;
+    expect(buildEnhancedAxNode(mk("Day")).value).toBe("Day");
+    expect(buildEnhancedAxNode(mk(42)).value).toBeNull();
+    expect(buildEnhancedAxNode(mk(true)).value).toBeNull();
+    expect(buildEnhancedAxNode(mk(undefined)).value).toBeNull();
   });
 });

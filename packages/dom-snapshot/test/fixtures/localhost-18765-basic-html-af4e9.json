@@ -1,7 +1,7 @@
 {
  "meta": {
   "url": "http://localhost:18765/basic.html",
-  "generated_at": "2026-09-20T04:15:15.993963+00:00",
+  "generated_at": "2026-10-24T04:19:24.296Z",
   "degradation": "full",
   "source_statuses": {
    "dom_tree": "ok",
@@ -8786,8 +8786,121 @@
   "dpr": 1.0
  },
  "output": {
-  "element_tree_text": "基础结构页\n用于 golden fixture 的静态梯度：标题、段落、多个同类链接（xpath 索引）、表单、表格。\n[18]<a />\n\t链接甲\n[20]<a />\n\t链接乙\n[22]<a />\n\t链接丙\n用户名\n[3]<input type=text id=user name=username placeholder=请输入用户名 />\n密码\n[4]<input type=password id=pass autocomplete=current-password />\n[89]<label />\n\t[7]<input type=checkbox checked=false name=remember />\n\t记住我\n[91]<label />\n\t[8]<input type=radio checked=true name=plan value=pro />\n\t专业版\n[93]<label />\n\t[9]<input type=radio checked=false name=plan value=free />\n\t免费版\n*[5]<select id=city name=city expanded=false compound_components=(name=Dropdown Toggle,role=button),(name=Options,role=listbox,count=2,options=上海|北京) />\n[6]<textarea id=memo name=memo placeholder=备注（可空） />\n[10]<button type=submit id=submit-btn />\n\t登录\n取消\n[39]<tr />\n\t名称\n\t数量\n[44]<tr />\n\t[45]<td />\n\t\t苹果\n\t[47]<td />\n\t\t3\n[49]<tr />\n\t[50]<td />\n\t\t香蕉\n\t[52]<td />\n\t\t5\n*[56]<input type=file id=upload accept=image/png,image/jpeg compound_components=(name=Browse Files,role=button),(name=File Selected,role=textbox,current=None) />\n© fixture",
+  "element_tree_text": "基础结构页\n用于 golden fixture 的静态梯度：标题、段落、多个同类链接（xpath 索引）、表单、表格。\n[18]<a />\n\t链接甲\n[20]<a />\n\t链接乙\n[22]<a />\n\t链接丙\n用户名\n[3]<input type=text id=user name=username placeholder=请输入用户名 />\n密码\n[4]<input type=password id=pass autocomplete=current-password />\n[89]<label />\n\t[7]<input type=checkbox checked=false name=remember />\n\t记住我\n[91]<label />\n\t[8]<input type=radio checked=true name=plan value=pro />\n\t专业版\n[93]<label />\n\t[9]<input type=radio checked=false name=plan value=free />\n\t免费版\n*[5]<select id=city name=city value=北京 expanded=false compound_components=(name=Dropdown Toggle,role=button),(name=Options,role=listbox,count=2,options=上海|北京) />\n[6]<textarea id=memo name=memo placeholder=备注（可空） />\n[10]<button type=submit id=submit-btn />\n\t登录\n取消\n[39]<tr />\n\t名称\n\t数量\n[44]<tr />\n\t[45]<td />\n\t\t苹果\n\t[47]<td />\n\t\t3\n[49]<tr />\n\t[50]<td />\n\t\t香蕉\n\t[52]<td />\n\t\t5\n*[56]<input type=file id=upload value=未选择任何文件 accept=image/png,image/jpeg compound_components=(name=Browse Files,role=button),(name=File Selected,role=textbox,current=None) />\n© fixture",
   "selector_map": {
+   "3": {
+    "backend_node_id": 3,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "id": "user",
+     "name": "username",
+     "type": "text",
+     "placeholder": "请输入用户名",
+     "autocomplete": "username"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/input[1]"
+   },
+   "4": {
+    "backend_node_id": 4,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "id": "pass",
+     "name": "password",
+     "type": "password",
+     "autocomplete": "current-password"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/input[2]"
+   },
+   "5": {
+    "backend_node_id": 5,
+    "node_name": "SELECT",
+    "node_value": "",
+    "attributes": {
+     "id": "city",
+     "name": "city"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/select"
+   },
+   "6": {
+    "backend_node_id": 6,
+    "node_name": "TEXTAREA",
+    "node_value": "",
+    "attributes": {
+     "id": "memo",
+     "name": "memo",
+     "placeholder": "备注（可空）"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/textarea"
+   },
+   "7": {
+    "backend_node_id": 7,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "type": "checkbox",
+     "name": "remember"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/label[3]/input"
+   },
+   "8": {
+    "backend_node_id": 8,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "type": "radio",
+     "name": "plan",
+     "value": "pro",
+     "checked": ""
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/label[4]/input"
+   },
+   "9": {
+    "backend_node_id": 9,
+    "node_name": "INPUT",
+    "node_value": "",
+    "attributes": {
+     "type": "radio",
+     "name": "plan",
+     "value": "free"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/label[5]/input"
+   },
+   "10": {
+    "backend_node_id": 10,
+    "node_name": "BUTTON",
+    "node_value": "",
+    "attributes": {
+     "type": "submit",
+     "id": "submit-btn"
+    },
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/button[1]"
+   },
    "18": {
     "backend_node_id": 18,
     "node_name": "A",
@@ -8823,149 +8936,6 @@
     "is_scrollable": null,
     "has_js_click_listener": false,
     "xpath": "html/body/nav/a[3]"
-   },
-   "3": {
-    "backend_node_id": 3,
-    "node_name": "INPUT",
-    "node_value": "",
-    "attributes": {
-     "id": "user",
-     "name": "username",
-     "type": "text",
-     "placeholder": "请输入用户名",
-     "autocomplete": "username"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/input[1]"
-   },
-   "4": {
-    "backend_node_id": 4,
-    "node_name": "INPUT",
-    "node_value": "",
-    "attributes": {
-     "id": "pass",
-     "name": "password",
-     "type": "password",
-     "autocomplete": "current-password"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/input[2]"
-   },
-   "89": {
-    "backend_node_id": 89,
-    "node_name": "LABEL",
-    "node_value": "",
-    "attributes": {},
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/label[3]"
-   },
-   "7": {
-    "backend_node_id": 7,
-    "node_name": "INPUT",
-    "node_value": "",
-    "attributes": {
-     "type": "checkbox",
-     "name": "remember"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/label[3]/input"
-   },
-   "91": {
-    "backend_node_id": 91,
-    "node_name": "LABEL",
-    "node_value": "",
-    "attributes": {},
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/label[4]"
-   },
-   "8": {
-    "backend_node_id": 8,
-    "node_name": "INPUT",
-    "node_value": "",
-    "attributes": {
-     "type": "radio",
-     "name": "plan",
-     "value": "pro",
-     "checked": ""
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/label[4]/input"
-   },
-   "93": {
-    "backend_node_id": 93,
-    "node_name": "LABEL",
-    "node_value": "",
-    "attributes": {},
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/label[5]"
-   },
-   "9": {
-    "backend_node_id": 9,
-    "node_name": "INPUT",
-    "node_value": "",
-    "attributes": {
-     "type": "radio",
-     "name": "plan",
-     "value": "free"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/label[5]/input"
-   },
-   "5": {
-    "backend_node_id": 5,
-    "node_name": "SELECT",
-    "node_value": "",
-    "attributes": {
-     "id": "city",
-     "name": "city"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/select"
-   },
-   "6": {
-    "backend_node_id": 6,
-    "node_name": "TEXTAREA",
-    "node_value": "",
-    "attributes": {
-     "id": "memo",
-     "name": "memo",
-     "placeholder": "备注（可空）"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/textarea"
-   },
-   "10": {
-    "backend_node_id": 10,
-    "node_name": "BUTTON",
-    "node_value": "",
-    "attributes": {
-     "type": "submit",
-     "id": "submit-btn"
-    },
-    "is_visible": true,
-    "is_scrollable": null,
-    "has_js_click_listener": false,
-    "xpath": "html/body/main/form/button[1]"
    },
    "39": {
     "backend_node_id": 39,
@@ -9050,6 +9020,36 @@
     "is_scrollable": null,
     "has_js_click_listener": false,
     "xpath": "html/body/main/input"
+   },
+   "89": {
+    "backend_node_id": 89,
+    "node_name": "LABEL",
+    "node_value": "",
+    "attributes": {},
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/label[3]"
+   },
+   "91": {
+    "backend_node_id": 91,
+    "node_name": "LABEL",
+    "node_value": "",
+    "attributes": {},
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/label[4]"
+   },
+   "93": {
+    "backend_node_id": 93,
+    "node_name": "LABEL",
+    "node_value": "",
+    "attributes": {},
+    "is_visible": true,
+    "is_scrollable": null,
+    "has_js_click_listener": false,
+    "xpath": "html/body/main/form/label[5]"
    }
   },
   "file_input_backend_ids": [
