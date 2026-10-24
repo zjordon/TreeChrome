@@ -1218,6 +1218,31 @@ describe("issue #6 bug 修复：buildAttributesString Step 5 数据源正源", (
     expect(out).toContain("value=top-level");
     expect(out).toContain("valuetext=from-props");
   });
+
+  it("空态清陈旧种子：AX 顶层空串/全空白清掉 Step 1 的 DOM value 初始值（评审轮 1）", () => {
+    const attrs = { type: "text", value: "初始值" };
+    expect(
+      buildAttributesString(el("INPUT", 1, 1, { attributes: attrs, axNode: axWithValue("") }), inc),
+    ).toBe("type=text");
+    expect(
+      buildAttributesString(
+        el("INPUT", 2, 2, { attributes: attrs, axNode: axWithValue("   ") }),
+        inc,
+      ),
+    ).toBe("type=text");
+  });
+
+  it("AX 无状态（value=null）不清种子：Step 1 初始值保留，降级语义不变", () => {
+    expect(
+      buildAttributesString(
+        el("INPUT", 1, 1, {
+          attributes: { type: "text", value: "初始值" },
+          axNode: axWithValue(null),
+        }),
+        inc,
+      ),
+    ).toContain("value=初始值");
+  });
 });
 
 describe("issue #6 bug 修复：序列化管线端到端", () => {

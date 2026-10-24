@@ -78,4 +78,9 @@ AX getFullAXTree（已在采）
 
 ## 7. 评审轮登记（/review-loop，base=main）
 
-（待实施后登记）
+### 轮 1（2026-10-24，ocr 耗时 19m，3 条意见 high:1 medium:2 → 全采纳，驳回 0）
+
+- **#1/#3（P1，同根采纳）**：Step 5 真值判断漏空态——collector 对空串透传（`""` 非 null），用户清空输入框后 AX 顶层 value 为 `""` → falsy 跳过正源分支 → Step 1 从 DOM `value` 属性种入的初始值无人清除，快照渲染陈旧旧值（全空白输入同理：外层 truthy 进分支、折叠为空后内层 `if (v)` 漏删）。修复：外层 `typeof node.axNode?.value === "string"` 显式收空串 + 内层折叠为空 `attrsToInclude.delete("value")`（`serializer.ts:320-332`）。新测试 2 条（空串/全空白清种子必红验证过；`value=null` 不清种子——降级语义「AX 无状态 ≠ AX 报空态」钉死）
+- **#2（P2 采纳，夹具影响表述有误但契约主张实证成立）**：新字段经 `toJson` 的 `ax_node: {...spread}` 泄入投影——Python `models.py` `EnhancedAXNode` dataclass 无 `value` 字段、`__json__` 用 `asdict`（实测行号 592-613），TS 泄漏即超出唯一获准的 element_tree_text 偏离面（现有 fixture output 不含 ax_node 故潜伏不炸；SimplifiedNode.toJson 嵌套传播）。修复：投影前剔除该键（`types.ts:663-667`），字段注释补「仅限 Step 5 消费」。新测试 1 条（ax_node 投影无 value 键）
+- 驳回 0 / stale 0；dom-snapshot 173→176 全绿（golden 逐字节不受影响——夹具页无「属性种子+AX 空态」组合，无需重生成）；全仓 typecheck+test+biome 绿
+
