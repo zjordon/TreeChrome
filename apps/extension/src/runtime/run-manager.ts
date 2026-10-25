@@ -13,7 +13,7 @@ import {
   dominantHostOf,
   type EventBus,
   type GrantStore,
-  passesDistillGate,
+  gateFailureReason,
   redactSensitiveString,
   type SkillSource,
   serializeTraceForPrompt,
@@ -112,6 +112,22 @@ function narrowJudgement(j: unknown): RunJournalSnapshot["judgement"] {
 /** commit 彻底未知（pending 已被超时/错位清理）时的 lost 拒绝占位——UI 按
  *  transferId 用本地传输记录补全展示 */
 const LOST_PLACEHOLDER = { name: "（未知附件）", mimeType: "", size: 0 } as const;
+
+/** 停跑原因中文映射（issue #10 D6：done 终态 isDone=false 时进 lastError——
+ *  FinalResult 既有红字渲染面直接生效，零协议改动。2026-10-25 HTTP 401 实测：
+ *  此前 UI 仅「✗ 未成功」无任何解释） */
+const STOP_REASON_TEXT: Record<string, string> = {
+  max_steps: "已达最大步数上限——任务未完成",
+  max_consecutive_failures: "连续失败达到上限——常见原因：模型输出持续不可解析或动作持续报错",
+  max_infra_failures: "LLM 基建失败达到上限——常见原因：API key 失效/网络不通/端点不可达",
+  history_degraded: "历史记录连续降级（finalize 异常）——轨迹不完整",
+};
+
+function stopReasonText(reason: string | null): string {
+  return reason !== null && STOP_REASON_TEXT[reason] !== undefined
+    ? STOP_REASON_TEXT[reason]
+    : "任务未完成（未知停跑原因）";
+}
 
 export class RunManager {
   private readonly deps: RunManagerDeps;
@@ -392,6 +408,9 @@ export class RunManager {
           finalResult: history.finalResult(),
           isDone: history.isDone(),
           isSuccessful: history.isSuccessful(),
+          // issue #10 D6：非 done 收口带停跑原因（isDone=true 时恒 null——
+          // lastError 语义保持「终态失败解释」单一职责）
+          lastError: history.isDone() ? null : stopReasonText(history.stopReason),
           judgement: narrowJudgement(
             history.history[history.history.length - 1]?.result.find((r) => r.isDone)?.judgement,
           ),
@@ -459,8 +478,11 @@ export class RunManager {
     try {
       const settings = await this.deps.settingsStore.load();
       if (!selfEvolutionOf(settings).enabled) return;
-      if (!passesDistillGate(history)) {
-        this.deps.log?.("distill: 门控未过（非成功完成或 Judge 复核未通过）——跳过");
+      // issue #10 D4：归因单源（core gateFailureReason 三态）——judgement=null
+      //（未执行/调用失败）与 verdict=false（复核拒绝）不再混为一句
+      const gateReason = gateFailureReason(history);
+      if (gateReason !== null) {
+        this.deps.log?.(`distill: 门控未过——${gateReason}`);
         return;
       }
       const host = dominantHostOf(history);

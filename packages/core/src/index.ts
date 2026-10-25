@@ -76,7 +76,11 @@ export {
   DISTILL_TRACE_MAX_CHARS,
   distillTaskCard,
 } from "./agent/skills/distill.js";
-export { dominantHostOf, passesDistillGate } from "./agent/skills/distill-gate.js";
+export {
+  dominantHostOf,
+  gateFailureReason,
+  passesDistillGate,
+} from "./agent/skills/distill-gate.js";
 export type { MatcherLLM, TaskSkillMatch } from "./agent/skills/task-matcher.js";
 export { buildTaskSkillText, matchTaskSkill } from "./agent/skills/task-matcher.js";
 export { serializeTraceForPrompt } from "./agent/skills/trace-serialize.js";

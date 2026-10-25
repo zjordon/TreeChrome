@@ -14,7 +14,7 @@ import {
   type DistillLLM,
   distillTaskCard,
   dominantHostOf,
-  passesDistillGate,
+  gateFailureReason,
   type SensitiveDataSpec,
   type SkillCardDraft,
 } from "@tw/core";
@@ -22,7 +22,7 @@ import { FsSkillSource, type FsTaskCardMeta } from "./skill-source.js";
 
 // 门控/host 判定已下放 core（agent/skills/distill-gate.ts，issue #5 S4——扩展
 // worker 同源共用）；此处 re-export 维持本模块既有导出面
-export { dominantHostOf, passesDistillGate } from "@tw/core";
+export { dominantHostOf, gateFailureReason, passesDistillGate } from "@tw/core";
 
 export interface DistillRunOptions {
   /** 蒸馏产物写入的技能根目录（domain-skills 形态：<root>/<host>/tasks/<slug>/…） */
@@ -31,6 +31,9 @@ export interface DistillRunOptions {
   runId?: string;
   /** 收敛阈值（D17：连续 N 次成功且无新观察 → 后续跳过蒸馏；缺省 core 的 2） */
   convergeThreshold?: number;
+  /** 单次蒸馏 LLM 调用超时毫秒（issue #10 B2：缺省 180s 对齐扩展 worker——
+   *  thinking 模型生成整卡 60s 实测不够，2026-10-24 抖音真机超时实录） */
+  callTimeoutMs?: number;
 }
 
 export interface DistillAfterRunOptions {
@@ -47,8 +50,11 @@ export interface DistillAfterRunOptions {
  *  撞名兜底在 core 编排内）；产物经 writeTaskCard 落盘 */
 export async function distillAfterRun(options: DistillAfterRunOptions): Promise<void> {
   const log = options.log ?? (() => {});
-  if (!passesDistillGate(options.history)) {
-    log("distill: 门控未过（非成功完成或 Judge 复核未通过）——跳过蒸馏");
+  // issue #10 D4：归因单源（core gateFailureReason）——三态区分，不再混淆
+  // judgement=null 与 verdict=false
+  const gateReason = gateFailureReason(options.history);
+  if (gateReason !== null) {
+    log(`distill: 门控未过——${gateReason}`);
     return;
   }
   const host = dominantHostOf(options.history);
@@ -83,6 +89,9 @@ export async function distillAfterRun(options: DistillAfterRunOptions): Promise<
       ...(options.distill.convergeThreshold !== undefined
         ? { convergeThreshold: options.distill.convergeThreshold }
         : {}),
+      // issue #10 B2：缺省 180s 对齐扩展 worker（长轨迹 + thinking 模型整卡
+      // 生成 60s 不够——2026-10-24 抖音真机超时实录）
+      callTimeoutMs: options.distill.callTimeoutMs ?? 180_000,
       llm: options.llm,
       sensitiveData: options.sensitiveData ?? null,
       ...(options.now !== undefined ? { now: options.now } : {}),

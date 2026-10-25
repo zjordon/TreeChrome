@@ -36,6 +36,10 @@ export interface JudgeSettings {
   model: string;
   maxHistorySteps: number;
   traceMaxChars: number;
+  /** 单次判官调用超时毫秒（issue #10 D1：可选键不进 DEFAULT——Python 对拍 fixture
+   *  零变化，沿 submitConfirmEnabled 先例；缺省 judge.ts 内的 60s 冻结契约）。
+   *  thinking 模型 + 40k 轨迹贴近 60s 线（2026-10-25 实测），宿主可放宽 */
+  callTimeoutMs?: number;
 }
 
 export const DEFAULT_JUDGE_SETTINGS: JudgeSettings = {
@@ -194,9 +198,14 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   outputModel: null,
 };
 
-/** 构造时合并部分覆盖（浅合并 + truncation/judge 子对象合并） */
+/** 构造时合并部分覆盖（浅合并 + truncation/judge 子对象合并）。judge 覆盖面收
+ *  Partial（issue #10 D1：可选键单独透传不要求全量对象——assemble 只传
+ *  callTimeoutMs 的形态；Omit 防交叉类型把 judge 又收紧回全量） */
 export function resolveAgentSettings(
-  overrides: Partial<AgentSettings> | null | undefined,
+  overrides:
+    | (Omit<Partial<AgentSettings>, "judge"> & { judge?: Partial<JudgeSettings> })
+    | null
+    | undefined,
 ): AgentSettings {
   const base = DEFAULT_AGENT_SETTINGS;
   if (!overrides) return { ...base };

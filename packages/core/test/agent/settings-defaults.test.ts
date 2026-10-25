@@ -8,7 +8,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { DEFAULT_AGENT_SETTINGS } from "../../src/agent/settings.js";
+import {
+  DEFAULT_AGENT_SETTINGS,
+  DEFAULT_JUDGE_SETTINGS,
+  resolveAgentSettings,
+} from "../../src/agent/settings.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(
@@ -185,5 +189,14 @@ describe("DEFAULT_AGENT_SETTINGS ↔ Python load_settings() 运营默认对拍",
     // config.py:538/:540；此前 TS 误为 2.0/false（node-host 方案 §5.1 对账修正）
     expect(DEFAULT_AGENT_SETTINGS.explorationActionabilityTimeout).toBe(1.5);
     expect(DEFAULT_AGENT_SETTINGS.explorationActionabilityReceivesEvents).toBe(true);
+  });
+});
+
+describe("resolveAgentSettings judge 可选键（issue #10 D1）", () => {
+  test("judge.callTimeoutMs 透传且不污染缺省值（Python 对拍 fixture 零变化）", () => {
+    const merged = resolveAgentSettings({ judge: { callTimeoutMs: 180_000 } });
+    expect(merged.judge.callTimeoutMs).toBe(180_000);
+    expect(DEFAULT_JUDGE_SETTINGS.callTimeoutMs).toBeUndefined();
+    expect(resolveAgentSettings(null).judge.callTimeoutMs).toBeUndefined();
   });
 });

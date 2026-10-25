@@ -225,6 +225,10 @@ export interface AgentHistoryListInit {
   /** 存盘时写入，load 侧宽松校验（防 action 注册表漂移导致旧历史读不回）；文件持久化 M6 */
   actionRegistryVersion?: string | null;
   finalizeDegradedSteps?: number;
+  /** issue #10 D5：run() 收尾停跑原因（max_steps/max_consecutive_failures/
+   *  max_infra_failures/history_degraded；正常 done 与用户中断为 null——中断原因
+   *  由宿主 interruptReason 承载） */
+  stopReason?: string | null;
 }
 
 /** run() 的返回值（runner 契约消费面：isDone/isSuccessful/finalResult/history） */
@@ -233,11 +237,14 @@ export class AgentHistoryList {
   actionRegistryVersion: string | null;
   /** run() 收尾落计数：调用方可区分「正常完成」与「history 残缺的完成」；0 = 无降级 */
   finalizeDegradedSteps: number;
+  /** issue #10 D5：停跑原因（additive TS 扩展，Python 无此字段——终态可观测面） */
+  stopReason: string | null;
 
   constructor(init: AgentHistoryListInit = {}) {
     this.history = init.history ?? [];
     this.actionRegistryVersion = init.actionRegistryVersion ?? null;
     this.finalizeDegradedSteps = init.finalizeDegradedSteps ?? 0;
+    this.stopReason = init.stopReason ?? null;
   }
 
   finalResult(): string | null {

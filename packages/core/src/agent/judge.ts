@@ -58,6 +58,9 @@ export class JudgeEvaluator {
   constructor(
     private readonly llm: JudgeLLM,
     private readonly settings: JudgeSettings | null = null,
+    /** issue #10 D2：失败路径留痕（调用异常/空响应放弃——成功不刷屏）；缺省静默
+     *  （历史行为不变，判官失败仍不挂任务） */
+    private readonly log: (message: string) => void = () => {},
   ) {}
 
   async judge(
@@ -76,7 +79,7 @@ export class JudgeEvaluator {
           systemPrompt: JUDGE_SYSTEM_PROMPT,
           userPrompt,
           tool: judgeToolDef(),
-          callTimeoutMs: JUDGE_CALL_TIMEOUT_MS,
+          callTimeoutMs: this.settings?.callTimeoutMs ?? JUDGE_CALL_TIMEOUT_MS,
         });
         for (const block of response.toolCalls) {
           if (block.name === "agent_response") {
@@ -92,8 +95,14 @@ export class JudgeEvaluator {
         }
         userPrompt = `${userPrompt}\nRespond now using the agent_response tool with your JSON verdict.`;
       }
+      // issue #10 D2：两轮均无 tool_use——此前零痕迹（judgement=null 不可与
+      // 「judge 关闭」区分）
+      this.log("judge: 两轮尝试均未返回 agent_response 工具调用——放弃复核（不影响任务结果）");
       return null; // Judge 失败不挂任务（Python logger.exception + return None 同款）
-    } catch {
+    } catch (e) {
+      // issue #10 D2：调用异常（超时/HTTP 等）留痕——LLMCallTimeoutError 文案自含
+      // 超时毫秒；仍返 null 不挂任务（03 §8 冻结契约不变）
+      this.log(`judge: 调用失败——${e instanceof Error ? e.message : String(e)}（不影响任务结果）`);
       return null;
     }
   }
