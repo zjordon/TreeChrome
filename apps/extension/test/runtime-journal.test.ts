@@ -83,6 +83,25 @@ describe("RunJournal 基本面", () => {
         summary: "y".repeat(3000),
       }).summary,
     ).toHaveLength(2001);
+    // issue #11 显示修复：taskSkillChars 随事件持久化（两级命中判定的任务级证据）
+    expect(
+      compactEventData({
+        eventType: "skill_active",
+        step: 1,
+        sessionId: "s",
+        host: "www.baidu.com",
+        skillLoaded: false,
+        charCount: 0,
+        taskSlug: "baidu-search-top-results",
+        taskSkillChars: 1234,
+      }),
+    ).toEqual({
+      step: 1,
+      host: "www.baidu.com",
+      skillLoaded: false,
+      taskSlug: "baidu-search-top-results",
+      taskSkillChars: 1234,
+    });
   });
 
   it("record 无 begin → null（非活 journal 静默）", () => {

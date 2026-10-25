@@ -5,14 +5,17 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  applySelfCheckFooter,
   type DistillLLM,
   distillTaskCard,
   normalizeTaskSlug,
   scanPII,
+  TASK_SOP_SELF_CHECK_FOOTER,
 } from "../../../src/agent/skills/distill.js";
 import {
   buildTaskDistillPrompt,
   CONSUMER_CONTEXT,
+  TASK_SOP_SPEC,
 } from "../../../src/agent/skills/distill-prompt.js";
 import { serializeTraceForPrompt } from "../../../src/agent/skills/trace-serialize.js";
 import type { TaskCardMeta } from "../../../src/agent/skills/types.js";
@@ -420,8 +423,8 @@ describe("distillTaskCard", () => {
     const outcome = await distillTaskCard({ ...BASE_INPUT, catalog: [], llm });
     expect(outcome.kind).toBe("draft");
     if (outcome.kind !== "draft") return;
-    // 字面量 \n（无真换行）→ 反转义
-    expect(outcome.card.sop).toBe("# 标题\n\n## 步骤\n第一步");
+    // 字面量 \n（无真换行）→ 反转义（SOP 尾部还有自检 footer——startsWith 锚定）
+    expect(outcome.card.sop.startsWith("# 标题\n\n## 步骤\n第一步")).toBe(true);
     expect(outcome.card.quirks).toBe("quirk1\nquirk2");
     // 真换行在场（模型转义正常）→ 原样保留（VALID_CARD.sop_md 含真换行）
     expect(outcome.card.description).toBe(VALID_CARD.task_description);
@@ -536,5 +539,52 @@ describe("distillTaskCard", () => {
     const defaulted = await distillTaskCard({ ...BASE_INPUT, catalog: [], llm });
     expect(defaulted.kind).toBe("draft");
     expect(seen.at(-1)?.callTimeoutMs).toBe(60_000);
+  });
+});
+
+// —— issue #11 D1 防锚定：SOP 尾部自检 footer（蒸馏侧后处理，不动消费端冻结口径）——
+
+describe("SOP 自检 footer（issue #11 D1）", () => {
+  it("新卡 draft：原 sop 在前、footer 恒居尾", async () => {
+    const llm = makeLlm(NO_MATCH, VALID_CARD);
+    const outcome = await distillTaskCard({ ...BASE_INPUT, catalog: [], llm });
+    expect(outcome.kind).toBe("draft");
+    if (outcome.kind !== "draft") return;
+    expect(outcome.card.sop.startsWith(VALID_CARD.sop_md)).toBe(true);
+    expect(outcome.card.sop.endsWith(TASK_SOP_SELF_CHECK_FOOTER)).toBe(true);
+  });
+
+  it("幂等：增量模式 LLM 原样回带 footer 的 sop → 剥后重附恒单份（不重复）", async () => {
+    const withFooter = `${VALID_CARD.sop_md}\n\n${TASK_SOP_SELF_CHECK_FOOTER}`;
+    const llm = makeLlm(MATCH_UPLOAD, { ...VALID_CARD, sop_md: withFooter });
+    const outcome = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      cardText: async () => `旧卡 SOP\n\n${TASK_SOP_SELF_CHECK_FOOTER}`,
+      llm,
+    });
+    expect(outcome.kind).toBe("draft");
+    if (outcome.kind !== "draft") return;
+    expect(outcome.card.sop.split(TASK_SOP_SELF_CHECK_FOOTER).length - 1).toBe(1);
+    expect(outcome.card.sop.endsWith(TASK_SOP_SELF_CHECK_FOOTER)).toBe(true);
+  });
+
+  it("applySelfCheckFooter 纯函数：未含 → 附加；已含 → 剥后重附等值", () => {
+    const sop = "# 步骤\nstep 1: 打开页面";
+    const once = applySelfCheckFooter(sop);
+    expect(once.endsWith(TASK_SOP_SELF_CHECK_FOOTER)).toBe(true);
+    expect(once.startsWith(sop)).toBe(true);
+    // 双重附加（footer 后再走一次）→ 与单次等值
+    expect(applySelfCheckFooter(once)).toBe(once);
+  });
+
+  it("TASK_SOP_SPEC 防锚定规则锚定：步骤只能是页面操作、完成断言只属 done 且须页面实时证据", () => {
+    expect(TASK_SOP_SPEC).toContain("page operation");
+    expect(TASK_SOP_SPEC).toContain("final done");
+    expect(TASK_SOP_SPEC).toContain("live check against the CURRENT page");
+    // footer 文案要点：历史总结声明 / 页面实时核验 / 不符以页面为准
+    expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("历史成功轨迹的总结");
+    expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("以当前页面真实状态核验");
+    expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("以页面为准");
   });
 });

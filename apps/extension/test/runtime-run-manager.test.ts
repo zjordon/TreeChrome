@@ -191,6 +191,41 @@ describe("RunManager 状态机", () => {
     await busy.manager.control("start", "再次起跑"); // 收口后可再跑
   });
 
+  it("附件起跑守卫（issue #11 D3）：任务指涉附件但列表空 → 拒绝并给可行动提示；有附件/无指涉 → 放行", async () => {
+    const m = makeDeps();
+    // 空表：中/英两种指涉都拒（SW 被杀丢内存态 / 上一轮 clearForRun 清表的场景）
+    expect(await m.manager.control("start", "用附件里的视频发布到抖音")).toMatchObject({
+      ok: false,
+      error: "任务提到附件但附件列表为空——请先在下方附加文件（浏览器重启或上一轮结束会清空附件）",
+    });
+    expect(await m.manager.control("start", "attachment: video.mp4 上传")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("附件列表为空"),
+    });
+    // 无附件指涉 → 放行（既有行为不变）
+    const m2 = makeDeps();
+    expect(await m2.manager.control("start", "打开首页")).toEqual({ ok: true });
+    m2.stub.finish(doneHistory());
+    // 有附件 → 放行
+    const m3 = makeDeps();
+    m3.manager.handleUiMessage({
+      kind: "attachment-begin",
+      transferId: "t1",
+      name: "a.mp4",
+      mimeType: "video/mp4",
+      size: 1,
+    });
+    m3.manager.handleUiMessage({
+      kind: "attachment-chunk",
+      transferId: "t1",
+      offset: 0,
+      data: btoa("x"),
+    });
+    m3.manager.handleUiMessage({ kind: "attachment-commit", transferId: "t1" });
+    expect(await m3.manager.control("start", "用附件里的视频发布到抖音")).toEqual({ ok: true });
+    m3.stub.finish(doneHistory());
+  });
+
   it("成功链：journal running（runId/tabId/task）→ agent.run 完成 → done + 收口广播", async () => {
     const m = makeDeps();
     expect(await m.manager.control("start", "做")).toEqual({ ok: true });

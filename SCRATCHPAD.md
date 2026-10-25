@@ -1,76 +1,61 @@
-# issue #10 实施草稿：LLM 调用失败可见性
+# issue #11 实施草稿：v1.5——卡质量三项
 
-- issue: [#10](https://github.com/zjordon/TreeChrome/issues/10)
-- 分支：`fix/issue-10-llm-failure-visibility`（自 main 63192c2）
-- 状态：**实施完成，测试全绿 + gate 过 + 已重建扩展**——待评审（/review-loop）
+- issue: [#11](https://github.com/zjordon/TreeChrome/issues/11)
+- 分支：`feat/issue-11-v15-card-quality`（自 main d26fb88）
+- 状态：**实施完成，待 /review-loop**（2026-10-25：S1-S4 落地，typecheck/test 全绿 54+15 文件，gate 过，扩展 rebuild 完成）
 
-## 0 实施记录（2026-10-25）
-
-- 计划外发现 ①（D5 实施时实抓）：**能力止损在 step 层收口**——pipeline.ts:116 在
-  consecutiveFailures 达上限时 runStep 直接返 true，agent.run 的 `if (done) break`
-  吞掉该路径，run 顶部破环是到不了的二道防线。修法：done-break 上以
-  `!history.isDone()` 判别归因 max_consecutive_failures（临时埋点实证后落修）
-- 计划外收紧 ②：`resolveAgentSettings` 的 judge 覆盖面收 `Partial<JudgeSettings>`
-  （交叉类型会把 judge 又收紧回全量——用 Omit 规避）；assemble 单键透传形态依赖此
-- 测试：core 1372→1375、node-host 89→91、extension 154→155（判官留痕/超时透传、
-  gateFailureReason 三态、stopReason 三停跑点、lastError 终态映射、门控日志归因）
-- biome 5 文件格式修正；扩展已重建
-
-## 1 背景与证据（issue #10 三件套）
+## 1 背景与证据（三项）
 
 | 项 | 证据 |
 |---|---|
-| E2a judge 静默 catch | judge.ts `catch { return null }`——超时/HTTP 异常/两轮空响应零日志零事件；2026-10-24 真机 judge 失败全无痕迹 |
-| E2b 60s 硬超时 | JUDGE_CALL_TIMEOUT_MS 不可配；thinking 模型 + 40k 轨迹贴近超时线（2026-10-25 判官实跑窗口 ≤82s 含序列化）；蒸馏侧同类已放宽 180s |
-| E2c 门控日志混淆 | 「门控未过（非成功完成或 Judge 复核未通过）」把 judgement=null 与 verdict=false 混为一句 |
-| B2 node-host 蒸馏超时 | distillAfterRun 未传 callTimeoutMs，长轨迹撞缺省 60s（扩展 worker 已 180s） |
-| E5 终态无原因 | 2026-10-25 HTTP 401 实测：连续 5 步失败 → status=done、isDone=false、lastError=null → UI 仅「✗ 未成功」无解释 |
-
-判词显示链已实证无恙（#9 收尾验证）——本 issue 只修失败/超时面。
+| A1 卡锚定 | 2026-10-24 抖音实测：注入卡把「确认发布成功」写成可照做步骤，模型按剧本声称完成（Judge 拦截） |
+| A2 起跑页 miss | google 起跑去 douyin 任务整 run 无法命中任务卡（匹配锚定初始 host、每 run 一次） |
+| 附件守卫 | 2026-10-25 实录：附件注册表空（SW 重启/clearForRun 清空）→ 任务文本无 [Attachments] 段 → 模型瞎猜文件路径空烧 ~10 步（issue #11 评论全文） |
 
 ## 2 设计决策
 
-- **D1 超时可配走可选键**：`JudgeSettings.callTimeoutMs?: number`，**不进 DEFAULT_JUDGE_SETTINGS**（Python 对拍 fixture 零变化——沿 `submitConfirmEnabled`/`maxAttachmentBytes` 先例）；judge.ts 消费时缺省 60_000。`resolveAgentSettings` 的 judge 子合并天然透传。
-- **D2 判官日志注入**：JudgeEvaluator 构造第三参 `log?: (m: string) => void`（agent 侧接线 `this.log`，扩展里呈现为 `[tc] judge: …`）。两条失败路径各自留痕：调用异常（含超时——LLMCallTimeoutError 文案自含超时毫秒）与两轮空响应放弃；**成功路径不刷屏**。judgement=null 仍返 null 不挂任务（03 §8 冻结契约不变）。
-- **D3 扩展侧 180s**：assemble 的 `resolveAgentSettings({ judge: { callTimeoutMs: 180_000 } })`——与 distill worker 同口径同理由（SW 生命周期无约束差，判官无 keepalive hold 但调用短于 run 收口窗口）。node-host judge 维持 60s 缺省（无超时实证，不臆测放宽）。
-- **D4 门控失败归因单源**：core `distill-gate.ts` 新增 `gateFailureReason(history): string | null`（null=门控通过）——三态：任务未成功完成 / judge 未执行或调用失败（judgement=null）/ judge 复核拒绝（verdict=false）。run-manager 与 node-host distillAfterRun 的日志都改用它（双宿主单源，可单测）。
-- **D5 停跑原因进 history**：`AgentHistoryList.stopReason?: string | null`（additive TS 扩展，Python 无此字段——agent 返回契约的可观测增强，非 parity 面）。取值 `max_steps | max_consecutive_failures | max_infra_failures | history_degraded`；四个 break 点 + maxSteps 自然退出赋值，正常 done 收口为 null；`finalizeDegradedSteps` 的 finally 赋值是既有同款先例。
-- **D6 终态原因复用 lastError**：扩展 run-manager done 分支 `isDone=false` 时 `lastError ← 停跑原因中文映射`（收在 run-manager 常量表：如 max_infra_failures→「LLM 基建失败达到上限——常见原因：API key 失效/网络不通」）。**零协议改动**——FinalResult 既有 lastError 红字渲染面直接生效。
-- **不做**：judgement=null 的 UI 侧区分呈现（需协议扩字段，无真实需求前不立项）；node-host judge 超时配置化；模型 text-not-tool_use 高频重试问题（另一维度，今日实测另行登记与否由用户定）。
+- **D1 防锚定三层（蒸馏侧，不动消费端冻结口径）**：
+  ① `TASK_SOP_SPEC` 补规则：SOP 步骤只能是**页面操作**；禁止把「确认/验证任务完成」写成可执行步骤——完成声明只属于末步 done 且须引用页面实时证据；
+  ② core `distillTaskCard` 后处理：LLM 产出校验通过后，`draft.sop` 尾部附加**固定**「执行前自检」footer（中文常量，导出供测试锚定）——**幂等**：sop 已含该 footer 先剥再附（增量模式旧卡带着 footer 进 LLM、输出再统一附加）；
+  ③ footer 文案要点：本卡是历史轨迹总结、页面可能已变；「已完成/已保存」类剧本断言不是证据；done 前以当前页面真实状态核验（读到的值/新出现的元素/URL 变化），不符时以页面为准重试或改道。
+  **不动消费端渲染面**（任务卡全文 strip 后 `\n\n` 直拼是 P5.5 冻结口径，与 Python loader 对齐——footer 落在卡的 sop 内容里随卡走，双宿主/采纳后的扩展卡都自动携带）。
+- **D2 任务卡重匹配（host 变更重试）**：`Agent` 增 `taskSkillTriedHosts: Set<string>` + `taskSkillAttempts`（上限 2 = 初始 1 次 + 重试 1 次）。初始 `matchTaskSkill` 登记尝试 host；run 循环每步收尾后：未命中（`taskSkillText === null`）且注入开关在、`historyLast().stateSummary?.url` 的 host **未曾试过** → 重试匹配（锚点用步内已采的 stateSummary URL——零额外 CDP 调用）。命中即止；SW 侧无改动（core 变更双宿主免费）。skill_active 事件随命中照常发出。
+- **D3 附件起跑守卫**：run-manager `startInner` 在任务空判后：原始任务文本命中 `/附件|attachment:/i` 且 `attachments.list()` 为空 → `{ok:false, error:"任务提到附件但附件列表为空——请先在下方附加文件（浏览器重启或上一轮结束会清空附件）"}`。误报成本低（提示明确可行动：附加或改措辞）。
+- **D4 不做**：附件持久化（M5 有意内存态，改持久化需整体设计 SW 恢复语义——独立议题）；sidepanel 附件丢失显性提示（守卫挡住主危害后评估）；搜索 host 黑名单锚定（host-change 重试已覆盖等价场景且不引入站点清单维护）。
+- **D5 两级技能显示修复（2026-10-25 真机验收发现，用户批准并入）**：baidu run 任务卡命中但侧边栏显示「未命中」——`run-timeline.tsx` 把站点级 `skillLoaded`（命中标志）与任务级 `taskSlug`（拼在同一行）混用。修法：两级分开呈现（`✚ 站点卡 {host} 命中/未命中 · 任务卡 {slug} 已注入`，任务卡未命中不渲染空 slug——顺带消掉 `str("")` 不过 null 检查导致的尾斜杠）；`journal.ts` 持久化 `taskSkillChars`（此前发了但丢弃，旧事件回退 slug 非空判定）；`repeatedSkillSeqs` 去重键补 taskSlug（D2 中途命中 miss→hit 转换行不得折叠）。
 
 ## 3 实施步骤
 
-- **S1 core 判官**：settings.ts 加可选键；judge.ts 构造第三参 + 两条失败路径日志 + `callTimeoutMs: settings?.callTimeoutMs ?? JUDGE_CALL_TIMEOUT_MS`；agent.ts 接线传 log。
-- **S2 core 门控归因 + node-host B2**：distill-gate.ts 增 `gateFailureReason`；run-manager 与 node-host distillAfterRun 日志改用；distillAfterRun 传 `callTimeoutMs: 180_000`（DistillRunOptions 可选覆盖，缺省 180s）。
-- **S3 core 停跑原因 + 扩展终态**：views.ts AgentHistoryList 加 stopReason；agent.ts 四 break 点 + 循环自然退出赋值；run-manager done 分支 lastError 映射；assemble judge 180s。
-- **S4 验证**：pnpm typecheck/test + gate；扩展 rebuild。
+- **S1 core 防锚定**：distill-prompt.ts TASK_SOP_SPEC 补规则；distill.ts `TASK_SOP_SELF_CHECK_FOOTER` 常量 + `applySelfCheckFooter(sop)` 幂等附加（新卡/增量两路径统一走 draft 落地点）。
+- **S2 core 重匹配**：agent.ts 增 triedHosts/attempts 状态 + `retryTaskSkillMatchOnHostChange()`（runStep 收尾后调用）；matchTaskSkill 登记尝试 host。
+- **S3 扩展守卫**：run-manager startInner 附件指涉检查。
+- **S4 测试 + gate**：core distill（footer 附加/幂等/prompt 规则锚定）、core agent（host 变更重试命中/频控/已命中不重试）、extension run-manager（守卫两分支）；typecheck/test/gate；扩展 rebuild。
 
 ## 4 测试面
 
 | 层 | 用例 |
 |---|---|
-| core judge | 超时抛错→日志含失败+返 null；两轮空响应→放弃日志；callTimeoutMs 透传（mock 断言 req.callTimeoutMs=180_000）与缺省 60s |
-| core distill-gate | gateFailureReason 三态 + 通过返 null |
-| core agent | maxFailures/maxInfra/maxSteps/degraded 四停跑点 stopReason；正常 done 为 null |
-| extension run-manager | isDone=false 终态 lastError 含停跑原因；门控日志三分支文案 |
-| node-host distill-run | callTimeoutMs=180_000 透传进 distillTaskCard |
-| settings | resolveAgentSettings judge 可选键透传 |
+| core distill | 新卡 sop 尾含 footer；增量模式旧卡带 footer 不重复（幂等剥附）；TASK_SOP_SPEC 文本含防锚定措辞（prompt 构造锚定） |
+| core agent | 初始 host catalog 空 → 导航后有 catalog host → 下一步重试命中 taskSkillText；attempts 上限 2；已命中不再重试 |
+| extension | 「附件」+空表拒绝（含可行动文案）；有附件放行；无附件指涉放行 |
+| console-ui | 站点卡未命中+任务卡命中两段各标各的；空 slug 不渲染尾斜杠；旧事件（无 taskSkillChars）slug 非空回退判定；去重键含 taskSlug（miss→hit 转换行不折叠） |
+| journal | skill_active 压缩投影带 taskSkillChars（charCount 仍不持久化） |
 
 ## 5 验收清单
 
-- [ ] 人为配错 API key 跑真机：终态呈现「LLM 基建失败达到上限…」红字（E5）
-- [ ] SW 控制台可见 `judge:` 前缀日志（失败时）；门控日志区分三态（E2a/c）
-- [ ] node-host 蒸馏长轨迹不再撞 60s（B2，单测锚定透传即可）
-- [ ] pnpm typecheck/test 全绿；gate 过；覆盖率 ≥85%
+- [ ] 蒸馏产物卡 sop 尾部恒带自检 footer（单测锚定）
+- [ ] google 起跑 douyin 任务实测第 2 步后命中任务卡（skill_active 日志）
+- [ ] 附件空表 + 「附件」任务 → 起跑被拒并提示（真机或单测）
+- [ ] typecheck/test 全绿；gate 过；覆盖率 ≥85%
 
 ## 6 风险与边界
 
-- stopReason 是公共契约新增字段——评测仓消费面不受影响（additive）；fixtures 不动
-- judge 日志只在失败路径——不影响现有判官对拍测试的日志断言面
-- lastError 复用不改 protocol/journal 类型——无旧快照兼容问题
+- footer 改变蒸馏产物内容——既有已采纳卡不带（旧卡不回写）；增量更新时统一补上
+- 重匹配引入第二次 matcher LLM 调用（仅 miss + host 变更场景，频控 2 次）
+- 守卫正则可能拦截「把附件发给我」类反向表述——接受（提示可行动）
 
 ## 7 评审轮登记
 
 | 轮 | 意见 | 采纳/驳回/stale | 要点 |
 |---|---|---|---|
-| 1 | 0 | —/—/— | 零意见收敛（complete，13 文件，glm-5.3，6m39s）；测试 core 1375/node-host 91/extension 155；gate 过 |
+| — | — | — | 待 /review-loop |

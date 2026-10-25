@@ -129,13 +129,18 @@ function EventLine({ event }: { event: JournalEvent }) {
       );
     }
     case "skill_active": {
+      // 两级分开呈现（issue #11 显示修复）：命中态属站点卡（skillLoaded）、slug 属
+      // 任务卡——此前拼成一行用站点级标志标注任务级 slug，任务卡命中被误示「未命中」
       const host = str(d.host);
-      const slug = str(d.taskSlug);
       const loaded = d.skillLoaded === true;
+      const slug = str(d.taskSlug) ?? "";
+      // 任务级命中判据：slug 非空；旧持久化事件无 taskSkillChars——slug 非空即注入过
+      const taskChars = num(d.taskSkillChars);
+      const taskHit = slug !== "" && (taskChars === null || taskChars > 0);
       return (
         <div className="tc-ev-muted">
-          ✚ skill {host ?? "?"}
-          {slug !== null ? `/${slug}` : ""} {loaded ? "命中" : "未命中"}
+          ✚ 站点卡 {host ?? "?"} {loaded ? "命中" : "未命中"}
+          {taskHit ? ` · 任务卡 ${slug} 已注入` : ""}
         </div>
       );
     }
@@ -147,20 +152,27 @@ function EventLine({ event }: { event: JournalEvent }) {
 /**
  * 连续重复 skill_active 的展示去重（段 F 验收反馈：未命中站点每步一行是噪音）。
  * 数据层不动（每步一条是 Python 同款可观测契约——host 随导航变化须逐步解析），
- * 仅显示层折叠：与上一条 skill_active 同 host 且同命中态 → 不渲染。
+ * 仅显示层折叠：与上一条 skill_active 同 host、同命中态且同任务 slug → 不渲染
+ *（键含任务 slug——D2 中途命中时 miss→hit 的转换行不得被折叠掉）。
  */
 export function repeatedSkillSeqs(events: JournalEvent[]): Set<number> {
   const hidden = new Set<number>();
-  let prev: { host: string | null; loaded: boolean } | null = null;
+  let prev: { host: string | null; loaded: boolean; taskSlug: string } | null = null;
   for (const e of events) {
     if (e.type !== "skill_active") continue;
     const d = isRecord(e.data) ? e.data : {};
     const host = str(d.host);
     const loaded = d.skillLoaded === true;
-    if (prev !== null && prev.host === host && prev.loaded === loaded) {
+    const taskSlug = str(d.taskSlug) ?? "";
+    if (
+      prev !== null &&
+      prev.host === host &&
+      prev.loaded === loaded &&
+      prev.taskSlug === taskSlug
+    ) {
       hidden.add(e.seq);
     }
-    prev = { host, loaded };
+    prev = { host, loaded, taskSlug };
   }
   return hidden;
 }
