@@ -103,6 +103,69 @@ describe("judge 边界", () => {
     }).judge("t", history, null);
     expect(passthrough).toMatchObject({ reasoning: "封面弹层从未打开", failureReason: "证据不足" });
   });
+
+  /** issue #10 D2/D1：失败可见性 + 超时透传 */
+  const judgeHistory = () =>
+    new AgentHistoryList({
+      history: [
+        new AgentHistory({
+          stepNumber: 1,
+          modelOutput: { next_goal: "g", action: { name: "wait", params: {} } } as never,
+          result: [new ActionResult({ isDone: true, success: true, extractedContent: "x" })],
+          stateSummary: { url: "https://x.example/1", title: "T", duration: 1 },
+        }),
+      ],
+    });
+
+  it("judge 失败留痕（D2）：调用异常与两轮空响应各自记日志且返 null 不挂任务", async () => {
+    const logs: string[] = [];
+    const throwing = new JudgeEvaluator(
+      {
+        singleShot: async () => {
+          throw new Error("单次调用超时（60000ms）");
+        },
+      } as never,
+      null,
+      (m) => void logs.push(m),
+    );
+    expect(await throwing.judge("t", judgeHistory(), null)).toBeNull();
+    expect(logs.at(-1)).toContain("judge: 调用失败");
+    expect(logs.at(-1)).toContain("60000ms");
+    const empty = new JudgeEvaluator(
+      {
+        singleShot: async () => ({ text: "", toolCalls: [], stopReason: "stop", usage: null }),
+      } as never,
+      null,
+      (m) => void logs.push(m),
+    );
+    expect(await empty.judge("t", judgeHistory(), null)).toBeNull();
+    expect(logs.at(-1)).toContain("两轮尝试均未返回");
+  });
+
+  it("judge callTimeoutMs（D1）：可选键透传 singleShot，缺省 60s 冻结契约", async () => {
+    const seen: Array<number | null | undefined> = [];
+    const mk = (settings: import("../../src/agent/settings.js").JudgeSettings | null) =>
+      new JudgeEvaluator(
+        {
+          singleShot: async (req: { callTimeoutMs?: number | null }) => {
+            seen.push(req.callTimeoutMs);
+            return { text: "", toolCalls: [], stopReason: "stop", usage: null };
+          },
+        } as never,
+        settings,
+        () => {},
+      );
+    await mk({
+      enabled: true,
+      model: "",
+      maxHistorySteps: 20,
+      traceMaxChars: 40000,
+      callTimeoutMs: 180_000,
+    }).judge("t", judgeHistory(), null);
+    await mk(null).judge("t", judgeHistory(), null);
+    // 空响应 nudge 重试 → 每 judge() 两次 singleShot（180000×2 / 60000×2）
+    expect([...new Set(seen)]).toEqual([180_000, 60_000]);
+  });
   it("trace 超 traceMaxChars → 尾部截断 + Step 边界对齐 + 截断标记", () => {
     const judge = new JudgeEvaluator(null as never, {
       traceMaxChars: 400,

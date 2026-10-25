@@ -124,6 +124,9 @@ export function assembleRun(input: AssembleInput, deps: AssembleDeps): Assembled
     // 附件数据通道上限对齐注册表（评审轮 1 [4]）：core 缺省 32MB < 注册表 100MB
     // 时，33-100MB 附件入表后 upload 必被拒——且拒绝发生在 resolve() 全量转码之后
     maxAttachmentBytes: MAX_ATTACHMENT_BYTES,
+    // issue #10 D3：判官单次调用放宽 180s（与 distill worker 同口径——thinking
+    // 模型 + 40k 轨迹贴近 60s 冻结线，2026-10-25 实跑窗口 ≤82s 含序列化）
+    judge: { callTimeoutMs: 180_000 },
     ...(input.settings.agent?.useVision !== undefined
       ? { useVision: input.settings.agent.useVision }
       : {}),

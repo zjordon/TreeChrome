@@ -1,77 +1,76 @@
-# issue #9 实施草稿：skill-drafts 通知面三缺口
+# issue #10 实施草稿：LLM 调用失败可见性
 
-- issue: [#9](https://github.com/zjordon/TreeChrome/issues/9)
-- 分支：`fix/issue-9-skill-drafts-notify`（自 main 3608b09）
+- issue: [#10](https://github.com/zjordon/TreeChrome/issues/10)
+- 分支：`fix/issue-10-llm-failure-visibility`（自 main 63192c2）
 - 状态：**实施完成，测试全绿 + gate 过 + 已重建扩展**——待评审（/review-loop）
 
 ## 0 实施记录（2026-10-25）
 
-- 计划外收紧 ①：D1 的「通知失败不改 op 结果」从实现侧自律升级为 **handler 层兜底吞异常**（测试暴露：裸 await 会把通知异常漏进外层 catch 变 {ok:false}）
-- 计划外修复 ②：迁移测试实抓 **revoke-grant `removed` 求值顺序脆弱性**——原代码在 `saveAlways` 之后求 `grants.length - kept.length`，loadAlways 返回活引用时 splice 已清空原数组恒得 0；真实 ChromeGrantStore 每次 filter 出新数组故线上无恙，仍改为先算后写
-- 测试：extension 140→154（+options-handler 11、worker 过程拍 5 处断言、run-manager queued 拍、reducer distill 状态机、core 判官归一 2 例、envelope kind 表）
-- 覆盖率：extension 93.96%（gate ≥85% 过）；biome 3 文件格式修正
+- 计划外发现 ①（D5 实施时实抓）：**能力止损在 step 层收口**——pipeline.ts:116 在
+  consecutiveFailures 达上限时 runStep 直接返 true，agent.run 的 `if (done) break`
+  吞掉该路径，run 顶部破环是到不了的二道防线。修法：done-break 上以
+  `!history.isDone()` 判别归因 max_consecutive_failures（临时埋点实证后落修）
+- 计划外收紧 ②：`resolveAgentSettings` 的 judge 覆盖面收 `Partial<JudgeSettings>`
+  （交叉类型会把 judge 又收紧回全量——用 Omit 规避）；assemble 单键透传形态依赖此
+- 测试：core 1372→1375、node-host 89→91、extension 154→155（判官留痕/超时透传、
+  gateFailureReason 三态、stopReason 三停跑点、lastError 终态映射、门控日志归因）
+- biome 5 文件格式修正；扩展已重建
 
-## 1 背景与证据（2026-10-24/25 真机）
+## 1 背景与证据（issue #10 三件套）
 
-| 缺口 | 证据 |
+| 项 | 证据 |
 |---|---|
-| adopt/discard 后不广播计数 → 幻影「1 张待审」 | 代码机制：background.ts 两个 case 只调 store 返回；draftCount 只增不减。存储层无泄漏 |
-| 蒸馏过程零状态 → run 结束后 3m43s 空窗 | SW 日志实测：run ended 01:57:07 → matcher 115s → distill 105s → 草稿 02:00:50；用户在空窗内误判「蒸馏没成功」 |
-| failureReason 字面字符串 "null" | 快照实读：judge prompt 示例 `"... or null"` 被照抄 |
+| E2a judge 静默 catch | judge.ts `catch { return null }`——超时/HTTP 异常/两轮空响应零日志零事件；2026-10-24 真机 judge 失败全无痕迹 |
+| E2b 60s 硬超时 | JUDGE_CALL_TIMEOUT_MS 不可配；thinking 模型 + 40k 轨迹贴近超时线（2026-10-25 判官实跑窗口 ≤82s 含序列化）；蒸馏侧同类已放宽 180s |
+| E2c 门控日志混淆 | 「门控未过（非成功完成或 Judge 复核未通过）」把 judgement=null 与 verdict=false 混为一句 |
+| B2 node-host 蒸馏超时 | distillAfterRun 未传 callTimeoutMs，长轨迹撞缺省 60s（扩展 worker 已 180s） |
+| E5 终态无原因 | 2026-10-25 HTTP 401 实测：连续 5 步失败 → status=done、isDone=false、lastError=null → UI 仅「✗ 未成功」无解释 |
 
-判词显示链已实证无恙（不在本 issue 范围）。
+判词显示链已实证无恙（#9 收尾验证）——本 issue 只修失败/超时面。
 
 ## 2 设计决策
 
-- **D1 通知收敛**：options 面注入 `notifyDrafts: () => Promise<void>`（**必填**——评审轮教训：可选注入缺省静默失去语义），实现放 boot 闭包（自查 listDrafts → broadcast，内部 catch 只记日志，**通知失败不得改变 op 返回值**）；adopt/discard 成功路径调用。worker 既有 `notify(count)` 保持签名不动（两处薄实现，不强行抽象）。
-- **D2 过程状态走新协议 kind `distill-status`**：不动 skill-drafts 语义（它表达「当前待审数」，过程态是另一维度）。`DistillPhase = "queued" | "running" | "done" | "failed"` + `detail?: string | null`（中文短句）。SW_TO_UI_KINDS 10→11，向后兼容（sidepanel reducer default 忽略未知 kind 已有）。
-- **D3 三拍来源**：
-  - `queued`：run-manager enqueueDistill 在 enqueue 成功后经 deps.broadcast 直发（run-manager 已持广播面）；
-  - `running` / `done` / `failed`：DistillWorker 新增必填 `onPhase(phase, detail?)` 钩子，boot 接线为广播+日志。每条 job 一拍 running、一拍终拍（队列多条即多拍，状态行覆盖更新）；
-  - saveDraft 后既有 skill-drafts count 广播保持不变（done 拍与 count 广播独立并存）。
-- **D4 done 也有拍**：skip/unchanged 路径无 count 变化，done 拍 + detail（「跳过：…」「无新观察（streak+1）」「新草稿待审」）让用户知道「跑完了、为何没产出」。failed detail 带错误摘要（含重试信息）。
-- **D5 sidepanel 状态行**：state 加 `distill: {phase, detail} | null`；`distill-status` 消息置位；**journal-snapshot runChanged 时清 null**（旧失败提示不跨 run 残留）；hello 同 run 保留。渲染：queued/running/done 用 muted 文案，failed 用 tc-ev-err 常驻。与草稿待审提示并存不互斥。
-- **D6 判官字面 null 归一（core，解析侧）**：`reasoning`/`failureReason` 为字符串且 trim+小写后 === "null" → null。**不动 prompt**（judge system prompt/tool schema 与 Python 字节锚定，改措辞引入 parity 分歧）。范围只收 "null"（无 "None" 证据，不臆测）。
-- **D7 handleOptionsRequest 迁出 entrypoint**：搬入新 `apps/extension/src/runtime/options-handler.ts`（纯函数+注入面，行为不变），换可测性——现状零单测；background.ts 只留注册与 boot 装配。同时 D1 的 notifyDrafts 在新文件注入。
-- **不做**：SW 重启后过程态恢复（transient 可接受，fetchDraftCount 兜底草稿数）；e2e smoke 不加断言（单元覆盖足够）。
+- **D1 超时可配走可选键**：`JudgeSettings.callTimeoutMs?: number`，**不进 DEFAULT_JUDGE_SETTINGS**（Python 对拍 fixture 零变化——沿 `submitConfirmEnabled`/`maxAttachmentBytes` 先例）；judge.ts 消费时缺省 60_000。`resolveAgentSettings` 的 judge 子合并天然透传。
+- **D2 判官日志注入**：JudgeEvaluator 构造第三参 `log?: (m: string) => void`（agent 侧接线 `this.log`，扩展里呈现为 `[tc] judge: …`）。两条失败路径各自留痕：调用异常（含超时——LLMCallTimeoutError 文案自含超时毫秒）与两轮空响应放弃；**成功路径不刷屏**。judgement=null 仍返 null 不挂任务（03 §8 冻结契约不变）。
+- **D3 扩展侧 180s**：assemble 的 `resolveAgentSettings({ judge: { callTimeoutMs: 180_000 } })`——与 distill worker 同口径同理由（SW 生命周期无约束差，判官无 keepalive hold 但调用短于 run 收口窗口）。node-host judge 维持 60s 缺省（无超时实证，不臆测放宽）。
+- **D4 门控失败归因单源**：core `distill-gate.ts` 新增 `gateFailureReason(history): string | null`（null=门控通过）——三态：任务未成功完成 / judge 未执行或调用失败（judgement=null）/ judge 复核拒绝（verdict=false）。run-manager 与 node-host distillAfterRun 的日志都改用它（双宿主单源，可单测）。
+- **D5 停跑原因进 history**：`AgentHistoryList.stopReason?: string | null`（additive TS 扩展，Python 无此字段——agent 返回契约的可观测增强，非 parity 面）。取值 `max_steps | max_consecutive_failures | max_infra_failures | history_degraded`；四个 break 点 + maxSteps 自然退出赋值，正常 done 收口为 null；`finalizeDegradedSteps` 的 finally 赋值是既有同款先例。
+- **D6 终态原因复用 lastError**：扩展 run-manager done 分支 `isDone=false` 时 `lastError ← 停跑原因中文映射`（收在 run-manager 常量表：如 max_infra_failures→「LLM 基建失败达到上限——常见原因：API key 失效/网络不通」）。**零协议改动**——FinalResult 既有 lastError 红字渲染面直接生效。
+- **不做**：judgement=null 的 UI 侧区分呈现（需协议扩字段，无真实需求前不立项）；node-host judge 超时配置化；模型 text-not-tool_use 高频重试问题（另一维度，今日实测另行登记与否由用户定）。
 
 ## 3 实施步骤
 
-- **S1 协议面**：`packages/protocol/src/index.ts`——DistillPhase 类型 + SwDistillStatusMessage + kind 表 10→11 + 联合；`test/envelope.test.ts` 样例与长度同步。
-- **S2 core 判官归一**：`packages/core/src/agent/judge.ts`——nullish 归一 helper 应用于 reasoning/failureReason；judge 测试补字面 "null"（含大小写/空白变体）与正常串透传。
-- **S3 options-handler 迁出 + notifyDrafts**：新 `apps/extension/src/runtime/options-handler.ts`（自 background.ts 搬移 handleOptionsRequest/OptionsFace/grantsMutation + 扩 notifyDrafts）；background.ts 引用改 import、boot 组装注入；新 `apps/extension/test/runtime-options-handler.test.ts`（adopt/discard 成功 → notifyDrafts 调用；载荷校验回归；通知异常不改 op 结果）。
-- **S4 worker 三拍 + run-manager queued 拍**：`distill-worker.ts` 加 onPhase（running 每条 job、done/failed 终拍全路径含 skip/unchanged/无卡）；`run-manager.ts` enqueueDistill 成功后广播 queued；distill-worker.test / runtime-run-manager.test 补断言。
-- **S5 sidepanel 状态行**：`sidepanel-state.ts` 状态机 + reducer；`sidepanel-app.tsx` 渲染；ui-glue.test 补（各 phase 渲染、runChanged 清空、hello 保留）。
-- **S6 验证**：pnpm typecheck + test + gate；扩展 rebuild 供真机走查。
+- **S1 core 判官**：settings.ts 加可选键；judge.ts 构造第三参 + 两条失败路径日志 + `callTimeoutMs: settings?.callTimeoutMs ?? JUDGE_CALL_TIMEOUT_MS`；agent.ts 接线传 log。
+- **S2 core 门控归因 + node-host B2**：distill-gate.ts 增 `gateFailureReason`；run-manager 与 node-host distillAfterRun 日志改用；distillAfterRun 传 `callTimeoutMs: 180_000`（DistillRunOptions 可选覆盖，缺省 180s）。
+- **S3 core 停跑原因 + 扩展终态**：views.ts AgentHistoryList 加 stopReason；agent.ts 四 break 点 + 循环自然退出赋值；run-manager done 分支 lastError 映射；assemble judge 180s。
+- **S4 验证**：pnpm typecheck/test + gate；扩展 rebuild。
 
 ## 4 测试面
 
 | 层 | 用例 |
 |---|---|
-| protocol envelope | kind 表 11、distill-status 样例路由 |
-| core judge | "null"/" NULL "/" null " 归 null；正常串透传；verdict 布尔不受影响 |
-| options-handler | adopt/discard 成功调 notifyDrafts；坏载荷拒绝不调；notify 抛异常 op 仍 ok |
-| distill-worker | 每条 job running；saveDraft→done(新草稿)；skip/unchanged→done(detail)；error→failed；空队列不发拍 |
-| run-manager | 门控过入队 → 广播含 distill-status queued；门控不过不发 |
-| ui-glue | 四 phase 渲染文案；failed 用 err 样式；新 run 清空；与草稿提示并存 |
+| core judge | 超时抛错→日志含失败+返 null；两轮空响应→放弃日志；callTimeoutMs 透传（mock 断言 req.callTimeoutMs=180_000）与缺省 60s |
+| core distill-gate | gateFailureReason 三态 + 通过返 null |
+| core agent | maxFailures/maxInfra/maxSteps/degraded 四停跑点 stopReason；正常 done 为 null |
+| extension run-manager | isDone=false 终态 lastError 含停跑原因；门控日志三分支文案 |
+| node-host distill-run | callTimeoutMs=180_000 透传进 distillTaskCard |
+| settings | resolveAgentSettings judge 可选键透传 |
 
 ## 5 验收清单
 
-- [ ] 采纳/丢弃草稿后 sidepanel 徽标即刻清零（真机）
-- [ ] run 结束后可见「已排队 → 蒸馏中 → 完成/失败」过程提示（真机）
-- [ ] 失败提示常驻至下一 run，新 run 清空
-- [ ] 快照 judgement 不再出现字面 "null"（单测锚定）
+- [ ] 人为配错 API key 跑真机：终态呈现「LLM 基建失败达到上限…」红字（E5）
+- [ ] SW 控制台可见 `judge:` 前缀日志（失败时）；门控日志区分三态（E2a/c）
+- [ ] node-host 蒸馏长轨迹不再撞 60s（B2，单测锚定透传即可）
 - [ ] pnpm typecheck/test 全绿；gate 过；覆盖率 ≥85%
 
 ## 6 风险与边界
 
-- protocol 新 kind 对旧 UI 向后兼容（default 忽略）——本仓 UI 与 SW 同版本发布，无灰度问题
-- onPhase 必填会破坏 distill-worker 既有测试装配——同步更新注入（stub 记录）
-- boot 闭包 notifyDrafts 与 worker notify 双实现有轻微重复——接受（各 3 行，语义不同源）
-- 不改 e2e、不改 prompt 常量、不动 skill-drafts 既有语义
+- stopReason 是公共契约新增字段——评测仓消费面不受影响（additive）；fixtures 不动
+- judge 日志只在失败路径——不影响现有判官对拍测试的日志断言面
+- lastError 复用不改 protocol/journal 类型——无旧快照兼容问题
 
 ## 7 评审轮登记
 
 | 轮 | 意见 | 采纳/驳回/stale | 要点 |
 |---|---|---|---|
-| 1 | 0 | —/—/— | 零意见收敛（complete，10 文件，glm-5.3，5m52s）；测试 154、覆盖率 93.96% |
+| 1 | 0 | —/—/— | 零意见收敛（complete，13 文件，glm-5.3，6m39s）；测试 core 1375/node-host 91/extension 155；gate 过 |

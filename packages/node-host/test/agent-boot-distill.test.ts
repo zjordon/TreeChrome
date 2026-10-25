@@ -13,6 +13,7 @@ import { assembleAgent } from "../src/agent-boot.js";
 import {
   distillAfterRun,
   dominantHostOf,
+  gateFailureReason,
   passesDistillGate,
   writeTaskCard,
 } from "../src/distill-run.js";
@@ -34,6 +35,9 @@ const mkTmp = async (): Promise<string> => {
 /** 按 schema 分流的假 LLM（properties 含 "match" = matcher 调用） */
 class FakeLlm implements DistillLLM {
   distillCalls = 0;
+  /** 蒸馏调用的 opts 面（issue #10 B2：callTimeoutMs 透传断言） */
+  distillOpts: Array<{ callTimeoutMs?: number | null }> = [];
+
   constructor(
     private readonly matcherResult: Record<string, unknown> | null,
     private readonly distillResult: Record<string, unknown> | null,
@@ -43,10 +47,12 @@ class FakeLlm implements DistillLLM {
     _systemPrompt: string,
     _userPrompt: string,
     outputSchema: Record<string, unknown>,
+    opts?: { maxTokens?: number; callTimeoutMs?: number | null },
   ): Promise<Record<string, unknown> | null> {
     const props = (outputSchema.properties ?? {}) as Record<string, unknown>;
     if ("match" in props) return this.matcherResult;
     this.distillCalls += 1;
+    this.distillOpts.push(opts ?? {});
     return this.distillResult;
   }
 }
@@ -122,6 +128,25 @@ describe("passesDistillGate", () => {
   });
 });
 
+describe("gateFailureReason", () => {
+  it("门控通过 → null；三态归因互斥（issue #10 D4）", () => {
+    expect(
+      gateFailureReason(
+        history([{ url: "https://a.com", done: { success: true, verdict: true } }]),
+      ),
+    ).toBeNull();
+    expect(gateFailureReason(history([{ url: "https://a.com" }]))).toContain("任务未成功完成");
+    expect(
+      gateFailureReason(history([{ url: "https://a.com", done: { success: true } }])),
+    ).toContain("judge 未执行或调用失败");
+    expect(
+      gateFailureReason(
+        history([{ url: "https://a.com", done: { success: true, verdict: false } }]),
+      ),
+    ).toContain("judge 复核拒绝");
+  });
+});
+
 describe("dominantHostOf", () => {
   it("步 URL 多数票；含端口形态保留", () => {
     expect(
@@ -143,17 +168,29 @@ describe("dominantHostOf", () => {
 // —— 编排主流程 ——
 
 describe("distillAfterRun", () => {
-  it("门控不过 → 零 LLM 调用零落盘", async () => {
+  it("门控不过 → 零 LLM 调用零落盘；日志归因三态（issue #10 D4）", async () => {
     const dir = await mkTmp();
     const llm = new FakeLlm(NO_MATCH, DISTILLED);
+    const logs: string[] = [];
     await distillAfterRun({
       ...BASE,
       distill: { skillsDir: dir },
       llm,
+      log: (m) => void logs.push(m),
       history: history([{ url: "https://a.com", done: { success: true, verdict: false } }]),
     });
     expect(llm.distillCalls).toBe(0);
     expect(await fsp.readdir(dir)).toEqual([]);
+    expect(logs.at(-1)).toContain("judge 复核拒绝");
+    const logs2: string[] = [];
+    await distillAfterRun({
+      ...BASE,
+      distill: { skillsDir: dir },
+      llm,
+      log: (m) => void logs2.push(m),
+      history: history([{ url: "https://a.com", done: { success: true } }]),
+    });
+    expect(logs2.at(-1)).toContain("judge 未执行或调用失败");
   });
 
   it("门控过 → 四文件落盘（_task.json snake_case meta 完整）", async () => {
@@ -181,6 +218,20 @@ describe("distillAfterRun", () => {
       distilled_at: "2026-10-23T00:00:00.000Z",
       distill_streak: 0, // 写入即真蒸馏——streak 归 0（D17）
     });
+    // issue #10 B2：缺省 180s 对齐扩展 worker
+    expect(llm.distillOpts.at(-1)?.callTimeoutMs).toBe(180_000);
+  });
+
+  it("callTimeoutMs 可选覆盖（issue #10 B2）", async () => {
+    const dir = await mkTmp();
+    const llm = new FakeLlm(NO_MATCH, DISTILLED);
+    await distillAfterRun({
+      ...BASE,
+      distill: { skillsDir: dir, callTimeoutMs: 90_000 },
+      llm,
+      history: history([{ url: "https://a.com", done: { success: true, verdict: true } }]),
+    });
+    expect(llm.distillOpts.at(-1)?.callTimeoutMs).toBe(90_000);
   });
 
   it("增量：既有卡 source_traces 并集 + distilled_at 刷新（D8）", async () => {

@@ -82,6 +82,7 @@ describe("run 外层与公共 API", () => {
     expect(history.isDone()).toBe(true);
     expect(history.isSuccessful()).toBe(true);
     expect(history.finalResult()).toBe("Task done");
+    expect(history.stopReason).toBeNull(); // issue #10 D5：正常 done 无停跑原因
     expect(history.history).toHaveLength(2);
     expect(history.history[0].stateSummary?.url).toBe("https://a.example");
     expect(history.history[1].stateSummary?.domExcerpt).toBe("[1] button 'Go'"); // done 步带摘录
@@ -109,6 +110,7 @@ describe("run 外层与公共 API", () => {
     const history = await agent.run();
     expect(history.isDone()).toBe(false);
     expect(history.history.length).toBeGreaterThanOrEqual(2);
+    expect(history.stopReason).toBe("max_steps"); // issue #10 D5：自然条件退出
   });
   it("连败达 maxFailures → run 顶部破环", async () => {
     const browser = new FakeAgentBrowser();
@@ -125,6 +127,7 @@ describe("run 外层与公共 API", () => {
     const history = await agent.run();
     expect(agent.state.consecutiveFailures).toBe(2);
     expect(history.isDone()).toBe(false);
+    expect(history.stopReason).toBe("max_consecutive_failures"); // issue #10 D5
   });
   it("stop() 公共 API：LLM 调用中停止 → 丢弃输出、无历史写入", async () => {
     const browser = new FakeAgentBrowser();

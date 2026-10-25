@@ -77,6 +77,7 @@ function makeDeps(
   const tabRemovedListeners: Array<(tabId: number) => void> = [];
   const stub = stubAgent();
   const browserStops: number[] = [];
+  const logs: string[] = [];
   const noRoot: DirHandleLike = {
     async getDirectoryHandle() {
       throw new Error("unused");
@@ -138,10 +139,19 @@ function makeDeps(
     ...(options.distill !== undefined ? { distill: options.distill } : {}),
     newRunId: () => "run_test",
     now: () => 1234,
-    log: () => {},
+    log: (m: string) => void logs.push(m),
   };
   const manager = new RunManager(deps);
-  return { manager, journal, attachments, broadcasts, tabRemovedListeners, stub, browserStops };
+  return {
+    manager,
+    journal,
+    attachments,
+    broadcasts,
+    logs,
+    tabRemovedListeners,
+    stub,
+    browserStops,
+  };
 }
 
 const doneHistory = () =>
@@ -699,6 +709,32 @@ describe("RunManager 蒸馏门控入队", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(m.journal.current()).toMatchObject({
       judgement: { verdict: false, reasoning: "无页面证据", failureReason: "证据不足" },
+      lastError: null, // issue #10 D6：正常 done 收口不携带停跑原因
+    });
+  });
+
+  it("非 done 收口 → lastError 带停跑原因（issue #10 D6：E5 可见性）", async () => {
+    const m = makeDeps();
+    await m.manager.control("start", "查报表");
+    m.stub.finish(
+      new AgentHistoryList({
+        history: [
+          {
+            stepNumber: 1,
+            modelOutput: { next_goal: "查", action: { name: "wait", params: {} } },
+            stateSummary: { url: "https://a.example/r" },
+            result: [{ extractedContent: "x" }],
+          } as never,
+        ],
+        stopReason: "max_infra_failures",
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    // 2026-10-25 HTTP 401 实测：此前仅「✗ 未成功」无任何解释
+    expect(m.journal.current()).toMatchObject({
+      status: "done",
+      isDone: false,
+      lastError: "LLM 基建失败达到上限——常见原因：API key 失效/网络不通/端点不可达",
     });
   });
 
@@ -714,6 +750,13 @@ describe("RunManager 蒸馏门控入队", () => {
       expect(jobs).toHaveLength(0); // D1 严格读法：judgement 缺失 = 不蒸馏
       // 门控不过 → 也不发 queued 拍（没入队就没过程可跟踪——issue #9）
       expect(m.broadcasts.filter((b) => b.kind === "distill-status")).toEqual([]);
+      // issue #10 D4：门控日志三态归因——null 与 false 不再混为一句
+      //（some 匹配：门控行之后还有 run ended 等收尾日志）
+      expect(
+        m.logs.some((l) =>
+          l.includes(verdict === false ? "judge 复核拒绝" : "judge 未执行或调用失败"),
+        ),
+      ).toBe(true);
     }
   });
 

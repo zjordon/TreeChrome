@@ -206,7 +206,9 @@ export class Agent implements StepCtx {
     // Python agent.py:218 getattr(llm, 'output_mode', 'standard')——registry 侧
     // destructuring 缺省即 getattr 兜底（fake client 无字段 → undefined → standard）
     this.outputMode = options.llm.outputMode;
-    this.judge = s.judge.enabled ? new JudgeEvaluator(options.judgeLlm ?? this.llm, s.judge) : null;
+    this.judge = s.judge.enabled
+      ? new JudgeEvaluator(options.judgeLlm ?? this.llm, s.judge, this.log)
+      : null;
     this.historyMessageProvider = () => this.buildAgentHistoryDescription();
 
     this.systemPrompt = buildSystemPrompt(
@@ -259,12 +261,15 @@ export class Agent implements StepCtx {
         }
       }
 
+      // issue #10 D5：停跑原因（finally 落 history——正常 done 与用户中断保持 null）
+      let stopReason: string | null = null;
       while (this.state.nSteps <= this.settings.maxSteps) {
         if (this.state.stopped) {
           break;
         }
         if (this.state.consecutiveFailures >= this.settings.maxFailures) {
           this.log(`Max consecutive failures (${this.settings.maxFailures}) reached`);
+          stopReason = "max_consecutive_failures";
           break;
         }
         // #194：基建预算检查——infra 步不递增 n_steps，防 livelock 的界由此接管
@@ -272,6 +277,7 @@ export class Agent implements StepCtx {
           this.log(
             `Max infra failures (${this.settings.maxInfraFailures}) reached — API unreachable, stopping`,
           );
+          stopReason = "max_infra_failures";
           break;
         }
         // paused 等待 resume（宿主调用 resume() 放行）
@@ -287,6 +293,7 @@ export class Agent implements StepCtx {
             `_finalize degraded on ${this.state.finalizeDegradedSteps} steps — aborting run ` +
               "(history is incomplete; see prior error logs)",
           );
+          stopReason = "history_degraded";
           if (done && this.judge !== null) {
             await this.runJudge();
           }
@@ -296,9 +303,19 @@ export class Agent implements StepCtx {
           if (this.judge !== null) {
             await this.runJudge();
           }
+          // issue #10 D5：step 层能力止损也经 done=true 收口（pipeline.ts:116——
+          // consecutiveFailures 达上限时 runStep 返 true，run 顶部破环是二道防线
+          // 正常到不了）；末步无 done result 即该路径，与正常 done 区分归因
+          if (!this.history.isDone()) stopReason = "max_consecutive_failures";
           break;
         }
       }
+      // 自然条件退出（nSteps 超 maxSteps）——唯一不经 break 的路径；用户中断
+      //（state.stopped）由宿主 interruptReason 承载，保持 null
+      if (stopReason === null && !this.history.isDone() && !this.state.stopped) {
+        stopReason = "max_steps";
+      }
+      this.history.stopReason = stopReason;
     } finally {
       // 降级信息落到返回的 history（调用方可区分「正常完成」与「残缺完成」）
       this.history.finalizeDegradedSteps = this.state.finalizeDegradedSteps;
