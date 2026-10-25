@@ -41,11 +41,18 @@ export const TASK_SOP_SELF_CHECK_FOOTER = `## 执行前自检
 - 声明 done 前，必须以当前页面真实状态核验：亲自读到的值（find_elements/search_page/read_grid）、新出现的元素（成功提示/toast/结果页）、或 URL 变化。
 - 当前页面与卡描述不符时，以页面为准——重试、改道或重新探索，不要按剧本走完就收题。`;
 
-/** SOP 尾部幂等附加自检 footer：已含则先剥再附（增量模式旧卡带着 footer 进 LLM、
- *  输出再统一附加）——恒为单份且居尾 */
+/** SOP 尾部幂等附加自检 footer：剥除**所有**出现位置的 footer（LLM 可能前置/
+ *  中部回带——评审轮 1 [1]：首现位 slice 截断会静默丢弃其后正文，残缺卡过非空
+ *  校验落盘覆盖旧卡），分段 trim 后重组，尾部统一重附单份 */
 export function applySelfCheckFooter(sop: string): string {
-  const idx = sop.indexOf(TASK_SOP_SELF_CHECK_FOOTER);
-  return `${(idx === -1 ? sop : sop.slice(0, idx)).trimEnd()}\n\n${TASK_SOP_SELF_CHECK_FOOTER}`;
+  const stripped = sop
+    .split(TASK_SOP_SELF_CHECK_FOOTER)
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .join("\n\n");
+  return stripped === ""
+    ? TASK_SOP_SELF_CHECK_FOOTER
+    : `${stripped}\n\n${TASK_SOP_SELF_CHECK_FOOTER}`;
 }
 
 /** 结构化调用面（LLMClient.structuredCall 结构满足——与 MatcherLLM 同款形态） */

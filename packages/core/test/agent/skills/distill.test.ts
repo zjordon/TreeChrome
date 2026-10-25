@@ -578,6 +578,19 @@ describe("SOP 自检 footer（issue #11 D1）", () => {
     expect(applySelfCheckFooter(once)).toBe(once);
   });
 
+  it("评审轮 1 [1]：footer 被模型前置/置于中部 → 剥除所有出现且不丢正文（尾部单份）", () => {
+    // 前置（「执行前自检」字面语义诱导）——旧实现 slice(0,0) 丢整卡正文
+    const front = `${TASK_SOP_SELF_CHECK_FOOTER}\n\n${VALID_CARD.sop_md}`;
+    expect(applySelfCheckFooter(front)).toBe(
+      `${VALID_CARD.sop_md}\n\n${TASK_SOP_SELF_CHECK_FOOTER}`,
+    );
+    // 中部（尾部 footer 之后又追加新观察）——旧实现丢弃 footer 之后全部正文
+    const mid = `# 标题\n\n${TASK_SOP_SELF_CHECK_FOOTER}\n\nstep 1: 后续正文`;
+    expect(applySelfCheckFooter(mid)).toBe(
+      `# 标题\n\nstep 1: 后续正文\n\n${TASK_SOP_SELF_CHECK_FOOTER}`,
+    );
+  });
+
   it("TASK_SOP_SPEC 防锚定规则锚定：步骤只能是页面操作、完成断言只属 done 且须页面实时证据", () => {
     expect(TASK_SOP_SPEC).toContain("page operation");
     expect(TASK_SOP_SPEC).toContain("final done");
