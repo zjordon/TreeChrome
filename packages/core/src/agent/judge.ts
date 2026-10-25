@@ -31,6 +31,14 @@ export interface JudgeLLM {
 /** judge 单次调用超时（03 §8 冻结契约：60s 级；LLMCallTimeoutError 由 catch 兜住返 null） */
 const JUDGE_CALL_TIMEOUT_MS = 60_000;
 
+/** 判官 JSON 文本字段收窄（issue #9 D6）：非 string 归 null；字面 "null"（trim +
+ *  大小写不敏感——prompt 示例 `"... or null"` 被模型照抄的实测形态，2026-10-25
+ *  快照实读确认）同样归 null，避免拒绝判词渲染「失败原因：null」 */
+function nullishText(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  return v.trim().toLowerCase() === "null" ? null : v;
+}
+
 /** codegen 产物 {name, description, input_schema} → ToolDefinition（parameters 映射，
  *  与 think.ts toolDef 同款——漏映射会使适配器契约校验抛违例、judge 静默失效） */
 function judgeToolDef(): ToolDefinition {
@@ -74,9 +82,9 @@ export class JudgeEvaluator {
           if (block.name === "agent_response") {
             const data = block.args as Record<string, unknown>;
             return {
-              reasoning: typeof data.reasoning === "string" ? data.reasoning : null,
+              reasoning: nullishText(data.reasoning),
               verdict: data.verdict === true,
-              failureReason: typeof data.failure_reason === "string" ? data.failure_reason : null,
+              failureReason: nullishText(data.failure_reason),
               impossibleTask: data.impossible_task === true,
               captcha: data.captcha === true,
             };

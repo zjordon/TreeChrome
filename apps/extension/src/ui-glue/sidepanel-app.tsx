@@ -18,7 +18,12 @@ import type { UiToSwMessage } from "@tw/protocol";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type BegunSignal, uploadAttachment } from "./attachment-upload.js";
 import { PortClient, type UiPort } from "./port-client.js";
-import { ingestSidepanel, initialSidepanelState, type SidepanelAction } from "./sidepanel-state.js";
+import {
+  ingestSidepanel,
+  initialSidepanelState,
+  type SidepanelAction,
+  type SidepanelState,
+} from "./sidepanel-state.js";
 
 export interface SidepanelAppProps {
   connect: () => UiPort;
@@ -33,6 +38,23 @@ interface UploadProgress {
   name: string;
   size: number;
   sent: number;
+}
+
+/** 蒸馏过程状态行文案（issue #9 D5：failed 红字常驻到下一 run；queued/running/
+ *  done 灰字。实测 matcher+蒸馏两次串行慢调用 ~4 分钟——空窗期用户无从得知后台
+ *  在干什么，曾据此误判「蒸馏没成功」） */
+function distillStatusText(d: NonNullable<SidepanelState["distill"]>): string {
+  const detail = d.detail !== null ? `：${d.detail}` : "";
+  switch (d.phase) {
+    case "queued":
+      return "⧗ 蒸馏已排队——后台进行中（约 1–4 分钟）";
+    case "running":
+      return "⚗ 蒸馏中……";
+    case "done":
+      return `✓ 蒸馏完成${detail}`;
+    case "failed":
+      return `✗ 蒸馏失败${detail}`;
+  }
 }
 
 export function SidepanelApp({ connect, fetchDraftCount }: SidepanelAppProps) {
@@ -200,6 +222,15 @@ export function SidepanelApp({ connect, fetchDraftCount }: SidepanelAppProps) {
             空闲——配置好 LLM 卡片（设置页）后输入任务开始。
           </p>
         )}
+
+        {state.distill !== null ? (
+          <p
+            style={{ margin: "4px 0" }}
+            className={state.distill.phase === "failed" ? "tc-ev-err" : "tc-ev-muted"}
+          >
+            {distillStatusText(state.distill)}
+          </p>
+        ) : null}
 
         {(state.draftCount ?? 0) > 0 ? (
           <p style={{ margin: "4px 0" }} className="tc-ev-muted">

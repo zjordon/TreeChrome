@@ -11,7 +11,7 @@ import {
   createChromeDebuggerTransport,
 } from "@tw/cdp-chrome";
 import { LLMClient } from "@tw/core";
-import type { OptionsOp, ProviderCardDto, RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
+import type { RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
 import { AttachmentRegistry } from "../src/host/attachment-registry.js";
@@ -27,7 +27,7 @@ import { makeDebuggerTransportFactory } from "../src/host/debugger-api.js";
 import { ChromeGrantStore } from "../src/host/grant-store.js";
 import { KeepaliveController } from "../src/host/keepalive.js";
 import { OpfsFs } from "../src/host/opfs-fs.js";
-import { parseExtensionSettings, SettingsStore } from "../src/host/settings-store.js";
+import { SettingsStore } from "../src/host/settings-store.js";
 import { ExtensionSkillSource } from "../src/host/skill-source.js";
 import {
   type BuiltinsManifest,
@@ -40,7 +40,7 @@ import { DISTILL_ALARM_NAME, DistillQueue } from "../src/runtime/distill-queue.j
 import { DistillWorker } from "../src/runtime/distill-worker.js";
 import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
-import { createMutationQueue } from "../src/runtime/mutation-queue.js";
+import { handleOptionsRequest, type OptionsFace } from "../src/runtime/options-handler.js";
 import { PortServer } from "../src/runtime/port-server.js";
 import { RunManager } from "../src/runtime/run-manager.js";
 
@@ -164,157 +164,6 @@ interface Booted {
   skillStore: SkillStore;
   /** options 请求-应答面（段 E） */
   options: OptionsFace;
-}
-
-/** options 面（段 E）：settings 读写 / grants 列举撤销 / skills 列举 / 端点测试 */
-interface OptionsFace {
-  settingsStore: SettingsStore;
-  grantStore: ChromeGrantStore;
-  skillStore: SkillStore;
-}
-
-/** options 请求处理（全路径 fail-soft：异常/坏载荷回 {ok:false,error} 不炸通道） */
-const grantsMutation = createMutationQueue();
-
-async function handleOptionsRequest(
-  op: OptionsOp,
-  payload: unknown,
-  face: OptionsFace,
-): Promise<unknown> {
-  try {
-    switch (op) {
-      case "get-settings":
-        return { ok: true, settings: await face.settingsStore.load() };
-      case "save-settings":
-        // 宽松收窄再落盘（单一写者=SW——UI 不直碰 chrome.storage，避免双端竞态）
-        await face.settingsStore.save(parseExtensionSettings(payload));
-        return { ok: true };
-      case "list-grants":
-        return { ok: true, grants: await face.grantStore.loadAlways() };
-      case "revoke-grant": {
-        const p = payload as { capability?: unknown; host?: unknown } | null;
-        if (
-          p === null ||
-          typeof p.capability !== "string" ||
-          typeof p.host !== "string" ||
-          p.capability === "" ||
-          p.host === ""
-        ) {
-          return { ok: false, error: "revoke-grant 需要 {capability, host}" };
-        }
-        // 读-改-写串行化（评审轮 1 [12]）：两条 revoke 在 await 点交错时后写者
-        // 以陈旧全量覆盖回——已撤销的授权复活且不再弹权限卡
-        const removed = await grantsMutation(() =>
-          (async () => {
-            const grants = await face.grantStore.loadAlways();
-            const kept = grants.filter(
-              (g) => !(g.capability === p.capability && g.host === p.host),
-            );
-            await face.grantStore.saveAlways(kept);
-            return grants.length - kept.length;
-          })(),
-        );
-        return { ok: true, removed };
-      }
-      case "list-skills": {
-        const cards = await face.skillStore.listAll();
-        return {
-          ok: true,
-          cards: cards.map((c) => ({
-            host: c.host,
-            slug: c.slug,
-            sourceType: c.provenance.sourceType,
-            updatedAt: c.updatedAt,
-            ...(c.distilledAt !== undefined ? { distilledAt: c.distilledAt } : {}),
-            ...(c.status !== undefined ? { status: c.status } : {}),
-          })),
-        };
-      }
-      case "list-skill-drafts": {
-        // 草稿全文（options 审阅面编辑底稿）——draft:: 键空间专用列举
-        const drafts = await face.skillStore.listDrafts();
-        return {
-          ok: true,
-          drafts: drafts.map((d) => ({
-            host: d.host,
-            slug: d.slug,
-            ...(d.description !== undefined ? { description: d.description } : {}),
-            ...(d.keywords !== undefined ? { keywords: d.keywords } : {}),
-            sop: d.sop,
-            selectors: d.selectors,
-            quirks: d.quirks,
-            ...(d.distilledAt !== undefined ? { distilledAt: d.distilledAt } : {}),
-            ...(d.sourceTraces !== undefined ? { sourceTraces: d.sourceTraces } : {}),
-            updatedAt: d.updatedAt,
-          })),
-        };
-      }
-      case "adopt-skill-draft": {
-        const p = payload as { host?: unknown; slug?: unknown; edits?: unknown } | null;
-        if (
-          p === null ||
-          typeof p.host !== "string" ||
-          typeof p.slug !== "string" ||
-          p.host === "" ||
-          p.slug === ""
-        ) {
-          return { ok: false, error: "adopt-skill-draft 需要 {host, slug}" };
-        }
-        // edits 宽松收窄（三件套/描述可编辑；空串=不覆盖——与 store 层语义一致）
-        const rawEdits = (p.edits ?? {}) as Record<string, unknown>;
-        const edits: Record<string, string | string[]> = {};
-        for (const key of ["sop", "selectors", "quirks", "description"] as const) {
-          if (typeof rawEdits[key] === "string") edits[key] = rawEdits[key] as string;
-        }
-        if (Array.isArray(rawEdits.keywords)) {
-          edits.keywords = (rawEdits.keywords as unknown[]).filter(
-            (k): k is string => typeof k === "string",
-          );
-        }
-        const res = await face.skillStore.adoptDraft(p.host, p.slug, edits);
-        return res.ok ? { ok: true } : { ok: false, error: res.error };
-      }
-      case "discard-skill-draft": {
-        const p = payload as { host?: unknown; slug?: unknown } | null;
-        if (
-          p === null ||
-          typeof p.host !== "string" ||
-          typeof p.slug !== "string" ||
-          p.host === "" ||
-          p.slug === ""
-        ) {
-          return { ok: false, error: "discard-skill-draft 需要 {host, slug}" };
-        }
-        await face.skillStore.discardDraft(p.host, p.slug);
-        return { ok: true };
-      }
-      case "test-card": {
-        const card = payload as ProviderCardDto | null;
-        if (
-          card === null ||
-          typeof card.baseUrl !== "string" ||
-          !/^https?:\/\//.test(card.baseUrl)
-        ) {
-          return { ok: false, message: "baseUrl 形态不合法" };
-        }
-        // 可达性探测（非语义级验证）：任何 HTTP 应答即端点可达；5s 超时
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 5000);
-        try {
-          const res = await fetch(card.baseUrl, { method: "GET", signal: ctrl.signal });
-          return { ok: true, message: `HTTP ${res.status}（端点可达）` };
-        } catch (e) {
-          return { ok: false, message: e instanceof Error ? e.message : String(e) };
-        } finally {
-          clearTimeout(timer);
-        }
-      }
-      default:
-        return { ok: false, error: `未知操作：${op}` };
-    }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
 }
 
 /** IDB 打不开时的降级空库（评审轮 1 [13]：skill 是可选增强，存储故障不得
@@ -458,16 +307,35 @@ async function boot(): Promise<Booted> {
       log(`distill: ${count} 张草稿待审（options 审阅）`);
       portServerRef?.broadcast({ kind: "skill-drafts", count });
     },
+    // 过程状态拍（issue #9 D3）：running/done/failed → distill-status 广播
+    onPhase: (phase, detail) => {
+      portServerRef?.broadcast({
+        kind: "distill-status",
+        phase,
+        ...(detail !== undefined ? { detail } : {}),
+      });
+    },
     activeCard: (settings) => activeProviderCard(settings),
     log,
   });
   kickDistill();
 
   log("SW booted (segment D runtime)");
+  // issue #9 D1：采纳/丢弃后的计数广播（boot 闭包自查 listDrafts——通知失败只记
+  //  日志，不得改变 op 结果；与 worker 的 notify(count) 是两处薄实现，不强行抽象）
+  const notifyDrafts = async (): Promise<void> => {
+    try {
+      const n = (await store.listDrafts()).length;
+      log(`drafts: ${n} 张待审（options 审阅）`);
+      portServerRef?.broadcast({ kind: "skill-drafts", count: n });
+    } catch (e) {
+      log(`drafts notify failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   return {
     runManager,
     skillStore: store,
-    options: { settingsStore, grantStore, skillStore: store },
+    options: { settingsStore, grantStore, skillStore: store, notifyDrafts },
   };
 }
 

@@ -7,6 +7,7 @@ import type {
   AttachmentBudget,
   AttachmentInfo,
   AttachmentRejection,
+  DistillPhase,
   JournalEvent,
   RunJournalSnapshot,
   SwPermissionRequestMessage,
@@ -31,6 +32,9 @@ export interface SidepanelState {
   submit: SwSubmitRequestMessage | null;
   /** skill-drafts 广播的待审草稿数（issue #5 D11 轻提示；null = 未收到过） */
   draftCount: number | null;
+  /** 蒸馏过程状态拍（issue #9 D5：null = 无过程在跟踪。failed 常驻到下一 run——
+   *  journal-snapshot runChanged / hello 换 run 时清空，新 run 不背旧失败） */
+  distill: { phase: DistillPhase; detail: string | null } | null;
 }
 
 export const initialSidepanelState: SidepanelState = {
@@ -42,6 +46,7 @@ export const initialSidepanelState: SidepanelState = {
   permission: null,
   submit: null,
   draftCount: null,
+  distill: null,
 };
 
 /** 本地动作（确认卡 resolve 后乐观清除——SW 不广播 resolve 回执；拒绝明细的
@@ -89,6 +94,8 @@ export function ingestSidepanel(
             ? [...state.events, ...tail.filter((t) => !state.events.some((e) => e.seq === t.seq))]
             : tail,
           attachments: snap.attachments,
+          // 换 run（如 SW 休眠期间新 run 已起）——旧 run 的蒸馏状态一并作废
+          ...(sameRun ? {} : { distill: null }),
         },
         ack: null,
       };
@@ -97,6 +104,14 @@ export function ingestSidepanel(
       // D11 轻提示：sidepanel 只显示待审数——审阅面在 options 页
       return { state: { ...state, draftCount: action.count }, ack: null };
     }
+    case "distill-status": {
+      // issue #9 D5：过程拍只置位不清——终态语义由 phase 自带（done/failed），
+      // 清空时机在下一 run 起跑（journal-snapshot runChanged）
+      return {
+        state: { ...state, distill: { phase: action.phase, detail: action.detail ?? null } },
+        ack: null,
+      };
+    }
     case "journal-snapshot": {
       // run 切换（SW 在 begin 后广播起始快照——seq 已重置）→ 全量重建；同 run
       // 终态快照只更新视图字段（评审轮 1 [6]：不重建则新 run 事件被 seq 去重
@@ -104,7 +119,7 @@ export function ingestSidepanel(
       const runChanged = state.snapshot?.runId !== action.snapshot.runId;
       return {
         state: runChanged
-          ? { ...state, snapshot: action.snapshot, events: action.snapshot.events }
+          ? { ...state, snapshot: action.snapshot, events: action.snapshot.events, distill: null }
           : { ...state, snapshot: action.snapshot },
         ack: null,
       };

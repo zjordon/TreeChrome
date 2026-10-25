@@ -151,6 +151,37 @@ describe("sidepanel reducer", () => {
     expect(next.snapshot?.runId).toBe("r1");
   });
 
+  it("distill-status 过程拍（issue #9 D5）：置位/覆盖；换 run 清空；同 run 保留", () => {
+    const base = ingestSidepanel(initialSidepanelState, {
+      kind: "hello",
+      runId: "r1",
+      snapshot: snap(1),
+    }).state;
+    expect(base.distill).toBeNull();
+    let state = ingestSidepanel(base, { kind: "distill-status", phase: "queued" }).state;
+    expect(state.distill).toEqual({ phase: "queued", detail: null });
+    state = ingestSidepanel(state, { kind: "distill-status", phase: "running" }).state;
+    expect(state.distill).toEqual({ phase: "running", detail: null });
+    state = ingestSidepanel(state, {
+      kind: "distill-status",
+      phase: "failed",
+      detail: "蒸馏失败（将重试）——超时",
+    }).state;
+    expect(state.distill).toEqual({ phase: "failed", detail: "蒸馏失败（将重试）——超时" });
+    // 同 run 终态快照：失败提示不清（常驻语义）
+    state = ingestSidepanel(state, { kind: "journal-snapshot", snapshot: snap(5) }).state;
+    expect(state.distill?.phase).toBe("failed");
+    // 换 run（新 run 起始快照）：清空——新 run 不背旧失败
+    state = ingestSidepanel(state, { kind: "journal-snapshot", snapshot: snap(0, "r2") }).state;
+    expect(state.distill).toBeNull();
+    // 同 run hello 保留；换 run hello 清空
+    state = ingestSidepanel(state, { kind: "distill-status", phase: "running" }).state;
+    state = ingestSidepanel(state, { kind: "hello", runId: "r2", snapshot: snap(1, "r2") }).state;
+    expect(state.distill?.phase).toBe("running");
+    state = ingestSidepanel(state, { kind: "hello", runId: "r3", snapshot: snap(1, "r3") }).state;
+    expect(state.distill).toBeNull();
+  });
+
   it("hello 同 run 重连：未 ack 尾巴合入（SW 裁剪快照不销毁本地时间线）", () => {
     let state = ingestSidepanel(initialSidepanelState, {
       kind: "hello",

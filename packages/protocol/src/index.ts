@@ -42,6 +42,7 @@ export const SW_TO_UI_KINDS = [
   "attachment-begun",
   "attachment-rejected",
   "skill-drafts",
+  "distill-status",
 ] as const;
 
 export const UI_TO_SW_KINDS = [
@@ -282,6 +283,19 @@ export interface SwSkillDraftsMessage {
   count: number;
 }
 
+/** 蒸馏过程阶段（issue #9 D2：与 skill-drafts 的「当前待审数」正交——过程态维度） */
+export type DistillPhase = "queued" | "running" | "done" | "failed";
+
+/** 蒸馏过程状态拍（issue #9 D3：queued=run-manager 入队成功；running/done/failed=
+ *  worker 每条 job 的执行拍——skip/unchanged 也走 done 带 detail；failed 常驻到
+ *  下一 run）。saveDraft 后的 skill-drafts count 广播独立并存，不由此替代 */
+export interface SwDistillStatusMessage {
+  kind: "distill-status";
+  phase: DistillPhase;
+  /** 中文短句（done/failed 的结果/原因摘要；queued/running 无值） */
+  detail?: string | null;
+}
+
 export type SwToUiMessage =
   | SwHelloMessage
   | SwJournalSnapshotMessage
@@ -292,7 +306,8 @@ export type SwToUiMessage =
   | SwAttachmentsMessage
   | SwAttachmentBegunMessage
   | SwAttachmentRejectedMessage
-  | SwSkillDraftsMessage;
+  | SwSkillDraftsMessage
+  | SwDistillStatusMessage;
 
 // —— UI → SW 消息（Port 发送 + options 页 sendMessage 单发共用）——
 

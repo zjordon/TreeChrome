@@ -484,6 +484,9 @@ export class RunManager {
         traceText,
         stepCount: history.history.length,
       });
+      // issue #9 D3：入队成功即广播 queued——run 结束到 worker 开跑之间的空窗可见
+      //（matcher+蒸馏两次串行慢调用实测 ~4 分钟，此前零状态提示）
+      this.deps.broadcast({ kind: "distill-status", phase: "queued" });
       distill.kick();
     } catch (e) {
       this.deps.log?.(

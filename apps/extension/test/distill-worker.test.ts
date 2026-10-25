@@ -4,6 +4,7 @@
 // distillCard 附属卡优先。
 
 import type { DistillLLM, ProviderConfig, SkillSource } from "@tw/core";
+import type { DistillPhase } from "@tw/protocol";
 import { describe, expect, it } from "vitest";
 import { parseExtensionSettings, type SettingsStore } from "../src/host/settings-store.js";
 import { type SkillDb, SkillStore } from "../src/host/skill-store.js";
@@ -107,6 +108,7 @@ function buildWorker(opts: BuildOpts): {
   holds: number[];
   notified: number[];
   usedCards: Array<ProviderConfig | null>;
+  phases: Array<{ phase: DistillPhase; detail?: string }>;
 } {
   const db = fakeDb();
   opts.seedCard?.(db);
@@ -116,6 +118,7 @@ function buildWorker(opts: BuildOpts): {
   const holds: number[] = [];
   const notified: number[] = [];
   const usedCards: Array<ProviderConfig | null> = [];
+  const phases: Array<{ phase: DistillPhase; detail?: string }> = [];
   const catalog = opts.catalog ?? [];
   const skillSource: SkillSource = {
     loadHostSkill: async () => null,
@@ -139,18 +142,20 @@ function buildWorker(opts: BuildOpts): {
       onEndRun: () => {},
     } as never,
     notify: (n) => void notified.push(n),
+    onPhase: (phase, detail) =>
+      void phases.push({ phase, ...(detail !== undefined ? { detail } : {}) }),
     activeCard: () => {
       usedCards.push(null);
       return CARD;
     },
   });
-  return { worker, store, queue, holds, notified, usedCards };
+  return { worker, store, queue, holds, notified, usedCards, phases };
 }
 
 describe("DistillWorker", () => {
   it("happy path：新卡草稿落 draft 键空间 → notify(1) → 队列清空", async () => {
     const { llm } = mockLlm({ match: { match: null, confidence: "high" }, distill: VALID_DRAFT });
-    const { worker, store, notified } = buildWorker({ llm });
+    const { worker, store, notified, phases } = buildWorker({ llm });
     await worker.drainAll();
     const drafts = await store.listDrafts();
     expect(drafts).toHaveLength(1);
@@ -162,6 +167,11 @@ describe("DistillWorker", () => {
     });
     expect(notified).toEqual([1]);
     expect((await store.getCard("a.example", "bestsellers-report")) === null).toBe(true); // 正键未占
+    // issue #9 D3：过程拍序列——running 每条 job 一拍 + done 终拍带 detail
+    expect(phases).toEqual([
+      { phase: "running" },
+      { phase: "done", detail: "新草稿待审——options 审阅采纳" },
+    ]);
   });
 
   it("unchanged：无新观察 → 在用卡 streak+1（内容/distilledAt 不动）→ ack", async () => {
@@ -170,7 +180,7 @@ describe("DistillWorker", () => {
       match: { match: "old-task", confidence: "high" },
       distill: { ...VALID_DRAFT, has_new_observations: false },
     });
-    const { worker, store } = buildWorker({
+    const { worker, store, phases } = buildWorker({
       llm,
       catalog: [{ slug: "old-task", description: "旧任务", text: "SOP-OLD" }],
       seedCard: (db) => {
@@ -195,6 +205,11 @@ describe("DistillWorker", () => {
       distillStreak: 2,
     });
     expect(await store.listDrafts()).toHaveLength(0);
+    // 无新观察也走 done 拍（「跑完了为何没产出」可见——issue #9 D4）
+    expect(phases).toEqual([
+      { phase: "running" },
+      { phase: "done", detail: "无新观察——卡内容不动（收敛计数+1：old-task）" },
+    ]);
   });
 
   it("D14：matcher 命中 built-in 卡 → 蒸馏调用不发出 → skip ack", async () => {
@@ -202,7 +217,7 @@ describe("DistillWorker", () => {
       match: { match: "builtin-task", confidence: "high" },
       distill: VALID_DRAFT,
     });
-    const { worker, store } = buildWorker({
+    const { worker, store, phases } = buildWorker({
       llm,
       catalog: [{ slug: "builtin-task", description: "内置任务" }],
       seedCard: (db) => {
@@ -221,16 +236,37 @@ describe("DistillWorker", () => {
     await worker.drainAll();
     expect(distillCalls()).toBe(0); // 蒸馏调用被 D14 短路
     expect(await store.listDrafts()).toHaveLength(0);
+    expect(phases).toEqual([
+      { phase: "running" },
+      { phase: "done", detail: "跳过：matched protected card: builtin-task" },
+    ]);
   });
 
   it("error：LLM 不可解析 → job 保留（attempts+1）；再失败 → 丢弃", async () => {
     const { llm } = mockLlm({ match: { match: null, confidence: "high" }, distill: null });
-    const { worker, queue } = buildWorker({ llm });
+    const { worker, queue, phases } = buildWorker({ llm });
     await worker.drainAll();
     expect(await queue.size()).toBe(1); // 保留重试
     expect((await queue.peek())?.attempts).toBe(1);
+    expect(phases.at(-1)?.phase).toBe("failed");
+    expect(phases.at(-1)?.detail).toContain("将重试"); // issue #9 D3：failed 带重试信息
     await worker.drainAll(); // 第二轮：attempts 达上限 → 丢弃
     expect(await queue.size()).toBe(0);
+    expect(phases).toHaveLength(4); // 两轮各 running+failed
+    expect(phases.at(-1)?.detail).toContain("重试额度耗尽");
+  });
+
+  it("空队列 drain：不发任何过程拍（没发生任何事）", async () => {
+    const { llm } = mockLlm({ match: { match: null }, distill: VALID_DRAFT });
+    const empty = new DistillQueue({
+      async get() {
+        return {};
+      },
+      async set() {},
+    });
+    const { worker, phases } = buildWorker({ llm, queue: empty });
+    await worker.drainAll();
+    expect(phases).toEqual([]);
   });
 
   it("selfEvolution.enabled=false：整轮不 drain（job 原样保留）", async () => {
@@ -306,6 +342,7 @@ describe("DistillWorker 落库异常", () => {
         onEndRun: () => {},
       } as never,
       notify: () => {},
+      onPhase: () => {},
       activeCard: () => CARD,
     });
     await worker.drainAll();
