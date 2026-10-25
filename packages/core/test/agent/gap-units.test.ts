@@ -58,6 +58,51 @@ describe("judge 边界", () => {
     );
     expect(await judge.judge("t", new AgentHistoryList(), null)).toBeNull();
   });
+  it('判词文本字段：字面 "null"（含空白/大小写变体）归 null，正常串透传（issue #9 D6）', async () => {
+    const mk = (args: Record<string, unknown>) =>
+      new JudgeEvaluator(
+        {
+          singleShot: async () => ({
+            text: "",
+            toolCalls: [{ name: "agent_response", args }],
+            stopReason: "tool_use",
+            usage: null,
+          }),
+        } as never,
+        null,
+      );
+    const history = new AgentHistoryList({
+      history: [
+        new AgentHistory({
+          stepNumber: 1,
+          modelOutput: { next_goal: "g", action: { name: "wait", params: {} } } as never,
+          result: [new ActionResult({ isDone: true, success: true, extractedContent: "x" })],
+          stateSummary: { url: "https://x.example/1", title: "T", duration: 1 },
+        }),
+      ],
+    });
+    // prompt 示例 `"... or null"` 被模型照抄的实测形态（2026-10-25 快照实读）
+    const literalNull = await mk({
+      reasoning: "null",
+      verdict: false,
+      failure_reason: " NULL ",
+      impossible_task: false,
+      captcha: false,
+    }).judge("t", history, null);
+    expect(literalNull).toEqual({
+      reasoning: null,
+      verdict: false,
+      failureReason: null,
+      impossibleTask: false,
+      captcha: false,
+    });
+    const passthrough = await mk({
+      reasoning: "封面弹层从未打开",
+      verdict: false,
+      failure_reason: "证据不足",
+    }).judge("t", history, null);
+    expect(passthrough).toMatchObject({ reasoning: "封面弹层从未打开", failureReason: "证据不足" });
+  });
   it("trace 超 traceMaxChars → 尾部截断 + Step 边界对齐 + 截断标记", () => {
     const judge = new JudgeEvaluator(null as never, {
       traceMaxChars: 400,

@@ -6,6 +6,7 @@
 
 import type { DistillLLM, ProviderConfig, SkillSource, TaskCardMeta } from "@tw/core";
 import { distillTaskCard } from "@tw/core";
+import type { DistillPhase } from "@tw/protocol";
 import type { KeepaliveController } from "../host/keepalive.js";
 import type { SettingsStore } from "../host/settings-store.js";
 import { findCard, selfEvolutionOf } from "../host/settings-store.js";
@@ -23,6 +24,10 @@ export interface DistillWorkerDeps {
   keepalive: KeepaliveController;
   /** 草稿数通知面（S5 接 protocol 广播；S4 注入可测/日志） */
   notify: (draftCount: number) => void;
+  /** 过程状态拍（issue #9 D3）：running=每条 job 处理前；done/failed=终拍
+   *  （skip/unchanged 也走 done 带 detail——「跑完了为何没产出」可见；boot 接线
+   *  为 distill-status 广播。queued 拍在 run-manager 入队侧，不经 worker） */
+  onPhase: (phase: DistillPhase, detail?: string) => void;
   /** 主卡解析（assemble.activeProviderCard——注入可测） */
   activeCard: (settings: Awaited<ReturnType<SettingsStore["load"]>>) => ProviderConfig | null;
   log?: (message: string) => void;
@@ -52,6 +57,7 @@ export class DistillWorker {
         }
         const job = await this.deps.queue.peek();
         if (job === null) return;
+        this.deps.onPhase("running");
         const again = await this.distillOne(job, settings, log);
         if (again === "retry") return; // 失败不热转——等下一次 kick/alarm
       }
@@ -76,6 +82,7 @@ export class DistillWorker {
     if (card === null) {
       log("distill: 无可用 LLM 卡——跳过该 job");
       await this.deps.queue.ack(job.runId);
+      this.deps.onPhase("done", "跳过：无可用 LLM 卡");
       return "ack";
     }
     try {
@@ -115,26 +122,37 @@ export class DistillWorker {
       if (outcome.kind === "skip") {
         log(`distill: ${outcome.reason}——跳过`);
         await this.deps.queue.ack(job.runId);
+        this.deps.onPhase("done", `跳过：${outcome.reason}`);
         return "ack";
       }
       if (outcome.kind === "error") {
         log(`distill: 失败（attempts 记账）——${outcome.error}`);
-        return (await this.deps.queue.fail(job.runId)) === "retry" ? "retry" : "ack";
+        const again = (await this.deps.queue.fail(job.runId)) === "retry" ? "retry" : "ack";
+        this.deps.onPhase(
+          "failed",
+          again === "retry"
+            ? `蒸馏失败（将重试）——${outcome.error}`
+            : `蒸馏失败（重试额度耗尽）——${outcome.error}`,
+        );
+        return again;
       }
       if (outcome.kind === "unchanged") {
         log(`distill: 无新观察——streak+1（${outcome.slug}）`);
         await this.deps.skillStore.bumpDistillStreak(job.host, outcome.slug);
         await this.deps.queue.ack(job.runId);
+        this.deps.onPhase("done", `无新观察——卡内容不动（收敛计数+1：${outcome.slug}）`);
         return "ack";
       }
       await this.deps.skillStore.saveDraft(outcome.card);
       const drafts = await this.deps.skillStore.listDrafts();
       this.deps.notify(drafts.length);
       await this.deps.queue.ack(job.runId);
+      this.deps.onPhase("done", "新草稿待审——options 审阅采纳");
       return "ack";
     } catch (e) {
       log(`distill: 编排/落库异常（attempts 记账）——${e instanceof Error ? e.message : String(e)}`);
       await this.deps.queue.fail(job.runId);
+      this.deps.onPhase("failed", `蒸馏异常——${e instanceof Error ? e.message : String(e)}`);
       return "retry";
     }
   }

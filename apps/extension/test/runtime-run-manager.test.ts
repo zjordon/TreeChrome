@@ -666,6 +666,8 @@ describe("RunManager 蒸馏门控入队", () => {
     });
     expect(jobs[0]?.traceText).toContain("https://a.example/reports");
     expect(kicks).toHaveLength(1);
+    // issue #9 D3：入队成功 → distill-status queued 广播（空窗可见性的第一拍）
+    expect(m.broadcasts).toContainEqual({ kind: "distill-status", phase: "queued" });
     // issue #5 可观测性：judge 结论进 journal 快照（收尾后可查「为什么没蒸馏」）
     expect(m.journal.current()).toMatchObject({
       judgement: { verdict: true, reasoning: null, failureReason: null },
@@ -710,6 +712,8 @@ describe("RunManager 蒸馏门控入队", () => {
       m.stub.finish(distillHistory(verdict));
       await new Promise((r) => setTimeout(r, 10));
       expect(jobs).toHaveLength(0); // D1 严格读法：judgement 缺失 = 不蒸馏
+      // 门控不过 → 也不发 queued 拍（没入队就没过程可跟踪——issue #9）
+      expect(m.broadcasts.filter((b) => b.kind === "distill-status")).toEqual([]);
     }
   });
 

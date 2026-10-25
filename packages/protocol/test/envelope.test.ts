@@ -18,6 +18,7 @@ function swKindOf(msg: SwToUiMessage): SwToUiKind {
     case "attachment-begun":
     case "attachment-rejected":
     case "skill-drafts":
+    case "distill-status":
       return msg.kind;
     default: {
       const unreachable: never = msg;
@@ -68,8 +69,9 @@ describe("@tw/protocol 信封", () => {
         rejection: { name: "a.mp4", mimeType: "video/mp4", size: 3, reason: "too-large", limit: 2 },
       },
       { kind: "skill-drafts", count: 1 },
+      { kind: "distill-status", phase: "running" },
     ];
-    expect([...SW_TO_UI_KINDS]).toHaveLength(10);
+    expect([...SW_TO_UI_KINDS]).toHaveLength(11);
     expect(samples.map(swKindOf)).toEqual([...SW_TO_UI_KINDS]);
   });
 
