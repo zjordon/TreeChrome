@@ -2,7 +2,7 @@
 
 - issue: [#11](https://github.com/zjordon/TreeChrome/issues/11)
 - 分支：`feat/issue-11-v15-card-quality`（自 main d26fb88）
-- 状态：**实施完成，待 /review-loop**（2026-10-25：S1-S4 落地，typecheck/test 全绿 54+15 文件，gate 过，扩展 rebuild 完成）
+- 状态：**评审收敛，待 /finish-issue**（2026-10-25：review-loop 2 轮收敛——1 意见采纳（P1 footer 截断），轮 2 零意见；真机验证过）
 
 ## 1 背景与证据（三项）
 
@@ -59,4 +59,4 @@
 | 轮 | 意见 | 采纳/驳回/stale | 要点 |
 |---|---|---|---|
 | 1 | 1（high/bug×1） | 采纳 1 | applySelfCheckFooter 首现位 slice 截断：LLM 前置/中部回带 footer 时静默丢弃其后正文，残缺卡过非空校验落盘覆盖旧卡（P1 数据损坏）。修复：剥除所有出现位 + 分段 trim 重组 + 尾部单份重附（评审建议片段的残留四连换行与空文前导由 trim/join 归一与空文守卫补齐）；双向验证红→绿；测试 +1（前置/中部两场景） |
-| — | — | — | 待续 |
+| 2 | 0 | — | 增量 diff（仅轮 1 修复）零意见——收敛。累计：2 轮 / 1 意见 / 采纳 1 / 驳回 0 / stale 0 |
