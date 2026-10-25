@@ -288,6 +288,16 @@ export class RunManager {
     if (task.trim() === "") {
       return { ok: false, error: "任务不能为空" };
     }
+    // issue #11 D3 附件起跑守卫：任务文本指涉附件但注册表为空（SW 被杀丢内存态 /
+    // 上一轮 clearForRun 清表）→ 拒绝起跑给可行动提示——否则任务文本无 [Attachments]
+    // 段，模型瞎猜文件路径空烧 ~10 步（2026-10-25 实录）。误报（如反向表述）成本低：
+    // 附加文件或改措辞即可
+    if (/附件|attachment:/i.test(task) && this.deps.attachments.list().length === 0) {
+      return {
+        ok: false,
+        error: "任务提到附件但附件列表为空——请先在下方附加文件（浏览器重启或上一轮结束会清空附件）",
+      };
+    }
     let tabId: number | undefined;
     let sawRestricted = false;
     try {

@@ -61,6 +61,9 @@ export function compactEventData(event: TwEvent): Record<string, unknown> {
         ...(event.host !== undefined ? { host: event.host } : {}),
         ...(event.skillLoaded !== undefined ? { skillLoaded: event.skillLoaded } : {}),
         ...(event.taskSlug !== undefined ? { taskSlug: event.taskSlug } : {}),
+        // issue #11 显示修复：任务级注入量随事件持久化——侧边栏两级命中判定不再
+        // 靠 slug 非空间接推断（此前发了但持久化时丢弃）
+        ...(event.taskSkillChars !== undefined ? { taskSkillChars: event.taskSkillChars } : {}),
       };
     default:
       return { ...base, ...({ ...event } as Record<string, unknown>) };

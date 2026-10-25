@@ -68,6 +68,7 @@ export type {
   SkillCardDraft,
 } from "./agent/skills/distill.js";
 export {
+  applySelfCheckFooter,
   clipTraceTail,
   DISTILL_ATTEMPTS,
   DISTILL_CONVERGE_THRESHOLD,
@@ -75,6 +76,7 @@ export {
   DISTILL_OUTPUT_SCHEMA,
   DISTILL_TRACE_MAX_CHARS,
   distillTaskCard,
+  TASK_SOP_SELF_CHECK_FOOTER,
 } from "./agent/skills/distill.js";
 export {
   dominantHostOf,

@@ -1,7 +1,8 @@
 // 任务级技能蒸馏器（issue #5 S1，架构 §6.3 自进化闭环中段）：成功轨迹 →
 // SkillCardDraft。编排 = matcher 预匹配（同 host catalog；命中且可更新 → 增量模式
 // 旧卡进 prompt、slug 复用；未命中 → 新卡模式）+ structuredCall 蒸馏（2 次尝试 +
-// 60s 超时 + fail-soft）+ 产物校验（schema/非空/PII 正则门）。宿主只注入 LLM 与
+// 60s 超时 + fail-soft）+ 产物校验（schema/非空/PII 正则门）+ SOP 尾部自检 footer
+//（issue #11 D1 防锚定）。宿主只注入 LLM 与
 // 既有卡读取面——扩展 worker 与 node-host 钩子同入口（SCRATCHPAD D6/D14/D16）；
 // D14（built-in 命中跳过）由宿主经 isUpdatable 判定注入，本层不感知 provenance。
 
@@ -24,6 +25,35 @@ export const DISTILL_TRACE_MAX_CHARS = 60_000;
 export const DISTILL_MAX_TOKENS = 8192;
 /** 收敛阈值缺省（D17）：连续 N 次成功且无新观察 → 后续 matcher 命中该卡直接跳过蒸馏 */
 export const DISTILL_CONVERGE_THRESHOLD = 2;
+
+// —— issue #11 D1 防锚定：SOP 尾部固定附加「执行前自检」footer ——蒸馏卡是历史
+//    轨迹总结，模型可能照剧本声称完成（2026-10-24 抖音实录：卡把「确认发布成功」
+//    写成可照做步骤，模型按剧本收题被 Judge 拦截）。footer 随卡的 sop 内容走
+//    （消费端任务卡全文直拼是 P5.5 冻结口径，不动渲染面）；unchanged 路径不产
+//    draft，旧卡保持原样（增量更新时统一补上）——
+
+/** 自检 footer 常量（导出供测试锚定与幂等剥附） */
+export const TASK_SOP_SELF_CHECK_FOOTER = `## 执行前自检
+
+本卡是对历史成功轨迹的总结——页面可能已经变化，卡中描述不是当前页面的证据：
+
+- 卡里的「已提交/已发布/已保存」等结果是**录制时的观察**，不是现在可以照抄声明的事实。
+- 声明 done 前，必须以当前页面真实状态核验：亲自读到的值（find_elements/search_page/read_grid）、新出现的元素（成功提示/toast/结果页）、或 URL 变化。
+- 当前页面与卡描述不符时，以页面为准——重试、改道或重新探索，不要按剧本走完就收题。`;
+
+/** SOP 尾部幂等附加自检 footer：剥除**所有**出现位置的 footer（LLM 可能前置/
+ *  中部回带——评审轮 1 [1]：首现位 slice 截断会静默丢弃其后正文，残缺卡过非空
+ *  校验落盘覆盖旧卡），分段 trim 后重组，尾部统一重附单份 */
+export function applySelfCheckFooter(sop: string): string {
+  const stripped = sop
+    .split(TASK_SOP_SELF_CHECK_FOOTER)
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .join("\n\n");
+  return stripped === ""
+    ? TASK_SOP_SELF_CHECK_FOOTER
+    : `${stripped}\n\n${TASK_SOP_SELF_CHECK_FOOTER}`;
+}
 
 /** 结构化调用面（LLMClient.structuredCall 结构满足——与 MatcherLLM 同款形态） */
 export interface DistillLLM {
@@ -372,12 +402,13 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
         slug: validated.fields.slug,
         description: validated.fields.description,
         keywords: validated.fields.keywords,
-        sop: validated.fields.sop,
         selectors: validated.fields.selectors,
         quirks: validated.fields.quirks,
         mode,
         sourceTraces: [input.runId],
         distilledAt: (input.now ?? (() => new Date()))().toISOString(),
+        // issue #11 D1：sop 尾部幂等附加自检 footer（新卡/增量统一落地点）
+        sop: applySelfCheckFooter(validated.fields.sop),
       },
     };
   }

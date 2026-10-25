@@ -82,7 +82,7 @@ describe("RunTimeline", () => {
     expect(screen.getByText("✓ 动作成功（0.4s）")).toBeDefined();
     expect(screen.getByText("✗ 元素不可见")).toBeDefined();
     expect(screen.getByText("✓ 动作成功（1.1s）")).toBeDefined(); // 常规成功（null）不得误报失败
-    expect(screen.getByText(/✚ skill douyin\.com\/upload 命中/)).toBeDefined();
+    expect(screen.getByText(/✚ 站点卡 douyin\.com 命中 · 任务卡 upload 已注入/)).toBeDefined();
     expect(screen.getByText(/⚠ \[action_loop\]\(warning\) 重复动作/)).toBeDefined();
     expect(screen.getByText("第 1 步完成（2.1s）")).toBeDefined();
     expect(screen.getByText(/■ 会话结束：完成上传/)).toBeDefined();
@@ -143,8 +143,8 @@ describe("skill_active 展示去重（段 F 验收：未命中每步一行是噪
         ]}
       />,
     );
-    expect(screen.getAllByText(/✚ skill www\.google\.com 未命中/)).toHaveLength(1);
-    expect(screen.getAllByText(/✚ skill douyin\.com 命中/)).toHaveLength(1);
+    expect(screen.getAllByText(/✚ 站点卡 www\.google\.com 未命中/)).toHaveLength(1);
+    expect(screen.getAllByText(/✚ 站点卡 douyin\.com 命中/)).toHaveLength(1);
     // 数据层 helper 语义：隐藏的是 4、5、7
     expect(
       repeatedSkillSeqs([
@@ -153,5 +153,54 @@ describe("skill_active 展示去重（段 F 验收：未命中每步一行是噪
         ev(4, "skill_active", 1, { host: "a", skillLoaded: true }),
       ]),
     ).toEqual(new Set([3]));
+  });
+});
+
+// —— issue #11 显示修复：站点级/任务级两级分开呈现（2026-10-25 baidu 真机：
+//    任务卡命中却显示「未命中」——站点级 skillLoaded 误标任务级 slug）——
+
+describe("skill_active 两级呈现（issue #11 显示修复）", () => {
+  it("站点卡未命中 + 任务卡命中 → 两段各标各的（不再误示未命中）", () => {
+    render(
+      <RunTimeline
+        events={[
+          ev(1, "step_start", 1, {}),
+          ev(2, "skill_active", 1, {
+            host: "www.baidu.com",
+            skillLoaded: false,
+            taskSlug: "baidu-search-top-results",
+            taskSkillChars: 1200,
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText(/✚ 站点卡 www\.baidu\.com 未命中 · 任务卡 baidu-search-top-results 已注入/),
+    ).toBeDefined();
+  });
+
+  it("任务卡未命中 → 不渲染空 slug（旧行尾“host/ 未命中”消失）；旧事件无 taskSkillChars 时 slug 非空即注入", () => {
+    render(
+      <RunTimeline
+        events={[
+          ev(1, "step_start", 1, {}),
+          ev(2, "skill_active", 1, { host: "www.google.com", skillLoaded: false, taskSlug: "" }),
+          ev(3, "skill_active", 1, { host: "x.com", skillLoaded: true, taskSlug: "old-card" }),
+        ]}
+      />,
+    );
+    expect(screen.getByText(/^✚ 站点卡 www\.google\.com 未命中$/)).toBeDefined();
+    // 旧持久化事件（journal 未带 taskSkillChars）——slug 非空回退判定为已注入
+    expect(screen.getByText(/✚ 站点卡 x\.com 命中 · 任务卡 old-card 已注入/)).toBeDefined();
+  });
+
+  it("去重键含任务 slug：同 host 同站点态下任务卡 miss→hit 的转换行不被折叠（D2 中途命中可见）", () => {
+    const seqs = repeatedSkillSeqs([
+      ev(2, "skill_active", 1, { host: "a", skillLoaded: false, taskSlug: "" }),
+      ev(3, "skill_active", 1, { host: "a", skillLoaded: false, taskSlug: "" }),
+      ev(4, "skill_active", 1, { host: "a", skillLoaded: false, taskSlug: "hit-card" }),
+      ev(5, "skill_active", 1, { host: "a", skillLoaded: false, taskSlug: "hit-card" }),
+    ]);
+    expect(seqs).toEqual(new Set([3, 5])); // 4 是转换行——必须显示
   });
 });

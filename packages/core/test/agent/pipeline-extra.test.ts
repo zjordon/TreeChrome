@@ -434,6 +434,144 @@ describe("任务级 skill 注入", () => {
     expect(main2Called).toBe(true);
     expect(agent2.taskSkillSlug).toBe("card-a");
   });
+
+  // —— issue #11 D2：起跑 host miss → 随导航重试匹配（google 起跑做 douyin 任务实录）——
+
+  /** 起跑在 google 的 FakeAgentBrowser（urls 数组是 getCurrentUrl 的真源——两处都要置） */
+  function googleStartBrowser(): FakeAgentBrowser {
+    const browser = new FakeAgentBrowser(makeState({ url: "https://google.example" }));
+    browser.urls = ["https://google.example"];
+    return browser;
+  }
+
+  it("D2：初始 host catalog 空 → 导航到有卡 host 后重试命中，后续步骤注入 [Task Skill]", async () => {
+    const browser = googleStartBrowser();
+    const llm = new FakeAgentLLM([
+      ok({
+        action: { name: "navigate", params: { url: "https://douyin.example/creator" } },
+        actions: [{ name: "navigate", params: { url: "https://douyin.example/creator" } }],
+      }),
+      ok({ action: waitAct, actions: [waitAct] }),
+      ok(doneOutput()),
+    ]);
+    let matcherCalls = 0;
+    llm.structuredCall = async () => {
+      matcherCalls += 1;
+      return { match: "card-a", confidence: "high", reason: "same task" };
+    };
+    const skillSource = {
+      loadHostSkill: async () => null,
+      taskCatalog: async (host: string) =>
+        host === "douyin.example" ? [{ slug: "card-a", description: "发布视频" }] : [],
+      taskCardText: async () => "Step 1: 打开创作者中心",
+    };
+    const agent = new Agent({
+      task: "在抖音发布视频",
+      llm: llm.asLLMClient(),
+      browser: browser as unknown as BrowserSession,
+      settings: {
+        enableTaskSkillInjection: true,
+        judge: { enabled: false },
+        explorationActionabilityCheck: false,
+      } as unknown as AgentSettings,
+      skillSource,
+      sleep: () => Promise.resolve(),
+      now: () => 1000,
+      log: () => {},
+    });
+    await agent.run();
+    // 初始 google catalog 空（未发 matcher 调用）；step0 导航 douyin；step1 Sense
+    // 读到 douyin URL → 收尾后重试 → matcher 命中；step2 注入生效
+    expect(matcherCalls).toBe(1);
+    expect(agent.taskSkillSlug).toBe("card-a");
+    expect(agent.taskSkillAttempts).toBe(2);
+    const step2Text = llm.calls[2].messages
+      .filter((m) => m.role === "user")
+      .map((m) => (m as { blocks: Array<{ text: string }> }).blocks.map((b) => b.text).join(""))
+      .find((t) => t.includes("[Task Skill]"));
+    expect(step2Text).toContain("Step 1: 打开创作者中心");
+  });
+
+  it("D2 频控：attempts 上限 2（初始 + 重试 1 次）——连环换 host 不再匹配", async () => {
+    const browser = googleStartBrowser();
+    const nav = (url: string) => ({
+      action: { name: "navigate", params: { url } },
+      actions: [{ name: "navigate", params: { url } }],
+    });
+    const llm = new FakeAgentLLM([
+      ok(nav("https://douyin.example/")),
+      ok(nav("https://b.example/")),
+      ok(doneOutput()),
+    ]);
+    let matcherCalls = 0;
+    llm.structuredCall = async () => {
+      matcherCalls += 1;
+      return { match: null, confidence: "low", reason: "no" };
+    };
+    const skillSource = {
+      loadHostSkill: async () => null,
+      taskCatalog: async () => [{ slug: "card-a", description: "发布视频" }],
+      taskCardText: async () => "Step 1",
+    };
+    const agent = new Agent({
+      task: "在抖音发布视频",
+      llm: llm.asLLMClient(),
+      browser: browser as unknown as BrowserSession,
+      settings: {
+        enableTaskSkillInjection: true,
+        judge: { enabled: false },
+        explorationActionabilityCheck: false,
+      } as unknown as AgentSettings,
+      skillSource,
+      sleep: () => Promise.resolve(),
+      now: () => 1000,
+      log: () => {},
+    });
+    await agent.run();
+    // 初始 google（1 次 miss）→ step1 后 douyin 重试（2 次 miss）→ step2 后
+    // b.example 新 host 但 attempts 已达上限，不再调用
+    expect(matcherCalls).toBe(2);
+    expect(agent.taskSkillAttempts).toBe(2);
+    expect(agent.taskSkillText).toBeNull();
+  });
+
+  it("D2：已命中不再重试（host 变更也零额外 matcher 调用）", async () => {
+    const browser = googleStartBrowser();
+    const nav = (url: string) => ({
+      action: { name: "navigate", params: { url } },
+      actions: [{ name: "navigate", params: { url } }],
+    });
+    const llm = new FakeAgentLLM([ok(nav("https://douyin.example/")), ok(doneOutput())]);
+    let matcherCalls = 0;
+    llm.structuredCall = async () => {
+      matcherCalls += 1;
+      return { match: "card-a", confidence: "high", reason: "same task" };
+    };
+    const skillSource = {
+      loadHostSkill: async () => null,
+      taskCatalog: async () => [{ slug: "card-a", description: "发布视频" }],
+      taskCardText: async () => "Step 1",
+    };
+    const agent = new Agent({
+      task: "在抖音发布视频",
+      llm: llm.asLLMClient(),
+      browser: browser as unknown as BrowserSession,
+      settings: {
+        enableTaskSkillInjection: true,
+        judge: { enabled: false },
+        explorationActionabilityCheck: false,
+      } as unknown as AgentSettings,
+      skillSource,
+      sleep: () => Promise.resolve(),
+      now: () => 1000,
+      log: () => {},
+    });
+    await agent.run();
+    // 初始 google 即命中 → taskSkillText 非空短路重试
+    expect(matcherCalls).toBe(1);
+    expect(agent.taskSkillSlug).toBe("card-a");
+    expect(agent.taskSkillAttempts).toBe(1);
+  });
 });
 
 describe("MessageCompactor 集成", () => {

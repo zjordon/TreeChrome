@@ -86,6 +86,10 @@ const defaultSleep = (ms: number, signal?: AbortSignal) =>
     );
   });
 
+/** 任务卡匹配尝试上限（issue #11 D2：初始 1 次 + host 变更重试 1 次——重试是
+ *  第二次 matcher LLM 调用，封顶防慢速 run 内连环重试） */
+const TASK_SKILL_MATCH_ATTEMPTS = 2;
+
 export class Agent implements StepCtx {
   readonly task: string;
   safeTask: string;
@@ -116,6 +120,10 @@ export class Agent implements StepCtx {
   readonly taskSkillLlm: LLMClient | null;
   taskSkillText: string | null = null;
   taskSkillSlug: string | null = null;
+  /** issue #11 D2：已试过的任务卡匹配 host（catalog 空也占位——run 内目录不变，
+   *  导航回同 host 重试无意义）；配合 taskSkillAttempts 封顶重试 */
+  readonly taskSkillTriedHosts = new Set<string>();
+  taskSkillAttempts = 0;
   readonly sensitiveDataRaw: Record<string, { value: string; urls: string[] | null }> | null;
   readonly sensitiveMap: Record<string, string> | null;
   readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -287,6 +295,11 @@ export class Agent implements StepCtx {
         }
 
         const done = await runStep(this);
+        // issue #11 D2：起跑 host miss → 每步收尾后按步内 stateSummary URL 的
+        // host 重试任务卡匹配（零额外 CDP；done/停跑步重试无意义——run 即将收口）
+        if (!done && !this.state.stopped) {
+          await this.retryTaskSkillMatchOnHostChange();
+        }
         // review5 #3：升级检查在 done-break 之前，升级分支先跑 judge
         if (this.state.finalizeDegradedSteps >= 3) {
           this.log(
@@ -409,6 +422,9 @@ export class Agent implements StepCtx {
     const url = preferredUrl ?? (await this.browser.getCurrentUrl());
     const hostKey = extractHostWithPort(url);
     if (hostKey === null) return;
+    // issue #11 D2：登记尝试 host 与次数（catalog 空也占位——见 taskSkillTriedHosts）
+    this.taskSkillTriedHosts.add(hostKey);
+    this.taskSkillAttempts += 1;
     const catalog = await this.skillSource.taskCatalog(hostKey);
     if (catalog.length === 0) return;
     const match = await matchTaskSkill(this.safeTask, catalog, this.taskSkillLlm ?? this.llm);
@@ -441,6 +457,29 @@ export class Agent implements StepCtx {
     });
     // 命中装载日志（agent.py:589 锚定）——检索层冒烟三件套的第三条
     this.log(`task-skill hit: slug=${match.slug} chars=${this.taskSkillText.length}`);
+  }
+
+  /** issue #11 D2：起跑 host miss 时随导航重试匹配——google 起跑做 douyin 任务
+   *  整 run 无法命中任务卡（匹配锚定初始 host 且每 run 一次，2026-10-24 实录）。
+   *  锚点用步内已采的 stateSummary URL（零额外 CDP 调用）；命中即止——
+   *  taskSkillText 是可变字段，后续步骤的注入面自然生效（skill_active 照常发出） */
+  private async retryTaskSkillMatchOnHostChange(): Promise<void> {
+    if (this.taskSkillText !== null) return; // 已命中
+    if (!this.settings.enableTaskSkillInjection || this.skillSource === null) return;
+    if (this.taskSkillAttempts >= TASK_SKILL_MATCH_ATTEMPTS) return;
+    // 步内已采的 stateSummary URL（Sense 阶段快照——步首状态，步内导航在下一步可见）
+    const rawUrl = this.historyLast()?.stateSummary?.url;
+    const url = typeof rawUrl === "string" && rawUrl !== "" ? rawUrl : null;
+    if (url === null) return;
+    const hostKey = extractHostWithPort(url);
+    if (hostKey === null || this.taskSkillTriedHosts.has(hostKey)) return;
+    try {
+      await this.matchTaskSkill(url);
+    } catch (e) {
+      this.log(
+        `task-skill: retry match failed (${e instanceof Error ? e.message : String(e)}) — no injection`,
+      );
+    }
   }
 
   /** 归一化 sensitive_data（旧全局字符串 / 新 {value,urls}——跳过无 value 项） */
