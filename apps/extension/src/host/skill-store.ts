@@ -24,6 +24,8 @@ export interface SkillCardData {
   sourceTraces?: string[];
   /** 连续无新观察次数（D17 收敛；采纳写内容即归 0，unchanged 路径递增） */
   distillStreak?: number;
+  /** 成功 run 步数基线（#12 D1：min 棘轮——判停守卫与蒸馏效率对比行共用） */
+  bestSteps?: number;
   provenance: { sourceType: "built-in" | "import" | "distilled"; note?: string };
   updatedAt: number;
 }
@@ -275,6 +277,7 @@ export class SkillStore {
       distilledAt: draft.distilledAt,
       status: "draft",
       sourceTraces: draft.sourceTraces,
+      bestSteps: draft.bestSteps,
       provenance: { sourceType: "distilled", note: `distill:${draft.mode}` },
       updatedAt: now,
     };
@@ -328,6 +331,14 @@ export class SkillStore {
           ...new Set([...(existing?.sourceTraces ?? []), ...(draftCard.sourceTraces ?? [])]),
         ],
         distillStreak: 0,
+        // #12 评审轮 1 [2]：与在用卡取 min（草稿待审期间在用卡可能已被 unchanged
+        // 棘轮下移——直接落草稿值会把基线抬回去）；存量草稿缺字段时保留在用值
+        ...(() => {
+          const candidates = [draftCard.bestSteps, existing?.bestSteps].filter(
+            (v): v is number => typeof v === "number",
+          );
+          return candidates.length > 0 ? { bestSteps: Math.min(...candidates) } : {};
+        })(),
         provenance: { sourceType: "distilled", note: "adopted" },
         updatedAt: now,
       };
@@ -343,14 +354,23 @@ export class SkillStore {
   }
 
   /** D17 收敛计数：unchanged 路径递增在用卡 streak（内容/distilledAt 不动——与
-   *  node bumpDistillStreak 只重写 _task.json 同口径）。卡不存在静默 no-op */
-  async bumpDistillStreak(host: string, slug: string, now = Date.now()): Promise<void> {
+   *  node bumpDistillStreak 只重写 _task.json 同口径）。卡不存在静默 no-op。
+   *  #12 D2：steps 在场时一并棘轮 best_steps = min(旧, steps)。 */
+  async bumpDistillStreak(
+    host: string,
+    slug: string,
+    steps?: number,
+    now = Date.now(),
+  ): Promise<void> {
     await this.serialize(async () => {
       const card = await this.getCard(host, slug);
       if (card === null) return;
+      const nextBest =
+        steps !== undefined ? Math.min(card.bestSteps ?? steps, steps) : card.bestSteps;
       await this.db.put(cardKey(host, slug), {
         ...card,
         distillStreak: (card.distillStreak ?? 0) + 1,
+        ...(nextBest !== undefined ? { bestSteps: nextBest } : {}),
         updatedAt: now,
       });
     });

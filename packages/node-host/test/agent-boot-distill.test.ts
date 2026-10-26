@@ -216,6 +216,7 @@ describe("distillAfterRun", () => {
       task_keywords: ["上传", "视频"],
       source_traces: ["run_t1"],
       distilled_at: "2026-10-23T00:00:00.000Z",
+      best_steps: 2, // #12：新卡基线 = 本次步数（history 2 步）
       distill_streak: 0, // 写入即真蒸馏——streak 归 0（D17）
     });
     // issue #10 B2：缺省 180s 对齐扩展 worker
@@ -314,10 +315,12 @@ describe("writeTaskCard", () => {
       mode: "update",
       sourceTraces: ["r1"],
       distilledAt: "2026-10-23T00:00:00Z",
+      bestSteps: 5,
     });
     expect(out).toBe(cardDir);
     const meta = JSON.parse(await fsp.readFile(join(cardDir, "_task.json"), "utf8"));
     expect(meta.source_traces).toEqual(["r1"]);
+    expect(meta.best_steps).toBe(5); // #12：坏 JSON 前科 → 取 draft 值
   });
 });
 
@@ -339,8 +342,8 @@ describe("assembleAgent 暴露主 llm（钩子复用面）", () => {
 
 // —— D17 收敛循环（unchanged / streak 累计与跳过 / 计数清零）——
 
-/** 预置既有卡（含 distill_streak）到沙箱 */
-const seedCard = async (dir: string, opts: { streak?: number } = {}) => {
+/** 预置既有卡（含 distill_streak / best_steps）到沙箱 */
+const seedCard = async (dir: string, opts: { streak?: number; bestSteps?: number } = {}) => {
   const cardDir = join(dir, "shop.example.com", "tasks", "cancel-order");
   await fsp.mkdir(cardDir, { recursive: true });
   await fsp.writeFile(join(cardDir, "_sop.md"), "旧 SOP 原文", "utf8");
@@ -354,6 +357,7 @@ const seedCard = async (dir: string, opts: { streak?: number } = {}) => {
       source_traces: ["run_old"],
       distilled_at: "2026-01-01T00:00:00Z",
       ...(opts.streak !== undefined ? { distill_streak: opts.streak } : {}),
+      ...(opts.bestSteps !== undefined ? { best_steps: opts.bestSteps } : {}),
     }),
     "utf8",
   );
@@ -405,6 +409,75 @@ describe("distillAfterRun 收敛循环", () => {
     expect(await fsp.readFile(join(cardDir, "_sop.md"), "utf8")).toBe("旧 SOP 原文");
     const meta = JSON.parse(await fsp.readFile(join(cardDir, "_task.json"), "utf8"));
     expect(meta.distill_streak).toBe(2); // skip 不累计——streak 只统计成功蒸馏判定
+  });
+
+  it("#12 判停守卫：streak 达阈值但有显著步数改进 → 跨过收敛照发蒸馏 + best_steps 棘轮", async () => {
+    const dir = await mkTmp();
+    // okHistory 1 步；best=12 → margin=2 → 1 < 10 显著改进
+    const cardDir = await seedCard(dir, { streak: 2, bestSteps: 12 });
+    const llm = new FakeLlm(MATCH_CANCEL, { ...DISTILLED, task_slug: "cancel-order" });
+    await distillAfterRun({
+      ...BASE,
+      task: "取消订单 302",
+      distill: { skillsDir: dir, runId: "run_new" },
+      llm,
+      history: okHistory,
+    });
+    expect(llm.distillCalls).toBe(1); // 守卫放行——不 skip
+    const meta = JSON.parse(await fsp.readFile(join(cardDir, "_task.json"), "utf8"));
+    expect(meta.best_steps).toBe(1); // min(12, 1)
+    expect(meta.distill_streak).toBe(0); // 真蒸馏归 0
+  });
+
+  it("#12 unchanged+改进：内容不动但 best_steps 棘轮（下界记住，内容归下轮捕获）", async () => {
+    const dir = await mkTmp();
+    const cardDir = await seedCard(dir, { bestSteps: 12 });
+    const llm = new FakeLlm(MATCH_CANCEL, {
+      ...DISTILLED,
+      task_slug: "cancel-order",
+      has_new_observations: false,
+    });
+    await distillAfterRun({
+      ...BASE,
+      task: "取消订单 302",
+      distill: { skillsDir: dir, runId: "run_new" },
+      llm,
+      history: okHistory,
+    });
+    expect(await fsp.readFile(join(cardDir, "_sop.md"), "utf8")).toBe("旧 SOP 原文");
+    const meta = JSON.parse(await fsp.readFile(join(cardDir, "_task.json"), "utf8"));
+    expect(meta.distill_streak).toBe(1);
+    expect(meta.best_steps).toBe(1); // 棘轮 min(12, 1)——本次 1 步
+  });
+
+  it("#12 writeTaskCard：best_steps 与既有 meta 取 min（防手工编辑旁路）", async () => {
+    const dir = await mkTmp();
+    const cardDir = join(dir, "h", "tasks", "s");
+    await fsp.mkdir(cardDir, { recursive: true });
+    await fsp.writeFile(
+      join(cardDir, "_task.json"),
+      JSON.stringify({ source_traces: ["old"], best_steps: 3 }),
+      "utf8",
+    );
+    const draft = {
+      host: "h",
+      slug: "s",
+      description: "d",
+      keywords: [],
+      sop: "sop",
+      selectors: "",
+      quirks: "",
+      mode: "update" as const,
+      sourceTraces: ["r1"],
+      distilledAt: "2026-10-23T00:00:00Z",
+      bestSteps: 5,
+    };
+    await writeTaskCard(dir, "h", draft);
+    let meta = JSON.parse(await fsp.readFile(join(cardDir, "_task.json"), "utf8"));
+    expect(meta.best_steps).toBe(3); // 既有 3 更小——保持
+    await writeTaskCard(dir, "h", { ...draft, bestSteps: 2 });
+    meta = JSON.parse(await fsp.readFile(join(cardDir, "_task.json"), "utf8"));
+    expect(meta.best_steps).toBe(2); // draft 更小——棘轮下移
   });
 
   it("有新观察的增量更新 → distill_streak 归 0 + source_traces 并集", async () => {

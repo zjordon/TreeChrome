@@ -8,9 +8,11 @@ import {
   applySelfCheckFooter,
   type DistillLLM,
   distillTaskCard,
+  efficiencyMargin,
   normalizeTaskSlug,
   scanPII,
   TASK_SOP_SELF_CHECK_FOOTER,
+  TASK_SOP_SELF_CHECK_FOOTER_V1,
 } from "../../../src/agent/skills/distill.js";
 import {
   buildTaskDistillPrompt,
@@ -591,6 +593,24 @@ describe("SOP 自检 footer（issue #11 D1）", () => {
     );
   });
 
+  it("#12 评审轮 1 [1]：存量卡的旧版三条 footer（#11 形态）一并剥除——不残留双份自检节", () => {
+    // #12 D3 加第四条前落盘到存量卡的历史原文（冻结兼容面——勿随后续常量改动漂移）
+    expect(TASK_SOP_SELF_CHECK_FOOTER_V1).not.toBe(TASK_SOP_SELF_CHECK_FOOTER);
+    expect(TASK_SOP_SELF_CHECK_FOOTER_V1).toContain("以页面为准");
+    expect(TASK_SOP_SELF_CHECK_FOOTER_V1).not.toContain("不是最短保证");
+    // 旧卡（尾部带 V1）增量回带 → 剥 V1、附新版单份
+    const withV1 = `${VALID_CARD.sop_md}\n\n${TASK_SOP_SELF_CHECK_FOOTER_V1}`;
+    const out = applySelfCheckFooter(withV1);
+    expect(out.split("## 执行前自检").length - 1).toBe(1); // 恰一份
+    expect(out.endsWith(TASK_SOP_SELF_CHECK_FOOTER)).toBe(true);
+    expect(out.startsWith(VALID_CARD.sop_md)).toBe(true);
+    // 混合：V1 中部 + 新版尾部（模型既回带旧又落新）→ 双双剥除
+    const mixed = `# 标题\n\n${TASK_SOP_SELF_CHECK_FOOTER_V1}\n\n正文\n\n${TASK_SOP_SELF_CHECK_FOOTER}`;
+    const out2 = applySelfCheckFooter(mixed);
+    expect(out2.split("## 执行前自检").length - 1).toBe(1);
+    expect(out2).toBe(`# 标题\n\n正文\n\n${TASK_SOP_SELF_CHECK_FOOTER}`);
+  });
+
   it("TASK_SOP_SPEC 防锚定规则锚定：步骤只能是页面操作、完成断言只属 done 且须页面实时证据", () => {
     expect(TASK_SOP_SPEC).toContain("page operation");
     expect(TASK_SOP_SPEC).toContain("final done");
@@ -599,5 +619,88 @@ describe("SOP 自检 footer（issue #11 D1）", () => {
     expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("历史成功轨迹的总结");
     expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("以当前页面真实状态核验");
     expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("以页面为准");
+    // #12 D3 效率句（缺口 B 软杠杆）：更短等效做法优先
+    expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("不是最短保证");
+    expect(TASK_SOP_SELF_CHECK_FOOTER).toContain("优先采用更短路径");
+  });
+});
+
+// —— issue #12 效率信号：margin 判定 / 判停守卫 / 基线透传与棘轮落值 ——
+
+describe("效率信号（issue #12）", () => {
+  it("efficiencyMargin：max(2, ⌈10%·best⌉)", () => {
+    expect(efficiencyMargin(5)).toBe(2);
+    expect(efficiencyMargin(20)).toBe(2);
+    expect(efficiencyMargin(21)).toBe(3);
+    expect(efficiencyMargin(50)).toBe(5);
+  });
+
+  it("D2 判停守卫：streak≥阈值但有显著改进 → 蒸馏照发；无基线/无改进 → 照常 skip", async () => {
+    // BASE_INPUT 轨迹 2 步；best=12 → margin=2 → 2 < 10 显著改进 → 跨过收敛
+    const llm = makeLlm(MATCH_UPLOAD, VALID_CARD);
+    const outcome = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      llm,
+      cardDistillState: async () => ({ streak: 2, bestSteps: 12 }),
+    });
+    expect(outcome.kind).toBe("draft");
+    expect(llm.distillCalls.length).toBe(1);
+    // 无基线（旧卡 meta 无 best_steps——存量卡）→ 守卫无从判定 → 照旧 skip
+    const llm2 = makeLlm(MATCH_UPLOAD, VALID_CARD);
+    const outcome2 = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      llm: llm2,
+      cardDistillState: async () => ({ streak: 2 }),
+    });
+    expect(outcome2.kind).toBe("skip");
+    expect(llm2.distillCalls.length).toBe(0);
+    // 有基线但无改进（best=3 → margin=2 → 2 < 1 不成立）→ skip
+    const llm3 = makeLlm(MATCH_UPLOAD, VALID_CARD);
+    const outcome3 = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      llm: llm3,
+      cardDistillState: async () => ({ streak: 2, bestSteps: 3 }),
+    });
+    expect(outcome3.kind).toBe("skip");
+  });
+
+  it("D1 基线透传：prompt 渲染 M vs N 对比行；draft.bestSteps = min(基线, 本次)", async () => {
+    const llm = makeLlm(MATCH_UPLOAD, VALID_CARD);
+    const outcome = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      llm,
+      cardDistillState: async () => ({ streak: 0, bestSteps: 5 }),
+    });
+    expect(outcome.kind).toBe("draft");
+    if (outcome.kind !== "draft") return;
+    expect(outcome.card.bestSteps).toBe(2); // min(5, 2)
+    const user = llm.distillCalls[0].user;
+    expect(user).toContain("best successful run took **5 steps**");
+    expect(user).toContain("this trace took **2 steps** (-60%)");
+    expect(user).toContain("has_new_observations");
+  });
+
+  it("新卡无基线 → draft.bestSteps = 本次步数；prompt 无效率对比行", async () => {
+    const llm = makeLlm(NO_MATCH, VALID_CARD);
+    const outcome = await distillTaskCard({ ...BASE_INPUT, catalog: [], llm });
+    expect(outcome.kind).toBe("draft");
+    if (outcome.kind !== "draft") return;
+    expect(outcome.card.bestSteps).toBe(2);
+    expect(llm.distillCalls[0].user).not.toContain("Efficiency baseline");
+  });
+
+  it("unchanged 判定不受改进影响（内容归模型——基线棘轮是宿主 bump 侧职责）", async () => {
+    const llm = makeLlm(MATCH_UPLOAD, { ...VALID_CARD, has_new_observations: false });
+    const outcome = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      llm,
+      cardDistillState: async () => ({ streak: 0, bestSteps: 12 }),
+    });
+    expect(outcome).toEqual({ kind: "unchanged", slug: "upload-video" });
   });
 });

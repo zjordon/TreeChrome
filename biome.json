@@ -17,6 +17,8 @@
       "!**/test/fixtures",
       "!docs",
       "!domain-skills",
+      "!_self-evolution-sandbox",
+      "!_douyin-sandbox",
       "!.aoci"
     ]
   },
