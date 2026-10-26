@@ -69,12 +69,18 @@ export async function distillAfterRun(options: DistillAfterRunOptions): Promise<
     const meta = catalog.find((c) => c.slug === slug);
     return meta === undefined ? null : source.taskCardText(meta);
   };
-  // D17 收敛状态注入：streak 从卡 meta 直读（distillTaskCard 在蒸馏调用前判停）
-  const cardDistillState = async (slug: string): Promise<{ streak: number } | null> => {
+  // D17 收敛状态注入：streak/best_steps 从卡 meta 直读（distillTaskCard 在蒸馏调用
+  // 前判停；#12 best_steps 兼作基线——判停守卫与 prompt 效率对比行共用）
+  const cardDistillState = async (
+    slug: string,
+  ): Promise<{ streak: number; bestSteps?: number } | null> => {
     const meta = await readTaskMeta(join(options.distill.skillsDir, host, "tasks", slug));
     return meta === null
       ? null
-      : { streak: typeof meta.distill_streak === "number" ? meta.distill_streak : 0 };
+      : {
+          streak: typeof meta.distill_streak === "number" ? meta.distill_streak : 0,
+          ...(typeof meta.best_steps === "number" ? { bestSteps: meta.best_steps } : {}),
+        };
   };
   let outcome: Awaited<ReturnType<typeof distillTaskCard>>;
   try {
@@ -110,9 +116,15 @@ export async function distillAfterRun(options: DistillAfterRunOptions): Promise<
     return;
   }
   if (outcome.kind === "unchanged") {
-    // D17：无新观察——内容文件与 distilled_at 都不动，只累计 streak（meta 单文件重写）
+    // D17：无新观察——内容文件与 distilled_at 都不动，只累计 streak（meta 单文件重写）；
+    // #12 D2：步数改进时一并棘轮 best_steps（内容没捕获到也要记住下界）
     try {
-      const streak = await bumpDistillStreak(options.distill.skillsDir, host, outcome.slug);
+      const streak = await bumpDistillStreak(
+        options.distill.skillsDir,
+        host,
+        outcome.slug,
+        options.history.history.length,
+      );
       const threshold = options.distill.convergeThreshold ?? DISTILL_CONVERGE_THRESHOLD_DEFAULT;
       log(
         `distill: 无新观察——卡 ${outcome.slug} 内容不动，连续无新观察 ${streak} 次` +
@@ -134,9 +146,10 @@ export async function distillAfterRun(options: DistillAfterRunOptions): Promise<
 }
 
 /** 目录四文件落盘（_task.json snake_case 键与既有卡一致——parseCard 对齐面）。
- *  目录已有 _task.json 时合并 source_traces（D8 并集，旧在前）；写入即真蒸馏，
- *  distillStreak 归 0（D17——unchanged 路径不经此函数）。增量蒸馏的「采纳即写」
- *  在 Node 宿主由操作者经 git diff 承担审阅 */
+ *  目录已有 _task.json 时合并 source_traces（D8 并集，旧在前）与 best_steps
+ *  （#12 棘轮 min——draft 值已含基线，此处防手工编辑过 meta 的旁路）；写入即真
+ *  蒸馏，distillStreak 归 0（D17——unchanged 路径不经此函数）。增量蒸馏的
+ *  「采纳即写」在 Node 宿主由操作者经 git diff 承担审阅 */
 export async function writeTaskCard(
   rootDir: string,
   host: string,
@@ -150,13 +163,16 @@ export async function writeTaskCard(
   await fsp.writeFile(join(dir, "quirks.md"), `${draft.quirks}\n`, "utf8");
   const metaPath = join(dir, "_task.json");
   let sourceTraces = [...draft.sourceTraces];
+  let prevBest: number | undefined;
   try {
     const prev = JSON.parse(await fsp.readFile(metaPath, "utf8")) as {
       source_traces?: unknown;
+      best_steps?: unknown;
     };
     if (Array.isArray(prev.source_traces)) {
       sourceTraces = [...new Set([...prev.source_traces.map(String), ...sourceTraces])];
     }
+    if (typeof prev.best_steps === "number") prevBest = prev.best_steps;
   } catch {
     // 无既有 _task.json（新卡）或坏 JSON（覆盖写）
   }
@@ -166,6 +182,8 @@ export async function writeTaskCard(
     task_keywords: draft.keywords,
     source_traces: sourceTraces,
     distilled_at: draft.distilledAt,
+    // #12 D1：基线棘轮落值
+    best_steps: Math.min(draft.bestSteps, prevBest ?? draft.bestSteps),
     ...(opts.distillStreak !== undefined ? { distill_streak: opts.distillStreak } : {}),
   };
   await fsp.writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
@@ -186,16 +204,24 @@ async function readTaskMeta(cardDir: string): Promise<Record<string, unknown> | 
 }
 
 /** D17 无新观察：只重写 _task.json 的 distill_streak（内容文件与 distilled_at 不动
- *  ——没发生真蒸馏），保留既有全部键；返回累计后的 streak */
+ *  ——没发生真蒸馏），保留既有全部键；返回累计后的 streak。#12 D2：steps 在场时
+ *  一并棘轮 best_steps = min(旧, steps)——内容没捕获到的改进也要记住下界 */
 export async function bumpDistillStreak(
   rootDir: string,
   host: string,
   slug: string,
+  steps?: number,
 ): Promise<number> {
   const metaPath = join(rootDir, host, "tasks", slug, "_task.json");
   const meta = (await readTaskMeta(join(rootDir, host, "tasks", slug))) ?? {};
   const streak = (typeof meta.distill_streak === "number" ? meta.distill_streak : 0) + 1;
   meta.distill_streak = streak;
+  if (steps !== undefined) {
+    meta.best_steps = Math.min(
+      typeof meta.best_steps === "number" ? meta.best_steps : steps,
+      steps,
+    );
+  }
   await fsp.writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
   return streak;
 }

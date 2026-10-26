@@ -203,6 +203,7 @@ describe("DistillWorker", () => {
       sop: "SOP-OLD",
       distilledAt,
       distillStreak: 2,
+      bestSteps: 3, // #12 D2：bump 随 job.stepCount 棘轮（seed 无 bestSteps → 落 3）
     });
     expect(await store.listDrafts()).toHaveLength(0);
     // 无新观察也走 done 拍（「跑完了为何没产出」可见——issue #9 D4）

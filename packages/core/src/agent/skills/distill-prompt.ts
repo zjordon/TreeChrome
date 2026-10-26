@@ -163,6 +163,15 @@ export interface TaskDistillPromptInput {
   catalog: readonly TaskCardMeta[];
   /** 增量模式（matcher 命中且可更新）：命中 slug + 旧卡全文（null = 取不到旧卡文本） */
   update: { slug: string; cardText: string | null } | null;
+  /** 命中卡的成功步数基线（#12 D1：仅 update 模式渲染效率对比行；null/缺省不渲染） */
+  baselineSteps?: number | null;
+}
+
+/** 基线差百分比（#12）：+X%/-X% 字样（基线非正 → n/a） */
+function efficiencyDelta(baseline: number, steps: number): string {
+  if (baseline <= 0) return "n/a";
+  const pct = Math.round(((steps - baseline) / baseline) * 100);
+  return pct > 0 ? `+${pct}%` : `${pct}%`;
 }
 
 /** 任务级蒸馏 user prompt 组装（evidence 段 = agent run 叙事，非 TreeForge 示教段） */
@@ -174,6 +183,12 @@ export function buildTaskDistillPrompt(input: TaskDistillPromptInput): string {
   const updateBlock =
     input.update !== null
       ? `\n${incrementalAddendum(input.update.slug, input.update.cardText)}`
+      : "";
+  // #12 D1 效率对比行：显著更短 → 更短做法入卡（has_new_observations=true）；
+  // 更长/持平 → 步骤保持——防「能用即停」收敛锁死次优 SOP
+  const efficiencyBlock =
+    input.update !== null && typeof input.baselineSteps === "number"
+      ? `\n# Efficiency baseline\nThe existing card's best successful run took **${input.baselineSteps} steps**; this trace took **${input.stepCount} steps** (${efficiencyDelta(input.baselineSteps, input.stepCount)}). If this trace is significantly SHORTER, it likely found a leaner path — capture the shorter procedure into the SOP (replace or condense the corresponding steps) and set \`has_new_observations\` to **true**. If it is longer or comparable, keep the existing steps as-is.\n`
       : "";
   return `Distill the following browser agent execution trace into a **TASK-LEVEL skill card** for \`${input.host}\`.
 This card documents ONE task — the flow recorded below — and will later be retrieved by its task description, so the description and keywords must faithfully identify the task.
@@ -193,7 +208,7 @@ A successful agent run of this task (each step: URL/title, the agent's stated go
 \`\`\`
 ${input.trace}
 \`\`\`
-${updateBlock}
+${updateBlock}${efficiencyBlock}
 # Output spec — produce THREE markdown sections
 
 ${TASK_SOP_SPEC}

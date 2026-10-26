@@ -273,6 +273,7 @@ describe("SkillStore 蒸馏草稿", () => {
     mode: "update",
     sourceTraces: ["run-9"],
     distilledAt: "2026-10-24T00:00:00Z",
+    bestSteps: 6,
     ...over,
   });
 
@@ -333,11 +334,49 @@ describe("SkillStore 蒸馏草稿", () => {
       distilledAt: "2026-10-24T00:00:00Z",
       sourceTraces: ["run-1", "run-2", "run-9"], // 并集旧在前（node writeTaskCard 同口径）
       distillStreak: 0, // D17：写内容即归 0
+      bestSteps: 6, // #12：随草稿落正键
       provenance: { sourceType: "distilled", note: "adopted" },
       updatedAt: 300,
     });
     expect(res.card.status).toBeUndefined(); // 采纳后无 status 键 = active（D7 缺省）
     expect([...db.map.keys()]).toEqual(["a.example::task-one"]); // 草稿键已清
+  });
+
+  it("bumpDistillStreak：streak 递增 + steps 在场棘轮 best_steps=min；steps 缺省不动（#12 D2）", async () => {
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    const seed = {
+      host: "a.example",
+      slug: "task-one",
+      sop: "S",
+      selectors: "",
+      quirks: "",
+      distillStreak: 1,
+      bestSteps: 12,
+      provenance: { sourceType: "distilled" },
+      updatedAt: 1,
+    };
+    db.map.set("a.example::task-one", seed);
+    await store.bumpDistillStreak("a.example", "task-one", 8, 99);
+    expect(db.map.get("a.example::task-one")).toMatchObject({
+      distillStreak: 2,
+      bestSteps: 8, // 棘轮 min(12, 8)
+      updatedAt: 99,
+    });
+    // steps 缺省 → bestSteps 保持
+    await store.bumpDistillStreak("a.example", "task-one", undefined, 100);
+    expect(db.map.get("a.example::task-one")).toMatchObject({
+      distillStreak: 3,
+      bestSteps: 8,
+    });
+    // 步数更差（更大）→ 保持既有下界
+    await store.bumpDistillStreak("a.example", "task-one", 20, 101);
+    expect(db.map.get("a.example::task-one")).toMatchObject({ bestSteps: 8 });
+    // 旧卡无 bestSteps + steps → 落 steps
+    const legacy = { ...seed, slug: "legacy", bestSteps: undefined };
+    db.map.set("a.example::legacy", legacy);
+    await store.bumpDistillStreak("a.example", "legacy", 5, 102);
+    expect(db.map.get("a.example::legacy")).toMatchObject({ bestSteps: 5 });
   });
 
   it("adoptDraft 防御拒绝：草稿不存在 / 非 draft 状态 / 正键 built-in 占用（D14）", async () => {

@@ -26,6 +26,17 @@ export const DISTILL_MAX_TOKENS = 8192;
 /** 收敛阈值缺省（D17）：连续 N 次成功且无新观察 → 后续 matcher 命中该卡直接跳过蒸馏 */
 export const DISTILL_CONVERGE_THRESHOLD = 2;
 
+/** #12 D2 改进判定裕量：步数含步内重试噪音（done-gate 重试/actionable 等待），
+ *  margin=0 会因一步抖动反复强制蒸馏——max(2, ⌈10%·best⌉)（设计讨论定稿） */
+export function efficiencyMargin(bestSteps: number): number {
+  return Math.max(2, Math.ceil(bestSteps * 0.1));
+}
+
+/** 显著改进 ⇔ steps < best − margin（基线未知 → 无从判定改进） */
+function isEfficiencyGain(steps: number, baseline: number | null): boolean {
+  return baseline !== null && steps < baseline - efficiencyMargin(baseline);
+}
+
 // —— issue #11 D1 防锚定：SOP 尾部固定附加「执行前自检」footer ——蒸馏卡是历史
 //    轨迹总结，模型可能照剧本声称完成（2026-10-24 抖音实录：卡把「确认发布成功」
 //    写成可照做步骤，模型按剧本收题被 Judge 拦截）。footer 随卡的 sop 内容走
@@ -39,7 +50,8 @@ export const TASK_SOP_SELF_CHECK_FOOTER = `## 执行前自检
 
 - 卡里的「已提交/已发布/已保存」等结果是**录制时的观察**，不是现在可以照抄声明的事实。
 - 声明 done 前，必须以当前页面真实状态核验：亲自读到的值（find_elements/search_page/read_grid）、新出现的元素（成功提示/toast/结果页）、或 URL 变化。
-- 当前页面与卡描述不符时，以页面为准——重试、改道或重新探索，不要按剧本走完就收题。`;
+- 当前页面与卡描述不符时，以页面为准——重试、改道或重新探索，不要按剧本走完就收题。
+- 卡中步骤不是最短保证：若当前页面有更少的等效做法（如更粗的报表粒度、直达 URL、更直接的入口），优先采用更短路径——仍以页面实时核验为收题标准（#12 D3）。`;
 
 /** SOP 尾部幂等附加自检 footer：剥除**所有**出现位置的 footer（LLM 可能前置/
  *  中部回带——评审轮 1 [1]：首现位 slice 截断会静默丢弃其后正文，残缺卡过非空
@@ -74,8 +86,10 @@ export interface SkillCardDraft {
   sop: string;
   selectors: string;
   quirks: string;
-  /** new = 新卡；update = 增量更新既有卡（slug 复用，采纳时整卡替换） */
+  /** 新卡 = 新卡；update = 增量更新既有卡（slug 复用，采纳时整卡替换） */
   mode: "new" | "update";
+  /** 成功 run 步数基线（#12 D1：min(卡基线, 本次)——新卡即本次步数；宿主落 meta） */
+  bestSteps: number;
   /** 来源轨迹 runId（采纳时并入既有卡 sourceTraces） */
   sourceTraces: string[];
   distilledAt: string;
@@ -143,8 +157,9 @@ export interface DistillTaskInput {
   /** 命中卡是否可增量更新（D14：扩展侧对 built-in/import 卡传 false → skip）。
    *  缺省全部可更新（node-host 目录形态无 provenance 面）；允许异步（查库） */
   isUpdatable?: (slug: string) => boolean | Promise<boolean>;
-  /** 命中卡的收敛状态（D17）：streak ≥ convergeThreshold → 跳过整个蒸馏调用 */
-  cardDistillState?: (slug: string) => Promise<{ streak: number } | null>;
+  /** 命中卡的收敛状态（D17）：streak ≥ convergeThreshold → 跳过整个蒸馏调用；
+   *  #12 D2：bestSteps 在场且有显著改进（steps < best − margin）时不判停 */
+  cardDistillState?: (slug: string) => Promise<{ streak: number; bestSteps?: number } | null>;
   /** 收敛阈值（缺省 DISTILL_CONVERGE_THRESHOLD：连续 N 次成功且无新观察即收敛） */
   convergeThreshold?: number;
   llm: DistillLLM;
@@ -318,6 +333,8 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
   // —— matcher 预匹配（D6）：命中可更新卡 → 增量；命中受保护卡 → skip（D14）——
   let update: { slug: string; cardText: string | null } | null = null;
   let matchedSlug = "";
+  // #12 D1：命中卡的成功步数基线（prompt 效率对比行 + draft.bestSteps 落值）
+  let baselineSteps: number | null = null;
   if (input.catalog.length > 0) {
     const match = await matchTaskSkill(task, [...input.catalog], input.llm as MatcherLLM);
     if (match.callFailed) {
@@ -330,18 +347,23 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
         return { kind: "skip", reason: `matched protected card: ${match.slug}` };
       }
       // D17 收敛跳过：streak 达阈值 → 连蒸馏调用都不发（判停必须先于判定器——
-      // 判定器本身是一次蒸馏调用，收敛的意义就是把它也省掉）
+      // 判定器本身是一次蒸馏调用，收敛的意义就是把它也省掉）。
+      // #12 D2 效率守卫：有显著步数改进（steps < best − margin）则不判停——
+      // 基线棘轮下水位降平前持续强制蒸馏，防「能用即停」锁死次优 SOP
       const threshold = input.convergeThreshold ?? DISTILL_CONVERGE_THRESHOLD;
       if (input.cardDistillState !== undefined) {
         const state = await input.cardDistillState(match.slug);
-        if (state !== null && state.streak >= threshold) {
-          log(
-            `distill: card ${match.slug} converged (streak ${state.streak} ≥ ${threshold}) — skip`,
-          );
-          return {
-            kind: "skip",
-            reason: `card converged: ${match.slug} (streak ${state.streak} ≥ ${threshold})`,
-          };
+        if (state !== null) {
+          if (typeof state.bestSteps === "number") baselineSteps = state.bestSteps;
+          if (state.streak >= threshold && !isEfficiencyGain(steps, baselineSteps)) {
+            log(
+              `distill: card ${match.slug} converged (streak ${state.streak} ≥ ${threshold}) — skip`,
+            );
+            return {
+              kind: "skip",
+              reason: `card converged: ${match.slug} (streak ${state.streak} ≥ ${threshold})`,
+            };
+          }
         }
       }
       matchedSlug = match.slug;
@@ -358,6 +380,7 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
     trace,
     catalog: input.catalog,
     update,
+    baselineSteps,
   });
 
   // —— 蒸馏调用（2 次尝试：API 抛错 / null 不可解析 / 校验失败都消耗一次）——
@@ -407,6 +430,8 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
         mode,
         sourceTraces: [input.runId],
         distilledAt: (input.now ?? (() => new Date()))().toISOString(),
+        // #12 D1：基线棘轮落值——min(卡基线, 本次)；新卡即本次步数
+        bestSteps: baselineSteps !== null ? Math.min(baselineSteps, steps) : steps,
         // issue #11 D1：sop 尾部幂等附加自检 footer（新卡/增量统一落地点）
         sop: applySelfCheckFooter(validated.fields.sop),
       },

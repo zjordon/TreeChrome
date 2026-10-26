@@ -97,10 +97,17 @@ export class DistillWorker {
         const c = await this.deps.skillStore.getCard(job.host, slug);
         return c?.provenance.sourceType === "distilled";
       };
-      // D17：streak 判停数据源（core 在蒸馏调用前判停）
-      const cardDistillState = async (slug: string): Promise<{ streak: number } | null> => {
+      // D17 streak 判停数据源（core 在蒸馏调用前判停）；#12 bestSteps 兼作基线
+      const cardDistillState = async (
+        slug: string,
+      ): Promise<{ streak: number; bestSteps?: number } | null> => {
         const c = await this.deps.skillStore.getCard(job.host, slug);
-        return c === null ? null : { streak: c.distillStreak ?? 0 };
+        return c === null
+          ? null
+          : {
+              streak: c.distillStreak ?? 0,
+              ...(c.bestSteps !== undefined ? { bestSteps: c.bestSteps } : {}),
+            };
       };
       const outcome = await distillTaskCard({
         task: job.task,
@@ -138,7 +145,8 @@ export class DistillWorker {
       }
       if (outcome.kind === "unchanged") {
         log(`distill: 无新观察——streak+1（${outcome.slug}）`);
-        await this.deps.skillStore.bumpDistillStreak(job.host, outcome.slug);
+        // #12 D2：步数随 bump 棘轮进 best_steps（内容不动也要记住下界）
+        await this.deps.skillStore.bumpDistillStreak(job.host, outcome.slug, job.stepCount);
         await this.deps.queue.ack(job.runId);
         this.deps.onPhase("done", `无新观察——卡内容不动（收敛计数+1：${outcome.slug}）`);
         return "ack";

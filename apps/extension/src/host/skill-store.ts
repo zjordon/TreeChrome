@@ -24,6 +24,8 @@ export interface SkillCardData {
   sourceTraces?: string[];
   /** 连续无新观察次数（D17 收敛；采纳写内容即归 0，unchanged 路径递增） */
   distillStreak?: number;
+  /** 成功 run 步数基线（#12 D1：min 棘轮——判停守卫与蒸馏效率对比行共用） */
+  bestSteps?: number;
   provenance: { sourceType: "built-in" | "import" | "distilled"; note?: string };
   updatedAt: number;
 }
@@ -275,6 +277,7 @@ export class SkillStore {
       distilledAt: draft.distilledAt,
       status: "draft",
       sourceTraces: draft.sourceTraces,
+      bestSteps: draft.bestSteps,
       provenance: { sourceType: "distilled", note: `distill:${draft.mode}` },
       updatedAt: now,
     };
@@ -328,6 +331,7 @@ export class SkillStore {
           ...new Set([...(existing?.sourceTraces ?? []), ...(draftCard.sourceTraces ?? [])]),
         ],
         distillStreak: 0,
+        ...(draftCard.bestSteps !== undefined ? { bestSteps: draftCard.bestSteps } : {}),
         provenance: { sourceType: "distilled", note: "adopted" },
         updatedAt: now,
       };
@@ -343,14 +347,23 @@ export class SkillStore {
   }
 
   /** D17 收敛计数：unchanged 路径递增在用卡 streak（内容/distilledAt 不动——与
-   *  node bumpDistillStreak 只重写 _task.json 同口径）。卡不存在静默 no-op */
-  async bumpDistillStreak(host: string, slug: string, now = Date.now()): Promise<void> {
+   *  node bumpDistillStreak 只重写 _task.json 同口径）。卡不存在静默 no-op。
+   *  #12 D2：steps 在场时一并棘轮 best_steps = min(旧, steps)。 */
+  async bumpDistillStreak(
+    host: string,
+    slug: string,
+    steps?: number,
+    now = Date.now(),
+  ): Promise<void> {
     await this.serialize(async () => {
       const card = await this.getCard(host, slug);
       if (card === null) return;
+      const nextBest =
+        steps !== undefined ? Math.min(card.bestSteps ?? steps, steps) : card.bestSteps;
       await this.db.put(cardKey(host, slug), {
         ...card,
         distillStreak: (card.distillStreak ?? 0) + 1,
+        ...(nextBest !== undefined ? { bestSteps: nextBest } : {}),
         updatedAt: now,
       });
     });
