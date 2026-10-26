@@ -2,7 +2,7 @@
 
 - issue: [#12](https://github.com/zjordon/TreeChrome/issues/12)
 - 分支：`feat/issue-12-efficiency-signal`（自 main b9408a5）
-- 状态：**实施完成，待验收**（2026-10-26：S1-S3 落地；typecheck/test 全绿——core 1388/node-host 94/extension 15 文件，gate 过，扩展 rebuild。验收清单第 1 条沙箱回归与第 2 条真机待跑）
+- 状态：**评审收敛，待 /finish-issue**（2026-10-26：review-loop 2 轮收敛——2 意见全采纳（V1 兼容剥除/adopt min 合并），轮 2 零意见；沙箱回归实跑通过）
 - 设计讨论已定四点（2026-10-26 用户拍板）：v1 度量**只用步数**；margin `max(2, ⌈10%·best⌉)`；**P3 footer 加效率句**；`best_steps` 语义 **min+margin 组合**。
 
 ## 1 背景与根因
@@ -63,4 +63,4 @@ D17 收敛判据 = 连续 N 次成功且无新观察——只保证「稳定」�
 | 轮 | 意见 | 采纳/驳回/stale | 要点 |
 |---|---|---|---|
 | 1 | 2（medium/bug×2） | 采纳 2 | ① footer 常量加第四条后 #11 存量卡的旧三条 footer 剥除不命中 → 增量回带残留双份自检节且永久不可剥——保留冻结的 V1 常量（TASK_SOP_SELF_CHECK_FOOTER_V1）新旧一并 split 剥除；② adoptDraft 直接落草稿 bestSteps 未与在用卡取 min（草稿待审期在用卡可能已被棘轮下移——采纳会抬回基线；存量草稿缺字段时静默丢在用值）——min(草稿, 在用) + 缺字段保留在用值，与 node-host writeTaskCard 口径对齐。双修复测试先行红→绿验证 |
-| — | — | — | 待续 |
+| 2 | 0 | — | 增量 diff（仅轮 1 修复）零意见——收敛。累计：2 轮 / 2 意见 / 采纳 2 / 驳回 0 / stale 0 |
