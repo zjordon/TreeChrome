@@ -12,6 +12,7 @@ import {
   normalizeTaskSlug,
   scanPII,
   TASK_SOP_SELF_CHECK_FOOTER,
+  TASK_SOP_SELF_CHECK_FOOTER_V1,
 } from "../../../src/agent/skills/distill.js";
 import {
   buildTaskDistillPrompt,
@@ -590,6 +591,24 @@ describe("SOP 自检 footer（issue #11 D1）", () => {
     expect(applySelfCheckFooter(mid)).toBe(
       `# 标题\n\nstep 1: 后续正文\n\n${TASK_SOP_SELF_CHECK_FOOTER}`,
     );
+  });
+
+  it("#12 评审轮 1 [1]：存量卡的旧版三条 footer（#11 形态）一并剥除——不残留双份自检节", () => {
+    // #12 D3 加第四条前落盘到存量卡的历史原文（冻结兼容面——勿随后续常量改动漂移）
+    expect(TASK_SOP_SELF_CHECK_FOOTER_V1).not.toBe(TASK_SOP_SELF_CHECK_FOOTER);
+    expect(TASK_SOP_SELF_CHECK_FOOTER_V1).toContain("以页面为准");
+    expect(TASK_SOP_SELF_CHECK_FOOTER_V1).not.toContain("不是最短保证");
+    // 旧卡（尾部带 V1）增量回带 → 剥 V1、附新版单份
+    const withV1 = `${VALID_CARD.sop_md}\n\n${TASK_SOP_SELF_CHECK_FOOTER_V1}`;
+    const out = applySelfCheckFooter(withV1);
+    expect(out.split("## 执行前自检").length - 1).toBe(1); // 恰一份
+    expect(out.endsWith(TASK_SOP_SELF_CHECK_FOOTER)).toBe(true);
+    expect(out.startsWith(VALID_CARD.sop_md)).toBe(true);
+    // 混合：V1 中部 + 新版尾部（模型既回带旧又落新）→ 双双剥除
+    const mixed = `# 标题\n\n${TASK_SOP_SELF_CHECK_FOOTER_V1}\n\n正文\n\n${TASK_SOP_SELF_CHECK_FOOTER}`;
+    const out2 = applySelfCheckFooter(mixed);
+    expect(out2.split("## 执行前自检").length - 1).toBe(1);
+    expect(out2).toBe(`# 标题\n\n正文\n\n${TASK_SOP_SELF_CHECK_FOOTER}`);
   });
 
   it("TASK_SOP_SPEC 防锚定规则锚定：步骤只能是页面操作、完成断言只属 done 且须页面实时证据", () => {

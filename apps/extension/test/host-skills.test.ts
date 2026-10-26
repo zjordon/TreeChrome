@@ -342,6 +342,45 @@ describe("SkillStore 蒸馏草稿", () => {
     expect([...db.map.keys()]).toEqual(["a.example::task-one"]); // 草稿键已清
   });
 
+  it("adoptDraft bestSteps 与在用卡取 min；存量草稿缺字段时保留在用值（#12 评审轮 1 [2]）", async () => {
+    // 场景一：草稿待审期间在用卡已被 unchanged 棘轮到更小——采纳不得抬回基线
+    const db = fakeDb();
+    const store = new SkillStore(db);
+    db.map.set("a.example::task-one", {
+      host: "a.example",
+      slug: "task-one",
+      sop: "SOP-OLD",
+      selectors: "",
+      quirks: "",
+      bestSteps: 5, // 在用卡已棘轮
+      provenance: { sourceType: "distilled" },
+      updatedAt: 1,
+    });
+    await store.saveDraft(draft({ bestSteps: 8 }), 100); // 草稿基线 8（蒸馏时旧基线）
+    const res = await store.adoptDraft("a.example", "task-one", {}, 300);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.card.bestSteps).toBe(5); // min(8,5)
+    // 场景二：升级前落库的存量草稿无 bestSteps——不得静默丢弃在用卡基线
+    const db2 = fakeDb();
+    const store2 = new SkillStore(db2);
+    db2.map.set("a.example::task-one", {
+      host: "a.example",
+      slug: "task-one",
+      sop: "S",
+      selectors: "",
+      quirks: "",
+      bestSteps: 7,
+      provenance: { sourceType: "distilled" },
+      updatedAt: 1,
+    });
+    const legacyDraft = draft();
+    delete legacyDraft.bestSteps;
+    await store2.saveDraft(legacyDraft, 100);
+    const res2 = await store2.adoptDraft("a.example", "task-one", {}, 300);
+    expect(res2.ok).toBe(true);
+    if (res2.ok) expect(res2.card.bestSteps).toBe(7);
+  });
+
   it("bumpDistillStreak：streak 递增 + steps 在场棘轮 best_steps=min；steps 缺省不动（#12 D2）", async () => {
     const db = fakeDb();
     const store = new SkillStore(db);

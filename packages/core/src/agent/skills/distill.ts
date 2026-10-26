@@ -53,12 +53,24 @@ export const TASK_SOP_SELF_CHECK_FOOTER = `## 执行前自检
 - 当前页面与卡描述不符时，以页面为准——重试、改道或重新探索，不要按剧本走完就收题。
 - 卡中步骤不是最短保证：若当前页面有更少的等效做法（如更粗的报表粒度、直达 URL、更直接的入口），优先采用更短路径——仍以页面实时核验为收题标准（#12 D3）。`;
 
-/** SOP 尾部幂等附加自检 footer：剥除**所有**出现位置的 footer（LLM 可能前置/
- *  中部回带——评审轮 1 [1]：首现位 slice 截断会静默丢弃其后正文，残缺卡过非空
- *  校验落盘覆盖旧卡），分段 trim 后重组，尾部统一重附单份 */
+/** #11 D1 三条旧版 footer（#12 D3 加第四条前的落盘形态）——存量卡剥除兼容：
+ *  精确匹配剥除不命中历史原文时，增量更新会在卡内残留双份自检节（#12 评审轮 1 [1]）。
+ *  冻结字面量，勿随后续常量改动漂移 */
+export const TASK_SOP_SELF_CHECK_FOOTER_V1 = `## 执行前自检
+
+本卡是对历史成功轨迹的总结——页面可能已经变化，卡中描述不是当前页面的证据：
+
+- 卡里的「已提交/已发布/已保存」等结果是**录制时的观察**，不是现在可以照抄声明的事实。
+- 声明 done 前，必须以当前页面真实状态核验：亲自读到的值（find_elements/search_page/read_grid）、新出现的元素（成功提示/toast/结果页）、或 URL 变化。
+- 当前页面与卡描述不符时，以页面为准——重试、改道或重新探索，不要按剧本走完就收题。`;
+
+/** SOP 尾部幂等附加自检 footer：剥除**所有出现位置**的新旧两版 footer（LLM 可能
+ *  前置/中部回带——评审轮 1 [1]：首现位 slice 截断会静默丢弃其后正文，残缺卡过
+ *  非空校验落盘覆盖旧卡），分段 trim 后重组，尾部统一重附单份 */
 export function applySelfCheckFooter(sop: string): string {
   const stripped = sop
     .split(TASK_SOP_SELF_CHECK_FOOTER)
+    .flatMap((part) => part.split(TASK_SOP_SELF_CHECK_FOOTER_V1))
     .map((part) => part.trim())
     .filter((part) => part !== "")
     .join("\n\n");

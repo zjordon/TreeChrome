@@ -331,7 +331,14 @@ export class SkillStore {
           ...new Set([...(existing?.sourceTraces ?? []), ...(draftCard.sourceTraces ?? [])]),
         ],
         distillStreak: 0,
-        ...(draftCard.bestSteps !== undefined ? { bestSteps: draftCard.bestSteps } : {}),
+        // #12 评审轮 1 [2]：与在用卡取 min（草稿待审期间在用卡可能已被 unchanged
+        // 棘轮下移——直接落草稿值会把基线抬回去）；存量草稿缺字段时保留在用值
+        ...(() => {
+          const candidates = [draftCard.bestSteps, existing?.bestSteps].filter(
+            (v): v is number => typeof v === "number",
+          );
+          return candidates.length > 0 ? { bestSteps: Math.min(...candidates) } : {};
+        })(),
         provenance: { sourceType: "distilled", note: "adopted" },
         updatedAt: now,
       };
