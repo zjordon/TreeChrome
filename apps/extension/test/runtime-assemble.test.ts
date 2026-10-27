@@ -173,6 +173,14 @@ describe("assembleRun", () => {
     expect(ctx.maxAttachmentBytes).toBe(MAX_ATTACHMENT_BYTES);
   });
 
+  it("issue #16 D3：judge 与 taskSkill 匹配超时恒 180s（judge/distill/matcher 三同值口径）", () => {
+    const { deps } = makeDeps();
+    const settings = parseExtensionSettings({ providerCards: [CARD], activeCard: "main" });
+    const assembled = assembleRun({ task: "做任务", tabId: 1, settings }, deps);
+    expect(assembled.agent.settings.judge.callTimeoutMs).toBe(180_000);
+    expect(assembled.agent.settings.taskSkill?.callTimeoutMs).toBe(180_000);
+  });
+
   it("附件注册表有附件 → taskText 拼接 [Attachments] 段；无附件原样", () => {
     const { deps, attachments } = makeDeps();
     const settings = parseExtensionSettings({ providerCards: [CARD], activeCard: "main" });

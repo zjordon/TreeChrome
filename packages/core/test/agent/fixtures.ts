@@ -71,7 +71,12 @@ export class FakeAgentLLM {
   extract(): Promise<string> {
     return Promise.resolve("extract-result");
   }
-  structuredCall(): Promise<Record<string, unknown> | null> {
+  structuredCall(
+    _systemPrompt: string,
+    _userPrompt: string,
+    _outputSchema: Record<string, unknown>,
+    _opts?: { maxTokens?: number; callTimeoutMs?: number | null },
+  ): Promise<Record<string, unknown> | null> {
     return Promise.resolve(null);
   }
   asLLMClient(): LLMClient {
