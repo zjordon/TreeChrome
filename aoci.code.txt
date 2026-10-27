@@ -12,7 +12,7 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：目标/设计决策/实施步骤/评审轮登记随实施持续更新——当前为 issue #16（matcher 超时可配+callFailed 步内重试，评审 2 轮收敛，squash 进 main） | R:code:AGENTS.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M1（theme 拆分+token 扩容，决策点 4/4 拍板，已实施待评审） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
@@ -40,6 +40,7 @@ smoke-sw-runtime.mjs[TB7M]: F:D5 SW 运行时全链 smoke：mock LLM 剧本三�
 smoke-ui.mjs[TU6M]: F:E5 真 UI smoke：CDP DOM 驱动真侧边栏页面——输入任务→开始→权限卡 DOM 代答→时间线→done 终态与 FinalResult 可见 | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/e2e/smoke-sw-runtime.mjs | A:- | S:React 受控组件输入须 native setter + input 事件
 smoke-attachments.mjs[TU5S]: F:附件分块传输 e2e smoke：真 SW+Port 驱动 begin→begun→chunk→commit（微型/8MB 多块/超限拒绝/多件并存）；diag echo 探针实证通道序列化行为 | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/src/host/attachment-registry.ts | A:- | S:通道实证留痕——chrome.runtime 消息 JSON 序列化，ArrayBuffer 克隆不可用（块载荷因此是 base64）
 smoke-self-evolution.mjs[TB7M]: F:e2e 全链 smoke（issue #5 M7 验收句）：mock LLM 四面路由（主循环步/judge/matcher/蒸馏）→成功 run→IDB 草稿+skill-drafts 广播→options op 采纳→二跑 skill_active(taskSlug) 注入断言 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:-
+_shot-theme.mjs[TU4T]: F:issue #20 M1 双主题截图验收临时件：harness 起真浏览器→侧边栏 420px/options 900px × 亮暗四截图写仓库根 _shot-*.png | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:_ 前缀不入库；M2-M4 验收可复用；biome 对 _ 件同样 lint
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/===
 background.ts[EW9M]: F:MV3 SW 壳：消息路由先注册再 boot 装配全套件；issue #5 蒸馏链（队列/worker/alarm 兜底 drain/skill-drafts 广播）+issue #9 notifyDrafts 计数与 onPhase 过程拍广播；diag 与 SW 被杀恢复 | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/message-router.ts,code:apps/extension/src/runtime/port-server.ts,code:apps/extension/src/runtime/distill-worker.ts,code:apps/extension/src/runtime/options-handler.ts | A:defineBackground, boot, recoverInterruptedRuns, refreshBuiltins | S:MV3 纪律：全部事件监听器须在首个 await 前同步注册（晚注册丢事件无自愈）；openSkillDb 是 boot 唯一 await 点置于尾部；IDB 打不开降级内存空库不拖垮 run
@@ -100,6 +101,7 @@ attachment-upload.ts[CU5S]: F:附件分块上传编排（纯函数）：begin→
 ===D:/dev/git/z_jordon/TreeChrome/docs/===
 architecture.md[SG9M]: F:架构基准：三条原则、包布局、agent loop 五阶段移植表、五宿主接口（CDPTransport/PolicyInteraction/Storage/Secret/FileSystem）、权限门 capability 映射、skill 双层、里程碑与移植对照索引 | R:code:AGENTS.md | A:- | S:修改架构决策必须先改本文件；SR parity=Python TreeWalker 退役验收门槛；Python 行为断言以 TreeWalker 640d52a 为行号锚点基准
 implementation-plan.md[SG5T]: F:实施计划索引：里程碑 M1-M7 战术排序与逐项验收细则入口 | R:code:docs/architecture.md | A:- | S:-
+ui-refactor-reference.md[SU5S]: F:UI 重构参照档案（qz-browser-agent）：范围裁定、token 映射表、组件对照清单、设置 overlay 迁移要点与 M1-M4 分期建议 | R:code:packages/console-ui/src/theme.css,code:apps/extension/src/ui-glue/options-app.tsx,code:apps/extension/e2e/smoke-ui.mjs | A:- | S:范围已拍板：仅视觉+布局层（chat 化单列）、accent 保蓝、设置收 sidepanel overlay；移植设计契约非代码（qz 非 React）；复制 CSS 须注 Apache-2.0 出处；实施计划在 SCRATCHPAD
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/code-review/===
 _r12c1.md[SQ3S]: F:p1.2-collector 评审轮 1 dump：11 条意见（glm-5.3，16m46s），覆盖 dom-snapshot collector 等 8 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
@@ -695,8 +697,8 @@ skill-list-view.tsx[AU4T]: F:SkillListView：技能卡列表只读（host/slug/�
 status-line.tsx[AU4T]: F:StatusLine：run 状态徽章+步数+耗时（snapshot 概要投影） | R:- | A:StatusLine | S:-
 submit-card.tsx[AU4T]: F:SubmitCard：submit 预确认卡（字段摘要≤8 行、password 已打码、超 40 字符防御性折叠） | R:- | A:SubmitCard | S:-
 task-bar.tsx[AU5S]: F:TaskBar：任务输入+附件清单+上传进度条目+预算余量行（≥90% 警色）+拒绝明细（reason 文案映射+×清除）+起跑/停止（File 对象交宿主——组件零 IO） | R:code:packages/protocol/src/index.ts | A:TaskBar, TaskBarUpload | S:budget/uploads/rejections 全部可选注入（SW 广播+宿主本地投影）；上传进行中禁用开始——起跑丢在途字节
-theme.css[FU4M]: F:控制台主题变量：单 CSS 变量骨架，亮/暗两套；.tc-root[data-tc-theme] 作用域根，auto 跟随系统 | R:- | A:- | S:-
-themed-root.tsx[AU3T]: F:主题容器 ThemedRoot：CSS 变量作用域根（显式 light/dark 覆盖，auto 跟随系统） | R:- | A:ThemedRoot | S:-
+theme.css[FU3T]: F:控制台主题聚合入口（issue #20 M1）：@import 层序 tokens→base→controls→components（四分片同目录），保持 @tw/console-ui/theme.css 出口与消费方零改动 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
+themed-root.tsx[AU3T]: F:主题容器 ThemedRoot：CSS 变量作用域根（显式 light/dark 覆盖，auto 跟随系统） | R:code:packages/console-ui/src/theme/tokens.css | A:ThemedRoot | S:-
 skill-draft-review.tsx[AU5M]: F:蒸馏草稿审阅组件：列表/展开/五字段可编辑（描述+关键词+三件套）/采纳带 edits/丢弃；不预建空编辑态、操作后清残留 | R:code:packages/console-ui/src/skill-list-view.tsx | A:SkillDraftReview | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/core/===
@@ -951,4 +953,10 @@ selectors.md[SD4T]: F:选择器登记（localhost_7780，重蒸版） | R:code:_
 
 ===D:/dev/git/z_jordon/TreeChrome/examples/self-evolution/===
 distill-and-rerun.mjs[TQ7M]: F:自蒸馏收敛循环脚本：沙箱积累模式/--fresh 护栏（仅 _ 前缀）/runs+converge/收敛验证轮（converged skip 断言）；judgePassed 门控与逐轮报告 | R:code:packages/node-host/boot.mjs | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/console-ui/src/theme/===
+base.css[FU3T]: F:主题作用域根 .tc-root 基线（自原 theme.css 头部迁出）：system-ui 字体栈/13px/行高 1.5/color-scheme | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
+components.css[FU5S]: F:组件类（issue #20 M1 迁移）：徽章/表格/卡片/时间线/倒计时/键值——规则结构不变取新 token，--tc-card-bg 收编为 --tc-bg-muted | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
+controls.css[FU4T]: F:控件类（issue #20 M1 迁移）：tc-btn 族与 tc-field 表单族——规则结构不变取新 token；默认钮透明底+hover 填充是决策点 2 批准的唯一状态新增 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:完整状态模型（pressed/focus-visible/尺寸档）在 M2，本期勿在此追加伪类
+tokens.css[FU4M]: F:语义 token 单源（issue #20 M1）：亮/暗/auto 三块双主题（表面四级/文字四级/accent+语义 subtle/透明度边框/阴影）+主题无关族（控件/表单/浮层/动效/圆角/滚动条） | R:code:packages/console-ui/src/theme.css,code:packages/console-ui/src/theme/base.css | A:- | S:灰阶冷灰/accent 保蓝已拍板；控件浮层动效族 M1 只定义不消费；auto 块重复 light 是有意
 
