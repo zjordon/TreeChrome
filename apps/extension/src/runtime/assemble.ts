@@ -127,6 +127,9 @@ export function assembleRun(input: AssembleInput, deps: AssembleDeps): Assembled
     // issue #10 D3：判官单次调用放宽 180s（与 distill worker 同口径——thinking
     // 模型 + 40k 轨迹贴近 60s 冻结线，2026-10-25 实跑窗口 ≤82s 含序列化）
     judge: { callTimeoutMs: 180_000 },
+    // issue #16 D3：匹配器同口径 180s（judge/distill/matcher 三同值——慢端点下
+    // 15s 出不来 → 整 run 无卡盲走，2026-10-26 真机实录）
+    taskSkill: { callTimeoutMs: 180_000 },
     ...(input.settings.agent?.useVision !== undefined
       ? { useVision: input.settings.agent.useVision }
       : {}),

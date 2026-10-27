@@ -572,6 +572,125 @@ describe("任务级 skill 注入", () => {
     expect(agent.taskSkillSlug).toBe("card-a");
     expect(agent.taskSkillAttempts).toBe(1);
   });
+
+  // —— issue #16：匹配超时透传（D2）+ callFailed 步内重试（D4）——
+
+  it("D2 透传：settings.taskSkill.callTimeoutMs → 匹配调用收到该超时（缺省不传走 15s 冻结契约）", async () => {
+    const llm = new FakeAgentLLM([ok(doneOutput())]);
+    const seen: Array<number | null | undefined> = [];
+    llm.structuredCall = async (_s, _u, _schema, opts) => {
+      seen.push(opts?.callTimeoutMs);
+      return { match: null, confidence: "low", reason: "no" };
+    };
+    const skillSource = {
+      loadHostSkill: async () => null,
+      taskCatalog: async () => [{ slug: "card-a", description: "Do the thing" }],
+      taskCardText: async () => "Step 1",
+    };
+    const agent = new Agent({
+      task: "Do the thing",
+      llm: llm.asLLMClient(),
+      browser: new FakeAgentBrowser() as unknown as BrowserSession,
+      settings: {
+        enableTaskSkillInjection: true,
+        judge: { enabled: false },
+        explorationActionabilityCheck: false,
+        taskSkill: { callTimeoutMs: 90_000 },
+      } as unknown as AgentSettings,
+      skillSource,
+      sleep: () => Promise.resolve(),
+      now: () => 1000,
+      log: () => {},
+    });
+    await agent.run();
+    // 初始匹配一次（miss 即止——callFailed=false 不触发旁路）
+    expect(seen).toEqual([90_000]);
+    expect(agent.settings.taskSkill?.callTimeoutMs).toBe(90_000);
+  });
+
+  it("D4：初始 callFailed → 同 host 步内旁路重试一次并命中（host 未变也拿到卡）", async () => {
+    // 剧本：初始匹配轮内 2 次都抛错（callFailed=true）→ step0 收尾后同 host 旁路
+    // 重试 → 第 3 次调用成功命中 → 后续注入生效
+    const llm = new FakeAgentLLM([ok({ action: waitAct, actions: [waitAct] }), ok(doneOutput())]);
+    let matcherCalls = 0;
+    llm.structuredCall = async () => {
+      matcherCalls += 1;
+      if (matcherCalls <= 2) throw new Error("单次调用超时（90000ms）");
+      return { match: "card-a", confidence: "high", reason: "same task" };
+    };
+    const skillSource = {
+      loadHostSkill: async () => null,
+      taskCatalog: async () => [{ slug: "card-a", description: "Do the thing" }],
+      taskCardText: async () => "Step 1: 打开创作者中心",
+    };
+    // 起跑即在有卡 host：urls 是 getCurrentUrl 真源，与 state 两处都置 douyin——
+    // 保证重试锚点与初始匹配同 host（走 D4 旁路，而非 D2 host 变化路径）
+    const browser = new FakeAgentBrowser(makeState({ url: "https://douyin.example" }));
+    browser.urls = ["https://douyin.example"];
+    const agent = new Agent({
+      task: "Do the thing",
+      llm: llm.asLLMClient(),
+      browser: browser as unknown as BrowserSession,
+      settings: {
+        enableTaskSkillInjection: true,
+        judge: { enabled: false },
+        explorationActionabilityCheck: false,
+      } as unknown as AgentSettings,
+      skillSource,
+      sleep: () => Promise.resolve(),
+      now: () => 1000,
+      log: () => {},
+    });
+    await agent.run();
+    // 初始轮 2 次（matcher 内部重试撞同一超时）+ 旁路轮 1 次成功 = 3 次
+    expect(matcherCalls).toBe(3);
+    expect(agent.taskSkillAttempts).toBe(2);
+    expect(agent.taskSkillSlug).toBe("card-a");
+    const doneText = llm.calls
+      .at(-1)
+      ?.messages.filter((m) => m.role === "user")
+      .map((m) => (m as { blocks: Array<{ text: string }> }).blocks.map((b) => b.text).join(""))
+      .find((t) => t.includes("[Task Skill]"));
+    expect(doneText).toContain("Step 1: 打开创作者中心");
+  });
+
+  it("D4 封顶：恒 callFailed → 旁路重试恰一轮，attempts 恒 2、无第三轮", async () => {
+    const llm = new FakeAgentLLM([
+      ok({ action: waitAct, actions: [waitAct] }),
+      ok({ action: waitAct, actions: [waitAct] }),
+      ok(doneOutput()),
+    ]);
+    let matcherCalls = 0;
+    llm.structuredCall = async () => {
+      matcherCalls += 1;
+      throw new Error("单次调用超时（90000ms）");
+    };
+    const skillSource = {
+      loadHostSkill: async () => null,
+      taskCatalog: async () => [{ slug: "card-a", description: "Do the thing" }],
+      taskCardText: async () => "Step 1",
+    };
+    const agent = new Agent({
+      task: "Do the thing",
+      llm: llm.asLLMClient(),
+      browser: new FakeAgentBrowser() as unknown as BrowserSession,
+      settings: {
+        enableTaskSkillInjection: true,
+        judge: { enabled: false },
+        explorationActionabilityCheck: false,
+      } as unknown as AgentSettings,
+      skillSource,
+      sleep: () => Promise.resolve(),
+      now: () => 1000,
+      log: () => {},
+    });
+    await agent.run();
+    // 初始轮 2 次 + 旁路轮 2 次 = 4 次；attempts 封顶后后续步骤不再发第 5 次
+    expect(matcherCalls).toBe(4);
+    expect(agent.taskSkillAttempts).toBe(2);
+    expect(agent.taskSkillCallFailed).toBe(true);
+    expect(agent.taskSkillText).toBeNull();
+  });
 });
 
 describe("MessageCompactor 集成", () => {

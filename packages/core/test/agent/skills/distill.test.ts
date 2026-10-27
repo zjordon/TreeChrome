@@ -542,6 +542,31 @@ describe("distillTaskCard", () => {
     expect(defaulted.kind).toBe("draft");
     expect(seen.at(-1)?.callTimeoutMs).toBe(60_000);
   });
+
+  it("issue #16 D2：前置匹配共享蒸馏超时——matcher 调用收到同一 callTimeoutMs（缺省 60s）", async () => {
+    const matcherSeen: Array<{ callTimeoutMs?: number | null } | undefined> = [];
+    const llm: DistillLLM = {
+      async structuredCall(_s, _p, schema, opts) {
+        const props = (schema.properties ?? {}) as Record<string, unknown>;
+        if ("match" in props) {
+          matcherSeen.push(opts);
+          return MATCH_UPLOAD;
+        }
+        return VALID_CARD;
+      },
+    };
+    const overridden = await distillTaskCard({
+      ...BASE_INPUT,
+      catalog: CATALOG,
+      llm,
+      callTimeoutMs: 180_000,
+    });
+    expect(overridden.kind).toBe("draft");
+    expect(matcherSeen).toEqual([{ callTimeoutMs: 180_000 }]);
+    const defaulted = await distillTaskCard({ ...BASE_INPUT, catalog: CATALOG, llm });
+    expect(defaulted.kind).toBe("draft");
+    expect(matcherSeen.at(-1)?.callTimeoutMs).toBe(60_000);
+  });
 });
 
 // —— issue #11 D1 防锚定：SOP 尾部自检 footer（蒸馏侧后处理，不动消费端冻结口径）——

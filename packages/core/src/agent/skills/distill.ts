@@ -348,7 +348,12 @@ export async function distillTaskCard(input: DistillTaskInput): Promise<DistillO
   // #12 D1：命中卡的成功步数基线（prompt 效率对比行 + draft.bestSteps 落值）
   let baselineSteps: number | null = null;
   if (input.catalog.length > 0) {
-    const match = await matchTaskSkill(task, [...input.catalog], input.llm as MatcherLLM);
+    // issue #16 D2：前置匹配共享蒸馏超时（两宿主缺省 180s）——慢端点下吃 matcher
+    // 固定 15s 会前置 call failed 整链 error（可重试失败白烧一轮，2026-10-26 实录同型）
+    const matchCallTimeoutMs = input.callTimeoutMs ?? DISTILL_CALL_TIMEOUT_MS;
+    const match = await matchTaskSkill(task, [...input.catalog], input.llm as MatcherLLM, {
+      callTimeoutS: matchCallTimeoutMs / 1000,
+    });
     if (match.callFailed) {
       // matcher 基建失败≠未命中——照新卡走会造出既有卡的近重复，按可重试失败处理
       return { kind: "error", error: `matcher call failed: ${match.reason}` };

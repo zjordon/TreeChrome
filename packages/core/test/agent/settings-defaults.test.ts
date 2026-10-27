@@ -200,3 +200,19 @@ describe("resolveAgentSettings judge 可选键（issue #10 D1）", () => {
     expect(resolveAgentSettings(null).judge.callTimeoutMs).toBeUndefined();
   });
 });
+
+describe("resolveAgentSettings taskSkill 可选键（issue #16 D1）", () => {
+  test("taskSkill.callTimeoutMs 透传且不进 DEFAULT（Python 对拍 fixture 零变化）", () => {
+    const merged = resolveAgentSettings({ taskSkill: { callTimeoutMs: 180_000 } });
+    expect(merged.taskSkill?.callTimeoutMs).toBe(180_000);
+    expect(DEFAULT_AGENT_SETTINGS.taskSkill).toBeUndefined();
+    expect(resolveAgentSettings(null).taskSkill).toBeUndefined();
+    // 与 judge 子对象合并不互相干扰
+    const both = resolveAgentSettings({
+      judge: { callTimeoutMs: 60_000 },
+      taskSkill: { callTimeoutMs: 90_000 },
+    });
+    expect(both.judge.callTimeoutMs).toBe(60_000);
+    expect(both.taskSkill?.callTimeoutMs).toBe(90_000);
+  });
+});

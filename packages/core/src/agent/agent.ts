@@ -124,6 +124,9 @@ export class Agent implements StepCtx {
    *  导航回同 host 重试无意义）；配合 taskSkillAttempts 封顶重试 */
   readonly taskSkillTriedHosts = new Set<string>();
   taskSkillAttempts = 0;
+  /** issue #16 D4：上次匹配调用是否基础设施失败（超时/异常——非「未命中」语义）。
+   *  同 host 已试过但上次 callFailed 时放行一次步内重试（attempts 封顶兜底） */
+  taskSkillCallFailed = false;
   readonly sensitiveDataRaw: Record<string, { value: string; urls: string[] | null }> | null;
   readonly sensitiveMap: Record<string, string> | null;
   readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -427,7 +430,15 @@ export class Agent implements StepCtx {
     this.taskSkillAttempts += 1;
     const catalog = await this.skillSource.taskCatalog(hostKey);
     if (catalog.length === 0) return;
-    const match = await matchTaskSkill(this.safeTask, catalog, this.taskSkillLlm ?? this.llm);
+    // issue #16 D2：超时透传（settings.taskSkill.callTimeoutMs，ms→matcher 的秒）；
+    // 缺省 matcher 内 15s 冻结契约
+    const matchTimeoutMs = this.settings.taskSkill?.callTimeoutMs;
+    // issue #16 D4：callFailed 反映本次调用结果（catalog 空不算调用失败——已前置返回）
+    this.taskSkillCallFailed = false;
+    const match = await matchTaskSkill(this.safeTask, catalog, this.taskSkillLlm ?? this.llm, {
+      ...(matchTimeoutMs !== undefined ? { callTimeoutS: matchTimeoutMs / 1000 } : {}),
+    });
+    this.taskSkillCallFailed = match.callFailed;
     // S4 匹配日志（agent.py:563-577 单行 JSON 锚定）：命中/未命中/降档都记——
     // catalog_newest_distilled_at 是手工迁移的过期探针；match_kind 无命中不适用记
     // null，task_kind 是用户任务属性无论命中与否照记
@@ -461,6 +472,7 @@ export class Agent implements StepCtx {
 
   /** issue #11 D2：起跑 host miss 时随导航重试匹配——google 起跑做 douyin 任务
    *  整 run 无法命中任务卡（匹配锚定初始 host 且每 run 一次，2026-10-24 实录）。
+   *  issue #16 D4：host 未变但上次 callFailed（慢端点超时）也放行一次步内重试。
    *  锚点用步内已采的 stateSummary URL（零额外 CDP 调用）；命中即止——
    *  taskSkillText 是可变字段，后续步骤的注入面自然生效（skill_active 照常发出） */
   private async retryTaskSkillMatchOnHostChange(): Promise<void> {
@@ -472,7 +484,10 @@ export class Agent implements StepCtx {
     const url = typeof rawUrl === "string" && rawUrl !== "" ? rawUrl : null;
     if (url === null) return;
     const hostKey = extractHostWithPort(url);
-    if (hostKey === null || this.taskSkillTriedHosts.has(hostKey)) return;
+    if (hostKey === null) return;
+    // issue #11 D2：同 host 已试过不再重试；issue #16 D4 例外——上次是调用失败
+    // （超时/基建，非「未命中」）时放行一次旁路重试（attempts 封顶兜底，总尝试恰 2 轮）
+    if (this.taskSkillTriedHosts.has(hostKey) && !this.taskSkillCallFailed) return;
     try {
       await this.matchTaskSkill(url);
     } catch (e) {

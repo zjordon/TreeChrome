@@ -1,66 +1,118 @@
-# issue #12 实施草稿：v2——收敛循环引入效率信号
+# issue #16 实施草稿：任务卡匹配器超时可配 + callFailed 步内重试
 
-- issue: [#12](https://github.com/zjordon/TreeChrome/issues/12)
-- 分支：`feat/issue-12-efficiency-signal`（自 main b9408a5）
-- 状态：**评审收敛，待 /finish-issue**（2026-10-26：review-loop 2 轮收敛——2 意见全采纳（V1 兼容剥除/adopt min 合并），轮 2 零意见；沙箱回归实跑通过）
-- 设计讨论已定四点（2026-10-26 用户拍板）：v1 度量**只用步数**；margin `max(2, ⌈10%·best⌉)`；**P3 footer 加效率句**；`best_steps` 语义 **min+margin 组合**。
+- issue: [#16](https://github.com/zjordon/TreeChrome/issues/16)
+- 分支：`issue-16-matcher-timeout`（自 main 4e3fb32）
+- 状态：**评审收敛（2 轮），待合并**（2026-10-27：轮 1 一条 P2 采纳（断言被注释吞掉）、
+  轮 2 零意见；typecheck/全仓测试/gate 全绿；扩展已重构建，真机命中待顺带验证）
 
 ## 1 背景与根因
 
-D17 收敛判据 = 连续 N 次成功且无新观察——只保证「稳定」不保证「最优」。两个缺口：
+`task-matcher.ts` 的 `MATCH_CALL_TIMEOUT_S = 15.0` 固定不可配，Agent 调用侧不传 opts。
+thinking 模型 + 慢端点下 structuredCall 15s 出不来 → matcher 内部 2 次重试撞同一
+超时 → `call failed: 单次调用超时` → **整 run 无卡盲走**。
 
-- **缺口 A（捕获）**：更短轨迹发生了，蒸馏器也判不出「这是值得入卡的新观察」（内容主题比对，看不见步数差）→ unchanged → 收敛锁死旧 SOP
-- **缺口 B（探索）**：卡收敛后引导每次 run 走同一条路，更短路径没有机会发生——#11 锚定问题的效率面
+2026-10-26 真机实录（run_1a1759310ae，抖音发视频）：无卡 48 步 / 52 分钟（封面模态框
+缠斗）；同任务 2026-10-25 有卡 18 步稳定完成。#11 自检 footer 随卡消失（防锚定提醒无载体）。
 
-证据：Day/Month 盲区（distill-and-rerun 5 轮，Period 恒选 Day）；步数→model 段→wall clock 76-82%，步数即成本主项。
+第三次同型打击（前两次 #10 已修）：
+
+| 调用 | 固定超时 | 修法（#10） |
+|---|---|---|
+| judge | 60s | `judge.callTimeoutMs` 可选键 + 扩展 180s |
+| distill | 60s | `callTimeoutMs` 参数 + 双宿主 180s |
+| **matcher** | **15s** | **本次漏网** |
 
 ## 2 设计决策
 
-- **D1 基线机制（core 蒸馏侧，双宿主免费）**：
-  - 卡 meta 增 `best_steps`（成功 run 最小步数）——node-host `_task.json` / 扩展 `SkillCardData.bestSteps`（IDB JSON 无迁移）
-  - `DistillTaskInput.baselineSteps?: number | null`；`SkillCardDraft.bestSteps: number = min(baseline ?? ∞, steps)`（新卡 = steps）
-  - 增量 prompt（`buildTaskDistillPrompt` 增 `baselineSteps`）加效率对比行：「本次 M 步 vs 卡基线 N 步——显著更短则把更短做法写进 SOP 且 has_new_observations=true；更长/持平则步骤保持」——只渲染在 update 块（新卡无基线）
-- **D2 收敛防锁死（core 机械兜底）**：
-  - `efficiencyMargin(best) = max(2, ⌈10%·best⌉)` 导出纯函数；improvement ⇔ `steps < best − margin`
-  - streak 判停处加守卫：`streak ≥ threshold && 无改进` 才 skip——有改进强制发蒸馏调用（防模型漏看基线吞掉改进）
-  - unchanged 且有改进：卡内容不动，但宿主 bump 时合并 `best_steps = min(旧, steps)`（基线棘轮——内容没捕获到也要记住下界，下次同水位不再误判改进；终止性：best 单调降，降平后收敛）
-- **D3 footer 效率句（缺口 B 软杠杆，借 #11 D1 的蒸馏后处理路径）**：`TASK_SOP_SELF_CHECK_FOOTER` 增一条：「卡中步骤不是最短保证：若当前页面提供更少的等效做法（如更粗的报表粒度、直达 URL），优先采用更短路径——仍以页面实时核验为收题标准」。旧卡增量更新时统一补上（幂等剥附机制不变）；乱抄近道风险由既有门控兜住（只蒸馏 success+judge 过的 run）
-- **D4 宿主接线**：
-  - node-host：`distill-run.ts` 的 `cardDistillState` 扩 `{streak, bestSteps}`（readTaskMeta 读 `best_steps`）+ 传 `baselineSteps`；`writeTaskCard` meta 写 `best_steps`；`bumpDistillStreak` 增 steps 参合并 min
-  - 扩展：worker `cardDistillState` 扩 `bestSteps` + 传 `baselineSteps`；unchanged 路径 `bumpDistillStreak(host, slug, steps)`；`saveDraft`/`adopt` 随 draft 落 `bestSteps`
-- **D5 不做**：token 度量（两宿主管道不通，挂账 v3）；双轨迹择优/skill-off 探索 run（P4——与「多轨迹合并」议题划边界后另立）；EMA 基线（min+margin 已防侥幸）。
+### D1 可选键形态：嵌套 `AgentSettings.taskSkill.callTimeoutMs`（judge 同款）
+
+```ts
+/** TS-only 增量（Python config 无此组）——可选键不进 DEFAULT_AGENT_SETTINGS，
+ *  settings 对拍 fixture 零变化（#10 纪律） */
+export interface TaskSkillSettings {
+  /** 单次匹配调用超时毫秒；缺省 matcher 内 15s 冻结契约 */
+  callTimeoutMs?: number;
+}
+// AgentSettings 增可选键 taskSkill?: TaskSkillSettings;
+// resolveAgentSettings 增合并分支 taskSkill: taskSkill ? {...base.taskSkill, ...taskSkill} : base.taskSkill
+```
+
+- 命名沿用 issue 原文 `taskSkill.callTimeoutMs`；与 node-host `settings.llm.taskSkill`
+  （匹配器**专用 LLM 卡**）同名不同层不同物——已评估，接受（核心侧 `taskSkill` 是匹配
+  行为组，未来 matcher 键（重试/置信门槛）有归宿）
+- 单位 ms 对齐 `judge.callTimeoutMs`；matcher 内部 API 保持 `callTimeoutS` 秒
+  （task_matcher.py 移植形态不动），调用侧换算
+
+### D2 透传三个调用侧（不止 issue 点名的 Agent 侧）
+
+| 调用侧 | 位置 | 透传值 |
+|---|---|---|
+| Agent 初始匹配 + #11 host 重匹配 | `agent.ts` matchTaskSkill（一处函数体，两条路径共用） | `settings.taskSkill?.callTimeoutMs` |
+| 蒸馏前置匹配 | `distill.ts:351`——**现状同样吃固定 15s**（issue 未点名，同型缺口） | 共享蒸馏自身的 `input.callTimeoutMs`（两宿主已缺省 180s） |
+| （不透传）matcher 单元 API | `task-matcher.ts` opts | 保持 `callTimeoutS`，Python 移植面不动 |
+
+node-host assemble 不传（#10 judge 同口径：judge 180s 也只有扩展传，node-host 走
+core 缺省；蒸馏路径经 D2 已覆盖）。
+
+### D3 扩展 assemble 对齐 #10 口径传 180s
+
+`assemble.ts` resolveAgentSettings 增 `taskSkill: { callTimeoutMs: 180_000 }`——
+judge / distill / matcher 三者同值 180s。
+
+### D4 callFailed 步内重试（issue 第 3 点「讨论后定」——建议做）
+
+现状：#11 D2 重匹配只覆盖 **host 变化**；host 未变的 callFailed 没有第二次机会。
+方案：
+
+- `agent.ts` 增 `taskSkillCallFailed` 私有标志，`matchTaskSkill` 内每次调用前置
+  false、调用后按 `match.callFailed` 置位（catalog 空提前返回时也保持 false——
+  那不是调用失败）
+- `retryTaskSkillMatchOnHostChange` 守卫放宽：同 host 已试过 **且** 上次 callFailed
+  → 放行一次旁路；attempts 封顶 `TASK_SKILL_MATCH_ATTEMPTS = 2` 不变（总尝试恰好
+  2 轮）
+- 重试时点：第一步结束后的步循环检查——慢端点瞬时拥塞天然获得一步喘息
+
+**代价明示**：最坏阻塞窗口 = 2 轮 × matcher 内部 2 次 × 180s = **12 分钟**（匹配
+失败不挂任务，只是无卡）。对照无卡盲走 52 分钟实录，值得；正常慢端点单轮 180s 内
+大概率出结果。
 
 ## 3 实施步骤
 
-- **S1 core**：`distill.ts`（efficiencyMargin 导出 + 判停守卫 + baselineSteps/bestSteps + draft 落值）、`distill-prompt.ts`（update 块效率对比行）、footer 常量加句。
-- **S2 宿主**：node-host `distill-run.ts`/`writeTaskCard`/`bumpDistillStreak`；扩展 `skill-store.ts`（SkillCardData.bestSteps + bump 签名）与 `distill-worker.ts` 接线。
-- **S3 测试 + gate**：core（margin 纯函数/判停守卫两分支/draft.bestSteps 三态/prompt 基线行/footer 句锚定）、node-host（bump 合并、writeTaskCard best_steps、cardDistillState 透传）、扩展（bump 带 steps、adopt 落 bestSteps）；typecheck/test/gate；扩展 rebuild。
+1. core settings.ts：`TaskSkillSettings` + `AgentSettings.taskSkill?` +
+   resolve 合并分支（Omit 收型同 judge——taskSkill 覆盖面收 Partial）
+2. agent.ts：matchTaskSkill 透传 `callTimeoutS = settings.taskSkill?.callTimeoutMs / 1000`；
+   `taskSkillCallFailed` 标志 + retry 旁路（D4）
+3. distill.ts：内部 matcher 透传 `input.callTimeoutMs`（条件展开保 undefined 语义）
+4. assemble.ts：`taskSkill: { callTimeoutMs: 180_000 }`
+5. 测试（见 §4）→ `pnpm typecheck && pnpm test` 全绿 → gate
 
-## 4 测试面
+## 4 测试清单（测试先行，D4 双向验证红→绿）
 
-| 层 | 用例 |
+| 文件 | 用例 |
 |---|---|
-| core distill | margin=max(2,10%) 边界；streak≥阈值且改进 → 不 skip（蒸馏调用发生）；无改进 → 照常 skip；新卡 draft.bestSteps=steps；增量改进 = min；unchanged 原样 |
-| core prompt | update 块含基线对比行（M vs N + 显著更短指示）；新卡模式无该行 |
-| core footer | 常量含效率句；幂等剥附回归不破 |
-| node-host | bumpDistillStreak 合并 min（含旧卡无 best_steps）；writeTaskCard 落 best_steps |
-| extension | worker unchanged→bump 带 steps；saveDraft→adopt 后 bestSteps 落卡 |
+| `core/test/agent/settings-defaults.test.ts` | resolve 合并：传 `{taskSkill:{callTimeoutMs:90000}}` → 90000；不传 → undefined；DEFAULT 无键（fixture 对拍零变化自动成立） |
+| `core/test/agent/pipeline-extra.test.ts` | ① settings 90s → 匹配调用收到 callTimeoutMs 90000；② D4：初始 callFailed → 同 host 步内重试成功命中（attempts=2）；③ D4 封顶：恒失败 → attempts 恒 2、无第 3 轮 |
+| `core/test/agent/skills/distill.test.ts` | input.callTimeoutMs=180000 → 内部 matcher 收到 callTimeoutS=180 |
+| `apps/extension/test/runtime-assemble.test.ts` | resolved settings `taskSkill.callTimeoutMs === 180_000`（judge 180 若无既有断言则同款补上） |
 
-## 5 验收清单
+## 5 验收口径（issue）
 
-- [x] 沙箱回归（2026-10-26 实跑，.git/issue12-regression.log）：卡 streak=2/best=12（种子）遇 5 步轨迹 → **D2 守卫生效**（streak≥阈值但 5<12−2 → 蒸馏调用未被收敛拦截）→ 模型判无新观察（**正确**——现行卡 SOP 本身就是这条 5 步 evaluate 路径，12 步基线是建卡前时代的残留）→ unchanged：内容不动 + **best_steps 棘轮 12→5**；下一轮 4 步（<best 但在 margin(5)=2 内）→ 正常 `converged — skip` 零改动。原始 Day/Month 场景已被卡的 evaluate 聚合消解（粒度不再影响步数，该任务效率天花板 ~4-5 步）——issue 验收句里的「SOP 含 Month」在新卡形态下无可捕获对象，机制本身（守卫/棘轮/终止）全验证
-- [x] footer 效率句：沙箱卡预置稳态 footer 实跑注入（node-host 链路）；扩展链路等价性由单测覆盖（saveDraft/adopt/bump 落值）
-- [x] typecheck/test 全绿；gate 过；覆盖率 ≥85%
+- 可选键不进 DEFAULT——settings 对拍 fixture 零变化（#10 同纪律）
+- 真机慢端点下任务卡稳定命中（`task-skill hit: slug=…` 可见）——实现侧只能保证
+  机制与单测，真机验证留给用户跑
 
-## 6 风险与边界
+## 6 评审轮登记（/review-loop）
 
-- footer 变更 → #11 锚定测试随常量自动锚定（导入驱动，非字面量）；已采纳旧卡不带效率句（增量更新统一补——与 #11 footer 同款扩散路径）
-- 改进判定依赖 steps 口径含步内重试噪音——margin 即为此设；margin 偏保守只会晚收敛，不会锁死（改进每次都会强制蒸馏）
-- unchanged+改进只棘轮 best_steps 不改内容——若短路径可复现，下一轮改进 run 会再次强制蒸馏直到模型捕获或水位降平
+### 轮 1（2026-10-27，base=main → adcbf61，8m52s，1 意见 medium/test）
 
-## 7 评审轮登记
+- **[1] 采纳（P2）**：D4 命中用例 `expect(matcherCalls).toBe(3)` 被行尾注释吞掉
+  ——修 urls 时的 Edit 误删注释与断言间换行，断言永不执行，「恰 3 次」不变量失守
+  （其余断言 attempts/slug/doneText 在，双向验证结论不受影响）。拆行修复，断言
+  恢复执行且通过（18/18）。
+- P1/P2/P3 分布：P2×1；采纳 1 / 驳回 0 / stale 0。
 
-| 轮 | 意见 | 采纳/驳回/stale | 要点 |
-|---|---|---|---|
-| 1 | 2（medium/bug×2） | 采纳 2 | ① footer 常量加第四条后 #11 存量卡的旧三条 footer 剥除不命中 → 增量回带残留双份自检节且永久不可剥——保留冻结的 V1 常量（TASK_SOP_SELF_CHECK_FOOTER_V1）新旧一并 split 剥除；② adoptDraft 直接落草稿 bestSteps 未与在用卡取 min（草稿待审期在用卡可能已被棘轮下移——采纳会抬回基线；存量草稿缺字段时静默丢在用值）——min(草稿, 在用) + 缺字段保留在用值，与 node-host writeTaskCard 口径对齐。双修复测试先行红→绿验证 |
-| 2 | 0 | — | 增量 diff（仅轮 1 修复）零意见——收敛。累计：2 轮 / 2 意见 / 采纳 2 / 驳回 0 / stale 0 |
+### 轮 2（2026-10-27，增量 adcbf61→e2b14c9，15s，零意见）
+
+- 增量复核轮：状态 complete、意见数 0——循环收敛出口。
+- 累计：2 轮 / 1 意见全采纳 / 0 驳回 / 0 stale；分支 2 提交（实现 + 轮 1 修复）；
+  无 P3 backlog。

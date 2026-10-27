@@ -49,6 +49,15 @@ export const DEFAULT_JUDGE_SETTINGS: JudgeSettings = {
   traceMaxChars: 40000,
 };
 
+/** TS-only 增量（Python config 无此组——issue #16）：任务级 skill 匹配行为组 */
+export interface TaskSkillSettings {
+  /** 单次匹配调用超时毫秒（issue #16：可选键不进 DEFAULT——Python 对拍 fixture
+   *  零变化，沿 judge.callTimeoutMs 先例；缺省 matcher 内 15s 冻结契约）。
+   *  thinking 模型 + 慢端点 structuredCall 15s 出不来 → 整 run 无卡盲走
+   *  （2026-10-26 真机实录） */
+  callTimeoutMs?: number;
+}
+
 /** 敏感数据条目：全局（字符串）或 URL 过滤（{value, urls}）——归一化前兼容两形态 */
 export type SensitiveDataSpec = string | { value?: string; urls?: string[] | null };
 
@@ -93,6 +102,9 @@ export interface AgentSettings {
   allowedReadPaths: string[] | null;
   displayFilesInDoneText: boolean;
   judge: JudgeSettings;
+  /** 任务级 skill 匹配行为（issue #16 D1：可选键不进 DEFAULT——对拍 fixture
+   *  零变化，沿 submitConfirmEnabled/judge.callTimeoutMs 先例） */
+  taskSkill?: TaskSkillSettings;
   /** extract 工具结构化抽取 schema（null = free-text） */
   extractionSchema: Record<string, unknown> | null;
   /** 任务级 skill 注入（默认关——评测红线；TreeChrome 默认经此配置表达） */
@@ -198,22 +210,27 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   outputModel: null,
 };
 
-/** 构造时合并部分覆盖（浅合并 + truncation/judge 子对象合并）。judge 覆盖面收
- *  Partial（issue #10 D1：可选键单独透传不要求全量对象——assemble 只传
- *  callTimeoutMs 的形态；Omit 防交叉类型把 judge 又收紧回全量） */
+/** 构造时合并部分覆盖（浅合并 + truncation/judge/taskSkill 子对象合并）。judge 与
+ *  taskSkill 覆盖面收 Partial（issue #10 D1 / #16 D1：可选键单独透传不要求全量
+ *  对象——assemble 只传 callTimeoutMs 的形态；Omit 防交叉类型又收紧回全量） */
 export function resolveAgentSettings(
   overrides:
-    | (Omit<Partial<AgentSettings>, "judge"> & { judge?: Partial<JudgeSettings> })
+    | (Omit<Partial<AgentSettings>, "judge" | "taskSkill"> & {
+        judge?: Partial<JudgeSettings>;
+        taskSkill?: Partial<TaskSkillSettings>;
+      })
     | null
     | undefined,
 ): AgentSettings {
   const base = DEFAULT_AGENT_SETTINGS;
   if (!overrides) return { ...base };
-  const { truncation, judge, ...rest } = overrides;
+  const { truncation, judge, taskSkill, ...rest } = overrides;
   return {
     ...base,
     ...rest,
     truncation: truncation ? { ...base.truncation, ...truncation } : base.truncation,
     judge: judge ? { ...base.judge, ...judge } : base.judge,
+    // base.taskSkill 恒 undefined（不进 DEFAULT）——合并结果只在显式传入时存在
+    taskSkill: taskSkill ? { ...base.taskSkill, ...taskSkill } : base.taskSkill,
   };
 }
