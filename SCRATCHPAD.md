@@ -2,8 +2,8 @@
 
 - issue: [#16](https://github.com/zjordon/TreeChrome/issues/16)
 - 分支：`issue-16-matcher-timeout`（自 main 4e3fb32）
-- 状态：**实现完成，测试全绿 + gate 过，待 /review-loop**（2026-10-27：D1–D4 全实施；
-  新增 6 用例全绿；D4 双向验证两用例旧实现下均红；typecheck/全仓测试/gate EXIT=0）
+- 状态：**评审收敛（2 轮），待合并**（2026-10-27：轮 1 一条 P2 采纳（断言被注释吞掉）、
+  轮 2 零意见；typecheck/全仓测试/gate 全绿；扩展已重构建，真机命中待顺带验证）
 
 ## 1 背景与根因
 
@@ -110,3 +110,9 @@ judge / distill / matcher 三者同值 180s。
   （其余断言 attempts/slug/doneText 在，双向验证结论不受影响）。拆行修复，断言
   恢复执行且通过（18/18）。
 - P1/P2/P3 分布：P2×1；采纳 1 / 驳回 0 / stale 0。
+
+### 轮 2（2026-10-27，增量 adcbf61→e2b14c9，15s，零意见）
+
+- 增量复核轮：状态 complete、意见数 0——循环收敛出口。
+- 累计：2 轮 / 1 意见全采纳 / 0 驳回 / 0 stale；分支 2 提交（实现 + 轮 1 修复）；
+  无 P3 backlog。
