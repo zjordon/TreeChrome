@@ -1,0 +1,63 @@
+/* 控件类（自原 theme.css 迁移，issue #20 M1）：按钮与表单控件取新 token，规则结构不变。
+   默认钮透明底 + hover 才有底是决策点 2 批准的唯一状态新增（完整状态模型在 M2）。 */
+
+.tc-btn {
+  font: inherit;
+  padding: 3px 10px;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-control-radius);
+  background: var(--tc-control-surface);
+  color: var(--tc-fg);
+  cursor: pointer;
+}
+
+.tc-btn:not(:disabled):hover {
+  background: var(--tc-control-surface-hover);
+}
+
+.tc-btn:disabled {
+  opacity: var(--tc-control-disabled-opacity);
+  cursor: not-allowed;
+}
+
+.tc-btn-primary {
+  background: var(--tc-control-primary-surface);
+  border-color: var(--tc-control-primary-surface);
+  color: var(--tc-control-primary-fg);
+}
+
+.tc-btn-primary:not(:disabled):hover {
+  background: var(--tc-control-primary-surface-hover);
+}
+
+.tc-btn-danger {
+  background: transparent;
+  border-color: var(--tc-danger);
+  color: var(--tc-danger);
+}
+
+.tc-field {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.tc-field-label {
+  color: var(--tc-muted);
+}
+
+.tc-field input,
+.tc-field select,
+.tc-field textarea {
+  font: inherit;
+  padding: 3px 6px;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-control-radius);
+  background: var(--tc-bg);
+  color: var(--tc-fg);
+}
+
+.tc-field-error {
+  color: var(--tc-danger);
+  font-size: 11px;
+}

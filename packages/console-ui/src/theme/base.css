@@ -1,0 +1,17 @@
+/* 主题作用域根（自原 theme.css 头部迁出）：字体/13px 基线；亮暗取值在 tokens.css */
+
+.tc-root {
+  color-scheme: light dark;
+  background: var(--tc-bg);
+  color: var(--tc-fg);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100%;
+}
