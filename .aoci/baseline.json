@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-10-13T12:30:11Z",
-  "updated_at": "2026-10-27T04:44:24Z",
+  "updated_at": "2026-10-27T11:45:51Z",
   "files": {
     ".archify/architecture-treechrome-20261018-093945/candidate.json": {
       "role": "index",
@@ -227,9 +227,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "47c8dba2f22eec604942ec0970b0cd7a0adbe5397f1b27a2e2fb4ab15fcec6d2",
-      "size": 158140,
-      "normalized_sha256": "47c8dba2f22eec604942ec0970b0cd7a0adbe5397f1b27a2e2fb4ab15fcec6d2"
+      "sha256": "322b4108a751529872579211bb249c51e9fc9e439b768b3c0bfcc138cc5def54",
+      "size": 158476,
+      "normalized_sha256": "322b4108a751529872579211bb249c51e9fc9e439b768b3c0bfcc138cc5def54"
     },
     "aoci.meta.txt": {
       "role": "index",
