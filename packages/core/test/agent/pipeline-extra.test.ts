@@ -642,7 +642,8 @@ describe("任务级 skill 注入", () => {
       log: () => {},
     });
     await agent.run();
-    // 初始轮 2 次（matcher 内部重试撞同一超时）+ 旁路轮 1 次成功 = 3 次    expect(matcherCalls).toBe(3);
+    // 初始轮 2 次（matcher 内部重试撞同一超时）+ 旁路轮 1 次成功 = 3 次
+    expect(matcherCalls).toBe(3);
     expect(agent.taskSkillAttempts).toBe(2);
     expect(agent.taskSkillSlug).toBe("card-a");
     const doneText = llm.calls

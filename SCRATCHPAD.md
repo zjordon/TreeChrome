@@ -100,3 +100,13 @@ judge / distill / matcher 三者同值 180s。
 - 可选键不进 DEFAULT——settings 对拍 fixture 零变化（#10 同纪律）
 - 真机慢端点下任务卡稳定命中（`task-skill hit: slug=…` 可见）——实现侧只能保证
   机制与单测，真机验证留给用户跑
+
+## 6 评审轮登记（/review-loop）
+
+### 轮 1（2026-10-27，base=main → adcbf61，8m52s，1 意见 medium/test）
+
+- **[1] 采纳（P2）**：D4 命中用例 `expect(matcherCalls).toBe(3)` 被行尾注释吞掉
+  ——修 urls 时的 Edit 误删注释与断言间换行，断言永不执行，「恰 3 次」不变量失守
+  （其余断言 attempts/slug/doneText 在，双向验证结论不受影响）。拆行修复，断言
+  恢复执行且通过（18/18）。
+- P1/P2/P3 分布：P2×1；采纳 1 / 驳回 0 / stale 0。
