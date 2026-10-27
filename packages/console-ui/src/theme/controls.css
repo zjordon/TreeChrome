@@ -11,7 +11,8 @@
   cursor: pointer;
 }
 
-.tc-btn:not(:disabled):hover {
+/* :not(.tc-btn-danger) 排除语义变体——danger 的 hover 底色是 M2 面，本期不得被通用 hover 误伤 */
+.tc-btn:not(.tc-btn-danger):not(:disabled):hover {
   background: var(--tc-control-surface-hover);
 }
 

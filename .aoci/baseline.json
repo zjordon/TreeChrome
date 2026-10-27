@@ -1877,12 +1877,6 @@
       "size": 11007,
       "normalized_sha256": "3d2c1ba227f5ed2cc21b238ce3c7ad599b869cac75d439695b4d5c8148e59778"
     },
-    "docs/ui-refactor-qz-reference.md": {
-      "role": "index",
-      "sha256": "c15b3acc8abfd61c72167c6dfa21a31266db16ad812a99ab81264e25dae9b378",
-      "size": 12283,
-      "normalized_sha256": "c15b3acc8abfd61c72167c6dfa21a31266db16ad812a99ab81264e25dae9b378"
-    },
     "docs/ui-refactor-reference.md": {
       "role": "index",
       "sha256": "c15b3acc8abfd61c72167c6dfa21a31266db16ad812a99ab81264e25dae9b378",
