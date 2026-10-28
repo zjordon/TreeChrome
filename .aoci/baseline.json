@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-10-13T12:30:11Z",
-  "updated_at": "2026-10-28T00:14:36Z",
+  "updated_at": "2026-10-28T04:01:49Z",
   "files": {
     ".archify/architecture-treechrome-20261018-093945/candidate.json": {
       "role": "index",
@@ -131,15 +131,15 @@
     },
     "SCRATCHPAD.md": {
       "role": "index",
-      "sha256": "59c1ae8d248f8fb4f706ab0817fa5473f33db66b984a58f5e4fd924deb148339",
-      "size": 11547,
-      "normalized_sha256": "59c1ae8d248f8fb4f706ab0817fa5473f33db66b984a58f5e4fd924deb148339"
+      "sha256": "77ac5a3970c889cbf809145ddde5dd96d4063bffe337097b1c8c318ea6e691c1",
+      "size": 7912,
+      "normalized_sha256": "77ac5a3970c889cbf809145ddde5dd96d4063bffe337097b1c8c318ea6e691c1"
     },
     "_cascade-check.html": {
       "role": "index",
-      "sha256": "29a8849f1acda349003fc305c4e3542b43ffa716e13a9e447ceca45bb4204ad0",
-      "size": 1210,
-      "normalized_sha256": "29a8849f1acda349003fc305c4e3542b43ffa716e13a9e447ceca45bb4204ad0"
+      "sha256": "0e492a3cbd949f2a0fb4cf278b89237ecdd43c2d944f2d4d16c265b4f078577f",
+      "size": 3396,
+      "normalized_sha256": "0e492a3cbd949f2a0fb4cf278b89237ecdd43c2d944f2d4d16c265b4f078577f"
     },
     "_douyin-sandbox/domain-skills/creator.douyin.com/tasks/upload-video-draft/_sop.md": {
       "role": "index",
@@ -233,9 +233,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "699b9ab9c24a5a987197ad6f2a623ff635caf6f4062547765190447d5b469013",
-      "size": 162715,
-      "normalized_sha256": "699b9ab9c24a5a987197ad6f2a623ff635caf6f4062547765190447d5b469013"
+      "sha256": "a2fdd8e77f3bcdee0d194edca23bf30bc3e4be77417d558b6b42159eca101d1d",
+      "size": 163857,
+      "normalized_sha256": "a2fdd8e77f3bcdee0d194edca23bf30bc3e4be77417d558b6b42159eca101d1d"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -3419,11 +3419,17 @@
       "size": 1652,
       "normalized_sha256": "d64aa6df1ef86687d86f27036f3cc4deffd6d6634a12e370a3106fca8c3fb380"
     },
+    "packages/console-ui/src/icon-button.tsx": {
+      "role": "index",
+      "sha256": "628f1b3ee90f452f9eed27a9e9fe08069c560eb64fe4249f4f8d519ef8382a50",
+      "size": 1003,
+      "normalized_sha256": "628f1b3ee90f452f9eed27a9e9fe08069c560eb64fe4249f4f8d519ef8382a50"
+    },
     "packages/console-ui/src/index.ts": {
       "role": "index",
-      "sha256": "d80f4d11f705c95e7947a71b0b447e4b13047da726937c5c20664f3d6a8009b3",
-      "size": 2010,
-      "normalized_sha256": "d80f4d11f705c95e7947a71b0b447e4b13047da726937c5c20664f3d6a8009b3"
+      "sha256": "997f2a8ed5f623f966e485ddcb0525e18dfe38ad1f581f3ecaa6d3ec77bef15c",
+      "size": 2303,
+      "normalized_sha256": "997f2a8ed5f623f966e485ddcb0525e18dfe38ad1f581f3ecaa6d3ec77bef15c"
     },
     "packages/console-ui/src/permission-card.tsx": {
       "role": "index",
@@ -3433,9 +3439,9 @@
     },
     "packages/console-ui/src/primitives.tsx": {
       "role": "index",
-      "sha256": "198e56bc9d965b5572e45032034360b84b699fc2a6ba09eddf3603aab361b972",
-      "size": 1957,
-      "normalized_sha256": "198e56bc9d965b5572e45032034360b84b699fc2a6ba09eddf3603aab361b972"
+      "sha256": "90086ee1837e431a647b8874a2ed580dfc899029b33a386299e8a71c5c2d9fbb",
+      "size": 2248,
+      "normalized_sha256": "90086ee1837e431a647b8874a2ed580dfc899029b33a386299e8a71c5c2d9fbb"
     },
     "packages/console-ui/src/provider-card-form.tsx": {
       "role": "index",
@@ -3454,6 +3460,12 @@
       "sha256": "409a71891ab42d1cc8f451a8ac38ae6c4be248ae4eaa1b8ed29c3ee834bc7781",
       "size": 7845,
       "normalized_sha256": "409a71891ab42d1cc8f451a8ac38ae6c4be248ae4eaa1b8ed29c3ee834bc7781"
+    },
+    "packages/console-ui/src/segment.tsx": {
+      "role": "index",
+      "sha256": "48f5a99d9391836896cbbc3a0648b8b7acda09a4752f09f4c9e11e0f2caa0ff0",
+      "size": 983,
+      "normalized_sha256": "48f5a99d9391836896cbbc3a0648b8b7acda09a4752f09f4c9e11e0f2caa0ff0"
     },
     "packages/console-ui/src/skill-draft-review.tsx": {
       "role": "index",
@@ -3479,6 +3491,12 @@
       "size": 2131,
       "normalized_sha256": "92c22906529ee4e2e98e99f57441d11e5a60609ee05271cae952684972346edc"
     },
+    "packages/console-ui/src/switch.tsx": {
+      "role": "index",
+      "sha256": "10718250b621bbb45003cbd754ebab4532076053c07c1f8e0f76a70713e6b00d",
+      "size": 955,
+      "normalized_sha256": "10718250b621bbb45003cbd754ebab4532076053c07c1f8e0f76a70713e6b00d"
+    },
     "packages/console-ui/src/task-bar.tsx": {
       "role": "index",
       "sha256": "465c1ca1cb4886e2923cef031bce58ea478e8247bc9995e5dfe226cdff378150",
@@ -3493,9 +3511,9 @@
     },
     "packages/console-ui/src/theme/base.css": {
       "role": "index",
-      "sha256": "63ecf853f37f361eb0ac76c9af5ae41d2204169ae8784f606c84f390a61f351a",
-      "size": 385,
-      "normalized_sha256": "63ecf853f37f361eb0ac76c9af5ae41d2204169ae8784f606c84f390a61f351a"
+      "sha256": "5b14ab665a667e4c29373551867d732bcd24cd0a18929237af5cf402a783992c",
+      "size": 1284,
+      "normalized_sha256": "5b14ab665a667e4c29373551867d732bcd24cd0a18929237af5cf402a783992c"
     },
     "packages/console-ui/src/theme/components.css": {
       "role": "index",
@@ -3505,15 +3523,15 @@
     },
     "packages/console-ui/src/theme/controls.css": {
       "role": "index",
-      "sha256": "e2da05f50ffbecc463aa89555000d3097a268fa25f923095378a8ef5073d919b",
-      "size": 1627,
-      "normalized_sha256": "e2da05f50ffbecc463aa89555000d3097a268fa25f923095378a8ef5073d919b"
+      "sha256": "17262508c6b57e507944a10629107244dd1e886a486289e886df4e6dd5db8020",
+      "size": 7993,
+      "normalized_sha256": "17262508c6b57e507944a10629107244dd1e886a486289e886df4e6dd5db8020"
     },
     "packages/console-ui/src/theme/tokens.css": {
       "role": "index",
-      "sha256": "dfd84bb08adcc0f7ac073e8249b300f712b1ab73516d7dbd175affd19458943c",
-      "size": 6537,
-      "normalized_sha256": "dfd84bb08adcc0f7ac073e8249b300f712b1ab73516d7dbd175affd19458943c"
+      "sha256": "60417255eb2d5cd9215cc5aa3327f46ac9b7fc9d1cbad6320d92806c4105e314",
+      "size": 6714,
+      "normalized_sha256": "60417255eb2d5cd9215cc5aa3327f46ac9b7fc9d1cbad6320d92806c4105e314"
     },
     "packages/console-ui/src/themed-root.tsx": {
       "role": "index",
@@ -3527,6 +3545,12 @@
       "size": 3448,
       "normalized_sha256": "b3dcbc355d31cab3945b7ca3afa7d771d2d7a1a8854c8965f91b68e8dfcef8ca"
     },
+    "packages/console-ui/test/icon-button.test.tsx": {
+      "role": "observe",
+      "sha256": "11968c7626ca364fd1c3baf40cef75dbae509515d2277c8f2ef7bf03ddfec34b",
+      "size": 1782,
+      "normalized_sha256": "11968c7626ca364fd1c3baf40cef75dbae509515d2277c8f2ef7bf03ddfec34b"
+    },
     "packages/console-ui/test/options-views.test.tsx": {
       "role": "observe",
       "sha256": "2d9f0894227e76f0dab81d15a57694d11a19cd7497fe5946a90815c093bd04ca",
@@ -3535,9 +3559,9 @@
     },
     "packages/console-ui/test/primitives.test.tsx": {
       "role": "observe",
-      "sha256": "10a6e500f11f010a1bb4d3e8a321e847f8feac7f4e418a04e033bf26e2b7fa7a",
-      "size": 2151,
-      "normalized_sha256": "10a6e500f11f010a1bb4d3e8a321e847f8feac7f4e418a04e033bf26e2b7fa7a"
+      "sha256": "a4147bd4c362ccd80395ba2ec743e0c49ae8ffa8307e13d998803b72ad13026c",
+      "size": 2498,
+      "normalized_sha256": "a4147bd4c362ccd80395ba2ec743e0c49ae8ffa8307e13d998803b72ad13026c"
     },
     "packages/console-ui/test/run-panel.test.tsx": {
       "role": "observe",
@@ -3550,6 +3574,18 @@
       "sha256": "54889acbaf56bef107a8f5b0722f562e92e0082d6e4426234b7dd8d663c8a730",
       "size": 8996,
       "normalized_sha256": "54889acbaf56bef107a8f5b0722f562e92e0082d6e4426234b7dd8d663c8a730"
+    },
+    "packages/console-ui/test/segment.test.tsx": {
+      "role": "observe",
+      "sha256": "c209b9a42b938f1a4edb76f8274a00566d9aa58033cfeafc7d947787ff722b8b",
+      "size": 1423,
+      "normalized_sha256": "c209b9a42b938f1a4edb76f8274a00566d9aa58033cfeafc7d947787ff722b8b"
+    },
+    "packages/console-ui/test/switch.test.tsx": {
+      "role": "observe",
+      "sha256": "6655325cff18677e339e6ac85c91e6723f9fec1759876a084fc696b8d3f883d5",
+      "size": 1643,
+      "normalized_sha256": "6655325cff18677e339e6ac85c91e6723f9fec1759876a084fc696b8d3f883d5"
     },
     "packages/console-ui/test/task-bar.test.tsx": {
       "role": "observe",

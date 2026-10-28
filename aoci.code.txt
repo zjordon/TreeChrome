@@ -12,11 +12,11 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M1（已实施；评审循环收敛：轮 1-2 P2×2+P1×1 采纳，轮 3 零意见） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M2（控件层：全状态模型+三新原语+滚动条/动效兑底，已实施待评审） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
-_cascade-check.html[TU3T]: F:评审轮 2 双向验证临时页：真实引用 theme.css，CDP 悬停实测三按钮变体 getComputedStyle 级联（ghost 填充/primary accent-strong/danger 透明） | R:code:packages/console-ui/src/theme/controls.css | A:dump | S:_ 前缀不入库；M2 控件状态模型验证可复用
+_cascade-check.html[TU3T]: F:M2 验证临时页：真实引用 theme.css——按钮 hover/尺寸/焦点环、开关轨道两态、段控 active 的 computed style 实测（CDP 悬停/Tab 键盘） | R:code:packages/console-ui/src/theme/controls.css | A:dump, focusInfo | S:_ 前缀不入库；M3/M4 验证可复用
 
 ===D:/dev/git/z_jordon/TreeChrome/.githooks/===
 pre-commit[OQ7T]: F:版本化 git pre-commit 钩子：校验 node≥22 后 exec scripts/gate.mjs pre-commit，人工提交与 agent 提交走同一道门 | R:code:scripts/gate.mjs | A:- | S:启用需每克隆一次 git config core.hooksPath .githooks（pnpm install 的 prepare 自动执行）
@@ -694,9 +694,9 @@ vitest.config.ts[FQ3T]: F:console-ui 测试配置（组件纯函数面，85% 阈
 bytes.ts[CG3T]: F:字节数格式化（1000 进制短写——组件展示面，与 SW 侧 humanSize 分工） | R:- | A:formatBytes | S:-
 final-result.tsx[AU5T]: F:FinalResult 组件：done 终态展示（is_successful 着色+附件清单+lastError 红字）；issue #5 Judge 徽章（通过/未通过）与拒绝判词折叠 | R:- | A:FinalResult | S:-
 grants-view.tsx[IU4T]: F:GrantsView：always 授权表（capability/host/时间）+撤销回调 | R:- | A:GrantsView | S:-
-index.ts[LU6T]: F:console-ui 公共导出面：任务条/时间线/状态行/终态/确认卡/options 件+SkillDraftReview 全量 | R:- | A:- | S:本包禁 chrome.*（biome overrides 强制）——宿主交互经 props/回调注入
+index.ts[LU6T]: F:console-ui 公共导出面：任务条/时间线/状态行/终态/确认卡/options 件+SkillDraftReview 全量 + M2 三原语（IconButton/Switch/Segment） | R:- | A:- | S:本包禁 chrome.*（biome overrides 强制）——宿主交互经 props/回调注入
 permission-card.tsx[AU5T]: F:PermissionCard：权限确认卡（capability 标签+参数表+元素定位+三按钮+倒计时条 expiresAt 线性收敛） | R:- | A:PermissionCard | S:-
-primitives.tsx[CU5T]: F:极简基础件：Button/Badge/Field/Table（不引组件库——语义类名+可访问性，视觉全在 theme.css） | R:- | A:Button, Badge, Field, Table | S:-
+primitives.tsx[CU5T]: F:极简基础件：Button（M2：secondary 默认/ghost 无边框矫正/sm-md-lg 尺寸档）/Badge/Field/Table（不引组件库——语义类名+可访问性） | R:code:packages/console-ui/src/theme/controls.css | A:Button, Badge, Field, Table | S:Button 默认 variant=secondary（M2 语义矫正，渲染与矫正前默认一致）；ghost=无边框勿当带边框默认用
 provider-card-form.tsx[AU5M]: F:ProviderCardForm：provider 卡表单（协议必选/URL http(s) 前缀/maxTokens 正整数/temperature 0-2 校验；onTest 宿主注入） | R:- | A:ProviderCardForm | S:-
 provider-list.tsx[AU4T]: F:ProviderList：卡列表+active 选择+编辑入口（只管主卡面——附属卡在宿主组态） | R:- | A:ProviderList | S:-
 run-timeline.tsx[AU6M]: F:RunTimeline：journal 事件流渲染——step 分组折叠体、按 type 分色、data 逐字段防御收窄、长文折叠；#11 skill_active 两级呈现（站点卡命中态与任务卡已注入分开标注）+去重键含 taskSlug | R:- | A:RunTimeline, repeatedSkillSeqs | S:两级语义勿拼一行：skillLoaded 属站点级、taskSlug/taskSkillChars 属任务级（曾致任务卡命中误示「未命中」）；旧事件无 taskSkillChars 回退 slug 非空判定；去重键含 taskSlug（转换行不折叠）
@@ -707,6 +707,9 @@ task-bar.tsx[AU5S]: F:TaskBar：任务输入+附件清单+上传进度条目+预
 theme.css[FU3T]: F:控制台主题聚合入口（issue #20 M1）：@import 层序 tokens→base→controls→components（四分片同目录），保持 @tw/console-ui/theme.css 出口与消费方零改动 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
 themed-root.tsx[AU3T]: F:主题容器 ThemedRoot：CSS 变量作用域根（显式 light/dark 覆盖，auto 跟随系统） | R:code:packages/console-ui/src/theme/tokens.css | A:ThemedRoot | S:-
 skill-draft-review.tsx[AU5M]: F:蒸馏草稿审阅组件：列表/展开/五字段可编辑（描述+关键词+三件套）/采纳带 edits/丢弃；不预建空编辑态、操作后清残留 | R:code:packages/console-ui/src/skill-list-view.tsx | A:SkillDraftReview | S:-
+icon-button.tsx[CU4S]: F:图标按钮原语（issue #20 M2）：label 必填注入 aria-label+title（图标无文字，可访问名强制）；xs/sm/md 尺寸与 secondary/danger 变体 | R:code:packages/console-ui/src/theme/controls.css | A:IconButton | S:-
+segment.tsx[CU4T]: F:段控原语（issue #20 M2）：受控单选组——fieldset（天然 group 角色）+button aria-pressed；首个消费方在 M4 设置分类 | R:code:packages/console-ui/src/theme/controls.css | A:Segment, SegmentItem | S:fieldset 是 biome useSemanticElements 要求（div+role=group 会被拦）——改回 div 须过 lint 豁免
+switch.tsx[CU4T]: F:开关原语（issue #20 M2）：原生 checkbox 驱动（键盘/表单语义原生保证）——视觉隐藏 input+相邻选择器渲染轨道；label 隐式关联点击可切换 | R:code:packages/console-ui/src/theme/controls.css | A:Switch | S:jsdom fireEvent 无视 disabled 切 checkbox——disabled 测试只断言属性勿加点击断言
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/core/===
 package.json[FE7T]: F:core 包定义：平台无关核心（agent/browser/tools/llm/policy/skills/judge/events——禁 chrome/process 由 biome 强制） | R:- | A:- | S:-
@@ -962,8 +965,8 @@ selectors.md[SD4T]: F:选择器登记（localhost_7780，重蒸版） | R:code:_
 distill-and-rerun.mjs[TQ7M]: F:自蒸馏收敛循环脚本：沙箱积累模式/--fresh 护栏（仅 _ 前缀）/runs+converge/收敛验证轮（converged skip 断言）；judgePassed 门控与逐轮报告 | R:code:packages/node-host/boot.mjs | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/console-ui/src/theme/===
-base.css[FU3T]: F:主题作用域根 .tc-root 基线（自原 theme.css 头部迁出）：system-ui 字体栈/13px/行高 1.5/color-scheme | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
+base.css[FU3T]: F:主题作用域根基线：system-ui 字体栈/13px/行高 + M2 追加——面板作用域 4px 细滚动条与 prefers-reduced-motion 全局兑底 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
 components.css[FU5S]: F:组件类（issue #20 M1 迁移）：徽章/表格/卡片/时间线/倒计时/键值——规则结构不变取新 token，--tc-card-bg 收编为 --tc-bg-muted | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
-controls.css[FU4T]: F:控件类（issue #20 M1 迁移）：tc-btn 族与 tc-field 表单族——结构不变取新 token；默认钮透明底+hover 填充，通用 hover 以 :where(:not(.tc-btn-danger)) 零特异性排除语义变体（评审轮 1-2 修复） | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:完整状态模型在 M2；勿改回 :not(.tc-btn-danger)——参数类计入特异性曾反超 primary hover
-tokens.css[FU4M]: F:语义 token 单源（issue #20 M1）：亮/暗/auto 三块双主题（表面四级/文字四级/accent+语义 subtle/透明度边框/阴影）+主题无关族（控件/表单/浮层/动效/圆角/滚动条） | R:code:packages/console-ui/src/theme.css,code:packages/console-ui/src/theme/base.css | A:- | S:灰阶冷灰/accent 保蓝已拍板；控件浮层动效族 M1 只定义不消费；auto 块重复 light 是有意
+controls.css[FU4M]: F:控件类（issue #20 M2 全状态模型）：Button 四态+尺寸档+变体、icon-btn/switch/segment 三族、表单 32px+focus ring+placeholder | R:code:packages/console-ui/src/theme/tokens.css | A:- | S::not(类) 计特异性，排除用 :where()；变体规则后置通用状态（primary hover 靠源序胜出）
+tokens.css[FU4M]: F:语义 token 单源：亮/暗/auto 三块双主题（表面四级/文字四级/accent+语义 subtle/透明度边框/阴影）+主题无关族（控件/表单/浮层/动效/圆角/滚动条/icon-btn/switch 尺寸） | R:code:packages/console-ui/src/theme.css,code:packages/console-ui/src/theme/base.css | A:- | S:灰阶冷灰/accent 保蓝已拍板；auto 块重复 light 是有意
 
