@@ -14,4 +14,34 @@
   font-size: 13px;
   line-height: 1.5;
   min-height: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tc-scrollbar-thumb) transparent;
+}
+
+/* 面板作用域细滚动条（issue #20 M2：4px，token 单源在 tokens.css） */
+.tc-root ::-webkit-scrollbar {
+  width: var(--tc-scrollbar-size);
+  height: var(--tc-scrollbar-size);
+}
+
+.tc-root ::-webkit-scrollbar-thumb {
+  background: var(--tc-scrollbar-thumb);
+  border-radius: var(--tc-radius-pill);
+}
+
+.tc-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 动效兜底（issue #20 M2）：系统减动效时面板内动画/过渡置零——结构参照
+   alibaba/qz-browser-agent base.css（Apache-2.0） */
+@media (prefers-reduced-motion: reduce) {
+  .tc-root *,
+  .tc-root *::before,
+  .tc-root *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

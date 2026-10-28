@@ -1,25 +1,60 @@
-/* 控件类（自原 theme.css 迁移，issue #20 M1）：按钮与表单控件取新 token，规则结构不变。
-   默认钮透明底 + hover 才有底是决策点 2 批准的唯一状态新增（完整状态模型在 M2）。 */
+/* 控件类（issue #20 M2 全状态模型）：按钮（变体+尺寸档+四态）、图标钮、开关、段控、表单控件。
+   级联纪律：变体规则一律后置于通用状态规则；排除类一律走 :where()（:not(类) 参数计入特异性——轮 2 教训）。 */
 
 .tc-btn {
-  font: inherit;
-  padding: 3px 10px;
+  min-width: 0;
+  height: var(--tc-control-height-md);
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 1px solid var(--tc-border);
   border-radius: var(--tc-control-radius);
   background: var(--tc-control-surface);
   color: var(--tc-fg);
+  font-size: var(--tc-control-font-md);
+  font-weight: var(--tc-control-weight);
   cursor: pointer;
+  transition: var(--tc-transition-surface);
 }
 
-/* :where(:not(.tc-btn-danger)) 排除语义变体且不计特异性（(0,3,0)——避免反超 .tc-btn-primary 的 hover）；
-   danger 的 hover 底色是 M2 面，本期不得被通用 hover 误伤 */
+/* 尺寸档（M2 决策点 1：默认 md=32px） */
+.tc-btn--sm {
+  height: var(--tc-control-height-sm);
+  padding: 0 8px;
+  font-size: var(--tc-control-font-sm);
+}
+
+.tc-btn--lg {
+  height: var(--tc-control-height-lg);
+  padding: 0 14px;
+}
+
+/* 通用状态四件：hover（danger 走自己的红系）/pressed/focus-visible/disabled */
 .tc-btn:where(:not(.tc-btn-danger)):not(:disabled):hover {
   background: var(--tc-control-surface-hover);
 }
 
+.tc-btn:not(:disabled):active {
+  background: var(--tc-control-surface-pressed);
+}
+
+.tc-btn:focus-visible {
+  outline: none;
+  border-color: var(--tc-border-focus);
+  box-shadow: var(--tc-control-focus-ring);
+}
+
 .tc-btn:disabled {
   opacity: var(--tc-control-disabled-opacity);
-  cursor: not-allowed;
+  cursor: default;
+}
+
+/* —— 变体（后置于通用状态）：secondary 与基类同观感，类名仅作语义标记；
+   ghost 无边框（M2 决策点 2 语义矫正——hover 才有底） —— */
+.tc-btn-ghost {
+  border-color: transparent;
 }
 
 .tc-btn-primary {
@@ -30,6 +65,11 @@
 
 .tc-btn-primary:not(:disabled):hover {
   background: var(--tc-control-primary-surface-hover);
+  border-color: var(--tc-control-primary-surface-hover);
+}
+
+.tc-btn-primary:not(:disabled):active {
+  background: var(--tc-control-primary-surface);
 }
 
 .tc-btn-danger {
@@ -38,6 +78,190 @@
   color: var(--tc-danger);
 }
 
+/* danger hover/pressed 是 M1 决策点 2 的 M2 后续：红系 subtle 底 */
+.tc-btn-danger:not(:disabled):hover {
+  background: var(--tc-danger-subtle);
+  border-color: color-mix(in srgb, var(--tc-danger) 42%, var(--tc-border));
+}
+
+.tc-btn-danger:not(:disabled):active {
+  background: var(--tc-danger-subtle);
+}
+
+/* —— 图标钮：无文字，尺寸即宽高；可访问名由组件层 label→aria-label 保证 —— */
+.tc-icon-btn {
+  flex: 0 0 auto;
+  width: var(--tc-icon-btn-size-md);
+  height: var(--tc-icon-btn-size-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--tc-control-radius);
+  background: transparent;
+  color: var(--tc-muted);
+  cursor: pointer;
+  transition: var(--tc-transition-surface);
+}
+
+.tc-icon-btn--xs {
+  width: var(--tc-icon-btn-size-xs);
+  height: var(--tc-icon-btn-size-xs);
+}
+
+.tc-icon-btn--sm {
+  width: var(--tc-icon-btn-size-sm);
+  height: var(--tc-icon-btn-size-sm);
+}
+
+.tc-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tc-icon-btn-secondary {
+  border-color: var(--tc-border);
+}
+
+.tc-icon-btn-danger {
+  color: var(--tc-danger);
+}
+
+.tc-icon-btn:not(:disabled):hover {
+  background: var(--tc-control-surface-hover);
+  color: var(--tc-fg);
+}
+
+.tc-icon-btn-danger:not(:disabled):hover {
+  background: var(--tc-danger-subtle);
+  color: var(--tc-danger);
+}
+
+.tc-icon-btn:not(:disabled):active {
+  background: var(--tc-control-surface-pressed);
+}
+
+.tc-icon-btn:focus-visible {
+  outline: none;
+  border-color: var(--tc-border-focus);
+  box-shadow: var(--tc-control-focus-ring);
+}
+
+.tc-icon-btn:disabled {
+  opacity: var(--tc-control-disabled-opacity);
+  cursor: default;
+}
+
+/* —— 开关：原生 checkbox 视觉隐藏（保留键盘/表单语义），轨道经相邻选择器渲染 —— */
+.tc-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.tc-switch-input {
+  position: absolute;
+  width: var(--tc-switch-width);
+  height: var(--tc-switch-height);
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.tc-switch-track {
+  flex: 0 0 auto;
+  position: relative;
+  width: var(--tc-switch-width);
+  height: var(--tc-switch-height);
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-border-strong);
+  transition: background-color var(--tc-transition), border-color var(--tc-transition);
+}
+
+.tc-switch-thumb {
+  position: absolute;
+  top: calc((var(--tc-switch-height) - var(--tc-switch-thumb)) / 2);
+  left: calc((var(--tc-switch-height) - var(--tc-switch-thumb)) / 2);
+  width: var(--tc-switch-thumb);
+  height: var(--tc-switch-thumb);
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-bg);
+  transition: translate var(--tc-transition);
+}
+
+.tc-switch-input:checked + .tc-switch-track {
+  background: var(--tc-accent);
+}
+
+.tc-switch-input:checked + .tc-switch-track .tc-switch-thumb {
+  translate: calc(var(--tc-switch-width) - var(--tc-switch-height)) 0;
+}
+
+.tc-switch-input:focus-visible + .tc-switch-track {
+  box-shadow: var(--tc-control-focus-ring);
+}
+
+.tc-switch-input:disabled ~ .tc-switch-track,
+.tc-switch-input:disabled ~ .tc-switch-label {
+  opacity: var(--tc-control-disabled-opacity);
+  cursor: default;
+}
+
+.tc-switch-label {
+  color: var(--tc-fg);
+}
+
+/* —— 段控：受控单选组（active = accent-subtle 底）；fieldset 天然 role=group，重置其缺省边距 —— */
+.tc-segment {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-control-radius);
+  background: var(--tc-bg-muted);
+}
+
+.tc-segment-item {
+  min-height: var(--tc-menu-item-min-height);
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: calc(var(--tc-control-radius) - 1px);
+  background: transparent;
+  color: var(--tc-muted);
+  font: inherit;
+  font-weight: var(--tc-control-weight);
+  cursor: pointer;
+  transition: var(--tc-transition-surface);
+}
+
+.tc-segment-item:not(:disabled):hover {
+  background: var(--tc-control-surface-hover);
+  color: var(--tc-fg);
+}
+
+.tc-segment-item:focus-visible {
+  outline: none;
+  box-shadow: var(--tc-control-focus-ring);
+}
+
+.tc-segment-item[aria-pressed="true"] {
+  background: var(--tc-accent-subtle);
+  color: var(--tc-accent);
+}
+
+.tc-segment-item:disabled {
+  opacity: var(--tc-control-disabled-opacity);
+  cursor: default;
+}
+
+/* —— 表单控件：32px 统一高（M2 决策点 3，textarea 自然高度）/placeholder/focus ring —— */
 .tc-field {
   display: grid;
   gap: 2px;
@@ -49,14 +273,50 @@
 }
 
 .tc-field input,
+.tc-field select {
+  height: var(--tc-field-height-md);
+  box-sizing: border-box;
+}
+
+.tc-field input,
 .tc-field select,
 .tc-field textarea {
   font: inherit;
-  padding: 3px 6px;
+  padding: 0 8px;
   border: 1px solid var(--tc-border);
   border-radius: var(--tc-control-radius);
   background: var(--tc-bg);
   color: var(--tc-fg);
+  transition: var(--tc-transition-surface);
+}
+
+.tc-field textarea {
+  padding: 4px 8px;
+}
+
+.tc-field input::placeholder,
+.tc-field textarea::placeholder {
+  color: var(--tc-field-placeholder);
+}
+
+.tc-field input:not(:disabled):hover,
+.tc-field select:not(:disabled):hover,
+.tc-field textarea:not(:disabled):hover {
+  border-color: var(--tc-border-strong);
+}
+
+.tc-field input:focus-visible,
+.tc-field select:focus-visible,
+.tc-field textarea:focus-visible {
+  outline: none;
+  border-color: var(--tc-border-focus);
+  box-shadow: var(--tc-control-focus-ring);
+}
+
+.tc-field input:disabled,
+.tc-field select:disabled,
+.tc-field textarea:disabled {
+  opacity: var(--tc-control-disabled-opacity);
 }
 
 .tc-field-error {

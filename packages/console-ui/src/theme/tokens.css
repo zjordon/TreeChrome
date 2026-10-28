@@ -30,6 +30,14 @@
   --tc-popover-padding: 4px;
   --tc-menu-item-min-height: 30px;
 
+  --tc-icon-btn-size-xs: 22px;
+  --tc-icon-btn-size-sm: 28px;
+  --tc-icon-btn-size-md: 32px;
+
+  --tc-switch-width: 30px;
+  --tc-switch-height: 18px;
+  --tc-switch-thumb: 12px;
+
   --tc-motion-fast: 120ms;
   --tc-motion-base: 180ms;
   --tc-motion-slow: 240ms;
