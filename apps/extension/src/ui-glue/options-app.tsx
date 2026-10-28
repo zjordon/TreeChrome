@@ -1,15 +1,17 @@
-// options 组态（m5/05 §2）：settings 读写走 options 单发请求（单一写者=SW——UI
-// 不直碰 chrome.storage）。ProviderList/ProviderCardForm + always 授权 + skill 库 +
-// 附属卡/agent 覆盖（M5 极简内联面）。request 工厂由 entrypoints 注入（chrome 面）。
+// options 组态（m5/05 §2 + issue #20 M4 分区 tab）：settings 读写走 options 单发请求
+// （单一写者=SW——UI 不直碰 chrome.storage）。Segment 四区（模型/授权/技能库/草稿），
+// 视觉模式走 Switch；ThemedRoot 由宿主负责（options 页薄壳 / sidepanel overlay 双宿主）。
+// request 工厂由 entrypoints 注入（chrome 面）。
 
 import {
   Button,
   GrantsView,
   ProviderCardForm,
   ProviderList,
+  Segment,
   SkillDraftReview,
   SkillListView,
-  ThemedRoot,
+  Switch,
 } from "@tw/console-ui";
 import type {
   Grant,
@@ -28,6 +30,15 @@ export interface OptionsAppProps {
 
 type FormTarget = { mode: "closed" } | { mode: "new" } | { mode: "edit"; card: ProviderCardDto };
 
+/** 分区 tab（issue #20 M4：Segment 首个消费方） */
+type TabKey = "models" | "grants" | "skills" | "drafts";
+const TABS = [
+  { value: "models", label: "模型" },
+  { value: "grants", label: "授权" },
+  { value: "skills", label: "技能库" },
+  { value: "drafts", label: "草稿" },
+];
+
 export function OptionsApp({ request }: OptionsAppProps) {
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
   const [grants, setGrants] = useState<Grant[]>([]);
@@ -36,6 +47,7 @@ export function OptionsApp({ request }: OptionsAppProps) {
   const [form, setForm] = useState<FormTarget>({ mode: "closed" });
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>("models");
 
   const refresh = useCallback(async (): Promise<void> => {
     // fail-soft（评审轮 1 [8]）：SW 被杀/扩展重载时 sendMessage reject——裸 await
@@ -133,13 +145,18 @@ export function OptionsApp({ request }: OptionsAppProps) {
   );
 
   return (
-    <ThemedRoot>
-      <main style={{ maxWidth: 860, margin: "0 auto", padding: 16, display: "grid", gap: 10 }}>
-        <h1 style={{ fontSize: 16, margin: 0 }}>TreeChrome 设置</h1>
-        {error !== null ? <p className="tc-ev-err">{error}</p> : null}
-        {notice !== null ? <p className="tc-ev-ok">{notice}</p> : null}
+    <>
+      {error !== null ? <p className="tc-ev-err">{error}</p> : null}
+      {notice !== null ? <p className="tc-ev-ok">{notice}</p> : null}
+      <Segment
+        items={TABS}
+        value={tab}
+        onChange={(v) => setTab(v as TabKey)}
+        ariaLabel="设置分区"
+      />
 
-        {settings === null ? (
+      {tab === "models" ? (
+        settings === null ? (
           <p className="tc-ev-muted">读取设置中…</p>
         ) : (
           <>
@@ -178,19 +195,16 @@ export function OptionsApp({ request }: OptionsAppProps) {
             <section className="tc-card">
               <strong>Agent 覆盖</strong>
               <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                <label className="tc-field">
-                  <span className="tc-field-label">视觉模式</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.agent?.useVision ?? false}
-                    onChange={(e) =>
-                      void saveSettings({
-                        ...settings,
-                        agent: { ...settings.agent, useVision: e.target.checked },
-                      })
-                    }
-                  />
-                </label>
+                <Switch
+                  label="视觉模式"
+                  checked={settings.agent?.useVision ?? false}
+                  onChange={(e) =>
+                    void saveSettings({
+                      ...settings,
+                      agent: { ...settings.agent, useVision: e.target.checked },
+                    })
+                  }
+                />
                 <label className="tc-field">
                   <span className="tc-field-label">最大步数</span>
                   <input
@@ -218,8 +232,10 @@ export function OptionsApp({ request }: OptionsAppProps) {
               </div>
             </section>
           </>
-        )}
+        )
+      ) : null}
 
+      {tab === "grants" ? (
         <GrantsView
           grants={grants}
           onRevoke={(grant) => {
@@ -231,6 +247,9 @@ export function OptionsApp({ request }: OptionsAppProps) {
               .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
           }}
         />
+      ) : null}
+
+      {tab === "drafts" ? (
         <SkillDraftReview
           drafts={drafts}
           onAdopt={(host, slug, edits) => {
@@ -252,18 +271,20 @@ export function OptionsApp({ request }: OptionsAppProps) {
               .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
           }}
         />
-        <SkillListView cards={skills} />
-        <p style={{ margin: 0 }} className="tc-ev-muted">
-          <Button
-            onClick={() => {
-              setNotice(null);
-              void refresh();
-            }}
-          >
-            刷新
-          </Button>
-        </p>
-      </main>
-    </ThemedRoot>
+      ) : null}
+
+      {tab === "skills" ? <SkillListView cards={skills} /> : null}
+
+      <p style={{ margin: 0 }} className="tc-ev-muted">
+        <Button
+          onClick={() => {
+            setNotice(null);
+            void refresh();
+          }}
+        >
+          刷新
+        </Button>
+      </p>
+    </>
   );
 }

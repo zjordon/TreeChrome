@@ -12,14 +12,16 @@ import {
   RunPanelHeader,
   RunStatusBar,
   RunTimeline,
+  SettingsOverlay,
   SubmitCard,
   TaskBar,
   ThemedRoot,
   WelcomePanel,
 } from "@tw/console-ui";
-import type { UiToSwMessage } from "@tw/protocol";
+import type { OptionsOp, UiToSwMessage } from "@tw/protocol";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type BegunSignal, uploadAttachment } from "./attachment-upload.js";
+import { OptionsApp } from "./options-app.js";
 import { PortClient, type UiPort } from "./port-client.js";
 import {
   ingestSidepanel,
@@ -33,7 +35,10 @@ export interface SidepanelAppProps {
   /** 草稿数主动查询面（issue #5 可观测性：广播即发即逝——打开/重连时补查一次；
    *  entrypoints 注入 chrome.runtime.sendMessage options op，测试注入 mock。缺省不查） */
   fetchDraftCount?: () => Promise<number | null>;
-  /** 设置入口（M3 跳 options 页；M4 换侧边栏 overlay）。entrypoints 注入 openOptionsPage */
+  /** options 单发请求工厂（issue #20 M4）：注入则设置钮开侧边栏 overlay（OptionsApp 双宿主），
+   *  缺省回退 onOpenSettings 跳 options 页（测试/降级）。模块级稳定引用——refresh 依赖其身份 */
+  optionsRequest?: (op: OptionsOp, payload?: unknown) => Promise<unknown>;
+  /** 设置入口降级路径（optionsRequest 未注入时使用——跳 options 页） */
   onOpenSettings?: () => void;
 }
 
@@ -45,7 +50,12 @@ interface UploadProgress {
   sent: number;
 }
 
-export function SidepanelApp({ connect, fetchDraftCount, onOpenSettings }: SidepanelAppProps) {
+export function SidepanelApp({
+  connect,
+  fetchDraftCount,
+  optionsRequest,
+  onOpenSettings,
+}: SidepanelAppProps) {
   const [state, dispatch] = useReducer(
     (s: typeof initialSidepanelState, a: SidepanelAction) => ingestSidepanel(s, a).state,
     initialSidepanelState,
@@ -53,6 +63,7 @@ export function SidepanelApp({ connect, fetchDraftCount, onOpenSettings }: Sidep
   const [portStatus, setPortStatus] = useState<"connecting" | "online" | "offline">("connecting");
   const [task, setTask] = useState("");
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const clientRef = useRef<PortClient | null>(null);
   /** begin→begun 回执桥（Map<transferId, settle>；超时自清不留悬挂传输） */
   const begunWaiters = useRef(new Map<string, (signal: BegunSignal) => void>());
@@ -151,8 +162,12 @@ export function SidepanelApp({ connect, fetchDraftCount, onOpenSettings }: Sidep
             portStatus={portStatus}
             distill={state.distill}
             draftCount={state.draftCount}
-            onOpenSettings={onOpenSettings}
-            onReviewDrafts={onOpenSettings}
+            onOpenSettings={
+              optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
+            }
+            onReviewDrafts={
+              optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
+            }
           />
         }
         dock={
@@ -234,6 +249,11 @@ export function SidepanelApp({ connect, fetchDraftCount, onOpenSettings }: Sidep
           />
         ) : null}
       </AppShell>
+      {optionsRequest !== undefined ? (
+        <SettingsOverlay open={settingsOpen} onClose={() => setSettingsOpen(false)} title="设置">
+          <OptionsApp request={optionsRequest} />
+        </SettingsOverlay>
+      ) : null}
     </ThemedRoot>
   );
 }
