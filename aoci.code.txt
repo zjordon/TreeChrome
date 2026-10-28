@@ -12,7 +12,7 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4T]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M3（三区布局已实施；评审轮 1 零意见首刷收敛；M1/M2 已并入 main） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4T]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M4（设置收纳 overlay 已实施待评审；M1-M3 已并入 main） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
@@ -38,21 +38,21 @@ probe-debugger.mjs[TN4S]: F:B1 真机探针：在扩展 SW 实测 chrome.debugge
 probe-debugger2.mjs[TN4S]: F:B1 探针 v2：收口 v1 悬念——getTargets 全键、createTarget 真 targetId 附着、Debuggee 路由形状矩阵与子会话事件流 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:-
 smoke-cdp-chrome.mjs[TN7S]: F:B4 跨通道对拍 smoke：同一 headless chrome 活页上 chrome.debugger 与 cdp-ws 通道各跑 BrowserSession get_state，断言 element_tree_text 逐字节一致 | R:code:apps/extension/e2e/lib-harness.mjs,code:packages/node-host/boot.mjs | A:- | S:前置 npx wxt build；驱动上下文必须是扩展页面（sendMessage 不回投发送者）
 smoke-sw-runtime.mjs[TB7M]: F:D5 SW 运行时全链 smoke：mock LLM 剧本三步（navigate/click/done）→权限卡 Port 代答→journal 落盘终态+点击副作用断言 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:click 索引从请求状态文本解析（盲填固定 index 必错）；mock 解析失败回 500 落 error 终态（回调 throw 崩进程残留端口）
-smoke-ui.mjs[TU6M]: F:E5 真 UI smoke：CDP DOM 驱动真侧边栏页——输入任务→开始→权限卡 DOM 代答→时间线→done 终态（M3 起终态由 FinalResult「✓ 成功」承载） | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/e2e/smoke-sw-runtime.mjs | A:- | S:React 受控组件输入须 native setter + input 事件
+smoke-ui.mjs[TU6M]: F:E5 真 UI smoke：CDP DOM 驱动真侧边栏页——输入→开始→权限卡代答→时间线→done；M4 增 ⑤ 设置 overlay 冒烟（设置钮→sheet 四区 tab+dialog→Esc 关） | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/e2e/smoke-sw-runtime.mjs | A:- | S:React 受控组件输入须 native setter + input 事件；overlay Esc 用 window.dispatchEvent
 smoke-attachments.mjs[TU5S]: F:附件分块传输 e2e smoke：真 SW+Port 驱动 begin→begun→chunk→commit（微型/8MB 多块/超限拒绝/多件并存）；diag echo 探针实证通道序列化行为 | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/src/host/attachment-registry.ts | A:- | S:通道实证留痕——chrome.runtime 消息 JSON 序列化，ArrayBuffer 克隆不可用（块载荷因此是 base64）
 smoke-self-evolution.mjs[TB7M]: F:e2e 全链 smoke（issue #5 M7 验收句）：mock LLM 四面路由（主循环步/judge/matcher/蒸馏）→成功 run→IDB 草稿+skill-drafts 广播→options op 采纳→二跑 skill_active(taskSlug) 注入断言 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:-
-_shot-theme.mjs[TU4T]: F:issue #20 M1 双主题截图验收临时件：harness 起真浏览器→侧边栏 420px/options 900px × 亮暗四截图写仓库根 _shot-*.png | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:_ 前缀不入库；M2-M4 验收可复用；biome 对 _ 件同样 lint
+_shot-theme.mjs[TU4T]: F:issue #20 双主题截图验收临时件：侧边栏/options × 亮暗 + M4 设置 overlay 双主题（header 设置钮开→shoot→Esc 关） | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:_ 前缀不入库；biome 对 _ 件同样 lint
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/===
 background.ts[EW9M]: F:MV3 SW 壳：消息路由先注册再 boot 装配全套件；issue #5 蒸馏链（队列/worker/alarm 兜底 drain/skill-drafts 广播）+issue #9 notifyDrafts 计数与 onPhase 过程拍广播；diag 与 SW 被杀恢复 | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/message-router.ts,code:apps/extension/src/runtime/port-server.ts,code:apps/extension/src/runtime/distill-worker.ts,code:apps/extension/src/runtime/options-handler.ts | A:defineBackground, boot, recoverInterruptedRuns, refreshBuiltins | S:MV3 纪律：全部事件监听器须在首个 await 前同步注册（晚注册丢事件无自愈）；openSkillDb 是 boot 唯一 await 点置于尾部；IDB 打不开降级内存空库不拖垮 run
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/options/===
-App.tsx[EU5T]: F:options 页粘合层：chrome 交互只在此——sendMessage 单发请求工厂注入 OptionsApp（settings 读写全走 SW 单一写者） | R:code:apps/extension/src/ui-glue/options-app.tsx | A:App, request | S:request 须模块级稳定引用——内联箭头每渲染重建，refresh 依赖其身份
+App.tsx[EU5T]: F:options 页粘合层（M4 双宿主薄壳）：ThemedRoot+页面壳在外（OptionsApp 已不带主题壳），sendMessage 单发工厂注入 | R:code:apps/extension/src/ui-glue/options-app.tsx | A:App, request | S:request 须模块级稳定引用——refresh 依赖其身份；主题壳在宿主是双宿主前提
 index.html[EU3T]: F:options 页 HTML 壳（zh-CN，#root 挂载点+main.tsx 模块入口） | R:code:apps/extension/entrypoints/options/main.tsx | A:- | S:-
 main.tsx[EU4T]: F:options 页 React 挂载入口（StrictMode+console-ui theme.css） | R:code:apps/extension/entrypoints/options/App.tsx | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/sidepanel/===
-App.tsx[EU5T]: F:侧边栏粘合层：chrome 交互只在此——runtime.connect 工厂 + 草稿数查询 + 设置入口（M3 openOptionsPage，M4 换 overlay）注入 SidepanelApp | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx | A:App, connect, fetchDraftCount | S:-
+App.tsx[EU5T]: F:侧边栏粘合层：chrome 交互只在此——connect 工厂+草稿数查询+optionsRequest（M4 overlay）+openOptionsPage（降级）注入 | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx | A:App, connect, fetchDraftCount, optionsRequest | S:-
 index.html[EU3T]: F:侧边栏页 HTML 壳（zh-CN，#root+main.tsx 入口） | R:code:apps/extension/entrypoints/sidepanel/main.tsx | A:- | S:-
 main.tsx[EU4T]: F:侧边栏 React 挂载入口（theme.css+sidepanel.css 页面 reset） | R:code:apps/extension/entrypoints/sidepanel/App.tsx | A:- | S:-
 sidepanel.css[FU3T]: F:侧边栏页面级 reset（html/body/#root 满高）+ 视口滚动条 4px webkit 定制（auto 跟随系统双套） | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:视口条挂 html；不设标准 scrollbar 属性（121+ 抑制 webkit）
@@ -93,9 +93,9 @@ options-handler.ts[AW7S]: F:options 请求处理器（自 background.ts 迁出�
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/src/ui-glue/===
 card-mutation.ts[DC6T]: F:卡片保存变更计划纯函数：撞名统一判定（新增路径 originalName=null）、activeCard 单点计算（自动激活+改名指针重定向合一防互覆） | R:code:apps/extension/src/ui-glue/options-app.tsx,code:apps/extension/src/host/settings-store.ts | A:planCardMutation, CardMutationPlan | S:对象展开后者胜——activeCard 自动激活与改名重定向须单点合一计算，拆回两个条件展开会互覆
-options-app.tsx[AU6M]: F:options 组态组件：ProviderList/CardForm+附属卡+agent 覆盖+授权与技能库视图；issue #5 草稿审阅接线（SkillDraftReview + 采纳/丢弃单发后刷新） | R:code:apps/extension/src/ui-glue/card-mutation.ts,code:apps/extension/entrypoints/options/App.tsx | A:OptionsApp, OptionsAppProps | S:SW 被杀 sendMessage reject 须 try/catch（裸 await 页面永停读态）；maxSteps 清空显式置 undefined（条件展开保留旧值致清空失败）
+options-app.tsx[AU6M]: F:options 组态（M4 分区 tab）：Segment 四区（模型/授权/技能库/草稿）+附属卡+agent 覆盖（视觉模式 Switch）；ThemedRoot 外提双宿主（options 页/sidepanel overlay） | R:code:apps/extension/src/ui-glue/card-mutation.ts,code:packages/console-ui/src/segment.js,code:packages/console-ui/src/switch.js | A:OptionsApp, OptionsAppProps | S:SW 被杀 sendMessage reject 须 try/catch；maxSteps 清空显式置 undefined；主题壳由宿主负责勿加回
 port-client.ts[IU6S]: F:Port 客户端封装：断线指数退避重连（1s·2^n 封顶 30s）、onMessage 分发、send 无连接返 false；connect 工厂注入零 chrome | R:code:apps/extension/src/runtime/port-server.ts,code:apps/extension/entrypoints/sidepanel/App.tsx | A:PortClient, UiPort, defaultBackoff, PortStatus | S:MV3 SW idle 被杀断 Port 是常态——重连后 hello 恢复快照+挂起卡补发；旧端口迟到断连按 port 身份比对忽略
-sidepanel-app.tsx[AU7M]: F:侧边栏组态：PortClient+console-ui 装配+附件传输编排；M3 三区重排——AppShell（header 连接/蒸馏/草稿徽标/设置入口 + main 确认卡/时间线/终态/欢迎屏 + dock 运行状态条/TaskBar 常驻） | R:code:apps/extension/src/ui-glue/port-client.ts,code:apps/extension/src/ui-glue/sidepanel-state.ts,code:apps/extension/entrypoints/sidepanel/App.tsx | A:SidepanelApp, SidepanelAppProps | S:确认卡同时至多一张（core 守卫链串行）；connect/fetchDraftCount/onOpenSettings 注入——组件层零 chrome
+sidepanel-app.tsx[AU7M]: F:侧边栏组态：PortClient+console-ui 装配+附件编排；M3 三区 AppShell；M4 设置 overlay（optionsRequest 注入则开 SettingsOverlay 内挂 OptionsApp，缺省回退跳 options 页） | R:code:apps/extension/src/ui-glue/port-client.ts,code:apps/extension/src/ui-glue/sidepanel-state.ts,code:apps/extension/entrypoints/sidepanel/App.tsx | A:SidepanelApp, SidepanelAppProps | S:确认卡同时至多一张；connect/fetchDraftCount/optionsRequest 注入——组件层零 chrome；optionsRequest 须模块级稳定（refresh 依赖身份）
 sidepanel-state.ts[DU7S]: F:sidepanel 状态机：SwToUiMessage→UI 态纯 reducer——hello 合并/live event 投影/附件吸收；issue #5 skill-drafts 吸收（draftCount）；issue #9 distill 态吸收与清空 | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx,code:apps/extension/src/runtime/journal.ts,code:packages/protocol/src/index.ts | A:ingestSidepanel, initialSidepanelState, SidepanelState | S:hello 无活 run 保留上一 run 终态视图；重连不得整表替换时间线——已 ack 事件只存本地副本；distill 态仅在换 run 时清空（journal-snapshot/hello 双路径）——failed 常驻到下一 run 不闪烁
 attachment-upload.ts[CU5S]: F:附件分块上传编排（纯函数）：begin→等 begun 回执（begun/rejected/timeout 三态）→顺序 chunk（slice 流式读+块级 base64）→commit；断连三阶段检查（send 返 false 即本地拒绝+abort）；空 MIME 规范化 | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx,code:packages/protocol/src/index.ts | A:uploadAttachment, bytesToBase64, ATTACHMENT_CHUNK_BYTES, BEGUN_TIMEOUT_MS | S:send 契约返 boolean（PortClient 断连返 false 不抛）——false 须显式收口，静默丢传输违反失败面契约；空 File.type 不规范化会被 registry 判 invalid 永久不可附加
 
@@ -700,7 +700,7 @@ vitest.config.ts[FQ3T]: F:console-ui 测试配置（组件纯函数面，85% 阈
 bytes.ts[CG3T]: F:字节数格式化（1000 进制短写——组件展示面，与 SW 侧 humanSize 分工） | R:- | A:formatBytes | S:-
 final-result.tsx[AU5T]: F:FinalResult 组件：done 终态展示（is_successful 着色+附件清单+lastError 红字）；issue #5 Judge 徽章（通过/未通过）与拒绝判词折叠 | R:- | A:FinalResult | S:-
 grants-view.tsx[IU4T]: F:GrantsView：always 授权表（capability/host/时间）+撤销回调 | R:- | A:GrantsView | S:-
-index.ts[LU6T]: F:console-ui 公共导出面：任务条/时间线/状态行/终态/确认卡/options 件 + M2 三原语（IconButton/Switch/Segment）+ M3 四件（AppShell/RunPanelHeader/RunStatusBar/WelcomePanel）；StatusLine 已删 | R:- | A:- | S:本包禁 chrome.*（biome overrides 强制）——宿主交互经 props/回调注入
+index.ts[LU6T]: F:console-ui 公共导出面：任务条/时间线/确认卡/options 件 + M2 三原语 + M3 四件 + M4 SettingsOverlay；StatusLine 已删 | R:- | A:- | S:本包禁 chrome.*（biome overrides 强制）——宿主交互经 props/回调注入
 permission-card.tsx[AU5T]: F:PermissionCard：权限确认卡（capability 标签+参数表+元素定位+三按钮+倒计时条 expiresAt 线性收敛） | R:- | A:PermissionCard | S:-
 primitives.tsx[CU5T]: F:极简基础件：Button（M2：secondary 默认/ghost 无边框矫正/sm-md-lg 尺寸档）/Badge/Field/Table（不引组件库——语义类名+可访问性） | R:code:packages/console-ui/src/theme/controls.css | A:Button, Badge, Field, Table | S:Button 默认 variant=secondary（M2 语义矫正，渲染与矫正前默认一致）；ghost=无边框勿当带边框默认用
 provider-card-form.tsx[AU5M]: F:ProviderCardForm：provider 卡表单（协议必选/URL http(s) 前缀/maxTokens 正整数/temperature 0-2 校验；onTest 宿主注入） | R:- | A:ProviderCardForm | S:-
@@ -719,6 +719,7 @@ app-shell.tsx[CU4T]: F:布局壳（issue #20 M3）：header/滚动 main/底部 d
 run-panel-header.tsx[CU4S]: F:面板 header（issue #20 M3）：标题+连接状态点三色+蒸馏 glyph（failed 红，distillStatusText 迁入）+草稿徽标（可点，缺省回退设置入口）+设置 IconButton（M3 跳 options/M4 换 overlay） | R:code:packages/console-ui/src/icon-button.js,code:packages/console-ui/src/theme/layout.css | A:RunPanelHeader, distillStatusText | S:-
 run-status-bar.tsx[CU4T]: F:运行状态条（issue #20 M3，替代 StatusLine）：呼吸 dot（waiting 警色）+文案+步数·耗时+停止钮——只运行期渲染（terminal 由 FinalResult 承载） | R:code:packages/console-ui/src/icon-button.js,code:packages/console-ui/src/theme/layout.css | A:RunStatusBar, formatSeconds | S:-
 welcome-panel.tsx[CU3T]: F:欢迎屏（issue #20 M3）：空闲态（无 run 无事件）品牌大字+tagline+输入引导，取代旧「空闲」文本行 | R:code:packages/console-ui/src/theme/layout.css | A:WelcomePanel | S:-
+settings-overlay.tsx[CU4T]: F:设置 overlay（issue #20 M4）：底部弹出卡（--tc-overlay-* 首次消费）——分区 tab 由宿主塞 children；三条关闭路径（×/backdrop/Esc）+ dialog 语义 | R:code:packages/console-ui/src/theme/layout.css | A:SettingsOverlay | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/core/===
 package.json[FE7T]: F:core 包定义：平台无关核心（agent/browser/tools/llm/policy/skills/judge/events——禁 chrome/process 由 biome 强制） | R:- | A:- | S:-
@@ -978,5 +979,5 @@ base.css[FU3S]: F:主题作用域根基线：字体/13px/行高/height100%（App
 components.css[FU5S]: F:组件类（issue #20 M1 迁移）：徽章/表格/卡片/时间线/倒计时/键值——规则结构不变取新 token，--tc-card-bg 收编为 --tc-bg-muted | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
 controls.css[FU4M]: F:控件类（issue #20 M2 全状态模型）：Button 四态+尺寸档+变体、icon-btn/switch/segment 三族、表单 32px+focus ring+placeholder；box-sizing 由 base 作用域 reset 统一 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S::not(类) 计特异性，排除用 :where()；变体规则后置通用状态（primary hover 靠源序胜出）
 tokens.css[FU4M]: F:语义 token 单源：亮/暗/auto 三块双主题（表面四级/文字四级/accent+语义 subtle/透明度边框/阴影）+主题无关族（控件/表单/浮层/动效/圆角/滚动条/icon-btn/switch 尺寸） | R:code:packages/console-ui/src/theme.css,code:packages/console-ui/src/theme/base.css | A:- | S:灰阶冷灰/accent 保蓝已拍板；auto 块重复 light 是有意
-layout.css[FU4S]: F:布局壳分片（issue #20 M3）：shell 三区/面板 header/port 点/草稿徽标/运行状态条（tc-pulse 呼吸动画受 reduced-motion 兑底）/欢迎屏 | R:code:packages/console-ui/src/theme.css | A:- | S:-
+layout.css[FU4M]: F:布局壳分片（M3/M4）：shell 三区/面板 header/运行状态条/欢迎屏 + 设置 overlay 族（backdrop/sheet/drawer-up——overlay token 首次消费） | R:code:packages/console-ui/src/theme.css | A:- | S:-
 
