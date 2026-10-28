@@ -1,6 +1,6 @@
 # SCRATCHPAD — issue #20 UI 重构 · M4 设置收纳（收官期）
 
-> 状态：**M4 已实施并全量验证（2026-10-29）；三个决策点均按建议拍板执行。** 待 `/review-loop`。
+> 状态：**M4 已实施并全量验证；评审轮 1 零意见首刷收敛（2026-10-29）。** 待 `/finish-issue` 收官（M1-M4 全部完成，PR 将关闭 #20）。
 > 基准：`docs/ui-refactor-reference.md`（§2.5 overlay 形态 / §5.2 通道面 / §5.3 options 处置）；issue #20；M1–M3 已并入 main（PR #21/#22/#23）。
 > 分支：`feat/issue-20-ui-m4`（自 main）。
 
@@ -79,4 +79,4 @@
 
 ## 评审轮登记
 
-（/review-loop 后填充）
+- **轮 1**（2026-10-29）：零意见、状态 complete——base=main 全量 9 文件，glm-5.3，4m14s。**首刷即收敛出口**（M1-M4 四期唯一一次与 M3 同款），无修复提交；累计 stats：1 轮 / 0 意见 / 0 采纳 / 0 驳回。
