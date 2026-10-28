@@ -174,6 +174,32 @@ try {
   if (!done) failures.push("run 未在预算内完成（FinalResult/时间线未就位）");
   if (allowedCards < 2) failures.push(`权限卡代答 = ${allowedCards} < 2`);
   if (toolCallCount < 3) failures.push(`LLM tool calls = ${toolCallCount} < 3`);
+
+  // ⑤ 设置 overlay 冒烟（issue #20 M4）：header 设置钮 → sheet 出现（Segment 四区）→ Esc 关闭
+  const overlayOpen = await page.evaluate(`(() => {
+    const btn = document.querySelector('button[aria-label="设置"]');
+    if (btn === null) return "no-button";
+    btn.click();
+    return "clicked";
+  })()`);
+  await new Promise((r) => setTimeout(r, 800));
+  const overlayState = await page.evaluate(`(() => {
+    const sheet = document.querySelector(".tc-settings-sheet");
+    if (sheet === null) return "no-sheet";
+    const tabs = sheet.querySelectorAll(".tc-segment-item").length;
+    const dialog = sheet.closest('[role="dialog"]') !== null;
+    return \`sheet tabs=\${tabs} dialog=\${dialog}\`;
+  })()`);
+  if (overlayOpen !== "clicked") failures.push(`设置钮不可见：${overlayOpen}`);
+  else if (!/^sheet tabs=4 dialog=true$/.test(overlayState)) {
+    failures.push(`设置 overlay 异常：${overlayState}`);
+  }
+  await page.evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);
+  await new Promise((r) => setTimeout(r, 400));
+  const overlayClosed = await page.evaluate(
+    `document.querySelector(".tc-settings-sheet") === null`,
+  );
+  if (overlayClosed !== true) failures.push("设置 overlay Esc 未关闭");
 } finally {
   proc?.kill();
   fixtureSrv.close();

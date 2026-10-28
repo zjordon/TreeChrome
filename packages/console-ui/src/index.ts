@@ -37,6 +37,8 @@ export type { RunTimelineProps } from "./run-timeline.js";
 export { groupByStep, RunTimeline, repeatedSkillSeqs } from "./run-timeline.js";
 export type { SegmentItem, SegmentProps } from "./segment.js";
 export { Segment } from "./segment.js";
+export type { SettingsOverlayProps } from "./settings-overlay.js";
+export { SettingsOverlay } from "./settings-overlay.js";
 export type { SkillDraftEdits, SkillDraftReviewProps } from "./skill-draft-review.js";
 export { SkillDraftReview } from "./skill-draft-review.js";
 export type { SkillListViewProps } from "./skill-list-view.js";

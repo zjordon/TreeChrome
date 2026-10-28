@@ -116,6 +116,70 @@
   }
 }
 
+/* —— 设置 overlay（issue #20 M4）：底部弹出卡——M1 的 --tc-overlay-* token 首次消费；
+   形态参照 alibaba/qz-browser-agent settings-panel（Apache-2.0）—— */
+.tc-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--tc-overlay-backdrop);
+  animation: tc-fade-in var(--tc-motion-slow) var(--tc-ease-standard);
+}
+
+.tc-settings-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 88%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--tc-overlay-border);
+  border-bottom: 0;
+  border-radius: var(--tc-radius-lg) var(--tc-radius-lg) 0 0;
+  background: var(--tc-overlay-surface);
+  box-shadow: var(--tc-overlay-shadow);
+  animation: tc-drawer-up var(--tc-motion-slow) var(--tc-ease-emphasized);
+}
+
+.tc-settings-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--tc-border);
+}
+
+.tc-settings-title {
+  font-weight: var(--tc-control-weight);
+}
+
+.tc-settings-close {
+  margin-left: auto;
+}
+
+.tc-settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+@keyframes tc-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tc-drawer-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
 /* —— 欢迎屏（WelcomePanel）—— */
 .tc-welcome {
   display: flex;
