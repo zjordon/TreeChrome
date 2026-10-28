@@ -1,6 +1,6 @@
 # SCRATCHPAD — issue #20 UI 重构 · M2 控件层
 
-> 状态：**M2 已实施并全量验证（2026-10-28）；三个决策点均按建议拍板执行。** 待 `/review-loop`。
+> 状态：**M2 已实施并全量验证；评审循环收敛（轮 2 零意见，2026-10-29）。待 `/finish-issue`。**
 > 基准：`docs/ui-refactor-reference.md`（§4 组件对照 / §6 M2 行）；issue #20；M1 已并入 main（PR #21）。
 > 分支：`feat/issue-20-ui-m2`（自 main）。
 
@@ -95,3 +95,4 @@
   - [3] 采纳（P2）：滚动条双路径失效——视口滚动条挂在 html 上（`.tc-root` 后代选择器够不到），且 `scrollbar-width/color` 标准属性可继承、Chrome 121+ 会整体抑制 `::-webkit-scrollbar`（4px 定制在内部容器上也会被继承值废掉）；修法：base.css 删标准属性只留 webkit 内部容器定制，视口条挂到 sidepanel.css 入口层（auto 跟随系统双套）；options 页视口维持默认（M4 设置收纳后 options 页退役，不投资）
   - 过程教训：此前用 computed style height 验证尺寸读的是 content-box 值，掩盖 2px 外扩——控件尺寸验证必须量 offsetHeight
   - 测试：纯 CSS 修复无单测面；gate 全绿
+- **轮 2**（2026-10-29）：**零意见收敛轮**（增量 021e422，2m43s，complete）——循环终止
