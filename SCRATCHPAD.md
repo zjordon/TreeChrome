@@ -1,6 +1,6 @@
 # SCRATCHPAD — issue #20 UI 重构 · M3 布局层
 
-> 状态：**M3 已实施并全量验证（2026-10-29）；四个决策点均按建议拍板执行。** 待 `/review-loop`。
+> 状态：**M3 已实施并全量验证；评审循环收敛（轮 1 零意见，2026-10-29）。待 `/finish-issue`。**
 > 基准：`docs/ui-refactor-reference.md`（§5.1 布局迁移要点 / §6 M3 行）；issue #20；M1/M2 已并入 main（PR #21/#22）。
 > 分支：`feat/issue-20-ui-m3`（自 main）。
 
@@ -93,4 +93,4 @@
 
 ## 评审轮登记
 
-（/review-loop 后填充）
+- **轮 1**（2026-10-29）：**零意见首刷收敛**（base=main 全量 13 文件，5m48s，complete）——循环终止；M1-M3 累计评审 7 轮，唯一一次首轮即收敛
