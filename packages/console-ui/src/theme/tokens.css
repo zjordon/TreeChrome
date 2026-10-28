@@ -1,0 +1,194 @@
+/* 语义 token 单源（issue #20 M1，值表见 SCRATCHPAD）：亮/暗双套显式 + auto 跟随系统，
+   三块沿用既有重复形态。取值基调：灰阶 GitHub 冷灰扩展；accent/语义色保本仓现值加
+   strong/subtle 派生；动效/阴影/圆角/滚动条取中性参照值。
+   分层组织参照 alibaba/qz-browser-agent（Apache-2.0）。 */
+
+/* —— 主题无关 token：控件/表单/浮层/动效/圆角/滚动条（M2/M4 消费面接续）—— */
+.tc-root {
+  --tc-control-height-sm: 28px;
+  --tc-control-height-md: 32px;
+  --tc-control-height-lg: 38px;
+  --tc-control-font-sm: 12px;
+  --tc-control-font-md: 13px;
+  --tc-control-weight: 540;
+  --tc-control-radius: var(--tc-radius-sm);
+  --tc-control-surface: transparent;
+  --tc-control-surface-hover: var(--tc-accent-subtle);
+  --tc-control-surface-pressed: color-mix(in srgb, var(--tc-accent-subtle) 72%, var(--tc-bg-elevated));
+  --tc-control-primary-surface: var(--tc-accent);
+  --tc-control-primary-surface-hover: var(--tc-accent-strong);
+  --tc-control-primary-fg: #ffffff;
+  --tc-control-focus-ring: 0 0 0 3px color-mix(in srgb, var(--tc-accent) 14%, transparent);
+  --tc-control-disabled-opacity: 0.42;
+
+  --tc-field-height-md: 32px;
+  --tc-field-font-md: 13px;
+  --tc-field-placeholder: var(--tc-fg-faint);
+
+  --tc-popover-radius: var(--tc-radius-md);
+  --tc-popover-shadow: var(--tc-shadow-lg);
+  --tc-popover-padding: 4px;
+  --tc-menu-item-min-height: 30px;
+
+  --tc-motion-fast: 120ms;
+  --tc-motion-base: 180ms;
+  --tc-motion-slow: 240ms;
+  --tc-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --tc-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --tc-transition: var(--tc-motion-fast) var(--tc-ease-standard);
+  --tc-transition-surface:
+    background-color var(--tc-transition),
+    border-color var(--tc-transition),
+    color var(--tc-transition),
+    opacity var(--tc-transition),
+    box-shadow var(--tc-transition);
+
+  --tc-radius-sm: 4px;
+  --tc-radius-md: 6px;
+  --tc-radius-lg: 8px;
+  --tc-radius-pill: 999px;
+
+  --tc-scrollbar-size: 4px;
+  --tc-scrollbar-thumb: color-mix(in srgb, var(--tc-border) 72%, transparent);
+}
+
+/* —— 亮色（显式 light；auto 亮色同源）—— */
+.tc-root[data-tc-theme="light"] {
+  --tc-bg: #ffffff;
+  --tc-bg-muted: #f6f8fa;
+  --tc-bg-elevated: #eff2f5;
+  --tc-overlay-backdrop: rgba(31, 35, 40, 0.24);
+  --tc-overlay-surface: #ffffff;
+  --tc-overlay-border: color-mix(in srgb, var(--tc-border) 78%, transparent);
+  --tc-overlay-shadow: var(--tc-shadow-lg);
+
+  --tc-fg: #1f2328;
+  --tc-muted: #656d76;
+  --tc-fg-faint: #8c959f;
+
+  --tc-accent: #0969da;
+  --tc-accent-strong: #0550ae;
+  --tc-accent-fg: #ffffff;
+  --tc-accent-subtle: rgba(9, 105, 218, 0.08);
+
+  --tc-danger: #cf222e;
+  --tc-danger-subtle: rgba(207, 34, 46, 0.08);
+  --tc-success: #1a7f37;
+  --tc-success-subtle: rgba(26, 127, 55, 0.08);
+  --tc-warning: #9a6700;
+  --tc-warning-subtle: rgba(154, 103, 0, 0.08);
+
+  --tc-border: rgba(31, 35, 40, 0.12);
+  --tc-border-strong: rgba(31, 35, 40, 0.2);
+  --tc-border-focus: rgba(31, 35, 40, 0.3);
+
+  --tc-shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.08);
+  --tc-shadow-md: 0 8px 24px rgba(31, 35, 40, 0.12);
+  --tc-shadow-lg: 0 16px 40px rgba(31, 35, 40, 0.16);
+}
+
+/* —— 暗色（显式 dark；auto 暗色同源）—— */
+.tc-root[data-tc-theme="dark"] {
+  --tc-bg: #0d1117;
+  --tc-bg-muted: #161b22;
+  --tc-bg-elevated: #21262d;
+  --tc-overlay-backdrop: rgba(1, 4, 9, 0.55);
+  --tc-overlay-surface: #1c2128;
+  --tc-overlay-border: color-mix(in srgb, var(--tc-border) 78%, transparent);
+  --tc-overlay-shadow: var(--tc-shadow-lg);
+
+  --tc-fg: #e6edf3;
+  --tc-muted: #8b949e;
+  --tc-fg-faint: #6e7681;
+
+  --tc-accent: #388bfd;
+  --tc-accent-strong: #58a6ff;
+  --tc-accent-fg: #ffffff;
+  --tc-accent-subtle: rgba(56, 139, 253, 0.12);
+
+  --tc-danger: #f85149;
+  --tc-danger-subtle: rgba(248, 81, 73, 0.12);
+  --tc-success: #3fb950;
+  --tc-success-subtle: rgba(63, 185, 80, 0.12);
+  --tc-warning: #d29922;
+  --tc-warning-subtle: rgba(210, 153, 34, 0.12);
+
+  --tc-border: rgba(230, 237, 243, 0.12);
+  --tc-border-strong: rgba(230, 237, 243, 0.22);
+  --tc-border-focus: rgba(230, 237, 243, 0.32);
+
+  --tc-shadow-sm: 0 1px 2px rgba(1, 4, 9, 0.48);
+  --tc-shadow-md: 0 8px 24px rgba(1, 4, 9, 0.64);
+  --tc-shadow-lg: 0 16px 40px rgba(1, 4, 9, 0.72);
+}
+
+/* —— auto：亮色同源；暗色跟随系统媒体查询（同 dark 块）—— */
+.tc-root[data-tc-theme="auto"] {
+  --tc-bg: #ffffff;
+  --tc-bg-muted: #f6f8fa;
+  --tc-bg-elevated: #eff2f5;
+  --tc-overlay-backdrop: rgba(31, 35, 40, 0.24);
+  --tc-overlay-surface: #ffffff;
+  --tc-overlay-border: color-mix(in srgb, var(--tc-border) 78%, transparent);
+  --tc-overlay-shadow: var(--tc-shadow-lg);
+
+  --tc-fg: #1f2328;
+  --tc-muted: #656d76;
+  --tc-fg-faint: #8c959f;
+
+  --tc-accent: #0969da;
+  --tc-accent-strong: #0550ae;
+  --tc-accent-fg: #ffffff;
+  --tc-accent-subtle: rgba(9, 105, 218, 0.08);
+
+  --tc-danger: #cf222e;
+  --tc-danger-subtle: rgba(207, 34, 46, 0.08);
+  --tc-success: #1a7f37;
+  --tc-success-subtle: rgba(26, 127, 55, 0.08);
+  --tc-warning: #9a6700;
+  --tc-warning-subtle: rgba(154, 103, 0, 0.08);
+
+  --tc-border: rgba(31, 35, 40, 0.12);
+  --tc-border-strong: rgba(31, 35, 40, 0.2);
+  --tc-border-focus: rgba(31, 35, 40, 0.3);
+
+  --tc-shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.08);
+  --tc-shadow-md: 0 8px 24px rgba(31, 35, 40, 0.12);
+  --tc-shadow-lg: 0 16px 40px rgba(31, 35, 40, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tc-root[data-tc-theme="auto"] {
+    --tc-bg: #0d1117;
+    --tc-bg-muted: #161b22;
+    --tc-bg-elevated: #21262d;
+    --tc-overlay-backdrop: rgba(1, 4, 9, 0.55);
+    --tc-overlay-surface: #1c2128;
+    --tc-overlay-border: color-mix(in srgb, var(--tc-border) 78%, transparent);
+    --tc-overlay-shadow: var(--tc-shadow-lg);
+
+    --tc-fg: #e6edf3;
+    --tc-muted: #8b949e;
+    --tc-fg-faint: #6e7681;
+
+    --tc-accent: #388bfd;
+    --tc-accent-strong: #58a6ff;
+    --tc-accent-fg: #ffffff;
+    --tc-accent-subtle: rgba(56, 139, 253, 0.12);
+
+    --tc-danger: #f85149;
+    --tc-danger-subtle: rgba(248, 81, 73, 0.12);
+    --tc-success: #3fb950;
+    --tc-success-subtle: rgba(63, 185, 80, 0.12);
+    --tc-warning: #d29922;
+    --tc-warning-subtle: rgba(210, 153, 34, 0.12);
+
+    --tc-border: rgba(230, 237, 243, 0.12);
+    --tc-border-strong: rgba(230, 237, 243, 0.22);
+    --tc-border-focus: rgba(230, 237, 243, 0.32);
+
+    --tc-shadow-sm: 0 1px 2px rgba(1, 4, 9, 0.48);
+    --tc-shadow-md: 0 8px 24px rgba(1, 4, 9, 0.64);
+    --tc-shadow-lg: 0 16px 40px rgba(1, 4, 9, 0.72);
+  }
+}

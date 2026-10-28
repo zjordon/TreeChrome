@@ -1,118 +1,153 @@
-# issue #16 实施草稿：任务卡匹配器超时可配 + callFailed 步内重试
+# SCRATCHPAD — issue #20 UI 重构 · M1 token 层
 
-- issue: [#16](https://github.com/zjordon/TreeChrome/issues/16)
-- 分支：`issue-16-matcher-timeout`（自 main 4e3fb32）
-- 状态：**评审收敛（2 轮），待合并**（2026-10-27：轮 1 一条 P2 采纳（断言被注释吞掉）、
-  轮 2 零意见；typecheck/全仓测试/gate 全绿；扩展已重构建，真机命中待顺带验证）
+> 状态：**M1 已实施并全量验证；评审循环收敛（轮 3 零意见，2026-10-28）。待 `/finish-issue`。**
+> 基准：`docs/ui-refactor-reference.md`（§3 token 映射 / §6 分期）；issue #20。
+> 分支：`feat/issue-20-ui-refactor`（自 main）。
 
-## 1 背景与根因
+## 目标
 
-`task-matcher.ts` 的 `MATCH_CALL_TIMEOUT_S = 15.0` 固定不可配，Agent 调用侧不传 opts。
-thinking 模型 + 慢端点下 structuredCall 15s 出不来 → matcher 内部 2 次重试撞同一
-超时 → `call failed: 单次调用超时` → **整 run 无卡盲走**。
+console-ui 主题层从「10 变量单文件」升级为「分片 + 全量语义 token」：
 
-2026-10-26 真机实录（run_1a1759310ae，抖音发视频）：无卡 48 步 / 52 分钟（封面模态框
-缠斗）；同任务 2026-10-25 有卡 18 步稳定完成。#11 自检 footer 随卡消失（防锚定提醒无载体）。
+1. `theme.css` 拆分为 `theme/` 目录四分片，原文件保留为聚合入口
+2. `--tc-*` 变量面按基准档案 §3 扩容（表面/文字/accent/语义色/边框/控件/表单/浮层/动效/阴影/圆角/滚动条 12 族）
+3. 现有组件类的**规则结构不动**，仅改取值来源——视觉变化全部来自 token 值
+4. 亮/暗双套 + auto 三块同步扩容
 
-第三次同型打击（前两次 #10 已修）：
+## 非目标（后续期）
 
-| 调用 | 固定超时 | 修法（#10） |
-|---|---|---|
-| judge | 60s | `judge.callTimeoutMs` 可选键 + 扩展 180s |
-| distill | 60s | `callTimeoutMs` 参数 + 双宿主 180s |
-| **matcher** | **15s** | **本次漏网** |
+- M2：控件状态模型（hover/pressed/focus-visible/disabled 选择器）、icon-btn/switch/segment 新原语、细滚动条落地、动效与 reduced-motion 兜底
+- M3：布局层；M4：设置 overlay（overlay 族变量本期**只定义不消费**）
+- 类名/DOM/JSX 零改动；e2e DOM 契约零影响
 
-## 2 设计决策
+## 设计决策
 
-### D1 可选键形态：嵌套 `AgentSettings.taskSkill.callTimeoutMs`（judge 同款）
+**D1 文件组织与消费面**
+- `packages/console-ui/src/theme.css` 保留原路径改为聚合入口（4 行 `@import`）；新增 `src/theme/{tokens,base,controls,components}.css`
+- `@tw/console-ui/theme.css` 出口与两个 `main.tsx` 的 import 零改动（Vite/WXT 构建内联 @import）
+- tokens.css 文件头注明结构参照 alibaba/qz-browser-agent（Apache-2.0，只参照组织与中性值，未逐字复制片段）
 
-```ts
-/** TS-only 增量（Python config 无此组）——可选键不进 DEFAULT_AGENT_SETTINGS，
- *  settings 对拍 fixture 零变化（#10 纪律） */
-export interface TaskSkillSettings {
-  /** 单次匹配调用超时毫秒；缺省 matcher 内 15s 冻结契约 */
-  callTimeoutMs?: number;
-}
-// AgentSettings 增可选键 taskSkill?: TaskSkillSettings;
-// resolveAgentSettings 增合并分支 taskSkill: taskSkill ? {...base.taskSkill, ...taskSkill} : base.taskSkill
-```
+**D2 拆分职责**
+- `base.css`：`.tc-root` 作用域根（字体/13px/行高/color-scheme）——自现 theme.css 头部迁出
+- `tokens.css`：全部变量；主题机制不变（`.tc-root[data-tc-theme="light"|"dark"]` 显式 + `auto`×`prefers-color-scheme`，沿用现有三块重复形态）
+- `controls.css`：`.tc-btn*` / `.tc-field*`（按钮与表单控件）
+- `components.css`：`.tc-badge*` / `.tc-table` / `.tc-card*` / `.tc-timeline*` / `.tc-ev-*` / `.tc-countdown` / `.tc-kv`
 
-- 命名沿用 issue 原文 `taskSkill.callTimeoutMs`；与 node-host `settings.llm.taskSkill`
-  （匹配器**专用 LLM 卡**）同名不同层不同物——已评估，接受（核心侧 `taskSkill` 是匹配
-  行为组，未来 matcher 键（重试/置信门槛）有归宿）
-- 单位 ms 对齐 `judge.callTimeoutMs`；matcher 内部 API 保持 `callTimeoutS` 秒
-  （task_matcher.py 移植形态不动），调用侧换算
+**D3 取值基调**（基准档案 §3 的落地细化）
+- 灰阶走 **GitHub 冷灰系扩展**，不搬参照暖灰（#f4f4f2 系）——观感连续性优先；即基准档案表面族标「A 借值」实际落「C 重调」，**分层结构**（四级表面 + overlay 族）照搬
+- accent/语义色保现有值，新增 strong/subtle 派生（subtle 是 M2 hover/选中底的原料）
+- 边框透明度化：亮 `rgba(31,35,40,·)`、暗 `rgba(230,237,243,·)`
+- 动效曲线/时长、阴影、圆角、滚动条 token 值直接取参照（中性值）
+- 旧变量 `--tc-card-bg` 删除，消费点（全在 CSS 内部，TSX 零内联引用已验证）同 PR 改指 `--tc-bg-muted`
 
-### D2 透传三个调用侧（不止 issue 点名的 Agent 侧）
+**D4 组件规则迁移边界**
+- 只允许：改取值来源、随 token 值自然变化的视觉
+- 不允许：新增伪类/状态选择器、新增类、改选择器结构；控件高度/字号变量本期只定义、M2 消费
 
-| 调用侧 | 位置 | 透传值 |
-|---|---|---|
-| Agent 初始匹配 + #11 host 重匹配 | `agent.ts` matchTaskSkill（一处函数体，两条路径共用） | `settings.taskSkill?.callTimeoutMs` |
-| 蒸馏前置匹配 | `distill.ts:351`——**现状同样吃固定 15s**（issue 未点名，同型缺口） | 共享蒸馏自身的 `input.callTimeoutMs`（两宿主已缺省 180s） |
-| （不透传）matcher 单元 API | `task-matcher.ts` opts | 保持 `callTimeoutS`，Python 移植面不动 |
+**D5 测试与构建**
+- console-ui 组件测试为 DOM 断言，与 CSS 无耦合，预期零改动；全仓 typecheck/test 必须全绿
+- `wxt build` 验证 @import 内联无回归
 
-node-host assemble 不传（#10 judge 同口径：judge 180s 也只有扩展传，node-host 走
-core 缺省；蒸馏路径经 D2 已覆盖）。
+## Token 值表（tokens.css 全量，亮 / 暗）
 
-### D3 扩展 assemble 对齐 #10 口径传 180s
+| 族 | 变量 | 亮 | 暗 |
+| --- | --- | --- | --- |
+| 表面 | `--tc-bg` | `#ffffff` | `#0d1117` |
+| | `--tc-bg-muted` | `#f6f8fa` | `#161b22` |
+| | `--tc-bg-elevated` | `#eff2f5` | `#21262d` |
+| | `--tc-overlay-backdrop` | `rgba(31,35,40,.24)` | `rgba(1,4,9,.55)` |
+| | `--tc-overlay-surface` | `#ffffff` | `#1c2128` |
+| | `--tc-overlay-border` | `color-mix(in srgb, var(--tc-border) 78%, transparent)` | 同左 |
+| | `--tc-overlay-shadow` | `var(--tc-shadow-lg)` | 同左 |
+| 文字 | `--tc-fg` | `#1f2328` | `#e6edf3` |
+| | `--tc-muted` | `#656d76` | `#8b949e` |
+| | `--tc-fg-faint` | `#8c959f` | `#6e7681` |
+| accent | `--tc-accent` | `#0969da` | `#388bfd` |
+| | `--tc-accent-strong` | `#0550ae` | `#58a6ff` |
+| | `--tc-accent-fg` | `#ffffff` | `#ffffff` |
+| | `--tc-accent-subtle` | `rgba(9,105,218,.08)` | `rgba(56,139,253,.12)` |
+| 语义 | `--tc-danger` / `--tc-danger-subtle` | `#cf222e` / `rgba(207,34,46,.08)` | `#f85149` / `rgba(248,81,73,.12)` |
+| | `--tc-success` / `--tc-success-subtle` | `#1a7f37` / `rgba(26,127,55,.08)` | `#3fb950` / `rgba(63,185,80,.12)` |
+| | `--tc-warning` / `--tc-warning-subtle` | `#9a6700` / `rgba(154,103,0,.08)` | `#d29922` / `rgba(210,153,34,.12)` |
+| 边框 | `--tc-border` | `rgba(31,35,40,.12)` | `rgba(230,237,243,.12)` |
+| | `--tc-border-strong` | `rgba(31,35,40,.20)` | `rgba(230,237,243,.22)` |
+| | `--tc-border-focus` | `rgba(31,35,40,.30)` | `rgba(230,237,243,.32)` |
+| 控件 | `--tc-control-height-sm/md/lg` | `28px` / `32px` / `38px` | 同左 |
+| | `--tc-control-font-sm/md` | `12px` / `13px` | 同左 |
+| | `--tc-control-weight` | `540` | 同左 |
+| | `--tc-control-radius` | `var(--tc-radius-sm)` | 同左 |
+| | `--tc-control-surface` | `transparent` | 同左 |
+| | `--tc-control-surface-hover` | `var(--tc-accent-subtle)` | 同左 |
+| | `--tc-control-surface-pressed` | `color-mix(in srgb, var(--tc-accent-subtle) 72%, var(--tc-bg-elevated))` | 同左 |
+| | `--tc-control-primary-surface` | `var(--tc-accent)` | 同左 |
+| | `--tc-control-primary-surface-hover` | `var(--tc-accent-strong)` | 同左 |
+| | `--tc-control-primary-fg` | `#ffffff` | 同左 |
+| | `--tc-control-focus-ring` | `0 0 0 3px color-mix(in srgb, var(--tc-accent) 14%, transparent)` | 同左 |
+| | `--tc-control-disabled-opacity` | `.42` | 同左 |
+| 表单 | `--tc-field-height-md` / `--tc-field-font-md` | `32px` / `13px` | 同左 |
+| | `--tc-field-placeholder` | `var(--tc-fg-faint)` | 同左 |
+| 浮层 | `--tc-popover-radius` / `--tc-popover-shadow` / `--tc-popover-padding` | `var(--tc-radius-md)` / `var(--tc-shadow-lg)` / `4px` | 同左 |
+| | `--tc-menu-item-min-height` | `30px` | 同左 |
+| 动效 | `--tc-motion-fast/base/slow` | `120ms` / `180ms` / `240ms` | 同左 |
+| | `--tc-ease-standard` / `--tc-ease-emphasized` | `cubic-bezier(.2,.8,.2,1)` / `cubic-bezier(.16,1,.3,1)` | 同左 |
+| | `--tc-transition` | `var(--tc-motion-fast) var(--tc-ease-standard)` | 同左 |
+| | `--tc-transition-surface` | `background-color/border-color/color/opacity/box-shadow var(--tc-transition)` | 同左 |
+| 阴影 | `--tc-shadow-sm` | `0 1px 2px rgba(31,35,40,.08)` | `0 1px 2px rgba(1,4,9,.48)` |
+| | `--tc-shadow-md` | `0 8px 24px rgba(31,35,40,.12)` | `0 8px 24px rgba(1,4,9,.64)` |
+| | `--tc-shadow-lg` | `0 16px 40px rgba(31,35,40,.16)` | `0 16px 40px rgba(1,4,9,.72)` |
+| 圆角 | `--tc-radius-sm/md/lg/pill` | `4px` / `6px` / `8px` / `999px` | 同左 |
+| 滚动条 | `--tc-scrollbar-size` / `--tc-scrollbar-thumb` | `4px` / `color-mix(in srgb, var(--tc-border) 72%, transparent)` | 同左 |
 
-`assemble.ts` resolveAgentSettings 增 `taskSkill: { callTimeoutMs: 180_000 }`——
-judge / distill / matcher 三者同值 180s。
+## 实施步骤
 
-### D4 callFailed 步内重试（issue 第 3 点「讨论后定」——建议做）
+1. 建 `src/theme/` 四分片骨架；`theme.css` 改为聚合入口（含出处注释与职责一句话）
+2. `tokens.css` 落上表（light / dark / auto×media 三块）
+3. `base.css` 迁 `.tc-root`；`controls.css` / `components.css` 逐类 retarget 新 token（`.tc-btn` 底色转 `--tc-control-*`、边框类转透明度变量、`--tc-card-bg`→`--tc-bg-muted`）
+4. `pnpm typecheck && pnpm test`（全仓）全绿
+5. `apps/extension` 构建 + 真机双主题目检（截图存 `_` 前缀临时件，不入库）
+6. `pnpm format` + `node scripts/gate.mjs pre-commit` 自查
 
-现状：#11 D2 重匹配只覆盖 **host 变化**；host 未变的 callFailed 没有第二次机会。
-方案：
+## 验收
 
-- `agent.ts` 增 `taskSkillCallFailed` 私有标志，`matchTaskSkill` 内每次调用前置
-  false、调用后按 `match.callFailed` 置位（catalog 空提前返回时也保持 false——
-  那不是调用失败）
-- `retryTaskSkillMatchOnHostChange` 守卫放宽：同 host 已试过 **且** 上次 callFailed
-  → 放行一次旁路；attempts 封顶 `TASK_SKILL_MATCH_ATTEMPTS = 2` 不变（总尝试恰好
-  2 轮）
-- 重试时点：第一步结束后的步循环检查——慢端点瞬时拥塞天然获得一步喘息
+- 全仓 typecheck + test 全绿；gate pre-commit 全绿
+- 亮/暗双主题：侧边栏与 options 目检无回归（按钮/徽章/表单/表格/卡片/时间线/倒计时条）
 
-**代价明示**：最坏阻塞窗口 = 2 轮 × matcher 内部 2 次 × 180s = **12 分钟**（匹配
-失败不挂任务，只是无卡）。对照无卡盲走 52 分钟实录，值得；正常慢端点单轮 180s 内
-大概率出结果。
+## 待人工审核的决策点
 
-## 3 实施步骤
+1. **控件圆角 4px**（参照密度语言）vs 保留现 6px —— 建议 4px（`.tc-btn` 视觉随之变锐）
+2. **按钮默认底 transparent**（hover 才有底，参照状态模型的前置）vs 保留 `card-bg` 实底 —— 建议 transparent；primary 实底 accent 不变
+3. **灰阶 GitHub 冷灰** vs 参照暖灰 —— 建议冷灰（D3，观感连续）
+4. overlay/浮层/动效/滚动条变量本期**只定义不消费** —— 确认可接受（M2/M4 才接消费）
 
-1. core settings.ts：`TaskSkillSettings` + `AgentSettings.taskSkill?` +
-   resolve 合并分支（Omit 收型同 judge——taskSkill 覆盖面收 Partial）
-2. agent.ts：matchTaskSkill 透传 `callTimeoutS = settings.taskSkill?.callTimeoutMs / 1000`；
-   `taskSkillCallFailed` 标志 + retry 旁路（D4）
-3. distill.ts：内部 matcher 透传 `input.callTimeoutMs`（条件展开保 undefined 语义）
-4. assemble.ts：`taskSkill: { callTimeoutMs: 180_000 }`
-5. 测试（见 §4）→ `pnpm typecheck && pnpm test` 全绿 → gate
+## 实施记录（2026-10-28）
 
-## 4 测试清单（测试先行，D4 双向验证红→绿）
+**落地文件**
+- `packages/console-ui/src/theme.css` → 聚合入口（4 行 `@import`，出口路径与消费方零改动）
+- `packages/console-ui/src/theme/tokens.css`（三块双主题 + 主题无关族）/ `base.css` / `controls.css` / `components.css`
+- `packages/console-ui/src/themed-root.tsx` 注释同步（theme.css → theme/tokens.css，零行为）
+- 决策点 4/4 按建议执行：控件圆角 4px、默认钮透明底 + hover 填充（`:not(:disabled):hover` 是本期唯一状态新增，primary hover 同族）、GitHub 冷灰、overlay/动效/滚动条只定义不消费
 
-| 文件 | 用例 |
-|---|---|
-| `core/test/agent/settings-defaults.test.ts` | resolve 合并：传 `{taskSkill:{callTimeoutMs:90000}}` → 90000；不传 → undefined；DEFAULT 无键（fixture 对拍零变化自动成立） |
-| `core/test/agent/pipeline-extra.test.ts` | ① settings 90s → 匹配调用收到 callTimeoutMs 90000；② D4：初始 callFailed → 同 host 步内重试成功命中（attempts=2）；③ D4 封顶：恒失败 → attempts 恒 2、无第 3 轮 |
-| `core/test/agent/skills/distill.test.ts` | input.callTimeoutMs=180000 → 内部 matcher 收到 callTimeoutS=180 |
-| `apps/extension/test/runtime-assemble.test.ts` | resolved settings `taskSkill.callTimeoutMs === 180_000`（judge 180 若无既有断言则同款补上） |
+**验证**
+- `pnpm typecheck` 全包绿；`pnpm test` 全包绿（覆盖率阈值内）
+- `wxt build` 通过（CSS 分片正常内联，`themed-root-*.css` 8.13 kB）
+- `e2e/smoke-ui.mjs` PASS（真机全链：输入 → 权限卡代答 → 时间线 → done）
+- `pnpm lint` 绿（biome 修了 `_shot-theme.mjs` 临时件的 import 超宽）
+- `node scripts/gate.mjs pre-commit` 全绿（boundaries/size/quality）
+- 双主题四截图目检通过：`_shot-sidepanel-{light,dark}.png`、`_shot-options-{light,dark}.png`（仓库根，临时件）
 
-## 5 验收口径（issue）
+**遗留**
+- `_shot-theme.mjs` + `_shot-*.png` 为验收临时件（`_` 前缀不入库）；M2–M4 验收可复用该脚本
+- M2 起点：控件全状态模型 + icon-btn/switch/segment 新原语 + 细滚动条 + 动效与 reduced-motion 兜底
 
-- 可选键不进 DEFAULT——settings 对拍 fixture 零变化（#10 同纪律）
-- 真机慢端点下任务卡稳定命中（`task-skill hit: slug=…` 可见）——实现侧只能保证
-  机制与单测，真机验证留给用户跑
+## 评审轮登记
 
-## 6 评审轮登记（/review-loop）
-
-### 轮 1（2026-10-27，base=main → adcbf61，8m52s，1 意见 medium/test）
-
-- **[1] 采纳（P2）**：D4 命中用例 `expect(matcherCalls).toBe(3)` 被行尾注释吞掉
-  ——修 urls 时的 Edit 误删注释与断言间换行，断言永不执行，「恰 3 次」不变量失守
-  （其余断言 attempts/slug/doneText 在，双向验证结论不受影响）。拆行修复，断言
-  恢复执行且通过（18/18）。
-- P1/P2/P3 分布：P2×1；采纳 1 / 驳回 0 / stale 0。
-
-### 轮 2（2026-10-27，增量 adcbf61→e2b14c9，15s，零意见）
-
-- 增量复核轮：状态 complete、意见数 0——循环收敛出口。
-- 累计：2 轮 / 1 意见全采纳 / 0 驳回 / 0 stale；分支 2 提交（实现 + 轮 1 修复）；
-  无 P3 backlog。
+- **轮 1**（2026-10-28，3 条 medium / 5m30s）：**P2×2 采纳 + 驳回×1**
+  - [1] 采纳（P2）：`.tc-btn:not(:disabled):hover`（0,3,0）压过 `.tc-btn-danger`（0,1,0）透明底——danger 钮 hover 被误染 accent-subtle（蓝底红字）；收窄为 `:not(.tc-btn-danger):not(:disabled):hover`（danger hover 底色属 M2 面）
+  - [2] 采纳（P2）：`.aoci/baseline.json` 幽灵条目 `docs/ui-refactor-qz-reference.md`（改名残留，盘上无此文件且与新路径同哈希）——手工摘除；`baseline scope` 治理流需 TTY approve 不适用单条清理，摘除后 verify/check 复核无治理失配
+  - [3] 驳回（先例）：baseline 索引 `_shot-theme.mjs` 是既定约定——`_dump_bestsellers.txt`/`_issue-self-evolution.md` 同为未入库 `_` 件且早已被基线索引（AOCI 索引工作树实况，非仅入库文件）
+  - 测试：纯 CSS 选择器修复无单测面（本仓测试不打样式断言）；`gate pre-commit` 全绿
+- **轮 2**（2026-10-28，1 条 high）：**P1×1 采纳**
+  - [1] 采纳（P1）：轮 1 修复引入回归——`:not(.tc-btn-danger)` 参数类计入特异性，(0,4,0) 反超 `.tc-btn-primary:not(:disabled):hover` 的 (0,3,0)，primary 钮 hover 被误染 accent-subtle（白字对比度骤降）；改 `:where(:not(.tc-btn-danger))`（参与匹配、零特异性贡献，Chrome 88+）
+  - 真机双向验证：临时页 `_cascade-check.html`（真实引用 theme.css）CDP 悬停实测 getComputedStyle——ghost hover=accent-subtle / primary hover=#0550ae / danger hover=transparent 三态全对
+  - 教训：评审建议片段也可能有缺陷（轮 1 建议未核验 primary 交互）——CSS 修复须过特异性核算
+  - gate 一次红：dom-snapshot paint-order「MAX_RECTS=5000 超限拒绝」瞬时超时（5104ms > 5000ms），单跑 796ms 全过、复跑绿——环境波动非代码缺陷
+- **轮 3**（2026-10-28）：**零意见收敛轮**（增量 e8aebb9，39s，complete）——循环终止
