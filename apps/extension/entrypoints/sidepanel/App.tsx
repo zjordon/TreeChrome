@@ -23,5 +23,11 @@ const fetchDraftCount = async (): Promise<number | null> => {
 };
 
 export function App() {
-  return <SidepanelApp connect={connect} fetchDraftCount={fetchDraftCount} />;
+  return (
+    <SidepanelApp
+      connect={connect}
+      fetchDraftCount={fetchDraftCount}
+      onOpenSettings={() => void browser.runtime.openOptionsPage()}
+    />
+  );
 }

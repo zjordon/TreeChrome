@@ -1,98 +1,96 @@
-# SCRATCHPAD — issue #20 UI 重构 · M2 控件层
+# SCRATCHPAD — issue #20 UI 重构 · M3 布局层
 
-> 状态：**M2 已实施并全量验证；评审循环收敛（轮 2 零意见，2026-10-29）。待 `/finish-issue`。**
-> 基准：`docs/ui-refactor-reference.md`（§4 组件对照 / §6 M2 行）；issue #20；M1 已并入 main（PR #21）。
-> 分支：`feat/issue-20-ui-m2`（自 main）。
+> 状态：**M3 已实施并全量验证（2026-10-29）；四个决策点均按建议拍板执行。** 待 `/review-loop`。
+> 基准：`docs/ui-refactor-reference.md`（§5.1 布局迁移要点 / §6 M3 行）；issue #20；M1/M2 已并入 main（PR #21/#22）。
+> 分支：`feat/issue-20-ui-m3`（自 main）。
 
 ## 目标
 
-1. **Button 全状态模型**：hover/pressed（:active）/focus-visible（ring）/disabled 四态 + transition；新增 `secondary` 变体与 `sm/md/lg` 尺寸档（消费 M1 只定义的 `--tc-control-height-*/font-*`）
-2. **新原语三件**：`IconButton` / `Switch` / `Segment`（React 组件 + `tc-*` 类 + 单测；Segment 首个消费方在 M4，本期交付原语与测试）
-3. **danger hover/pressed 补全**（M1 决策点 2 的"M2 后续"：danger-subtle 底 + 红系 border-hover）
-4. **表单控件状态**：focus ring、placeholder 色（`--tc-field-placeholder`）、高度消费（`--tc-field-height-md`）
-5. **细滚动条**：`.tc-root` 作用域 4px（`--tc-scrollbar-*`）
-6. **动效消费 + 兜底**：控件接 `--tc-transition-surface`；`prefers-reduced-motion: reduce` 全局置零
+侧边栏从「单列滚动」重排为参照形态的三区结构：
+
+```
+.tc-root（height 100%）
+├─ header   轻量：产品名 + 连接状态点 + 蒸馏状态 + 草稿徽标 + 设置图标钮（IconButton 首个消费方）
+├─ main     滚动区：确认卡 → 时间线 → 终态卡；空闲时欢迎屏
+└─ dock     底部常驻：运行状态条（dot+文案+步数耗时+停止钮）+ TaskBar（输入/附件/预算/起跑）
+```
 
 ## 非目标
 
-- M3 布局层（dock 化/状态条/欢迎屏）、M4 设置 overlay
-- 现有 Button 调用点（console-ui 12 处 + ui-glue 1 处）**零改动**：新 props 全可选；默认渲染除尺寸档高度外与现状一致
-- e2e smoke-ui 不动（文本/aria 定位不受影响）；类名/DOM 契约不破坏
+- M4 设置 overlay（header 设置钮本期跳 options 页，M4 换 overlay）
+- TaskBar 内部结构（输入/附件/预算/拒绝明细 DOM 契约不动——只移容器位置与移除停止钮）
+- Enter 快捷键提交与提示行（交互行为不扩，缩范围）
+- sidepanel-state / protocol / SW 运行时零改动（纯 UI 重排）
 
 ## 设计决策
 
-**D1 Button 扩展（向后兼容 + 语义矫正）**
-- `variant?: "primary" | "secondary" | "danger" | "ghost"`，默认 **secondary**（渲染与现状逐像素一致——带边框透明底）；`ghost` 矫正为无边框（hover 才有底，qz/行业通义）。**已核实全仓零显式 `variant="ghost"` 调用点**，语义矫正无视觉破坏
-- `size?: "sm" | "md" | "lg"`，默认 **md**（32px；拍板点 1）；class 形态 `tc-btn tc-btn-{variant} tc-btn--{size}`（变体单横杠 / 尺寸双横杠，互不干扰）
-- 状态规则全落 controls.css：基类 `:active`（pressed 底）+ `:focus-visible`（ring + border-focus）+ `transition: var(--tc-transition-surface)`；primary/danger 各自 hover/pressed 变体；M2 引入的变体规则一律**后置于**通用规则（源顺序依赖已在轮 2 学教训）+ `:where()` 守卫不引入特异性反超
+**D1 布局壳 `AppShell`（console-ui 新组件 + theme/layout.css 第五分片）**
+- `{header?, dock?, children}` 三区；`.tc-shell`（flex column 满高）/ `.tc-shell-header`（flex none + 底边框）/ `.tc-shell-main`（flex 1 + overflow-y auto）/ `.tc-shell-dock`（flex none + 顶边框）
+- `base.css` `.tc-root` 增 `height:100%`（保留 min-height；options 页内容超高仍可页面滚动）；`theme.css` 聚合口 +1 行 @import
 
-**D2 新原语 API（原生语义、受控友好）**
-- `IconButton`：`{ label: string（必填，aria-label+title）, size?: "xs"|"sm"|"md", variant?: "secondary"|"danger", children: SVG }` → `tc-icon-btn tc-icon-btn--{size}`
-- `Switch`：原生 checkbox 驱动 `{ checked?, defaultChecked?, onChange?, disabled?, label }`；`useId` 自动关联 label；视觉轨道 30×18 + 圆点 12（`--tc-switch-*` 尺寸进 tokens.css）；checked 态 accent 轨道；focus-visible ring
-- `Segment`：受控单选组 `{ items: {value,label}[], value, onChange, ariaLabel }` → `tc-segment` 容器 + `role="group"` + button `aria-pressed`；active 项 accent-subtle 底
+**D2 `RunPanelHeader`（console-ui 新组件）**
+- `{title, portStatus?, distill?, draftCount?, onOpenSettings?, onReviewDrafts?}`
+- 左：标题 + 连接状态点（online 绿 / connecting 黄 / offline 红，`title` 全文）
+- 右：蒸馏状态图标（⧗/⚗/✓/✗，failed 红色，`title` 全文——`distillStatusText` 从 ui-glue 迁入）；草稿徽标（`📝 N 草稿` 可点 → `onReviewDrafts`）；设置 IconButton（齿轮 svg，→ `onOpenSettings`）
+- ui-glue 删除对应三条文本行（main 减噪）
 
-**D3 CSS 落点**
-- `controls.css` 追加（职责一致，预计 ~220 行，远离行数门）：尺寸档/secondary/ghost 矫正/danger 状态/icon-btn/switch/segment/field 状态
-- `base.css` 追加：滚动条（`::-webkit-scrollbar` + `scrollbar-width: thin`，作用域 `.tc-root`）+ reduced-motion 兜底（qz base.css 同款：动画/过渡置零）
-- `tokens.css` 微增：`--tc-switch-width/height/thumb`、`--tc-icon-btn-size-xs/sm/md`（尺寸 token 单源）
+**D3 `RunStatusBar`（console-ui 新组件，替代 StatusLine）**
+- `{status, stepCount, startedAt, endedAt?, now?, onStop?}`——状态点（running=accent 呼吸动画 / awaiting-*=warning）+ 状态文案 + 步数·耗时 + 停止 IconButton（danger xs，右对齐）
+- **只运行期渲染**（terminal 后消失，终态由 FinalResult 卡承载）；`formatSeconds` 保留导出；`StatusLine` 组件删除（唯一消费者是 sidepanel，测试迁移）
+- **停止钮从 TaskBar 迁出**：TaskBar 移除 `onStop` prop 与"⏹ 停止"钮（运行态只禁用起跑）——e2e smoke-ui 已核实不依赖该钮
 
-**D4 测试（console-ui `test/` 惯例：RTL + jsdom + globals）**
-- 新文件 `test/icon-button.test.tsx`、`test/switch.test.tsx`、`test/segment.test.tsx`：渲染 class/尺寸与变体/aria-label 必填/disabled/受控切换（fireEvent.click 断言 onChange）/键盘可达（tabIndex 与原生焦点）
-- `test/primitives.test.tsx` 扩展：secondary 默认/ghost 无边框 class、size 档 class、向后兼容（不传新 props 时 class 含 `tc-btn tc-btn-secondary tc-btn--md`）
-- 覆盖率 85% 门全量过（新组件全在 src/ 计入）
+**D4 `WelcomePanel`（console-ui 新组件，空闲态）**
+- `snap == null && events 空` 时渲染：产品名大字 + tagline「浏览器里的任务代理」+「在下方输入任务开始 ↓」；取代现"空闲——配置好 LLM 卡片…"文本行
 
-**D5 视觉与真机验收**
-- `_cascade-check.html` 扩展：三新原语样例 + focus-visible ring（CDP 键盘 Tab 实测 computed boxShadow）+ Switch 切换 + Segment active
-- `_shot-theme.mjs` 复跑双主题四截图；`e2e/smoke-ui.mjs` 回归
+**D5 sidepanel 组态重排（ui-glue `sidepanel-app.tsx` + entrypoints `App.tsx`）**
+- `SidepanelAppProps` 增 `onOpenSettings?: () => void`（entrypoints 注入 `chrome.runtime.openOptionsPage`，M4 换 overlay）；`AppShell` 装配 header/main/dock
+- main：确认卡（保持顶部 inline）→ 欢迎屏或时间线 → 终态卡；port 警示文本行删除（收进 header 状态点）
+
+**D6 CSS 落点**
+- 新 `theme/layout.css`：shell/header/runstatus/welcome/port-dot 类 + `tc-pulse` keyframes（受 base 的 reduced-motion 兜底）
+- TaskBar 移位零 CSS 改动（容器换 dock）；`components.css` 不动
 
 ## 实施步骤
 
-1. `tokens.css` 微增尺寸 token；`controls.css` 状态模型 + 新类；`base.css` 滚动条 + reduced-motion
-2. `primitives.tsx`：Button variant/size 扩展（默认 variant 改 secondary）
-3. 新文件 `icon-button.tsx` / `switch.tsx` / `segment.tsx`；`index.ts` 导出面更新
-4. 单测三新文件 + `primitives.test.tsx` 扩展
+1. `theme/layout.css` 新分片 + `theme.css` 聚合 + `base.css` height:100%
+2. console-ui 四新组件（AppShell/RunPanelHeader/RunStatusBar/WelcomePanel）+ index.ts 导出；task-bar 移除 onStop/停止钮；status-line.tsx 删除
+3. 测试：四新组件单测 + `run-panel.test.tsx` 迁移（StatusLine→RunStatusBar）+ `task-bar.test.tsx` 停止钮断言更新
+4. ui-glue `sidepanel-app.tsx` 重排 + entrypoints `App.tsx` 注入 onOpenSettings
 5. `pnpm typecheck` + `pnpm test` 全绿；`pnpm exec biome check --write .`
-6. `wxt build` + `e2e/smoke-ui.mjs` + `_cascade-check.html` 扩展实测 + 双主题截图
+6. `wxt build` + `e2e/smoke-ui.mjs` + `_cascade-check.html` 增 shell 结构 + 双主题截图
 7. `node scripts/gate.mjs pre-commit`
 
 ## 验收
 
-- 全仓 typecheck/test 绿；console-ui 覆盖率 ≥85%；gate 全绿
-- e2e smoke-ui PASS（DOM 契约未动）
-- 双主题截图 + 交互态（hover/active/focus-visible/switch toggle/segment）实测通过
-- 现有 Button 调用点零改动（typecheck 层面验证）
+- 全仓 typecheck/test 绿（新组件覆盖率 100%，包阈值内）；gate 全绿
+- e2e smoke-ui PASS（TaskBar 选择器未破；若断言受移位影响同步修）
+- 双主题截图 + 真机目检：三区结构、header 徽标、运行状态条（含停止）、欢迎屏、暗色回归
 
 ## 待人工审核的决策点
 
-1. **Button 默认尺寸 md=32px**（现状实际渲染 ≈27px，默认档会整体微涨）vs 默认 sm=28（贴近现状）——建议 **md**（与参照密度语言一致，一次到位）
-2. **ghost/secondary 语义矫正**：默认 variant 从 ghost 改为 secondary（渲染结果与现状逐像素一致），ghost 矫正成无边框可选变体——已核实零显式 ghost 调用，**视觉零变化**，建议采纳
-3. **表单 input 统一 32px 高**（`--tc-field-height-md`）vs 保持 padding 弹性——建议**统一**（表单一致性，options 页多表单受益）
+1. **输入常驻底部 dock**（qz 形态；运行中状态条在 dock 上沿、TaskBar 输入禁用但常驻）——建议采纳
+2. **停止钮迁出 TaskBar** 至运行状态条（TaskBar 纯输入+起跑；e2e 已核不依赖）——建议采纳
+3. **欢迎屏**：空闲态大字产品名+tagline（低成本高观感）——建议做
+4. **header 收编**：port 状态点/蒸馏状态/草稿徽标进 header（main 删三条文本行）——建议采纳
 
-## 实施记录（2026-10-28）
+## 实施记录（2026-10-29）
 
 **落地文件**
-- `theme/tokens.css`：微增 `--tc-icon-btn-size-*`、`--tc-switch-*` 尺寸 token
-- `theme/controls.css`：全状态模型重写——Button 四态（hover/pressed/focus-visible ring/disabled + transition）、尺寸档、secondary（默认，与矫正前默认观感逐像素一致）、ghost 无边框矫正、danger 红系 hover/pressed（M1 的 M2 后续）、icon-btn/switch/segment 三族、表单 32px 高 + placeholder + focus ring
-- `theme/base.css`：面板作用域 4px 细滚动条 + `prefers-reduced-motion` 兜底
-- `src/primitives.tsx`：Button 增 `size` 与 `secondary`（默认 variant ghost→secondary，全仓零显式 ghost 调用已核实）
-- 新文件 `src/{icon-button,switch,segment}.tsx` + `index.ts` 导出；`segment` 用 `fieldset`（biome a11y `useSemanticElements` 抓的真问题：div+role=group → 语义元素，CSS 补边距重置）
-- 测试：新 `test/{icon-button,switch,segment}.test.tsx` + `primitives.test.tsx` 扩展（默认 secondary/md 断言更新）
+- `theme/layout.css`（第五分片）：shell 三区/面板 header/port 点/草稿徽标/运行状态条（tc-pulse 呼吸动画）/欢迎屏；`theme.css` 聚合 +1 行；`base.css` `.tc-root` 增 height:100%（AppShell 高度链）
+- console-ui 新组件 ×4：`AppShell` / `RunPanelHeader`（distillStatusText 自 ui-glue 迁入）/ `RunStatusBar`（替代 StatusLine——status-line.tsx 删除，formatSeconds 随迁）/ `WelcomePanel`；index.ts 导出面更新
+- `task-bar.tsx`：移除 onStop 与"⏹ 停止"钮（迁 RunStatusBar）；运行态只禁输入与起跑
+- `sidepanel-app.tsx` 三区重排（header 徽标区收编 port/蒸馏/草稿三条文本行；main = 确认卡→欢迎屏/时间线→终态；dock = 运行状态条 + TaskBar 常驻底部）；`App.tsx` 注入 onOpenSettings（openOptionsPage，M4 换 overlay）
+- 测试：app-shell/run-panel-header/welcome-panel 三新文件 + run-panel.test 迁移（StatusLine→RunStatusBar）+ task-bar.test 更新（停止钮断言改起跑禁用）
 
 **验证**
-- 全仓 typecheck + test 绿（console-ui 64 tests；新组件覆盖率 100%，全包阈值内）
-- `wxt build` + `e2e/smoke-ui.mjs` PASS（DOM 契约未动，现有 13 处 Button 调用点零改动）
-- `_cascade-check.html` 扩展实测（真 Chrome）：ghost 无框/secondary 32px·13px·540/sm 28px/icon 32px/开关轨道两态+拇指 12px 位移/段控 active accent-subtle——九项 computed style 全对；**Tab 键盘实测 focus-visible ring**（3px accent 14% + border-focus）；**danger hover 实测**（danger-subtle 底 + 红 42% 边，primary 无误染）
-- 双主题四截图复跑（`_shot-*.png` 更新）；gate pre-commit 全绿
+- 全仓 typecheck/test 一次全绿（console-ui 75 tests；新组件覆盖率 100%）
+- `wxt build` + `e2e/smoke-ui.mjs` PASS——**断言口径同步更新**：终态"完成"徽章随 StatusLine 消失，改为 FinalResult 的"✓ 成功"承载（计划第 5 步预案兑现）
+- 双主题四截图复跑（`_shot-*.png`——三区结构/欢迎屏可直查）
+- gate pre-commit 全绿（biome 顺清迁移后失效的 SidepanelState import）
 
 **过程记录**
-- jsdom 分歧登记：`fireEvent.click` 会无视 disabled 触发 checkbox 激活行为（与浏览器相左）——Switch disabled 测试改为断言原生属性落位，已注明
-- biome 先后抓两处：新测试 JSX 折行（format）、segment 的 role=group 语义化（lint，真问题已修）
+- chrome-devtools MCP 的 take_screenshot 在浏览器重连后持续挂起（120s×2 超时），目检降级为截图文件直查 + DOM 结构由 smoke 覆盖——MCP 侧问题非产物问题
 
 ## 评审轮登记
 
-- **轮 1**（2026-10-29，3 条 medium / 14m22s）：**P2×3 全采纳**
-  - [1][2] 采纳（P2）：`.tc-btn`/`.tc-icon-btn` 固定尺寸无 border-box——全仓无 reset，content-box 下 1px 边框外扩 2px（md 实际 34/sm 30/lg 40），与已 border-box 的表单控件系统性错位；修法为 base.css 作用域 border-box reset 一处根治（` .tc-root * `），controls.css 里冗余的显式 box-sizing 移除；offsetHeight 实测回归 32/28/32
-  - [3] 采纳（P2）：滚动条双路径失效——视口滚动条挂在 html 上（`.tc-root` 后代选择器够不到），且 `scrollbar-width/color` 标准属性可继承、Chrome 121+ 会整体抑制 `::-webkit-scrollbar`（4px 定制在内部容器上也会被继承值废掉）；修法：base.css 删标准属性只留 webkit 内部容器定制，视口条挂到 sidepanel.css 入口层（auto 跟随系统双套）；options 页视口维持默认（M4 设置收纳后 options 页退役，不投资）
-  - 过程教训：此前用 computed style height 验证尺寸读的是 content-box 值，掩盖 2px 外扩——控件尺寸验证必须量 offsetHeight
-  - 测试：纯 CSS 修复无单测面；gate 全绿
-- **轮 2**（2026-10-29）：**零意见收敛轮**（增量 021e422，2m43s，complete）——循环终止
+（/review-loop 后填充）

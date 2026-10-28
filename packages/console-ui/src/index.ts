@@ -2,6 +2,8 @@
 // 段 E 全量：任务条/时间线/状态行/终态/权限卡/提交卡/options 三件 + 基础件。
 // 本包禁 chrome.*（biome overrides 强制）——宿主交互经 props/回调注入。
 
+export type { AppShellProps } from "./app-shell.js";
+export { AppShell } from "./app-shell.js";
 export { formatBytes } from "./bytes.js";
 export type { FinalResultProps } from "./final-result.js";
 export { FinalResult } from "./final-result.js";
@@ -27,6 +29,10 @@ export {
 } from "./provider-card-form.js";
 export type { ProviderListProps } from "./provider-list.js";
 export { ProviderList } from "./provider-list.js";
+export type { DistillState, PortStatus, RunPanelHeaderProps } from "./run-panel-header.js";
+export { distillStatusText, RunPanelHeader } from "./run-panel-header.js";
+export type { RunStatusBarProps } from "./run-status-bar.js";
+export { formatSeconds, RunStatusBar } from "./run-status-bar.js";
 export type { RunTimelineProps } from "./run-timeline.js";
 export { groupByStep, RunTimeline, repeatedSkillSeqs } from "./run-timeline.js";
 export type { SegmentItem, SegmentProps } from "./segment.js";
@@ -35,8 +41,6 @@ export type { SkillDraftEdits, SkillDraftReviewProps } from "./skill-draft-revie
 export { SkillDraftReview } from "./skill-draft-review.js";
 export type { SkillListViewProps } from "./skill-list-view.js";
 export { SkillListView } from "./skill-list-view.js";
-export type { StatusLineProps } from "./status-line.js";
-export { formatSeconds, StatusLine } from "./status-line.js";
 export type { SubmitCardProps } from "./submit-card.js";
 export { clipValue, SubmitCard } from "./submit-card.js";
 export type { SwitchProps } from "./switch.js";
@@ -45,3 +49,5 @@ export type { TaskBarProps } from "./task-bar.js";
 export { TaskBar } from "./task-bar.js";
 export type { ThemedRootProps, ThemeMode } from "./themed-root.js";
 export { ThemedRoot } from "./themed-root.js";
+export type { WelcomePanelProps } from "./welcome-panel.js";
+export { WelcomePanel } from "./welcome-panel.js";

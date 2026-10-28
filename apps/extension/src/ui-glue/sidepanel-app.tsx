@@ -1,18 +1,21 @@
-// 侧边栏组态（m5/05 §2）：PortClient + console-ui 全量装配。chrome 交互只在此层
-// （connect 工厂由 entrypoints 注入）——组件零 chrome。端口状态条 + TaskBar +
-// 确认卡浮层（权限/提交，同时至多一张——core 守卫链串行语义）+ StatusLine +
-// RunTimeline + FinalResult。事件 ack 逐条回发（journal 环释放）。附件走分块
-// 二进制传输（issue #2 C 档）：begun 回执经 begunWaiters 桥回传输编排，SW 拒绝/
-// 本地失败统一落 attachmentRejections 展示位。
+// 侧边栏组态（m5/05 §2 + issue #20 M3 三区重排）：PortClient + console-ui 全量装配。
+// chrome 交互只在此层（connect 工厂由 entrypoints 注入）——组件零 chrome。AppShell 三区：
+// header（连接状态/蒸馏/草稿徽标/设置入口）+ main（确认卡浮层 + 时间线 + 终态 + 空闲欢迎屏）
+// + dock（运行状态条 + TaskBar 常驻底部）。事件 ack 逐条回发（journal 环释放）。附件走分块
+// 二进制传输（issue #2 C 档）：begun 回执经 begunWaiters 桥回传输编排，SW 拒绝/本地失败
+// 统一落 attachmentRejections 展示位。
 
 import {
+  AppShell,
   FinalResult,
   PermissionCard,
+  RunPanelHeader,
+  RunStatusBar,
   RunTimeline,
-  StatusLine,
   SubmitCard,
   TaskBar,
   ThemedRoot,
+  WelcomePanel,
 } from "@tw/console-ui";
 import type { UiToSwMessage } from "@tw/protocol";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -30,6 +33,8 @@ export interface SidepanelAppProps {
   /** 草稿数主动查询面（issue #5 可观测性：广播即发即逝——打开/重连时补查一次；
    *  entrypoints 注入 chrome.runtime.sendMessage options op，测试注入 mock。缺省不查） */
   fetchDraftCount?: () => Promise<number | null>;
+  /** 设置入口（M3 跳 options 页；M4 换侧边栏 overlay）。entrypoints 注入 openOptionsPage */
+  onOpenSettings?: () => void;
 }
 
 /** TaskBar 的上传进度投影（传输中条目——本地态，不进 protocol） */
@@ -40,24 +45,7 @@ interface UploadProgress {
   sent: number;
 }
 
-/** 蒸馏过程状态行文案（issue #9 D5：failed 红字常驻到下一 run；queued/running/
- *  done 灰字。实测 matcher+蒸馏两次串行慢调用 ~4 分钟——空窗期用户无从得知后台
- *  在干什么，曾据此误判「蒸馏没成功」） */
-function distillStatusText(d: NonNullable<SidepanelState["distill"]>): string {
-  const detail = d.detail !== null ? `：${d.detail}` : "";
-  switch (d.phase) {
-    case "queued":
-      return "⧗ 蒸馏已排队——后台进行中（约 1–4 分钟）";
-    case "running":
-      return "⚗ 蒸馏中……";
-    case "done":
-      return `✓ 蒸馏完成${detail}`;
-    case "failed":
-      return `✗ 蒸馏失败${detail}`;
-  }
-}
-
-export function SidepanelApp({ connect, fetchDraftCount }: SidepanelAppProps) {
+export function SidepanelApp({ connect, fetchDraftCount, onOpenSettings }: SidepanelAppProps) {
   const [state, dispatch] = useReducer(
     (s: typeof initialSidepanelState, a: SidepanelAction) => ingestSidepanel(s, a).state,
     initialSidepanelState,
@@ -156,35 +144,51 @@ export function SidepanelApp({ connect, fetchDraftCount }: SidepanelAppProps) {
 
   return (
     <ThemedRoot>
-      <main style={{ padding: 10, display: "grid", gap: 8 }}>
-        {portStatus !== "online" ? (
-          <p style={{ margin: 0 }} className="tc-ev-warn">
-            {portStatus === "connecting"
-              ? "连接服务…（SW 可能正在唤醒）"
-              : "连接已断开——自动重连中…"}
-          </p>
-        ) : null}
-
-        <TaskBar
-          task={task}
-          onTaskChange={setTask}
-          attachments={state.attachments}
-          budget={state.attachmentBudget}
-          uploads={uploads}
-          rejections={state.attachmentRejections}
-          onDismissRejection={(index) =>
-            dispatch({ kind: "attachment-rejection-dismissed", index })
-          }
-          onPickFiles={pickFiles}
-          onRemoveAttachment={(attachmentId) => send({ kind: "attachment-remove", attachmentId })}
-          runStatus={snap?.status ?? null}
-          onStart={() => {
-            dispatch({ kind: "attachment-rejections-cleared" });
-            send({ kind: "control", action: "start", task });
-          }}
-          onStop={() => send({ kind: "control", action: "stop" })}
-        />
-
+      <AppShell
+        header={
+          <RunPanelHeader
+            title="TreeChrome"
+            portStatus={portStatus}
+            distill={state.distill}
+            draftCount={state.draftCount}
+            onOpenSettings={onOpenSettings}
+            onReviewDrafts={onOpenSettings}
+          />
+        }
+        dock={
+          <>
+            {snap !== null && !terminal ? (
+              <RunStatusBar
+                status={snap.status}
+                stepCount={snap.stepCount}
+                startedAt={snap.startedAt}
+                endedAt={snap.endedAt}
+                onStop={() => send({ kind: "control", action: "stop" })}
+              />
+            ) : null}
+            <TaskBar
+              task={task}
+              onTaskChange={setTask}
+              attachments={state.attachments}
+              budget={state.attachmentBudget}
+              uploads={uploads}
+              rejections={state.attachmentRejections}
+              onDismissRejection={(index) =>
+                dispatch({ kind: "attachment-rejection-dismissed", index })
+              }
+              onPickFiles={pickFiles}
+              onRemoveAttachment={(attachmentId) =>
+                send({ kind: "attachment-remove", attachmentId })
+              }
+              runStatus={snap?.status ?? null}
+              onStart={() => {
+                dispatch({ kind: "attachment-rejections-cleared" });
+                send({ kind: "control", action: "start", task });
+              }}
+            />
+          </>
+        }
+      >
         {state.permission !== null ? (
           <PermissionCard
             req={state.permission.req}
@@ -210,32 +214,8 @@ export function SidepanelApp({ connect, fetchDraftCount }: SidepanelAppProps) {
           />
         ) : null}
 
-        {snap !== null ? (
-          <StatusLine
-            status={snap.status}
-            stepCount={snap.stepCount}
-            startedAt={snap.startedAt}
-            endedAt={snap.endedAt}
-          />
-        ) : (
-          <p style={{ margin: 0 }} className="tc-ev-muted">
-            空闲——配置好 LLM 卡片（设置页）后输入任务开始。
-          </p>
-        )}
-
-        {state.distill !== null ? (
-          <p
-            style={{ margin: "4px 0" }}
-            className={state.distill.phase === "failed" ? "tc-ev-err" : "tc-ev-muted"}
-          >
-            {distillStatusText(state.distill)}
-          </p>
-        ) : null}
-
-        {(state.draftCount ?? 0) > 0 ? (
-          <p style={{ margin: "4px 0" }} className="tc-ev-muted">
-            📝 {state.draftCount} 张蒸馏草稿待审——去设置页（options）审阅采纳。
-          </p>
+        {snap === null && state.events.length === 0 ? (
+          <WelcomePanel title="TreeChrome" tagline="浏览器里的任务代理" />
         ) : null}
 
         <RunTimeline
@@ -253,7 +233,7 @@ export function SidepanelApp({ connect, fetchDraftCount }: SidepanelAppProps) {
             judgement={snap.judgement}
           />
         ) : null}
-      </main>
+      </AppShell>
     </ThemedRoot>
   );
 }
