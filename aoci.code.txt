@@ -12,10 +12,11 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M1（theme 拆分+token 扩容，决策点 4/4 拍板，已实施待评审） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M1（已实施；评审循环收敛：轮 1-2 P2×2+P1×1 采纳，轮 3 零意见） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
+_cascade-check.html[TU3T]: F:评审轮 2 双向验证临时页：真实引用 theme.css，CDP 悬停实测三按钮变体 getComputedStyle 级联（ghost 填充/primary accent-strong/danger 透明） | R:code:packages/console-ui/src/theme/controls.css | A:dump | S:_ 前缀不入库；M2 控件状态模型验证可复用
 
 ===D:/dev/git/z_jordon/TreeChrome/.githooks/===
 pre-commit[OQ7T]: F:版本化 git pre-commit 钩子：校验 node≥22 后 exec scripts/gate.mjs pre-commit，人工提交与 agent 提交走同一道门 | R:code:scripts/gate.mjs | A:- | S:启用需每克隆一次 git config core.hooksPath .githooks（pnpm install 的 prepare 自动执行）
@@ -273,6 +274,12 @@ _r_issue-16-matcher-timeout_1.md[SQ3T]: F:issue #16 评审轮 1 dump：1 条意�
 _r_issue-16-matcher-timeout_2.md[SQ2T]: F:issue #16 评审轮 2 dump：零意见（增量复核轮）——循环收敛轮 | R:code:.zcode/commands/review-loop.md | A:- | S:-
 review-issue-16-matcher-timeout-1.json[ZQ2S]: F:open-code-review 原始输出（issue #16 轮 1，base=main，1 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
 review-issue-16-matcher-timeout-2.json[ZQ2T]: F:open-code-review 原始输出（issue #16 轮 2，增量复核：零意见收敛）——含 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
+_r_issue-20-ui-refactor_1.md[SQ2T]: F:issue #20 评审轮 1 dump：3 条 medium 意见（hover 误伤 danger/baseline 幽灵条目/baseline 索引 _ 件），P2×2 采纳+驳回×1（先例）修复于 a6870fa | R:code:.zcode/commands/review-loop.md | A:- | S:-
+review-issue-20-ui-refactor-1.json[ZQ2S]: F:ocr review 轮 1 原始输出（issue #20，base=main）：3 意见全文含 thinking | R:code:docs/code-review/_r_issue-20-ui-refactor_1.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
+_r_issue-20-ui-refactor_2.md[SQ2T]: F:issue #20 评审轮 2 dump：1 条 high（轮 1 修复引入 primary hover 特异性反超回归），P1 采纳 :where() 修复于 e8aebb9 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+review-issue-20-ui-refactor-2.json[ZQ2S]: F:ocr review 轮 2 原始输出（issue #20，增量 a6870fa）：1 意见全文含 thinking | R:code:docs/code-review/_r_issue-20-ui-refactor_2.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
+_r_issue-20-ui-refactor_3.md[SQ1T]: F:issue #20 评审轮 3 dump：零意见、状态 complete（增量 e8aebb9，39s）——review-loop 收敛出口；累计 3 轮 4 意见，P2×2+P1×1 采纳、驳回×1 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+review-issue-20-ui-refactor-3.json[ZQ1T]: F:ocr review 轮 3 原始输出（issue #20，增量 e8aebb9）：零意见收敛 | R:code:docs/code-review/_r_issue-20-ui-refactor_3.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
 README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
@@ -957,6 +964,6 @@ distill-and-rerun.mjs[TQ7M]: F:自蒸馏收敛循环脚本：沙箱积累模式/
 ===D:/dev/git/z_jordon/TreeChrome/packages/console-ui/src/theme/===
 base.css[FU3T]: F:主题作用域根 .tc-root 基线（自原 theme.css 头部迁出）：system-ui 字体栈/13px/行高 1.5/color-scheme | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
 components.css[FU5S]: F:组件类（issue #20 M1 迁移）：徽章/表格/卡片/时间线/倒计时/键值——规则结构不变取新 token，--tc-card-bg 收编为 --tc-bg-muted | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
-controls.css[FU4T]: F:控件类（issue #20 M1 迁移）：tc-btn 族与 tc-field 表单族——规则结构不变取新 token；默认钮透明底+hover 填充是决策点 2 批准的唯一状态新增 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:完整状态模型（pressed/focus-visible/尺寸档）在 M2，本期勿在此追加伪类
+controls.css[FU4T]: F:控件类（issue #20 M1 迁移）：tc-btn 族与 tc-field 表单族——结构不变取新 token；默认钮透明底+hover 填充，通用 hover 以 :where(:not(.tc-btn-danger)) 零特异性排除语义变体（评审轮 1-2 修复） | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:完整状态模型在 M2；勿改回 :not(.tc-btn-danger)——参数类计入特异性曾反超 primary hover
 tokens.css[FU4M]: F:语义 token 单源（issue #20 M1）：亮/暗/auto 三块双主题（表面四级/文字四级/accent+语义 subtle/透明度边框/阴影）+主题无关族（控件/表单/浮层/动效/圆角/滚动条） | R:code:packages/console-ui/src/theme.css,code:packages/console-ui/src/theme/base.css | A:- | S:灰阶冷灰/accent 保蓝已拍板；控件浮层动效族 M1 只定义不消费；auto 块重复 light 是有意
 

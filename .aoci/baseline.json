@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-10-13T12:30:11Z",
-  "updated_at": "2026-10-27T23:20:43Z",
+  "updated_at": "2026-10-28T00:14:36Z",
   "files": {
     ".archify/architecture-treechrome-20261018-093945/candidate.json": {
       "role": "index",
@@ -131,9 +131,15 @@
     },
     "SCRATCHPAD.md": {
       "role": "index",
-      "sha256": "8177dc06731a1120c7faa3d63f905afd87c891a2ecb79d6da0ee4ca153b0dbf0",
-      "size": 9575,
-      "normalized_sha256": "8177dc06731a1120c7faa3d63f905afd87c891a2ecb79d6da0ee4ca153b0dbf0"
+      "sha256": "59c1ae8d248f8fb4f706ab0817fa5473f33db66b984a58f5e4fd924deb148339",
+      "size": 11547,
+      "normalized_sha256": "59c1ae8d248f8fb4f706ab0817fa5473f33db66b984a58f5e4fd924deb148339"
+    },
+    "_cascade-check.html": {
+      "role": "index",
+      "sha256": "29a8849f1acda349003fc305c4e3542b43ffa716e13a9e447ceca45bb4204ad0",
+      "size": 1210,
+      "normalized_sha256": "29a8849f1acda349003fc305c4e3542b43ffa716e13a9e447ceca45bb4204ad0"
     },
     "_douyin-sandbox/domain-skills/creator.douyin.com/tasks/upload-video-draft/_sop.md": {
       "role": "index",
@@ -227,9 +233,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "3a060818e477b7c2b6a7a9b74d27ff2716fed52dc5408e70fe0579deb2f73d66",
-      "size": 160767,
-      "normalized_sha256": "3a060818e477b7c2b6a7a9b74d27ff2716fed52dc5408e70fe0579deb2f73d66"
+      "sha256": "699b9ab9c24a5a987197ad6f2a623ff635caf6f4062547765190447d5b469013",
+      "size": 162715,
+      "normalized_sha256": "699b9ab9c24a5a987197ad6f2a623ff635caf6f4062547765190447d5b469013"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -827,6 +833,24 @@
       "size": 180,
       "normalized_sha256": "e209e4dcde3a89fe228e4afd26dc01b3601d00eebf22c3e98c24ec0908eba757"
     },
+    "docs/code-review/_r_issue-20-ui-refactor_1.md": {
+      "role": "index",
+      "sha256": "338b0417513264aacc48d838ecf97215eaed6f3edbf0b859791ca480d63a81e1",
+      "size": 3397,
+      "normalized_sha256": "338b0417513264aacc48d838ecf97215eaed6f3edbf0b859791ca480d63a81e1"
+    },
+    "docs/code-review/_r_issue-20-ui-refactor_2.md": {
+      "role": "index",
+      "sha256": "189633bc857547b6879f885a99a4881a10c63af775b9ad45a881aa3a5ef3ef72",
+      "size": 1702,
+      "normalized_sha256": "189633bc857547b6879f885a99a4881a10c63af775b9ad45a881aa3a5ef3ef72"
+    },
+    "docs/code-review/_r_issue-20-ui-refactor_3.md": {
+      "role": "index",
+      "sha256": "8785f64b4f29d7f80c94c8ade6ee2ecffe4a9c7c48608e5811611564d4a6c7ee",
+      "size": 179,
+      "normalized_sha256": "8785f64b4f29d7f80c94c8ade6ee2ecffe4a9c7c48608e5811611564d4a6c7ee"
+    },
     "docs/code-review/_r_issue-5-self-evolution_1.md": {
       "role": "index",
       "sha256": "7a76d39027eb53d313c63365c6e46e4bb838c159cb8db981639bbd9b262ee7b5",
@@ -1396,6 +1420,24 @@
       "sha256": "76e386bb6cb185159925d9e132e4853df14fa14f0c3d2b4ba05aabaaa586fda6",
       "size": 3128,
       "normalized_sha256": "76e386bb6cb185159925d9e132e4853df14fa14f0c3d2b4ba05aabaaa586fda6"
+    },
+    "docs/code-review/review-issue-20-ui-refactor-1.json": {
+      "role": "index",
+      "sha256": "d6fd5ab6d25316d0a5786ae8eef93f997fa4a78102612053f4a08d833d5cba1a",
+      "size": 26817,
+      "normalized_sha256": "d6fd5ab6d25316d0a5786ae8eef93f997fa4a78102612053f4a08d833d5cba1a"
+    },
+    "docs/code-review/review-issue-20-ui-refactor-2.json": {
+      "role": "index",
+      "sha256": "20cb5e5b47a77843e04a4e6e4058d8292cd6216d1b638dcfc2ea8e63f51de42f",
+      "size": 10869,
+      "normalized_sha256": "20cb5e5b47a77843e04a4e6e4058d8292cd6216d1b638dcfc2ea8e63f51de42f"
+    },
+    "docs/code-review/review-issue-20-ui-refactor-3.json": {
+      "role": "index",
+      "sha256": "ac2002e2186023a3af163fc4951529f61edada47a735c76b1f21a6c45c543ae0",
+      "size": 2549,
+      "normalized_sha256": "ac2002e2186023a3af163fc4951529f61edada47a735c76b1f21a6c45c543ae0"
     },
     "docs/code-review/review-issue-5-self-evolution-1.json": {
       "role": "index",
@@ -3463,9 +3505,9 @@
     },
     "packages/console-ui/src/theme/controls.css": {
       "role": "index",
-      "sha256": "3f7f9ae24a78a12eba4b8ff7efb0afeec85e79707f09a20cb22ea71985fceb9e",
-      "size": 1393,
-      "normalized_sha256": "3f7f9ae24a78a12eba4b8ff7efb0afeec85e79707f09a20cb22ea71985fceb9e"
+      "sha256": "e2da05f50ffbecc463aa89555000d3097a268fa25f923095378a8ef5073d919b",
+      "size": 1627,
+      "normalized_sha256": "e2da05f50ffbecc463aa89555000d3097a268fa25f923095378a8ef5073d919b"
     },
     "packages/console-ui/src/theme/tokens.css": {
       "role": "index",
