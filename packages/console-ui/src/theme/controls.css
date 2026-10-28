@@ -275,7 +275,6 @@
 .tc-field input,
 .tc-field select {
   height: var(--tc-field-height-md);
-  box-sizing: border-box;
 }
 
 .tc-field input,

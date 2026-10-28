@@ -90,4 +90,8 @@
 
 ## 评审轮登记
 
-（/review-loop 后填充）
+- **轮 1**（2026-10-29，3 条 medium / 14m22s）：**P2×3 全采纳**
+  - [1][2] 采纳（P2）：`.tc-btn`/`.tc-icon-btn` 固定尺寸无 border-box——全仓无 reset，content-box 下 1px 边框外扩 2px（md 实际 34/sm 30/lg 40），与已 border-box 的表单控件系统性错位；修法为 base.css 作用域 border-box reset 一处根治（` .tc-root * `），controls.css 里冗余的显式 box-sizing 移除；offsetHeight 实测回归 32/28/32
+  - [3] 采纳（P2）：滚动条双路径失效——视口滚动条挂在 html 上（`.tc-root` 后代选择器够不到），且 `scrollbar-width/color` 标准属性可继承、Chrome 121+ 会整体抑制 `::-webkit-scrollbar`（4px 定制在内部容器上也会被继承值废掉）；修法：base.css 删标准属性只留 webkit 内部容器定制，视口条挂到 sidepanel.css 入口层（auto 跟随系统双套）；options 页视口维持默认（M4 设置收纳后 options 页退役，不投资）
+  - 过程教训：此前用 computed style height 验证尺寸读的是 content-box 值，掩盖 2px 外扩——控件尺寸验证必须量 offsetHeight
+  - 测试：纯 CSS 修复无单测面；gate 全绿
