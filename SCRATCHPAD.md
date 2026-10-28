@@ -145,3 +145,8 @@ console-ui 主题层从「10 变量单文件」升级为「分片 + 全量语义
   - [2] 采纳（P2）：`.aoci/baseline.json` 幽灵条目 `docs/ui-refactor-qz-reference.md`（改名残留，盘上无此文件且与新路径同哈希）——手工摘除；`baseline scope` 治理流需 TTY approve 不适用单条清理，摘除后 verify/check 复核无治理失配
   - [3] 驳回（先例）：baseline 索引 `_shot-theme.mjs` 是既定约定——`_dump_bestsellers.txt`/`_issue-self-evolution.md` 同为未入库 `_` 件且早已被基线索引（AOCI 索引工作树实况，非仅入库文件）
   - 测试：纯 CSS 选择器修复无单测面（本仓测试不打样式断言）；`gate pre-commit` 全绿
+- **轮 2**（2026-10-28，1 条 high）：**P1×1 采纳**
+  - [1] 采纳（P1）：轮 1 修复引入回归——`:not(.tc-btn-danger)` 参数类计入特异性，(0,4,0) 反超 `.tc-btn-primary:not(:disabled):hover` 的 (0,3,0)，primary 钮 hover 被误染 accent-subtle（白字对比度骤降）；改 `:where(:not(.tc-btn-danger))`（参与匹配、零特异性贡献，Chrome 88+）
+  - 真机双向验证：临时页 `_cascade-check.html`（真实引用 theme.css）CDP 悬停实测 getComputedStyle——ghost hover=accent-subtle / primary hover=#0550ae / danger hover=transparent 三态全对
+  - 教训：评审建议片段也可能有缺陷（轮 1 建议未核验 primary 交互）——CSS 修复须过特异性核算
+  - gate 一次红：dom-snapshot paint-order「MAX_RECTS=5000 超限拒绝」瞬时超时（5104ms > 5000ms），单跑 796ms 全过、复跑绿——环境波动非代码缺陷
