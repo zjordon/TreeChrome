@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-10-13T12:30:11Z",
-  "updated_at": "2026-10-28T12:14:40Z",
+  "updated_at": "2026-10-28T12:40:22Z",
   "files": {
     ".archify/architecture-treechrome-20261018-093945/candidate.json": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "SCRATCHPAD.md": {
       "role": "index",
-      "sha256": "f75e1a87d3193ca3c7afd819af59f0b2eb28c9efdee4a87abb301524471dd71d",
-      "size": 6988,
-      "normalized_sha256": "f75e1a87d3193ca3c7afd819af59f0b2eb28c9efdee4a87abb301524471dd71d"
+      "sha256": "2ece4b27a028c9766bb4160017800a9b63bba1e3f271ff3d23554291ad40dda6",
+      "size": 7138,
+      "normalized_sha256": "2ece4b27a028c9766bb4160017800a9b63bba1e3f271ff3d23554291ad40dda6"
     },
     "_cascade-check.html": {
       "role": "index",
@@ -233,9 +233,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "fe70ce95ef093509865a5104c3ad123e30db108157326ac9c9fd2582ae0bc7e8",
-      "size": 166384,
-      "normalized_sha256": "fe70ce95ef093509865a5104c3ad123e30db108157326ac9c9fd2582ae0bc7e8"
+      "sha256": "c3ee6f86c9d53ce9fffe4d03b59ab83f717162c39a5eb85595681e41ad902c4f",
+      "size": 166913,
+      "normalized_sha256": "c3ee6f86c9d53ce9fffe4d03b59ab83f717162c39a5eb85595681e41ad902c4f"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -845,6 +845,12 @@
       "size": 175,
       "normalized_sha256": "366fa6e896726a91ee8b9f019006db6ec2152f9d45e04576898963b96ff59a99"
     },
+    "docs/code-review/_r_issue-20-ui-m3_1.md": {
+      "role": "index",
+      "sha256": "c7078ae52cc7ae9bba9fa691e41ce5d869c5fa9d26274b48b372c05e861aca6c",
+      "size": 176,
+      "normalized_sha256": "c7078ae52cc7ae9bba9fa691e41ce5d869c5fa9d26274b48b372c05e861aca6c"
+    },
     "docs/code-review/_r_issue-20-ui-refactor_1.md": {
       "role": "index",
       "sha256": "338b0417513264aacc48d838ecf97215eaed6f3edbf0b859791ca480d63a81e1",
@@ -1444,6 +1450,12 @@
       "sha256": "c71676529e81cf53e7819dc12166be90a8e60de6a2ab3fd351484196f0d6d19a",
       "size": 3713,
       "normalized_sha256": "c71676529e81cf53e7819dc12166be90a8e60de6a2ab3fd351484196f0d6d19a"
+    },
+    "docs/code-review/review-issue-20-ui-m3-1.json": {
+      "role": "index",
+      "sha256": "c826d612643ddb9ad2331ff96f365931919eda8ad8e33b282b15bb3d89ad5569",
+      "size": 9641,
+      "normalized_sha256": "c826d612643ddb9ad2331ff96f365931919eda8ad8e33b282b15bb3d89ad5569"
     },
     "docs/code-review/review-issue-20-ui-refactor-1.json": {
       "role": "index",
