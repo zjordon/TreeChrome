@@ -12,7 +12,7 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M2（控件层：全状态模型+三新原语+滚动条/动效兑底，已实施待评审） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4T]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——当前为 issue #20 UI 重构 M2（已实施；评审循环收敛：轮 1 P2×3 采纳，轮 2 零意见） | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
@@ -55,7 +55,7 @@ main.tsx[EU4T]: F:options 页 React 挂载入口（StrictMode+console-ui theme.c
 App.tsx[EU5T]: F:侧边栏粘合层：chrome 交互只在此——runtime.connect 工厂 + 草稿数查询（options 单发 list-skill-drafts）注入 SidepanelApp | R:code:apps/extension/src/ui-glue/sidepanel-app.tsx,code:apps/extension/src/ui-glue/port-client.ts | A:App, connect, fetchDraftCount | S:-
 index.html[EU3T]: F:侧边栏页 HTML 壳（zh-CN，#root+main.tsx 入口） | R:code:apps/extension/entrypoints/sidepanel/main.tsx | A:- | S:-
 main.tsx[EU4T]: F:侧边栏 React 挂载入口（theme.css+sidepanel.css 页面 reset） | R:code:apps/extension/entrypoints/sidepanel/App.tsx | A:- | S:-
-sidepanel.css[FU2T]: F:侧边栏页面级样式 reset（html/body/#root 满高；组件样式在 console-ui theme.css） | R:- | A:- | S:-
+sidepanel.css[FU3T]: F:侧边栏页面级 reset（html/body/#root 满高）+ 视口滚动条 4px webkit 定制（auto 跟随系统双套） | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:视口条挂 html；不设标准 scrollbar 属性（121+ 抑制 webkit）
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/===
 package.json[FE6T]: F:扩展宿主包定义：WXT 构建、workspace 依赖（core/protocol/cdp-chrome/console-ui）与 e2e 脚本面（smoke/probe/runtime/ui/attachments/self-evolution） | R:- | A:- | S:typecheck 先 wxt prepare 生成 .wxt 类型再 tsc --noEmit
@@ -280,6 +280,10 @@ _r_issue-20-ui-refactor_2.md[SQ2T]: F:issue #20 评审轮 2 dump：1 条 high（
 review-issue-20-ui-refactor-2.json[ZQ2S]: F:ocr review 轮 2 原始输出（issue #20，增量 a6870fa）：1 意见全文含 thinking | R:code:docs/code-review/_r_issue-20-ui-refactor_2.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
 _r_issue-20-ui-refactor_3.md[SQ1T]: F:issue #20 评审轮 3 dump：零意见、状态 complete（增量 e8aebb9，39s）——review-loop 收敛出口；累计 3 轮 4 意见，P2×2+P1×1 采纳、驳回×1 | R:code:.zcode/commands/review-loop.md | A:- | S:-
 review-issue-20-ui-refactor-3.json[ZQ1T]: F:ocr review 轮 3 原始输出（issue #20，增量 e8aebb9）：零意见收敛 | R:code:docs/code-review/_r_issue-20-ui-refactor_3.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
+_r_issue-20-ui-m2_1.md[SQ2T]: F:issue #20 M2 评审轮 1 dump：3 条 medium（控件无 border-box 外扩 2px×2/滚动条双路径失效），P2×3 全采纳修复于 021e422 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+review-issue-20-ui-m2-1.json[ZQ2M]: F:ocr review 轮 1 原始输出（issue #20 M2，base=main）：3 意见全文含 thinking | R:code:docs/code-review/_r_issue-20-ui-m2_1.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
+_r_issue-20-ui-m2_2.md[SQ1T]: F:issue #20 M2 评审轮 2 dump：零意见、状态 complete（增量 021e422）——review-loop 收敛出口；累计 2 轮 3 意见 P2×3 全采纳 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+review-issue-20-ui-m2-2.json[ZQ1T]: F:ocr review 轮 2 原始输出（issue #20 M2，增量 021e422）：零意见收敛 | R:code:docs/code-review/_r_issue-20-ui-m2_2.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
 README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
@@ -965,8 +969,8 @@ selectors.md[SD4T]: F:选择器登记（localhost_7780，重蒸版） | R:code:_
 distill-and-rerun.mjs[TQ7M]: F:自蒸馏收敛循环脚本：沙箱积累模式/--fresh 护栏（仅 _ 前缀）/runs+converge/收敛验证轮（converged skip 断言）；judgePassed 门控与逐轮报告 | R:code:packages/node-host/boot.mjs | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/console-ui/src/theme/===
-base.css[FU3T]: F:主题作用域根基线：system-ui 字体栈/13px/行高 + M2 追加——面板作用域 4px 细滚动条与 prefers-reduced-motion 全局兑底 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
+base.css[FU3S]: F:主题作用域根基线：字体/13px/行高 + border-box 作用域 reset（控件尺寸 token 含边框总尺寸）+ webkit 细滚动条（仅内部容器）+ prefers-reduced-motion 兑底 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:不设标准 scrollbar 属性（121+ 抑制 webkit）；视口条挂宿主入口
 components.css[FU5S]: F:组件类（issue #20 M1 迁移）：徽章/表格/卡片/时间线/倒计时/键值——规则结构不变取新 token，--tc-card-bg 收编为 --tc-bg-muted | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:-
-controls.css[FU4M]: F:控件类（issue #20 M2 全状态模型）：Button 四态+尺寸档+变体、icon-btn/switch/segment 三族、表单 32px+focus ring+placeholder | R:code:packages/console-ui/src/theme/tokens.css | A:- | S::not(类) 计特异性，排除用 :where()；变体规则后置通用状态（primary hover 靠源序胜出）
+controls.css[FU4M]: F:控件类（issue #20 M2 全状态模型）：Button 四态+尺寸档+变体、icon-btn/switch/segment 三族、表单 32px+focus ring+placeholder；box-sizing 由 base 作用域 reset 统一 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S::not(类) 计特异性，排除用 :where()；变体规则后置通用状态（primary hover 靠源序胜出）
 tokens.css[FU4M]: F:语义 token 单源：亮/暗/auto 三块双主题（表面四级/文字四级/accent+语义 subtle/透明度边框/阴影）+主题无关族（控件/表单/浮层/动效/圆角/滚动条/icon-btn/switch 尺寸） | R:code:packages/console-ui/src/theme.css,code:packages/console-ui/src/theme/base.css | A:- | S:灰阶冷灰/accent 保蓝已拍板；auto 块重复 light 是有意
 
