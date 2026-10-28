@@ -1,6 +1,6 @@
-// TaskBar 测试：空任务禁用开始/起跑回调/运行态切换（停止 + 输入锁定）/附件挑选与
-// 移除（File 对象经 onPickFiles 原样出组件——零 IO）/上传进度条目/预算行（警色
-// 阈值）/拒绝明细（reason 文案映射 + 逐条清除）——issue #2。
+// TaskBar 测试：空任务禁用开始/起跑回调/运行态（输入锁定 + 起跑禁用——停止钮 M3 迁出至
+// RunStatusBar）/附件挑选与移除（File 对象经 onPickFiles 原样出组件——零 IO）/上传进度
+// 条目/预算行（警色阈值）/拒绝明细（reason 文案映射 + 逐条清除）——issue #2。
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { AttachmentBudget, AttachmentRejection } from "@tw/protocol";
@@ -10,7 +10,7 @@ import { TaskBar } from "../src/index.js";
 const ATT = { attachmentId: "att_1", name: "a.mp4", mimeType: "video/mp4", size: 10 };
 
 function setup(runStatus: "running" | null = null) {
-  const calls: Record<string, unknown[]> = { task: [], files: [], remove: [], start: [], stop: [] };
+  const calls: Record<string, unknown[]> = { task: [], files: [], remove: [], start: [] };
   const utils = render(
     <TaskBar
       task="做任务"
@@ -20,7 +20,6 @@ function setup(runStatus: "running" | null = null) {
       onRemoveAttachment={(id) => calls.remove.push(id)}
       runStatus={runStatus}
       onStart={() => calls.start.push(1)}
-      onStop={() => calls.stop.push(1)}
     />,
   );
   return { calls, ...utils };
@@ -36,12 +35,12 @@ describe("TaskBar", () => {
     expect(screen.getByText(/a\.mp4/)).toBeDefined();
   });
 
-  it("运行态：textarea 禁用、附件移除禁用、停止可点", () => {
-    const { calls } = setup("running");
+  it("运行态：textarea 禁用、附件移除禁用、开始禁用（停止钮已迁 RunStatusBar）", () => {
+    setup("running");
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "⏹ 停止" }));
-    expect(calls.stop).toEqual([1]);
-    expect(screen.queryByRole("button", { name: "▶ 开始" })).toBeNull();
+    expect((screen.getByRole("button", { name: "▶ 开始" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     expect(
       (screen.getByRole("button", { name: "移除附件 a.mp4" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -70,7 +69,6 @@ describe("TaskBar", () => {
         onRemoveAttachment={() => {}}
         runStatus={null}
         onStart={() => {}}
-        onStop={() => {}}
       />,
     );
     expect((screen.getByRole("button", { name: "▶ 开始" }) as HTMLButtonElement).disabled).toBe(
@@ -88,7 +86,6 @@ describe("TaskBar", () => {
         onRemoveAttachment={() => {}}
         runStatus={null}
         onStart={() => {}}
-        onStop={() => {}}
         uploads={[{ transferId: "t1", name: "v.mp4", size: 100, sent: 40 }]}
       />,
     );
@@ -105,7 +102,6 @@ describe("TaskBar", () => {
         onRemoveAttachment={() => {}}
         runStatus={null}
         onStart={() => {}}
-        onStop={() => {}}
         uploads={[]}
       />,
     );
@@ -130,7 +126,6 @@ describe("TaskBar", () => {
         onRemoveAttachment={() => {}}
         runStatus={null}
         onStart={() => {}}
-        onStop={() => {}}
         budget={budget(50, 200)}
       />,
     );
@@ -145,7 +140,6 @@ describe("TaskBar", () => {
         onRemoveAttachment={() => {}}
         runStatus={null}
         onStart={() => {}}
-        onStop={() => {}}
         budget={budget(190, 200)}
       />,
     );
@@ -174,7 +168,6 @@ describe("TaskBar", () => {
         onRemoveAttachment={() => {}}
         runStatus={null}
         onStart={() => {}}
-        onStop={() => {}}
         rejections={rejections}
         onDismissRejection={(i) => dismissed.push(i)}
       />,

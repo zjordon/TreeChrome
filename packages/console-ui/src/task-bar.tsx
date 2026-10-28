@@ -44,10 +44,9 @@ export interface TaskBarProps {
   attachments: AttachmentInfo[];
   onPickFiles: (files: File[]) => void;
   onRemoveAttachment: (attachmentId: string) => void;
-  /** null = 无 run（空闲）；running/awaiting-* → 停止态按钮 */
+  /** null = 无 run（空闲）；running/awaiting-* → 禁用输入与起跑（停止钮在 RunStatusBar——M3 迁出） */
   runStatus: RunStatus | null;
   onStart: () => void;
-  onStop: () => void;
   /** attachments 广播携带的预算投影（null = 尚无广播——不显示预算行） */
   budget?: AttachmentBudget | null;
   /** 进行中的分块传输（非空时禁用开始——起跑会丢在途字节） */
@@ -65,7 +64,6 @@ export function TaskBar({
   onRemoveAttachment,
   runStatus,
   onStart,
-  onStop,
   budget = null,
   uploads = [],
   rejections = [],
@@ -161,15 +159,9 @@ export function TaskBar({
         >
           📎 附件
         </Button>
-        {running ? (
-          <Button variant="danger" onClick={onStop}>
-            ⏹ 停止
-          </Button>
-        ) : (
-          <Button variant="primary" disabled={!canStart} onClick={onStart}>
-            ▶ 开始
-          </Button>
-        )}
+        <Button variant="primary" disabled={!canStart} onClick={onStart}>
+          ▶ 开始
+        </Button>
       </div>
       {/* 隐藏原生 input：组件面保持 File[] 回调，宿主不摸 DOM */}
       <input

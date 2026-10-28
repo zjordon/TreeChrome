@@ -1,0 +1,134 @@
+/* 布局壳（issue #20 M3）：AppShell 三区（header/滚动 main/底部 dock）+ 面板 header +
+   运行状态条 + 欢迎屏 + 连接状态点。布局形态参照 alibaba/qz-browser-agent（Apache-2.0）。 */
+
+.tc-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.tc-shell-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--tc-border);
+}
+
+.tc-shell-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.tc-shell-dock {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  border-top: 1px solid var(--tc-border);
+  background: var(--tc-bg);
+}
+
+/* —— 面板 header（RunPanelHeader）—— */
+.tc-panel-header-title {
+  font-weight: var(--tc-control-weight);
+  color: var(--tc-fg);
+}
+
+.tc-panel-header-spacer {
+  flex: 1 1 auto;
+}
+
+.tc-port-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-success);
+}
+.tc-port-dot--connecting {
+  background: var(--tc-warning);
+}
+.tc-port-dot--offline {
+  background: var(--tc-danger);
+}
+
+.tc-panel-distill {
+  font-size: 12px;
+}
+
+.tc-panel-drafts {
+  appearance: none;
+  font: inherit;
+  font-size: 11px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--tc-accent);
+  border-radius: var(--tc-radius-pill);
+  background: transparent;
+  color: var(--tc-accent);
+  cursor: pointer;
+  transition: var(--tc-transition-surface);
+}
+.tc-panel-drafts:hover {
+  background: var(--tc-accent-subtle);
+}
+
+/* —— 运行状态条（RunStatusBar）—— */
+.tc-runstatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+  color: var(--tc-muted);
+}
+
+.tc-runstatus-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-accent);
+  animation: tc-pulse 1.6s var(--tc-ease-standard) infinite;
+}
+.tc-runstatus-dot--waiting {
+  background: var(--tc-warning);
+}
+
+.tc-runstatus-stop {
+  margin-left: auto;
+}
+
+@keyframes tc-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* —— 欢迎屏（WelcomePanel）—— */
+.tc-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 56px 0 24px;
+  text-align: center;
+  color: var(--tc-muted);
+}
+
+.tc-welcome-title {
+  font-size: 18px;
+  font-weight: var(--tc-control-weight);
+  color: var(--tc-fg);
+}

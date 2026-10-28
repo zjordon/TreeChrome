@@ -13,6 +13,8 @@
     sans-serif;
   font-size: 13px;
   line-height: 1.5;
+  /* height 让 AppShell 的 100% 高度链成立（issue #20 M3）；内容超高仍可页面滚动 */
+  height: 100%;
   min-height: 100%;
 }
 

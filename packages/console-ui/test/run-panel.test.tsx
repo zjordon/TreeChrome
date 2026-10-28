@@ -1,22 +1,36 @@
-// StatusLine/FinalResult 测试：状态徽章文案/耗时注入时钟；终态三态着色 + 附件清单。
+// RunStatusBar/FinalResult 测试（issue #20 M3：StatusLine 已由 RunStatusBar 替代）：
+// 状态文案/耗时注入时钟/停止钮；终态三态着色 + 附件清单。
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { FinalResult, formatSeconds, StatusLine } from "../src/index.js";
+import { FinalResult, formatSeconds, RunStatusBar } from "../src/index.js";
 
-describe("StatusLine", () => {
-  it("六态徽章文案 + 步数 + 耗时（now 注入）", () => {
+describe("RunStatusBar", () => {
+  it("状态文案 + 步数·耗时（endedAt 注入）；等待态警示点", () => {
     render(
-      <StatusLine status="awaiting-permission" stepCount={3} startedAt={1_000} endedAt={4_000} />,
+      <RunStatusBar status="awaiting-permission" stepCount={3} startedAt={1_000} endedAt={4_000} />,
     );
-    expect(screen.getByText("等待确认")).toBeDefined();
-    expect(screen.getByText("步数 3")).toBeDefined();
-    expect(screen.getByText("耗时 3s")).toBeDefined();
+    expect(screen.getByText("等待确认 · 第 3 步 · 3s")).toBeDefined();
+    expect(document.querySelector(".tc-runstatus-dot--waiting")).not.toBeNull();
   });
 
-  it("未结束 → 耗时取 now()；分钟档", () => {
-    render(<StatusLine status="running" stepCount={1} startedAt={0} now={() => 90_000} />);
-    expect(screen.getByText("耗时 1m30s")).toBeDefined();
+  it("未结束 → now()；分钟档；停止钮回调与缺省不渲染", () => {
+    const stops: number[] = [];
+    const { rerender } = render(
+      <RunStatusBar
+        status="running"
+        stepCount={1}
+        startedAt={0}
+        now={() => 90_000}
+        onStop={() => stops.push(1)}
+      />,
+    );
+    expect(screen.getByText(/运行中 · 第 1 步 · 1m30s/)).toBeDefined();
+    expect(document.querySelector(".tc-runstatus-dot--waiting")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "停止" }));
+    expect(stops).toEqual([1]);
+    rerender(<RunStatusBar status="running" stepCount={1} startedAt={0} now={() => 90_000} />);
+    expect(screen.queryByRole("button", { name: "停止" })).toBeNull();
   });
 
   it("formatSeconds 边界", () => {

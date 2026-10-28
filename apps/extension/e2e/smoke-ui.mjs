@@ -163,12 +163,11 @@ try {
     if (s.card) allowedCards = Math.max(allowedCards, allowedCards + 1);
     if (s.final !== false && s.finalText.includes("ui smoke done") && s.timeline >= 2) {
       done = true;
-      if (s.status.includes("完成")) {
-        console.log(
-          `[smoke-ui] status=${s.status} timelineGroups=${s.timeline} final=${s.finalText.slice(0, 60)}`,
-        );
+      // M3 起终态由 FinalResult 承载（StatusLine 的「完成」徽章已随 RunStatusBar 替代——运行期显示）
+      if (s.finalText.includes("✓ 成功")) {
+        console.log(`[smoke-ui] final=${s.finalText.slice(0, 60)} timelineGroups=${s.timeline}`);
       } else {
-        failures.push(`终态徽章异常：${s.status}`);
+        failures.push(`终态异常：${s.finalText.slice(0, 80)}`);
       }
     }
   }
