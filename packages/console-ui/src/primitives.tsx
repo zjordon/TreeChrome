@@ -4,14 +4,19 @@
 import { cloneElement, isValidElement, type ReactElement, type ReactNode, useId } from "react";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "danger" | "ghost";
+  /** M2 语义矫正：secondary=带边框透明底（默认，与矫正前默认观感一致）；ghost=无边框 hover 才有底 */
+  variant?: "primary" | "secondary" | "danger" | "ghost";
+  /** 尺寸档（默认 md=32px——M2 决策点 1） */
+  size?: "sm" | "md" | "lg";
 }
 
-export function Button({ variant = "ghost", className, ...rest }: ButtonProps) {
+export function Button({ variant = "secondary", size = "md", className, ...rest }: ButtonProps) {
   return (
     <button
       type="button"
-      className={["tc-btn", `tc-btn-${variant}`, className].filter(Boolean).join(" ")}
+      className={["tc-btn", `tc-btn-${variant}`, `tc-btn--${size}`, className]
+        .filter(Boolean)
+        .join(" ")}
       {...rest}
     />
   );

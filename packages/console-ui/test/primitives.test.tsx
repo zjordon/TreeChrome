@@ -5,11 +5,12 @@ import { describe, expect, it } from "vitest";
 import { Badge, Button, Field, formatBytes, Table } from "../src/index.js";
 
 describe("基础件", () => {
-  it("Button：缺省 ghost/primary/danger 类名 + disabled 透传 + onClick", () => {
+  it("Button：缺省 secondary/md + primary/danger/ghost 变体与 sm 尺寸档 + disabled 透传 + onClick", () => {
     const clicks: string[] = [];
     const { rerender } = render(<Button onClick={() => clicks.push("a")}>跑</Button>);
     const btn = screen.getByRole("button", { name: "跑" });
-    expect(btn.className).toContain("tc-btn-ghost");
+    expect(btn.className).toContain("tc-btn-secondary");
+    expect(btn.className).toContain("tc-btn--md");
     fireEvent.click(btn);
     rerender(
       <Button variant="primary" disabled>
@@ -19,6 +20,14 @@ describe("基础件", () => {
     expect(screen.getByRole("button", { name: "跑" }).className).toContain("tc-btn-primary");
     expect((screen.getByRole("button", { name: "跑" }) as HTMLButtonElement).disabled).toBe(true);
     expect(clicks).toEqual(["a"]);
+    rerender(
+      <Button variant="ghost" size="sm">
+        跑
+      </Button>,
+    );
+    const ghostCls = screen.getByRole("button", { name: "跑" }).className;
+    expect(ghostCls).toContain("tc-btn-ghost");
+    expect(ghostCls).toContain("tc-btn--sm");
   });
 
   it("Badge：tone 类名", () => {
