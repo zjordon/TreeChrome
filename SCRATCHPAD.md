@@ -1,6 +1,6 @@
 # SCRATCHPAD — issue #20 UI 重构 · M1 token 层
 
-> 状态：**M1 已实施并全量验证（2026-10-28）；四个决策点均按建议拍板执行。** 待 `/review-loop`。
+> 状态：**M1 已实施并全量验证；评审循环收敛（轮 3 零意见，2026-10-28）。待 `/finish-issue`。**
 > 基准：`docs/ui-refactor-reference.md`（§3 token 映射 / §6 分期）；issue #20。
 > 分支：`feat/issue-20-ui-refactor`（自 main）。
 
@@ -150,3 +150,4 @@ console-ui 主题层从「10 变量单文件」升级为「分片 + 全量语义
   - 真机双向验证：临时页 `_cascade-check.html`（真实引用 theme.css）CDP 悬停实测 getComputedStyle——ghost hover=accent-subtle / primary hover=#0550ae / danger hover=transparent 三态全对
   - 教训：评审建议片段也可能有缺陷（轮 1 建议未核验 primary 交互）——CSS 修复须过特异性核算
   - gate 一次红：dom-snapshot paint-order「MAX_RECTS=5000 超限拒绝」瞬时超时（5104ms > 5000ms），单跑 796ms 全过、复跑绿——环境波动非代码缺陷
+- **轮 3**（2026-10-28）：**零意见收敛轮**（增量 e8aebb9，39s，complete）——循环终止
