@@ -5,6 +5,38 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
+### Added
+
+- 多附件收尾（#3）：拒绝明细反馈、附件预算呈现、分块二进制传输
+  （UI 时间线 / SW 注册表状态机 / 协议面）。
+- 自进化闭环（#5）：core 任务卡蒸馏器（PII 门、增量 addendum、判停守卫、
+  效率棘轮）、node-host 收敛循环脚本、扩展全链（IDB 草稿审阅、蒸馏队列与
+  worker、alarm 兜底）、e2e 全链 smoke。
+- skill-drafts 通知面（#9）：待审计数广播、蒸馏过程拍（distill-status 过程态）、
+  judge 字面 null 归一。
+- 蒸馏卡质量三项（#11）：防锚定（TASK_SOP_SPEC）、任务卡步内重匹配、
+  附件起跑守卫。
+- 收敛效率信号（#12）：bestSteps 步数基线、判停守卫、min 棘轮、自检 footer 效率句。
+- 任务卡匹配器超时可配（#16）：taskSkill.callTimeoutMs 可选键 + callFailed 步内重试。
+- UI 重构四期（#20）：M1 语义 token 体系（12 族、亮/暗/auto）→ M2 控件原语
+  （Button 全状态模型、IconButton/Switch/Segment）→ M3 三区布局（AppShell、
+  RunPanelHeader、RunStatusBar、欢迎屏）→ M4 设置收纳（SettingsOverlay 底部
+  弹出卡 + OptionsApp 四区 tab 双宿主）。
+
+### Fixed
+
+- enablePlanning 默认回归 dataclass 语义 false（#1）。
+- dom-snapshot 表单控件状态可见性：Step 5 以 AX 顶层 value 为正源（#6）。
+- LLM 调用失败可见性（#10）：judge 静默失败留痕、超时可配、node-host 蒸馏超时、
+  终态停跑原因归因。
+
+### Changed
+
+- 工程治理：接入 AOCI 仓库认知资产（可版本化认知索引）；AGENTS 新工作流
+  （issue → 分支 → SCRATCHPAD 计划 → /review-loop → /finish-issue）。
+
 ## [0.1.0] - 2026-10-10
 
 首个发布版本：TreeWalker（Python）核心能力的 TypeScript 全量移植 + Chrome 扩展宿主（MVP）。
