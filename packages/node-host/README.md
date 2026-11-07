@@ -10,15 +10,17 @@ Node 侧宿主共享件（NodeFs / env→配置 / 控制台观测 / Agent 装配
 2. Chrome 以远程调试口运行：`chrome --remote-debugging-port=9222`；
 3. 配置 LLM：环境变量 `ZHIPU_API_KEY`（或 `cwd/.env` 同名键；`LLM_MODEL` / `LLM_BASE_URL` 等可选）。
 
-用法（workspace 内）：
+用法（`node bin` 直启——pnpm 不为包自身的 bin 建链接，`pnpm --filter … exec tc` 不可用）：
 
 ```bash
 # 推荐：任务文本走 stdin 管道（对中文/多行最稳，避开 Windows 参数编码面）
-echo "帮我到 https://example.com 查 …" | pnpm --filter @tw/node-host exec tc run --json
+echo "帮我到 https://example.com 查 …" | node packages/node-host/bin/tc.mjs run --json
 
 # 或位置参数
-pnpm --filter @tw/node-host exec tc run "打开 example.com 并把标题告诉我" --json
+node packages/node-host/bin/tc.mjs run "打开 example.com 并把标题告诉我" --json
 ```
+
+其它目录/其它 agent 会话用绝对路径（如 `node D:/dev/git/z_jordon/TreeChrome/packages/node-host/bin/tc.mjs …`）；注意 `.env` 按 **CWD** 查找——不在仓库根跑时凭据走环境变量（`ZHIPU_API_KEY` 等），或在调用目录放 `.env`。
 
 人类可读模式去掉 `--json`（过程日志 + 终态行走 stdout）。
 
