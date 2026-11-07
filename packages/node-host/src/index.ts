@@ -13,6 +13,21 @@ export {
   runAgent,
   type TransportFactory,
 } from "./agent-boot.js";
+export {
+  type CliArgs,
+  exitCodeOf,
+  type MainDeps,
+  main,
+  type ParseResult,
+  parseCliArgs,
+  projectRunJson,
+  type RunJson,
+  renderHumanResult,
+  resolveTaskText,
+  type TaskTextInputs,
+  type TaskTextResolution,
+  USAGE,
+} from "./cli.js";
 export { type AttachConsoleOptions, attachConsole, clip, describeEvent } from "./console.js";
 export {
   bumpDistillStreak,
