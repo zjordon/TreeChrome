@@ -4,7 +4,7 @@
 .gitattributes[FG5T]: F:声明文本检出恒 LF——AOCI 基线锚定原始字节，Windows autocrlf 重写会致全树 stale | R:- | A:- | S:-
 .gitignore[FG5T]: F:Git 忽略清单：依赖/构建/覆盖率产物、.env 密钥、golden 抓取临时目录、WXT/扩展生成物、评测与 rerun 运行产物、AOCI 宿主配置与 Claude Code 本地权限配置 | R:- | A:- | S:aoci.txt/aoci.meta.txt/aoci.code.txt 与 AGENTS.md 不得加入忽略——被忽略的认知资产会被 AOCI scan 静默跳过；.claude 仅忽略 settings.local.json，commands 副本入库
 AGENTS.md[SG9M]: F:项目规范基准：架构铁律、设计模式映射、代码风格、测试与验收门禁、目录约定、新功能工作流（issue→分支→SCRATCHPAD.md 计划→人工审核→/review-loop→/finish-issue）与 Git 提交规则 | R:code:docs/architecture.md,code:scripts/gate.mjs | A:- | S:与 docs/architecture.md 冲突时以后者为准；核心包 src/ 禁 chrome.*/process.*；element_tree_text 等输出格式是对 LLM prompt 的契约须逐字节一致；SCRATCHPAD.md 草稿入库不 gitignore（用户裁定）；docs/implement-plan 是旧流程归档新流程不再写入
-CHANGELOG.md[SV4T]: F:Keep a Changelog 风格变更记录：v0.1.0 首版全量清单（工程基座/dom-snapshot/LLM 客户端/agent 主体/扩展 M5） | R:- | A:- | S:版本号格式 [X.Y.Z] 不带 v（git tag 才带 v）
+CHANGELOG.md[SV4T]: F:Keep a Changelog 风格变更记录：v0.1.0 首版全量（工程基座/dom-snapshot/LLM 客户端/agent 主体/扩展 M5）+v0.2.0 增量（多附件收尾/自进化闭环 #5/卡质量与效率信号/匹配器超时 #16/UI 重构四期 #20/治理接入 AOCI） | R:- | A:- | S:版本号格式 [X.Y.Z] 不带 v（git tag 才带 v）
 CLAUDE.md[SG3T]: F:Claude Code 项目指令入口，单行 @AGENTS.md 引用——不重复维护规范 | R:code:AGENTS.md | A:- | S:-
 README.md[SG6T]: F:仓库总览：平台无关核心包+多宿主 monorepo 设计原则、快速开始命令与包布局状态表 | R:code:docs/architecture.md | A:- | S:布局表状态标记滞后于实际进度（如 core 已实现仍标规划）——权威以 docs/architecture.md 为准
 biome.json[FG8T]: F:Biome lint/format 配置：2 空格/双引号/分号/行宽 100/trailingCommas all；核心四包 overrides 禁 chrome/node:process/process 全局；files 排除 test fixtures/docs/domain-skills/两沙箱/.aoci | R:code:scripts/gate.mjs,code:AGENTS.md | A:- | S:overrides 按路径生效（AST 级权威，gate.mjs 正则只是即时反馈）；测试文件关 noNonNullAssertion；沙箱（_self-evolution/_douyin）是蒸馏运行时产物——JSON.stringify 数组布局会撞全仓 format 检查（#12 实录），排除与 domain-skills 同性质
@@ -12,10 +12,14 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4T]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——issue #20 UI 重构 M1-M4 全部并入 main（PR #21-#24）issue 已关闭，当前无进行中计划 | R:code:AGENTS.md,code:docs/ui-refactor-reference.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4T]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——issue #25 M1 任务级 one-shot CLI（tc run）：计划+实施记录+评审 2 轮收敛（轮 1 三修采纳/轮 2 零意见），待 /finish-issue 收官 | R:code:AGENTS.md,code:_issue-cli-host.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
+_issue-cli-host.md[SW2T]: F:issue #25（agent 对外 CLI）发布底稿：browser-use CLI 3.0 调研（管子式+常驻 daemon/退出码纪律/skill install 分发）、两档形态（任务级 one-shot M1/会话级 daemon M2）可行性、M1 缺口与四决策点——经 gh api 发布为正式 issue | R:- | A:- | S:-
+_issue25-comment.md[SW2T]: F:issue #25 决策点拍板评论底稿：AutoAllow 直用/--json camelCase/node-host 加 bin/stdin 优先——发布后留存的记录件 | R:code:_issue-cli-host.md | A:- | S:-
+_issue-cli-m15.md[SW2T]: F:issue #26（M1.5 供给面产品化）发布底稿：自包含 dist 全局命令+TC_ENV_FILE 凭据链/--auto-chrome 自动拉起+scoped 清理纪律/skill 用法卡——经 gh api 发布为正式 issue | R:code:_issue-cli-host.md | A:- | S:-
+_issue-cli-m2-daemon.md[SW2T]: F:issue #27（M2 会话级 daemon CLI）发布底稿：daemon 常驻根因（selector map 活在进程内）/IPC 选型/命令面子集草案/串行与 tab 语义——前置依赖 #26，经 gh api 发布 | R:code:_issue-cli-host.md | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/.githooks/===
 pre-commit[OQ7T]: F:版本化 git pre-commit 钩子：校验 node≥22 后 exec scripts/gate.mjs pre-commit，人工提交与 agent 提交走同一道门 | R:code:scripts/gate.mjs | A:- | S:启用需每克隆一次 git config core.hooksPath .githooks（pnpm install 的 prepare 自动执行）
@@ -286,6 +290,10 @@ _r_issue-20-ui-m3_1.md[SQ1T]: F:issue #20 M3 评审轮 1 dump：零意见、状�
 review-issue-20-ui-m3-1.json[ZQ1S]: F:ocr review 轮 1 原始输出（issue #20 M3，base=main）：零意见首刷收敛 | R:code:docs/code-review/_r_issue-20-ui-m3_1.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
 _r_issue-20-ui-m4_1.md[SQ1T]: F:issue #20 M4 评审轮 1 dump：零意见、状态 complete（base=main 全量 9 文件，4m14s）——首刷即收敛出口；M1-M4 四期累计 8 轮中 M3/M4 两期首轮即收敛 | R:code:.zcode/commands/review-loop.md | A:- | S:-
 review-issue-20-ui-m4-1.json[ZQ1S]: F:ocr review 轮 1 原始输出（issue #20 M4，base=main）：零意见首刷收敛（收官轮） | R:code:docs/code-review/_r_issue-20-ui-m4_1.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
+_r_issue-25-cli_1.md[SQ3T]: F:issue #25 评审轮 1 dump：3 条意见（P1×1 stdin 挂起 + P2×2 未处理拒绝/启动兜底）全采纳修复于 033bcc7 | R:code:docs/code-review/review-issue-25-cli-1.json | A:- | S:-
+_r_issue-25-cli_2.md[SQ1T]: F:issue #25 评审轮 2 dump：零意见、状态 complete（增量=修复提交 033bcc7，3m54s）——循环收敛轮；首发误基线 skipped 后修正重发 | R:code:docs/code-review/review-issue-25-cli-2.json | A:- | S:-
+review-issue-25-cli-1.json[ZQ2M]: F:ocr review 轮 1 原始输出（issue #25，base=main）：3 意见全文（stdin 挂起/未处理拒绝/启动兜底） | R:code:docs/code-review/_r_issue-25-cli_1.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
+review-issue-25-cli-2.json[ZQ1T]: F:ocr review 轮 2 原始输出（issue #25，增量 f6a1906..033bcc7）：零意见收敛 | R:code:docs/code-review/_r_issue-25-cli_2.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
 README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
@@ -915,20 +923,22 @@ golden-fixture.ts[TB5S]: F:golden fixture schema 与加载器（gen_fixtures.py 
 gen_fixtures.py[XA5S]: F:golden fixture 生成器：Python dom-snapshot 三源原始输入+序列化产物落盘（借用 evals venv 运行） | R:code:packages/dom-snapshot/test/golden-fixture.ts | A:- | S:只在实际页面变化时刻意重生成；提交信息注明原因（AGENTS 纪律）
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/===
-boot.mjs[OB4T]: F:全仓唯一一份散脚本 esbuild 引导：把 src/boot-entry 打包给 examples 散脚本复用（node-host 方案 §4 决策 3） | R:code:packages/node-host/src/boot-entry.ts | A:loadKit | S:loadKit 是 27 个示例的共享入口（smoke/p7 系都经它）
-package.json[FE5T]: F:node-host 包定义（Node 宿主共享件；esbuild 依赖） | R:- | A:- | S:-
+boot.mjs[OB4T]: F:全仓唯一一份散脚本 esbuild 引导：loadEntry(entryRel) 通用装载（stdin re-export 形态）——loadKit（examples kit 面）与 bin/tc.mjs（cli）共用 | R:code:packages/node-host/src/boot-entry.ts,code:packages/node-host/src/cli.ts | A:loadEntry, loadKit | S:loadKit 是 27 个示例的共享入口（smoke/p7 系都经它）；bin/tc.mjs 经 loadEntry 直连 cli.ts（issue #25）
+package.json[FE5T]: F:node-host 包定义：Node 宿主共享件（NodeFs/env→配置/控制台观测/Agent 装配/boot.mjs 引导）——examples 与未来 cli/web-console 共享；bin tc + esbuild devDep | R:- | A:- | S:-
 tsconfig.json[FG2T]: F:node-host TS 配置（extends 基座） | R:- | A:- | S:-
 vitest.config.ts[FQ4T]: F:node-host 测试配置（85% 阈值） | R:- | A:- | S:-
+README.md[SG5T]: F:node-host 包 README：面向调用方 agent 的 tc CLI 使用说明（node bin 直启——pnpm 不链包自身 bin/.env 按 CWD 查找语义/stdin 优先序/--json 契约/退出码表/--allow-* 护栏/Windows 编码）+ 包导出面速览 | R:code:packages/node-host/src/cli.ts | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/src/===
 agent-boot.ts[AB7S]: F:Agent 装配与 one-shot 运行（扩展 assemble.ts 同构体）：LLMClient+NodeFs+FsSkillSource+AutoAllow；issue #5 runAgent opt-in distill 钩子与 skillSource 显式 null 关闭语义 | R:code:packages/core/src/agent/agent.ts,code:packages/node-host/src/distill-run.ts,code:packages/node-host/src/settings.ts | A:assembleAgent, runAgent | S:env→配置映射在宿主侧完成；skillSource 未传时缺省按 settings.skillsDir（CWD domain-skills）装配——评测基线必须显式传 null
 boot-entry.ts[EB3T]: F:散脚本打包入口：本包 kit+core/cdp-ws 的 example 导出面 | R:code:packages/node-host/boot.mjs | A:- | S:-
 console.ts[OB4T]: F:控制台观测：EventBus 事件逐行打印+截断助手 | R:code:packages/core/src/events/event-bus.ts | A:- | S:-
-index.ts[LB5T]: F:node-host 公共导出面（NodeFs/settings/console/agent-boot/boot + issue #5 distill-run 蒸馏钩子） | R:- | A:- | S:-
+index.ts[LB5T]: F:node-host 公共导出面（NodeFs/settings/console/agent-boot/boot + issue #5 distill-run 蒸馏钩子 + issue #25 cli 面 main/纯函数/USAGE） | R:- | A:- | S:-
 node-fs.ts[PB5T]: F:NodeFs：FileSystemProvider 的 node:fs 实现（架构 §4 五接口的 Node 宿主半边） | R:code:packages/core/src/tools/fs.ts | A:NodeFs | S:-
 settings.ts[FB7S]: F:env→类型化配置（config.py load_settings 的宿主侧移植）：.env 读取+ws_url 发现+mergeHostSettings definedOnly 合并+AGENT_ENABLE_PLANNING opt-in（core 默认 false） | R:code:packages/core/src/agent/settings.ts | A:loadSettings, mergeHostSettings | S:教训面：TreeWalker runner.py issue #1——口径开关曾因新建默认 settings 从未生效（显式传入而非全局单例的根因）；env 未设=键不进覆盖，core 默认生效（单源纪律）
 skill-source.ts[PB6S]: F:skill 宿主装载层：SkillLoader+TaskSkillLoader（loader.py/task_loader.py 读序与分段格式照搬；任务卡 \\n\\n 无头拼接口径） | R:code:packages/core/src/agent/skills/types.ts | A:FsSkillSource | S:任务卡全文 strip 后 \\n\\n 直拼（P5.5 冻结口径）——与扩展 skill-source.ts 同一契约
 distill-run.ts[AB6S]: F:runAgent 蒸馏钩子（D16）：门控→host 多数票→core distillTaskCard→目录四文件落盘（traces 并集/streak 归 0/best_steps 棘轮）；#10 门控归因单源+180s 缺省；#12 cardDistillState 读 best_steps 基线 | R:code:packages/core/src/agent/skills/distill.ts,code:packages/node-host/src/agent-boot.ts,code:packages/node-host/src/skill-source.ts | A:distillAfterRun, writeTaskCard, DistillRunOptions | S:同步 await——runAgent 返回前完成；目录形态无 provenance 面（D14 不适用）；180s 对齐扩展 worker；unchanged 路径 bump 带 steps 棘轮 best_steps=min
+cli.ts[EW7M]: F:tc CLI 逻辑层（issue #25 M1）：parseCliArgs/resolveTaskText（stdin 优先序）/projectRunJson（camelCase 投影）/exitCodeOf/main（IO 全注入 argv/stdin/readFile/out/err/run/version） | R:code:packages/node-host/src/agent-boot.ts | A:main, projectRunJson, resolveTaskText | S:--json 模式 stdout 只出终态 JSON——过程日志经 runAgent log 注入走 stderr；--task-file 就绪即跳过 stdin 读取（spawn 永不闭管防挂起，评审轮 1 [1]）
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/test/===
 agent-boot-helpers.ts[TA4T]: F:agent-boot 系测试共享件：settings fixture/假 transport/死端点 LLMClient | R:- | A:- | S:-
@@ -980,4 +990,7 @@ components.css[FU5S]: F:组件类（issue #20 M1 迁移）：徽章/表格/卡�
 controls.css[FU4M]: F:控件类（issue #20 M2 全状态模型）：Button 四态+尺寸档+变体、icon-btn/switch/segment 三族、表单 32px+focus ring+placeholder；box-sizing 由 base 作用域 reset 统一 | R:code:packages/console-ui/src/theme/tokens.css | A:- | S::not(类) 计特异性，排除用 :where()；变体规则后置通用状态（primary hover 靠源序胜出）
 tokens.css[FU4M]: F:语义 token 单源：亮/暗/auto 三块双主题（表面四级/文字四级/accent+语义 subtle/透明度边框/阴影）+主题无关族（控件/表单/浮层/动效/圆角/滚动条/icon-btn/switch 尺寸） | R:code:packages/console-ui/src/theme.css,code:packages/console-ui/src/theme/base.css | A:- | S:灰阶冷灰/accent 保蓝已拍板；auto 块重复 light 是有意
 layout.css[FU4M]: F:布局壳分片（M3/M4）：shell 三区/面板 header/运行状态条/欢迎屏 + 设置 overlay 族（backdrop/sheet/drawer-up——overlay token 首次消费） | R:code:packages/console-ui/src/theme.css | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/node-host/bin/===
+tc.mjs[EW5T]: F:tc 命令薄壳：读包版本→loadEntry 装载 src/cli.ts→main()；启动失败（esbuild 缺失/打包异常/包描述不可读）兜底 stderr+exit 2（评审轮 1 [3]） | R:code:packages/node-host/boot.mjs,code:packages/node-host/src/cli.ts | A:- | S:bin 与 boot.mjs 在包根不入单测覆盖率（vitest.config 既定纪律）
 

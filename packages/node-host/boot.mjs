@@ -1,14 +1,14 @@
-// 全仓唯一一份散脚本 esbuild 引导（node-host 方案 §4 决策 3）：把 src/boot-entry.ts
-// （= 本包 kit + @tw/core + @tw/cdp-ws 的导出面）打成临时 ESM 再返回。
+// 全仓唯一一份散脚本 esbuild 引导（node-host 方案 §4 决策 3）：把 src/ 下 TS 入口
+// 打成临时 ESM 再返回（@tw/* 包 exports 指向 src/*.ts 源码直发，Node 原生 import
+// 不了 TS；esbuild 认这条链——exports→src/*.ts，@tw/core 内部引 @tw/dom-snapshot
+// 已走通同模式）。
 //
-// 为什么需要它：@tw/* 包的 exports 指向 src/*.ts（源码直发，无构建产物），Node 原生
-// import 不了 TS；esbuild 认这条链（exports→src/*.ts，@tw/core 内部引 @tw/dom-snapshot
-// 已走通同模式）。examples 等散脚本经相对路径 import 本文件：
-//   import { loadKit } from "../packages/node-host/boot.mjs";
+// 消费方：
+//   import { loadEntry, loadKit } from "<pkg>/boot.mjs";
+//   loadKit()               —— examples 散脚本（boot-entry.ts 的 kit 导出面）
+//   loadEntry("./src/…")    —— bin/tc.mjs（issue #25 M1：src/cli.ts 入口）
 //
 // 有构建/发布形态（dist）后本文件可整体退役，散脚本塌缩成一行包名 import。
-//
-// 用法：const kit = await loadKit(); // kit.runAgent / kit.Agent / kit.CdpWsClient …
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -31,7 +31,8 @@ function resolveEsbuild() {
   }
 }
 
-export async function loadKit() {
+/** 打包并加载相对本包根的 TS 入口（esbuild stdin re-export 形态；返回其导出面） */
+export async function loadEntry(entryRel) {
   const mod = await import(pathToFileURL(resolveEsbuild()).href);
   const build = mod.build ?? mod.default?.build;
   if (typeof build !== "function") {
@@ -39,10 +40,10 @@ export async function loadKit() {
   }
   const tmp = mkdtempSync(join(tmpdir(), "tw-node-host-kit-"));
   try {
-    const out = join(tmp, "kit.mjs");
+    const out = join(tmp, "entry.mjs");
     await build({
       stdin: {
-        contents: 'export * from "./src/boot-entry.ts";\n',
+        contents: `export * from "${entryRel}";\n`,
         resolveDir: here,
         loader: "ts",
       },
@@ -59,4 +60,9 @@ export async function loadKit() {
       // Windows 杀毒/索引器瞬时文件锁：清理失败不影响主流程
     }
   }
+}
+
+/** examples 散脚本的 kit 面（boot-entry.ts 导出面）——loadEntry 的预置入口形态 */
+export function loadKit() {
+  return loadEntry("./src/boot-entry.ts");
 }
