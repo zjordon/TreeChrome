@@ -364,6 +364,57 @@ describe("main（壳契约）", () => {
     expect(await main(depsOf(ch2, ["run"], { stdin: pipedStdin("   "), run }))).toBe(2);
   });
 
+  test("--task-file 就绪时不读 stdin（spawn 永不关闭的 stdin 管道不得挂起）；stdin 读失败 → exit 2", async () => {
+    // 挂起防护（评审轮 1 [1]）：text() 若被调用即计一次——task-file 通道就绪时必须为 0
+    let stdinReads = 0;
+    const ch = channels();
+    await main(
+      depsOf(ch, ["run", "--task-file", "t.txt"], {
+        stdin: {
+          isTTY: false,
+          text: () => {
+            stdinReads += 1;
+            return Promise.resolve("s");
+          },
+        },
+        readFile: async () => "任务",
+        run: runCapturing(historyDone, []),
+      }),
+    );
+    expect(stdinReads).toBe(0);
+    // 无 task-file 时 stdin 正常读取（对照组，防修过头）
+    const chCtl = channels();
+    await main(
+      depsOf(chCtl, ["run"], {
+        stdin: {
+          isTTY: false,
+          text: () => {
+            stdinReads += 1;
+            return Promise.resolve("s");
+          },
+        },
+        run: runCapturing(historyDone, []),
+      }),
+    );
+    expect(stdinReads).toBe(1);
+
+    // stdin error 事件 → 前置失败收口 exit 2（评审轮 1 [2]），run 不被调用
+    const ch2 = channels();
+    const run = vi.fn(runCapturing(historyDone, []));
+    const code = await main(
+      depsOf(ch2, ["run"], {
+        stdin: {
+          isTTY: false,
+          text: () => Promise.reject(new Error("EPIPE")),
+        },
+        run,
+      }),
+    );
+    expect(code).toBe(2);
+    expect(run).not.toHaveBeenCalled();
+    expect(ch2.err[0]).toContain("stdin 读取失败");
+  });
+
   test("run 抛错（缺 key / 连不上 Chrome 文案）→ stderr + exit 2；--json 下 stdout 保持纯净", async () => {
     const ch = channels();
     const run = async () => {

@@ -290,7 +290,19 @@ export async function main(deps: MainDeps = {}): Promise<number> {
       return 2;
     }
   }
-  const stdinText = stdin.isTTY ? null : await stdin.text();
+  // --task-file 已就绪则跳过 stdin 读取：spawn 场景 stdin 管道可能永不关闭，无条件
+  // 读会永久挂起（评审轮 1 [1]）；「stdin 优先」只在 stdin 与 argv 之间裁决。
+  // stdin 读取失败（管道异常/坏 fd）按前置失败收口为 exit 2（评审轮 1 [2]）——
+  // 未处理拒绝会崩成 exit 1，被调用方误读为「跑完但未成功」。
+  let stdinText: string | null = null;
+  if (!stdin.isTTY && taskFileContent === null) {
+    try {
+      stdinText = await stdin.text();
+    } catch (e) {
+      err(`[tc] stdin 读取失败：${e instanceof Error ? e.message : String(e)}`);
+      return 2;
+    }
+  }
   const resolution = resolveTaskText({ taskFileContent, stdinText, argvTask: args.task });
   if (!resolution.ok) {
     err("[tc] 未提供任务文本——stdin 管道、位置参数、--task-file 至少其一：");

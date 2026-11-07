@@ -128,4 +128,8 @@ daemon/会话式（M2 另期）、MCP server、Chrome 自动拉起、npm 发布�
 
 ## 评审轮登记
 
-（/review-loop 待跑）
+- **轮 1**（2026-11-07）：3 条意见（自评 high/medium/low；triage 定级 **P1×1 + P2×2 + P3×0**）**全采纳**，25m07s：
+  1. [P1] `--task-file` 就绪时仍无条件 `await stdin.text()`——coding agent 以缺省 pipe stdio spawn（stdin 永不关闭）永久挂起。修复：task-file 通道就绪即跳过 stdin 读取（「stdin 优先」只在 stdin 与 argv 间裁决）
+  2. [P2] stdin 读取在 try 外——`error` 事件未处理拒绝崩成 exit 1，违背「前置失败=2」契约。修复：try/catch 收口 stderr + exit 2
+  3. [P2] bin/tc.mjs 顶层无兜底——esbuild 缺失等启动失败崩成 exit 1。修复：顶层 catch → stderr + exit 2（bin 在包根不入单测覆盖，代码检视级修复 + 契约同构于 [2] 的已测路径）
+  - 测试 +1（含挂起防护双分支 + EPIPE 收口）；117 全绿；双向验证过（旧实现下新测试必红）；gate 退出码 0（一次瞬态 ec=2 判定为背靠背 vitest 全量跑的覆盖率目录锁竞争，两次复跑均绿）
