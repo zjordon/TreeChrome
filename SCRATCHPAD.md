@@ -1,6 +1,6 @@
 # SCRATCHPAD — issue #25 M1：任务级 one-shot CLI（tc run）
 
-> 状态：**已实施并全量验证（typecheck/test/lint/gate 全绿 + 真机 smoke 通过）；待 `/review-loop` 评审收敛。**
+> 状态：**已实施并全量验证；评审循环 2 轮收敛（轮 1 三条全采纳、轮 2 零意见）。待 `/finish-issue` 收官。**
 > 基准：issue #25（可行性 + browser-use CLI 3.0 调研 + 决策点拍板评论）；`docs/architecture.md` §2 cli 宿主规划；AGENTS 新功能工作流。
 > 分支：`feat/issue-25-cli`（自 main）。计划已过人工审核（2026-11-07，bin 名 `tc`/D4 泛化/JSON 字段集一并通过）。
 
@@ -133,3 +133,4 @@ daemon/会话式（M2 另期）、MCP server、Chrome 自动拉起、npm 发布�
   2. [P2] stdin 读取在 try 外——`error` 事件未处理拒绝崩成 exit 1，违背「前置失败=2」契约。修复：try/catch 收口 stderr + exit 2
   3. [P2] bin/tc.mjs 顶层无兜底——esbuild 缺失等启动失败崩成 exit 1。修复：顶层 catch → stderr + exit 2（bin 在包根不入单测覆盖，代码检视级修复 + 契约同构于 [2] 的已测路径）
   - 测试 +1（含挂起防护双分支 + EPIPE 收口）；117 全绿；双向验证过（旧实现下新测试必红）；gate 退出码 0（一次瞬态 ec=2 判定为背靠背 vitest 全量跑的覆盖率目录锁竞争，两次复跑均绿）
+- **轮 2**（2026-11-07）：**零意见、状态 complete——循环收敛出口**（增量 diff = 修复提交 033bcc7，3m54s）。插曲：首发误把增量基线写成 `lastCommit`（= 分支 tip）得 `skipped` 空档；修正为「上一轮评审覆盖到的 tip」（f6a1906）重发。累计 stats：2 轮 / 3 意见 / 采纳 3 / 驳回 0 / stale 0。
