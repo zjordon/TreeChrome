@@ -17,12 +17,12 @@ const TASK =
   "帮我到抖音创作者中心发一个视频，信息如下，先暂存为草稿不要直接发布，发布完后回到发布视频界面就算完成了不要再点继续编辑进去重复编辑\n" +
   "\n" +
   "抖音创作者中心网址:https://creator.douyin.com/\n" +
-  "我要发的视频在'D:\\Videos\\test\\final\\2026-04-29-20-41-59.mp4'\n" +
-  "作品描述中的主标题为：ai浏览器第五期-browse-use,副标题为:'browse-use体验及技术原理'\n" +
-  "添加合集到'AI浏览器合集'\n" +
+  "我要发的视频在'D:\\Videos\\ai-native-handbook\\final\\ep6-收官基建下与总评.mp4'\n" +
+  "作品描述中的主标题为：AI Native第六期,简介：Agent 可以决定下一步想做什么，但系统必须独立决定它是否有权这样做\n" +
+  "添加合集到'AI Native'\n" +
   "自主声明选择'无需添加自主声明'\n" +
-  "横封面图片在'D:\\dev\\git\\claude\\skills-deom\\ppt\\browser-use\\heng.png'\n" +
-  "竖封面图片在'D:\\dev\\git\\claude\\skills-deom\\ppt\\browser-use\\shu.png'";
+  "横封面图片在'D:\\dev\\git\\z_jordon\\knowledge-garden\\projects\\ai-native-handbook\\video-assets\\exports\\ep6-ai-native-infra\\cover-h.png'\n" +
+  "竖封面图片在'D:\\dev\\git\\z_jordon\\knowledge-garden\\projects\\ai-native-handbook\\video-assets\\exports\\ep6-ai-native-infra\\cover-v.png'";
 
 try {
   const kit = await loadKit();
@@ -32,9 +32,9 @@ try {
       agent: {
         enablePlanning: true,
         allowedUploadPaths: [
-          "D:\\Videos\\test\\final\\2026-04-29-20-41-59.mp4",
-          "D:\\dev\\git\\claude\\skills-deom\\ppt\\browser-use\\heng.png",
-          "D:\\dev\\git\\claude\\skills-deom\\ppt\\browser-use\\shu.png",
+          "D:\\Videos\\ai-native-handbook\\final\\ep6-收官基建下与总评.mp4",
+          "D:\\dev\\git\\z_jordon\\knowledge-garden\\projects\\ai-native-handbook\\video-assets\\exports\\ep6-ai-native-infra\\cover-h.png",
+          "D:\\dev\\git\\z_jordon\\knowledge-garden\\projects\\ai-native-handbook\\video-assets\\exports\\ep6-ai-native-infra\\cover-v.png",
         ],
       },
     },

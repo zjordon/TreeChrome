@@ -15,13 +15,13 @@ const TASK =
   "帮我到B站创作者中心发一个视频，信息如下，先暂存为草稿不要直接发布\n" +
   "\n" +
   "B站创作者中心网址:https://member.bilibili.com/platform/home\n" +
-  "我要发的视频在'D:\\Videos\\test\\final\\2026-04-29-20-41-59.mp4'\n" +
-  "封面图片在'D:\\dev\\git\\claude\\skills-deom\\ppt\\browser-use\\横封面.png'\n" +
-  "标题为：ai浏览器第五期-browse-use\n" +
+  "我要发的视频在'D:\\Videos\\ai-native-handbook\\final\\ep6-收官基建下与总评.mp4'\n" +
+  "封面图片在'D:\\dev\\git\\z_jordon\\knowledge-garden\\projects\\ai-native-handbook\\video-assets\\exports\\ep6-ai-native-infra\\cover-h.png'\n" +
+  "标题为：AI Native第六期\n" +
   "创作声明:个人观点，仅供参考\n" +
   "分区:科技数码\n" +
-  "标签:浏览器Agent\n" +
-  "简介：ai浏览器第五期-browse-use";
+  "标签:AI Native\n" +
+  "简介：Agent 可以决定下一步想做什么，但系统必须独立决定它是否有权这样做";
 
 try {
   const kit = await loadKit();
@@ -31,8 +31,8 @@ try {
       agent: {
         enablePlanning: true,
         allowedUploadPaths: [
-          "D:\\Videos\\test\\final\\2026-04-29-20-41-59.mp4",
-          "D:\\dev\\git\\claude\\skills-deom\\ppt\\browser-use\\横封面.png",
+          "D:\\Videos\\ai-native-handbook\\final\\ep6-收官基建下与总评.mp4",
+          "D:\\dev\\git\\z_jordon\\knowledge-garden\\projects\\ai-native-handbook\\video-assets\\exports\\ep6-ai-native-infra\\cover-h.png",
         ],
       },
     },
