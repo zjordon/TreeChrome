@@ -1,6 +1,6 @@
 # SCRATCHPAD — issue #26 M1.5：tc 供给面产品化（全局命令 + --auto-chrome + skill 分发）
 
-> 状态：**已实施并全量验证（全仓 1869 tests 绿 + gate 0 + 四重真机 smoke 全过）；待 `/review-loop` 评审收敛。** 四决策点已拍板（a 全局直装+pack 顺带 / env 链仅 CLI / ~/.claude/skills/tc / --keep-chrome）。
+> 状态：**已实施并全量验证；评审循环 2 轮收敛（轮 1 五条全采纳、轮 2 零意见）。待 `/finish-issue` 收官。** 四决策点已拍板（a 全局直装+pack 顺带 / env 链仅 CLI / ~/.claude/skills/tc / --keep-chrome）。
 > 基准：issue #26 正文；#25 M1 已交付契约（stdin 优先序 / --json camelCase / 退出码 0-1-2）**全部不动**。
 > 分支：`feat/issue-26-cli-m15`（自 main `1ce3d2b`）。
 
@@ -87,3 +87,4 @@ daemon/会话保持（#27）、npm 公网发布、权限模型变更、runAgent 
   4. [P2] 测试 `AppData\\Local` 断言依赖宿主平台 join 分隔符（非 Win CI 必红）。修复：断言前归一
   5. [P3 顺手修] pid<=0 拉起失败路径泄漏 mkdtemp 目录。修复：抛错前 `rmBestEffort`；双向验证过（还原旧实现新测试必红）
   - 测试 +2（超时 rm 恒败不顶替 / pid<=0 回收断言）；134 全绿；gate 0；dist 已重建含修复
+- **轮 2**（2026-11-08）：**零意见、状态 complete——循环收敛出口**（增量 diff = 修复提交 248237a，7m15s）。累计 stats：2 轮 / 5 意见 / 采纳 5 / 驳回 0 / stale 0。
