@@ -93,6 +93,9 @@ MCP server 通道（另立）、云远端浏览器、多 Chrome 实例池、daem
 4. **upload 相对路径**：CLI 侧 `path.resolve` 成绝对路径再发（daemon CWD 可能与调用方不同）
 5. **serve 幂等**：EADDRINUSE → 「已在运行」exit 0（双拉起竞态收口）；SIGTERM/SIGINT 优雅关停
 6. **空串旗标值视同未给**（与 allow-* 收集口径一致），修掉 select_dropdown `--value ""` 误触 XOR
+7. **skill 卡增「怎么选」路由阶梯**（实施后用户追加裁定）：自然语言任务在调用方 agent 分流——
+   不需要浏览器→不用；目标+验收一句话写清→run；一步完事/探索诊断/要看路/内外交织/多轮同页→会话级；
+   模糊默认 run 并告知形态；run 失败读 stopReason/errors 再决定重发或切会话级诊断
 
 **验证**
 
