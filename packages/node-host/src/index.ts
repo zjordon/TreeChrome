@@ -37,6 +37,50 @@ export {
 } from "./cli.js";
 export { type AttachConsoleOptions, attachConsole, clip, describeEvent } from "./console.js";
 export {
+  type ClientDeps,
+  ensureDaemonRunning,
+  type FetchLike,
+  probeHealth,
+  requestDaemon,
+  stopDaemon,
+} from "./daemon/client.js";
+export {
+  type DoctorDeps,
+  type DoctorFinding,
+  type DoctorResult,
+  diagnoseDaemon,
+} from "./daemon/doctor.js";
+export {
+  buildParams,
+  DAEMON_VERBS,
+  type DaemonEnvelope,
+  type DaemonInfo,
+  DEFAULT_DAEMON_PORT,
+  DEFAULT_IDLE_SECS,
+  daemonErr,
+  daemonOk,
+  daemonPort,
+  findVerb,
+  idleSecs,
+  type VerbFlag,
+  type VerbSpec,
+} from "./daemon/protocol.js";
+export {
+  PortInUseError,
+  type RunningDaemon,
+  type ServerOptions,
+  startDaemonServer,
+} from "./daemon/server.js";
+export {
+  type ActionResultOut,
+  createDaemonSession,
+  type DaemonSession,
+  type SessionDeps,
+  SessionError,
+  type StateOut,
+  type TabsOut,
+} from "./daemon/session-holder.js";
+export {
   bumpDistillStreak,
   type DistillAfterRunOptions,
   type DistillRunOptions,

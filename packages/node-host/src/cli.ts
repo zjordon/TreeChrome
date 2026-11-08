@@ -1,20 +1,29 @@
-// tc CLI 的逻辑层（issue #25 M1 + #26 M1.5）：参数解析（run/skill 子命令）/ 任务文本
-// 解析序（stdin 优先，已拍板）/ AgentHistoryList → camelCase JSON 投影 / 退出码 /
-// 凭据链（TC_ENV_FILE > ~/.tc/.env > cwd/.env，仅 CLI 面）/ --auto-chrome 自动拉起 /
-// skill 用法卡分发。IO 一律经 MainDeps 注入（可测）；bin/tc.mjs 与 dist 构建入口共用。
+// tc CLI 的逻辑层（issue #25 M1 + #26 M1.5 + #27 M2）：参数解析（run / skill install /
+// daemon / 会话式动作动词）/ 任务文本解析序（stdin 优先，已拍板）/ AgentHistoryList →
+// camelCase JSON 投影 / 退出码 / 凭据链（TC_ENV_FILE > ~/.tc/.env > cwd/.env，仅 CLI 面）/
+// --auto-chrome 自动拉起 / skill 用法卡分发 / daemon 自起与单命令调用（控制权反转：
+// 调用方 LLM 直驱浏览器原语，daemon 内部无 LLM）。IO 一律经 MainDeps 注入（可测）；
+// bin/tc.mjs 与 dist 构建入口共用。
 
 import {
+  appendFile as fspAppendFile,
   mkdir as fspMkdir,
   readFile as fspReadFile,
+  rm as fspRm,
   writeFile as fspWriteFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { discoverWebSocketUrl } from "@tw/cdp-ws";
 import type { AgentHistoryList, AgentSettings } from "@tw/core";
 import { runAgent } from "./agent-boot.js";
 import { type LaunchedChrome, launchAutoChrome } from "./auto-chrome.js";
+import { probeHealth, requestDaemon, stopDaemon } from "./daemon/client.js";
+import { type DoctorResult, diagnoseDaemon } from "./daemon/doctor.js";
+import { buildParams, type DaemonEnvelope, daemonPort, findVerb } from "./daemon/protocol.js";
+import { PortInUseError, startDaemonServer } from "./daemon/server.js";
+import { createDaemonSession } from "./daemon/session-holder.js";
 import {
   applyDotEnv,
   type HostSettingsOverrides,
@@ -23,8 +32,10 @@ import {
 } from "./settings.js";
 import { SKILL_CARD } from "./skill-card.js";
 
-export const USAGE = `用法：tc run [task] [选项]
+export const USAGE = `用法：tc run [task] [选项]                    # 任务级：本仓 LLM 驱动整段 agent loop
       tc skill install [--dir <path>] [--print]
+      tc daemon (--status | --stop | --doctor)  # 会话守护进程管理
+      tc <动作> [选项]                          # 会话级：你的 LLM 直驱浏览器原语（#27）
 
 任务文本解析序（run）：--task-file > stdin（管道）> 位置参数；三者皆无报用法错。
 
@@ -46,20 +57,48 @@ skill 选项：
   --dir <path>      自定义安装目录
   --print           用法卡打到 stdout（供管道进任意 agent 配置，不写文件）
 
+daemon 选项（单例：127.0.0.1，缺省端口 9780 / TC_DAEMON_PORT；首次动作自动拉起，
+空闲 15 分钟自动回收 / TC_DAEMON_IDLE_SECS<=0 关闭；并发调用按 FIFO 串行）：
+  --status          查运行态（pid/端口/空闲计时）
+  --stop            优雅关停（自拉 Chrome 一并按 PID 树回收）
+  --doctor          诊断三类故障（Chrome 没起 / daemon 僵死 / 端口占用）并给动作
+  --daemon-port <n> 覆盖端口（动作动词同用）
+
+会话式动作（15 动词；stdout 恒单 JSON。index 类动作前先 get_state 刷新元素索引）：
+  get_state                                   # element_tree_text（核心供给物）+ url/title/tabs
+  navigate --url <u> [--new-tab]
+  click (--index N | --element-id N)          # 二选一
+  input_text (--index N | --element-id N) --text <t> [--no-clear]  # 缺省先清空再输入
+  select_dropdown --index N (--value v | --values v1 --values v2)   # 单选/多选二选一
+  scroll [--direction up|down] [--amount 1-10]
+  find_text --text <t> [--nth N] [--case-sensitive] [--highlight box|selection|none]
+  read_grid [--namespace ns] [--search kw] [--sorting "字段 desc"] [--page N]
+            [--page-size N] [--fields f1] [--fields f2] [--no-fresh] [--group-count f]
+  evaluate --code <js> [--no-await] [--timeout-ms N] [--user-gesture]
+  screenshot [--format png|jpeg|webp] [--quality 0-100] [--full-page]
+  upload_file --index N --path <file>         # 相对路径按调用方 CWD 解析为绝对路径
+  go_back
+  tabs                                        # 列表 + 当前 attached tab
+  switch_tab --tab-id <id后4位>
+  close_tab [--tab-id <id后4位>]              # 缺省关当前 tab
+
 示例：
   echo "帮我到 example.com 查 …" | tc run --json --auto-chrome
   tc run "打开 example.com 并把标题告诉我"
   tc skill install
+  tc navigate --url https://example.com && tc get_state
+  tc click --index 12 && tc input_text --index 8 --text "关键词"
 
-退出码：0 = done 且成功；1 = 跑完但未成功；2 = 用法/前置失败（参数错、任务文本空、
-缺 key、连不上 Chrome、Chrome 拉起失败）。
+退出码：run/动作 0 = 成功；1 = 跑完/执行但未成功（stdout 仍出 JSON，看 error 字段）；
+2 = 用法/前置失败（参数错、daemon 拉起失败、Chrome 不可达）。
 
-凭据（run）：环境变量 > TC_ENV_FILE > ~/.tc/.env > cwd/.env（逐键先到先得）。
-ZHIPU_API_KEY（必需）、LLM_MODEL / LLM_BASE_URL / LLM_MAX_TOKENS / FALLBACK_LLM_* /
-CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_* / AGENT_SKILLS_DIR。详见本包 README。`;
+凭据（run/daemon）：环境变量 > TC_ENV_FILE > ~/.tc/.env > cwd/.env（逐键先到先得）。
+ZHIPU_API_KEY（run 必需）、LLM_MODEL / LLM_BASE_URL / LLM_MAX_TOKENS / FALLBACK_LLM_* /
+CDP_HOST / CDP_PORT / CDP_WS_URL / CHROME_PATH / TC_DAEMON_PORT / AGENT_*。
+会话式 upload 不设白名单（调用方 agent 即信任边界；run 面护栏不变）。详见本包 README。`;
 
 export interface CliArgs {
-  command: "run" | "skill-install";
+  command: "run" | "skill-install" | "daemon" | "action";
   /** 位置参数拼出的任务文本（仅 run；空 → null） */
   task: string | null;
   json: boolean;
@@ -75,6 +114,14 @@ export interface CliArgs {
   skillDir: string | null;
   /** skill install --print：用法卡出 stdout（不写文件） */
   skillPrint: boolean;
+  /** daemon 子命令模式（--serve 为内部自起入口，不进帮助） */
+  daemonMode: "status" | "stop" | "doctor" | "serve" | null;
+  /** --daemon-port（动作与 daemon 子命令共用；null = TC_DAEMON_PORT 或 9780） */
+  daemonPortFlag: number | null;
+  /** 会话式动作动词（command === "action" 时非 null） */
+  actionVerb: string | null;
+  /** 动作参数（buildParams 产物；空参数动词为 {}） */
+  actionParams: Record<string, unknown> | null;
   help: boolean;
   version: boolean;
 }
@@ -100,6 +147,42 @@ export function parseCliArgs(argv: string[]): ParseResult {
         print: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
+        // ── daemon / 会话式动词（#27）──
+        "daemon-port": { type: "string" },
+        status: { type: "boolean", default: false },
+        stop: { type: "boolean", default: false },
+        doctor: { type: "boolean", default: false },
+        serve: { type: "boolean", default: false },
+        url: { type: "string" },
+        "new-tab": { type: "boolean", default: false },
+        index: { type: "string" },
+        "element-id": { type: "string" },
+        text: { type: "string" },
+        "no-clear": { type: "boolean", default: false },
+        direction: { type: "string" },
+        amount: { type: "string" },
+        "tab-id": { type: "string" },
+        value: { type: "string" },
+        values: { type: "string", multiple: true },
+        nth: { type: "string" },
+        "case-sensitive": { type: "boolean", default: false },
+        highlight: { type: "string" },
+        namespace: { type: "string" },
+        search: { type: "string" },
+        sorting: { type: "string" },
+        "page-size": { type: "string" },
+        page: { type: "string" },
+        fields: { type: "string", multiple: true },
+        "no-fresh": { type: "boolean", default: false },
+        "group-count": { type: "string" },
+        code: { type: "string" },
+        "no-await": { type: "boolean", default: false },
+        "timeout-ms": { type: "string" },
+        "user-gesture": { type: "boolean", default: false },
+        format: { type: "string" },
+        quality: { type: "string" },
+        "full-page": { type: "boolean", default: false },
+        path: { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -116,7 +199,8 @@ export function parseCliArgs(argv: string[]): ParseResult {
     return kept.length > 0 ? kept : null;
   };
   const rawTaskFile = parsed.values["task-file"];
-  const rawSkillDir = parsed.values["dir"];
+  const rawSkillDir = parsed.values.dir;
+  const rawDaemonPort = parsed.values["daemon-port"];
   const flags: CliArgs = {
     command: "run",
     task: null,
@@ -130,15 +214,26 @@ export function parseCliArgs(argv: string[]): ParseResult {
     keepChrome: parsed.values["keep-chrome"] === true,
     skillDir: typeof rawSkillDir === "string" && rawSkillDir !== "" ? rawSkillDir : null,
     skillPrint: parsed.values.print === true,
+    daemonMode: null,
+    daemonPortFlag: null,
+    actionVerb: null,
+    actionParams: null,
     help: parsed.values.help === true,
     version: parsed.values.version === true,
   };
   if (flags.help || flags.version) {
     return { ok: true, args: flags };
   }
+  if (rawDaemonPort !== undefined) {
+    const n = Number(rawDaemonPort);
+    if (!Number.isInteger(n) || n <= 0 || n >= 65536) {
+      return { ok: false, message: `--daemon-port "${rawDaemonPort}" 非法（需 1-65535 整数）` };
+    }
+    flags.daemonPortFlag = n;
+  }
   const positionals = parsed.positionals as string[];
   if (positionals.length === 0) {
-    return { ok: false, message: "缺少子命令（支持 run / skill install）" };
+    return { ok: false, message: "缺少子命令（支持 run / skill install / daemon / 会话动作）" };
   }
   if (positionals[0] === "skill") {
     if (positionals[1] !== "install" || positionals.length > 2) {
@@ -147,8 +242,40 @@ export function parseCliArgs(argv: string[]): ParseResult {
     flags.command = "skill-install";
     return { ok: true, args: flags };
   }
+  if (positionals[0] === "daemon") {
+    const modes = ["status", "stop", "doctor", "serve"].filter((m) => parsed.values[m] === true);
+    if (modes.length !== 1) {
+      return {
+        ok: false,
+        message: "tc daemon 需要恰好一个模式旗标（--status / --stop / --doctor）",
+      };
+    }
+    if (positionals.length > 1) {
+      return { ok: false, message: "tc daemon 不接受位置参数" };
+    }
+    flags.command = "daemon";
+    flags.daemonMode = modes[0] as CliArgs["daemonMode"];
+    return { ok: true, args: flags };
+  }
+  const verb = findVerb(positionals[0]);
+  if (verb !== null) {
+    if (positionals.length > 1) {
+      return { ok: false, message: `动作 ${verb.verb} 不接受位置参数（参数走旗标）` };
+    }
+    const built = buildParams(verb, parsed.values);
+    if (!built.ok) {
+      return { ok: false, message: built.message };
+    }
+    flags.command = "action";
+    flags.actionVerb = verb.verb;
+    flags.actionParams = built.params;
+    return { ok: true, args: flags };
+  }
   if (positionals[0] !== "run") {
-    return { ok: false, message: `未知子命令 "${positionals[0]}"（支持 run / skill install）` };
+    return {
+      ok: false,
+      message: `未知子命令 "${positionals[0]}"（支持 run / skill install / daemon / 会话动作如 get_state）`,
+    };
   }
   const rawSteps = parsed.values["max-steps"];
   if (rawSteps !== undefined) {
@@ -289,6 +416,26 @@ export interface MainDeps {
   /** skill install 写盘（缺省 node:fs/promises） */
   ensureDir?: (dir: string) => Promise<void>;
   writeFile?: (path: string, content: string) => Promise<void>;
+  // ── #27 会话式（缺省真 HTTP/spawn；测试注入假件）──
+  /** 动作单命令调用（缺省 requestDaemon：不可达自动拉起重试） */
+  daemonCall?: (
+    port: number,
+    action: string,
+    params: Record<string, unknown>,
+  ) => Promise<DaemonEnvelope>;
+  /** /health 探测（daemon --status） */
+  daemonHealth?: (port: number) => Promise<Record<string, unknown> | null>;
+  /** /shutdown（daemon --stop） */
+  daemonStopFn?: (port: number) => Promise<{ stopped: boolean; wasRunning: boolean }>;
+  /** doctor 诊断（daemon --doctor） */
+  daemonDoctor?: () => Promise<DoctorResult>;
+  /** serve 模式日志追加（缺省 appendFile ~/.tc/daemon/daemon.log） */
+  appendLog?: (line: string) => void;
+  /** serve 模式 daemon.json 写/删（缺省 node:fs/promises） */
+  writeInfo?: (path: string, content: string) => Promise<void>;
+  removeFile?: (path: string) => Promise<void>;
+  /** serve 模式 daemon server 工厂（缺省 startDaemonServer；测试注入） */
+  startServer?: typeof startDaemonServer;
 }
 
 const defaultStdin = (): { isTTY: boolean; text: () => Promise<string> } => ({
@@ -362,6 +509,76 @@ export async function main(deps: MainDeps = {}): Promise<number> {
   // 凭据链（issue #26 D1，已拍板仅 CLI 面；runAgent 缺省单文件行为不变）：
   // TC_ENV_FILE > ~/.tc/.env > cwd/.env，逐键先到先得；OS env 恒最高
   const applyEnv = deps.applyEnv ?? ((paths: string[]) => applyDotEnv(env, paths, { chain: true }));
+  const clientDeps = { env, log: (m: string) => err(m) };
+  const daemonCall =
+    deps.daemonCall ?? ((port, action, params) => requestDaemon(port, action, params, clientDeps));
+  const daemonHealth =
+    deps.daemonHealth ?? ((port) => probeHealth(globalThis.fetch.bind(globalThis), port));
+  const daemonStopFn = deps.daemonStopFn ?? ((port) => stopDaemon(port, clientDeps));
+  const daemonDoctor = deps.daemonDoctor ?? (() => diagnoseDaemon(clientDeps));
+  const portOf = (flag: number | null): number => flag ?? daemonPort(env);
+
+  // ── daemon 子命令（#27）：管理面 ─────────────────────────────────────────
+  if (args.command === "daemon") {
+    const port = portOf(args.daemonPortFlag);
+    if (args.daemonMode === "serve") {
+      applyEnv(resolveEnvChain(env));
+      return serveDaemon({ deps, env, port, err, home });
+    }
+    if (args.daemonMode === "status") {
+      const health = await daemonHealth(port);
+      out(
+        JSON.stringify(
+          health === null
+            ? {
+                running: false,
+                port,
+                hint: "未运行；下一次动作命令会自动拉起（tc daemon --doctor 诊断）",
+              }
+            : { running: true, port, ...health },
+        ),
+      );
+      return 0;
+    }
+    if (args.daemonMode === "stop") {
+      const r = await daemonStopFn(port);
+      out(JSON.stringify(r));
+      if (!r.wasRunning) {
+        err("[tc] daemon 未在运行");
+      }
+      return 0;
+    }
+    // doctor
+    applyEnv(resolveEnvChain(env));
+    const result = await daemonDoctor();
+    out(JSON.stringify(result));
+    for (const f of result.findings) {
+      if (f.status !== "ok" && f.hint !== null) {
+        err(`[doctor] ${f.name}: ${f.hint}`);
+      }
+    }
+    return 0;
+  }
+
+  // ── 会话式动作（#27）：单命令单 JSON；不可达自动拉起 daemon ────────────────
+  if (args.command === "action" && args.actionVerb !== null) {
+    applyEnv(resolveEnvChain(env));
+    const port = portOf(args.daemonPortFlag);
+    const params = { ...(args.actionParams ?? {}) };
+    // upload_file 相对路径按调用方 CWD 解析（daemon 的 CWD 可能不同）
+    if (typeof params.path === "string" && params.path !== "") {
+      params.path = resolve(params.path);
+    }
+    const envelope = await daemonCall(port, args.actionVerb, params);
+    if (envelope.ok) {
+      const data = envelope.data as { error?: string | null };
+      out(JSON.stringify(envelope.data));
+      return data.error != null ? 1 : 0;
+    }
+    err(`[tc] ${envelope.error ?? "daemon 调用失败"}`);
+    return envelope.kind === "exec" ? 1 : 2;
+  }
+
   applyEnv(resolveEnvChain(env));
 
   let taskFileContent: string | null = null;
@@ -463,4 +680,68 @@ export async function main(deps: MainDeps = {}): Promise<number> {
       await chrome.stop((m) => err(m));
     }
   }
+}
+
+/**
+ * daemon --serve（#27 内部自起入口，不进帮助）：日志 append ~/.tc/daemon/daemon.log、
+ * daemon.json 运行态写/删、startDaemonServer 惰性会话；SIGTERM/SIGINT 优雅关停。
+ * 端口已被占（daemon 已在运行）按幂等成功收口 exit 0。本函数常驻不返回直至信号。
+ */
+async function serveDaemon(options: {
+  deps: MainDeps;
+  env: Record<string, string | undefined>;
+  port: number;
+  err: (line: string) => void;
+  home: () => string;
+}): Promise<number> {
+  const { deps, env, port, err, home } = options;
+  const dir = join(home(), ".tc", "daemon");
+  const infoPath = join(dir, "daemon.json");
+  const ensureDir = deps.ensureDir ?? ((d) => fspMkdir(d, { recursive: true }));
+  const writeInfo = deps.writeInfo ?? ((p, c) => fspWriteFile(p, c, "utf8"));
+  const removeFile = deps.removeFile ?? ((p) => fspRm(p, { force: true }));
+  const appendLog =
+    deps.appendLog ??
+    ((line) => fspAppendFile(join(dir, "daemon.log"), `${line}\n`, "utf8").catch(() => {}));
+  try {
+    await ensureDir(dir);
+  } catch (e) {
+    err(`[tc] daemon 目录创建失败（${dir}）：${e instanceof Error ? e.message : String(e)}`);
+    return 2;
+  }
+  const log = (m: string) => {
+    void appendLog(m);
+  };
+  const startServer = deps.startServer ?? startDaemonServer;
+  let daemon: Awaited<ReturnType<typeof startServer>>;
+  try {
+    daemon = await startServer({
+      env,
+      port,
+      log,
+      makeSession: () => createDaemonSession({ env, log }),
+      writeInfo: (info) => {
+        void writeInfo(infoPath, JSON.stringify(info)).catch(() => {});
+      },
+      clearInfo: () => {
+        void removeFile(infoPath).catch(() => {});
+      },
+    });
+  } catch (e) {
+    if (e instanceof PortInUseError) {
+      log(`[daemon] ${e.message}——已有实例在跑，本次自起按幂等成功退出`);
+      err(`[tc] daemon 已在运行（${e.message}）`);
+      return 0;
+    }
+    err(`[tc] daemon 启动失败：${e instanceof Error ? e.message : String(e)}`);
+    return 2;
+  }
+  // 常驻：监听 socket 持住事件循环；SIGTERM/SIGINT → 优雅关停（会话 + 自拉 Chrome）
+  const exitCode = await new Promise<number>((resolve) => {
+    const finish = () => resolve(0);
+    process.once("SIGTERM", finish);
+    process.once("SIGINT", finish);
+  });
+  await daemon.close();
+  return exitCode;
 }
