@@ -1,26 +1,48 @@
 # @tw/node-host — Node 宿主共享件与 `tc` CLI
 
-Node 侧宿主共享件（NodeFs / env→配置 / 控制台观测 / Agent 装配 / esbuild 引导），examples 与未来 web-console 共享。`bin/tc`（issue #25 M1）把本仓浏览器 agent 以**任务级 one-shot CLI** 供给其它 agent 调用。
+Node 侧宿主共享件（NodeFs / env→配置 / 控制台观测 / Agent 装配 / esbuild 引导），examples 与未来 web-console 共享。`bin/tc`（#25 M1 + #26 M1.5）把本仓浏览器 agent 以**任务级 one-shot CLI** 供给其它 agent 调用。
 
 ## tc 快速开始（面向调用方 agent）
 
-前置（一次性）：
-
-1. 仓库根 `pnpm install`；
-2. Chrome 以远程调试口运行：`chrome --remote-debugging-port=9222`；
-3. 配置 LLM：环境变量 `ZHIPU_API_KEY`（或 `cwd/.env` 同名键；`LLM_MODEL` / `LLM_BASE_URL` 等可选）。
-
-用法（`node bin` 直启——pnpm 不为包自身的 bin 建链接，`pnpm --filter … exec tc` 不可用）：
+### 形态一：全局命令（推荐，任意目录可用）
 
 ```bash
-# 推荐：任务文本走 stdin 管道（对中文/多行最稳，避开 Windows 参数编码面）
-echo "帮我到 https://example.com 查 …" | node packages/node-host/bin/tc.mjs run --json
-
-# 或位置参数
-node packages/node-host/bin/tc.mjs run "打开 example.com 并把标题告诉我" --json
+# 仓库内构建（dist/ 不入库，按需生成）
+pnpm --filter @tw/node-host run build:cli
+# 全局安装 staging 包（无依赖，自包含单文件）
+npm i -g packages/node-host/dist/tc-package
+# 需要分发时出 tarball（可发同事 / 挂 Release 附件）
+cd packages/node-host/dist/tc-package && npm pack
 ```
 
-其它目录/其它 agent 会话用绝对路径（如 `node D:/dev/git/z_jordon/TreeChrome/packages/node-host/bin/tc.mjs …`）；注意 `.env` 按 **CWD** 查找——不在仓库根跑时凭据走环境变量（`ZHIPU_API_KEY` 等），或在调用目录放 `.env`。
+安装后任意目录：`tc run …`（卸载 `npm uninstall -g tc-cli`）。
+
+### 形态二：仓内直启（开发/未安装时）
+
+```bash
+node packages/node-host/bin/tc.mjs run …
+```
+
+（pnpm 不为包自身的 bin 建链接，`pnpm --filter … exec tc` 不可用。）
+
+### 前置
+
+- **Chrome**：以 `--remote-debugging-port=9222` 运行；或加 `--auto-chrome` 自动拉起临时 headless 实例（run 结束自动回收，不碰日常 Chrome；`--keep-chrome` 保留调试；显式 `CDP_WS_URL` 时为 no-op）；
+- **凭据**（解析序：环境变量 > `TC_ENV_FILE` > `~/.tc/.env` > 当前目录 `.env`，逐键先到先得）：`ZHIPU_API_KEY` 必需，`LLM_MODEL` / `LLM_BASE_URL` 等可选——全局安装场景建议放 `~/.tc/.env`。
+
+### 用法
+
+```bash
+# 推荐：任务文本走 stdin（中文/多行最稳），零前置（无 Chrome 时自动拉起）
+echo "帮我到 https://example.com 查 …" | tc run --json --auto-chrome
+
+# 或位置参数 / 文件
+tc run "打开 example.com 并把标题告诉我" --json
+tc run --task-file task.txt --json
+
+# 让你的 agent「天生会用」：安装用法卡到 ~/.claude/skills/tc/
+tc skill install          # 或 tc skill install --print 查看内容
+```
 
 人类可读模式去掉 `--json`（过程日志 + 终态行走 stdout）。
 
@@ -54,7 +76,7 @@ node packages/node-host/bin/tc.mjs run "打开 example.com 并把标题告诉我
 |---|---|
 | 0 | done 且成功 |
 | 1 | 跑完但未成功（done 失败 / 未 done，带 stopReason） |
-| 2 | 用法/前置失败（参数错、任务文本空、缺 `ZHIPU_API_KEY`、连不上 Chrome） |
+| 2 | 用法/前置失败（参数错、任务文本空、缺 `ZHIPU_API_KEY`、连不上 Chrome、Chrome 拉起失败） |
 
 ### 护栏（AutoAllow 无人值守，已拍板直用）
 
@@ -69,6 +91,10 @@ node packages/node-host/bin/tc.mjs run "打开 example.com 并把标题告诉我
 - PowerShell 下中文输出乱码时先 `chcp 65001`；`--json` 输出恒为 UTF-8；
 - 中文任务文本优先 stdin/`--task-file`（避开参数编码面）。
 
+## 构建产物（维护者）
+
+`pnpm --filter @tw/node-host run build:cli` → `dist/tc.mjs`（版本构建期嵌入的自包含单文件）+ `dist/tc-package/`（staging 安装包）。`dist/` 在 .gitignore。
+
 ## 其余导出面
 
-`loadKit()`（examples 散脚本的 kit 面）、`assembleAgent` / `runAgent`（Agent 装配与 one-shot）、`loadHostSettings` / `mergeHostSettings`（env→类型化配置）、`attachConsole`（事件观测）、`FsSkillSource`、蒸馏钩子（`distillAfterRun`）。详见 `src/index.ts`。
+`loadKit()`（examples 散脚本的 kit 面）、`assembleAgent` / `runAgent`（Agent 装配与 one-shot）、`loadHostSettings` / `mergeHostSettings` / `applyDotEnv`（env→类型化配置；chain 模式与 `resolveEnvChain` 为 CLI 凭据链）、`launchAutoChrome`（--auto-chrome 基建）、`attachConsole`（事件观测）、`FsSkillSource`、`SKILL_CARD`（用法卡单源）、蒸馏钩子（`distillAfterRun`）。详见 `src/index.ts`。

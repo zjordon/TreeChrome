@@ -20,6 +20,7 @@
     "./boot.mjs": "./boot.mjs"
   },
   "scripts": {
+    "build:cli": "node scripts/build-cli.mjs",
     "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit"
