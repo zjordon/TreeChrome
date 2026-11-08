@@ -12,7 +12,7 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4T]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——issue #25 M1 任务级 one-shot CLI（tc run）：计划+实施记录+评审 2 轮收敛（轮 1 三修采纳/轮 2 零意见），待 /finish-issue 收官 | R:code:AGENTS.md,code:_issue-cli-host.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——issue #26 M1.5 供给面产品化：计划+实施记录（三真机坑）+评审 2 轮收敛（轮 1 五修/轮 2 零意见），待 /finish-issue | R:code:AGENTS.md,code:_issue-cli-m15.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
@@ -294,6 +294,10 @@ _r_issue-25-cli_1.md[SQ3T]: F:issue #25 评审轮 1 dump：3 条意见（P1×1 s
 _r_issue-25-cli_2.md[SQ1T]: F:issue #25 评审轮 2 dump：零意见、状态 complete（增量=修复提交 033bcc7，3m54s）——循环收敛轮；首发误基线 skipped 后修正重发 | R:code:docs/code-review/review-issue-25-cli-2.json | A:- | S:-
 review-issue-25-cli-1.json[ZQ2M]: F:ocr review 轮 1 原始输出（issue #25，base=main）：3 意见全文（stdin 挂起/未处理拒绝/启动兜底） | R:code:docs/code-review/_r_issue-25-cli_1.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
 review-issue-25-cli-2.json[ZQ1T]: F:ocr review 轮 2 原始输出（issue #25，增量 f6a1906..033bcc7）：零意见收敛 | R:code:docs/code-review/_r_issue-25-cli_2.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
+_r_issue-26-cli-m15_1.md[SQ3T]: F:issue #26 评审轮 1 dump：5 条意见（P1×1 spawn 异步 error 崩溃+P2×3 unref 挂起/超时 rm 顶替/测试平台耦合+P3 泄漏）全采纳修复于 248237a | R:code:docs/code-review/review-issue-26-cli-m15-1.json | A:- | S:-
+_r_issue-26-cli-m15_2.md[SQ1T]: F:issue #26 评审轮 2 dump：零意见、状态 complete（增量=修复提交 248237a，7m15s）——循环收敛轮 | R:code:docs/code-review/review-issue-26-cli-m15-2.json | A:- | S:-
+review-issue-26-cli-m15-1.json[ZQ2M]: F:ocr review 轮 1 原始输出（issue #26，base=main）：5 意见全文 | R:code:docs/code-review/_r_issue-26-cli-m15_1.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
+review-issue-26-cli-m15-2.json[ZQ1T]: F:ocr review 轮 2 原始输出（issue #26，增量 7f9ad5b..248237a）：零意见收敛 | R:code:docs/code-review/_r_issue-26-cli-m15_2.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
 README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
@@ -924,21 +928,24 @@ gen_fixtures.py[XA5S]: F:golden fixture 生成器：Python dom-snapshot 三源�
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/===
 boot.mjs[OB4T]: F:全仓唯一一份散脚本 esbuild 引导：loadEntry(entryRel) 通用装载（stdin re-export 形态）——loadKit（examples kit 面）与 bin/tc.mjs（cli）共用 | R:code:packages/node-host/src/boot-entry.ts,code:packages/node-host/src/cli.ts | A:loadEntry, loadKit | S:loadKit 是 27 个示例的共享入口（smoke/p7 系都经它）；bin/tc.mjs 经 loadEntry 直连 cli.ts（issue #25）
-package.json[FE5T]: F:node-host 包定义：Node 宿主共享件（NodeFs/env→配置/控制台观测/Agent 装配/boot.mjs 引导）——examples 与未来 cli/web-console 共享；bin tc + esbuild devDep | R:- | A:- | S:-
+package.json[FE5T]: F:node-host 包定义：Node 宿主共享件（NodeFs/env→配置/控制台观测/Agent 装配/boot.mjs 引导）——examples 与未来 cli/web-console 共享；bin tc + build:cli 构建 + esbuild devDep | R:- | A:- | S:-
 tsconfig.json[FG2T]: F:node-host TS 配置（extends 基座） | R:- | A:- | S:-
-vitest.config.ts[FQ4T]: F:node-host 测试配置（85% 阈值） | R:- | A:- | S:-
-README.md[SG5T]: F:node-host 包 README：面向调用方 agent 的 tc CLI 使用说明（node bin 直启——pnpm 不链包自身 bin/.env 按 CWD 查找语义/stdin 优先序/--json 契约/退出码表/--allow-* 护栏/Windows 编码）+ 包导出面速览 | R:code:packages/node-host/src/cli.ts | A:- | S:-
+vitest.config.ts[FQ4T]: F:node-host 测试配置（85% 阈值；cli-main-entry 纯装配入口排除出覆盖率——真机 smoke 覆盖） | R:- | A:- | S:-
+README.md[SG5M]: F:node-host 包 README：tc CLI 供给面文档——全局安装（build:cli→npm i -g/npm pack）、--auto-chrome、凭据链、stdin 优先/--json 契约/退出码/护栏、skill install、Windows 编码 | R:code:packages/node-host/src/cli.ts | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/src/===
 agent-boot.ts[AB7S]: F:Agent 装配与 one-shot 运行（扩展 assemble.ts 同构体）：LLMClient+NodeFs+FsSkillSource+AutoAllow；issue #5 runAgent opt-in distill 钩子与 skillSource 显式 null 关闭语义 | R:code:packages/core/src/agent/agent.ts,code:packages/node-host/src/distill-run.ts,code:packages/node-host/src/settings.ts | A:assembleAgent, runAgent | S:env→配置映射在宿主侧完成；skillSource 未传时缺省按 settings.skillsDir（CWD domain-skills）装配——评测基线必须显式传 null
 boot-entry.ts[EB3T]: F:散脚本打包入口：本包 kit+core/cdp-ws 的 example 导出面 | R:code:packages/node-host/boot.mjs | A:- | S:-
 console.ts[OB4T]: F:控制台观测：EventBus 事件逐行打印+截断助手 | R:code:packages/core/src/events/event-bus.ts | A:- | S:-
-index.ts[LB5T]: F:node-host 公共导出面（NodeFs/settings/console/agent-boot/boot + issue #5 distill-run 蒸馏钩子 + issue #25 cli 面 main/纯函数/USAGE） | R:- | A:- | S:-
+index.ts[LB5M]: F:node-host 公共导出面（NodeFs/settings/console/agent-boot/boot + distill-run 蒸馏钩子 + #25 cli 面 + #26 auto-chrome/resolveEnvChain/SKILL_CARD） | R:- | A:- | S:-
 node-fs.ts[PB5T]: F:NodeFs：FileSystemProvider 的 node:fs 实现（架构 §4 五接口的 Node 宿主半边） | R:code:packages/core/src/tools/fs.ts | A:NodeFs | S:-
-settings.ts[FB7S]: F:env→类型化配置（config.py load_settings 的宿主侧移植）：.env 读取+ws_url 发现+mergeHostSettings definedOnly 合并+AGENT_ENABLE_PLANNING opt-in（core 默认 false） | R:code:packages/core/src/agent/settings.ts | A:loadSettings, mergeHostSettings | S:教训面：TreeWalker runner.py issue #1——口径开关曾因新建默认 settings 从未生效（显式传入而非全局单例的根因）；env 未设=键不进覆盖，core 默认生效（单源纪律）
+settings.ts[FB7L]: F:env→类型化配置（config.py load_settings 宿主侧移植）：.env 读取（chain 模式+resolveEnvChain 凭据链）+ws_url 发现+mergeHostSettings+AGENT_ENABLE_PLANNING opt-in | R:code:packages/core/src/agent/settings.ts | A:loadSettings, mergeHostSettings, resolveEnvChain | S:教训面：TreeWalker runner.py issue #1——显式传入而非全局单例；env 未设=键不进覆盖，core 默认生效（单源纪律）；chain 仅 CLI 面——runAgent 缺省单文件行为不变（#26 拍板）
 skill-source.ts[PB6S]: F:skill 宿主装载层：SkillLoader+TaskSkillLoader（loader.py/task_loader.py 读序与分段格式照搬；任务卡 \\n\\n 无头拼接口径） | R:code:packages/core/src/agent/skills/types.ts | A:FsSkillSource | S:任务卡全文 strip 后 \\n\\n 直拼（P5.5 冻结口径）——与扩展 skill-source.ts 同一契约
 distill-run.ts[AB6S]: F:runAgent 蒸馏钩子（D16）：门控→host 多数票→core distillTaskCard→目录四文件落盘（traces 并集/streak 归 0/best_steps 棘轮）；#10 门控归因单源+180s 缺省；#12 cardDistillState 读 best_steps 基线 | R:code:packages/core/src/agent/skills/distill.ts,code:packages/node-host/src/agent-boot.ts,code:packages/node-host/src/skill-source.ts | A:distillAfterRun, writeTaskCard, DistillRunOptions | S:同步 await——runAgent 返回前完成；目录形态无 provenance 面（D14 不适用）；180s 对齐扩展 worker；unchanged 路径 bump 带 steps 棘轮 best_steps=min
-cli.ts[EW7M]: F:tc CLI 逻辑层（issue #25 M1）：parseCliArgs/resolveTaskText（stdin 优先序）/projectRunJson（camelCase 投影）/exitCodeOf/main（IO 全注入 argv/stdin/readFile/out/err/run/version） | R:code:packages/node-host/src/agent-boot.ts | A:main, projectRunJson, resolveTaskText | S:--json 模式 stdout 只出终态 JSON——过程日志经 runAgent log 注入走 stderr；--task-file 就绪即跳过 stdin 读取（spawn 永不闭管防挂起，评审轮 1 [1]）
+cli.ts[EW7L]: F:tc CLI 逻辑层（#25 M1+#26 M1.5）：run/skill 双子命令、任务文本 stdin 优先序、camelCase JSON 投影、退出码、凭据链应用、--auto-chrome 接线（发现→拉起→wsUrl 显式透传）、skill 安装 | R:code:packages/node-host/src/agent-boot.ts | A:main, parseCliArgs, projectRunJson, resolveTaskText | S:--json 下 stdout 只出终态 JSON（log 注入走 stderr）；--task-file 就绪即跳过 stdin（spawn 永不闭管防挂起）；显式 CDP_WS_URL 时 --auto-chrome no-op
+auto-chrome.ts[IR7M]: F:--auto-chrome 基建（#26 D2）：Chrome 二进制解析（CHROME_PATH>平台候选）/临时 profile headless spawn（detached+unref+吞异步 error）/CDP 就绪轮询/PID 树回收与 rmBestEffort 清理 | R:code:packages/node-host/src/cli.ts | A:launchAutoChrome, resolveChromeBinary, chromePathCandidates | S:绝不按映像名杀 Chrome——只 kill 自己 spawn 的 pid（win taskkill /T /F、posix 负 pid 组杀）；taskkill 后句柄异步释放，rm 须短候+重试且失败不得顶替原始错误（评审轮 1）
+cli-main-entry.ts[EW4T]: F:dist 构建入口（build-cli.mjs 的 entry）：main() 全装配 + __TC_VERSION__ 构建期 define + 顶层 catch 兑底 exit 2 | R:code:packages/node-host/src/cli.ts | A:- | S:纯装配入口不入单测覆盖率（vitest.config 显式排除，真机 smoke 覆盖）
+skill-card.ts[SE3T]: F:tc 用法卡单源（#26 D3）：tc skill install/--print 的 SKILL.md 内容常量（frontmatter+When Not to Use+用法+JSON 契约+护栏+Windows） | R:code:packages/node-host/src/cli.ts | A:SKILL_CARD | S:TS 常量单源不落 .md——dist/loadEntry 形态下运行时读包内文件不可靠
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/test/===
 agent-boot-helpers.ts[TA4T]: F:agent-boot 系测试共享件：settings fixture/假 transport/死端点 LLMClient | R:- | A:- | S:-
@@ -993,4 +1000,7 @@ layout.css[FU4M]: F:布局壳分片（M3/M4）：shell 三区/面板 header/运�
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/bin/===
 tc.mjs[EW5T]: F:tc 命令薄壳：读包版本→loadEntry 装载 src/cli.ts→main()；启动失败（esbuild 缺失/打包异常/包描述不可读）兜底 stderr+exit 2（评审轮 1 [3]） | R:code:packages/node-host/boot.mjs,code:packages/node-host/src/cli.ts | A:- | S:bin 与 boot.mjs 在包根不入单测覆盖率（vitest.config 既定纪律）
+
+===D:/dev/git/z_jordon/TreeChrome/packages/node-host/scripts/===
+build-cli.mjs[XV5T]: F:tc 自包含构建脚本（build:cli）：esbuild 打 src/cli-main-entry→dist/tc.mjs（define 嵌版本+shebang banner）+ 组装 staging 包 dist/tc-package（无依赖，npm i -g / npm pack） | R:code:packages/node-host/src/cli-main-entry.ts | A:- | S:Windows 动态 import esbuild 须 pathToFileURL；shebang 必须有——npm sh shim 靠它路由 node，缺失则 sh 解释 .mjs 崩溃（真机实证）
 
