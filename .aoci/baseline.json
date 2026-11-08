@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-10-13T12:30:11Z",
-  "updated_at": "2026-11-08T01:25:05Z",
+  "updated_at": "2026-11-08T03:33:07Z",
   "files": {
     ".archify/architecture-treechrome-20261018-093945/candidate.json": {
       "role": "index",
@@ -5011,9 +5011,9 @@
     },
     "packages/dom-snapshot/test/paint-order.test.ts": {
       "role": "observe",
-      "sha256": "7ea1ceeee782557c103506dffb3d8d6d12ac99d0c707fdbfff4b1a40e943f34a",
-      "size": 9085,
-      "normalized_sha256": "7ea1ceeee782557c103506dffb3d8d6d12ac99d0c707fdbfff4b1a40e943f34a"
+      "sha256": "2a44fdc1abad55f955b32b4162a0bf33e1ec00480a300302144f09c09a756811",
+      "size": 9211,
+      "normalized_sha256": "2a44fdc1abad55f955b32b4162a0bf33e1ec00480a300302144f09c09a756811"
     },
     "packages/dom-snapshot/test/serializer.test.ts": {
       "role": "observe",
