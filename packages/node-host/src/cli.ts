@@ -1,41 +1,66 @@
-// tc CLI 的逻辑层（issue #25 M1）：参数解析 / 任务文本解析序（stdin 优先，已拍板）/
-// AgentHistoryList → camelCase JSON 投影 / 退出码。IO 一律经 MainDeps 注入（可测），
-// bin/tc.mjs 只做 esbuild 引导薄壳。已拍板决策：AutoAllow 直用（runAgent 缺省）、
-// --json 键形 camelCase、包位 @tw/node-host、stdin > argv（--task-file 显式覆盖）。
+// tc CLI 的逻辑层（issue #25 M1 + #26 M1.5）：参数解析（run/skill 子命令）/ 任务文本
+// 解析序（stdin 优先，已拍板）/ AgentHistoryList → camelCase JSON 投影 / 退出码 /
+// 凭据链（TC_ENV_FILE > ~/.tc/.env > cwd/.env，仅 CLI 面）/ --auto-chrome 自动拉起 /
+// skill 用法卡分发。IO 一律经 MainDeps 注入（可测）；bin/tc.mjs 与 dist 构建入口共用。
 
-import { readFile as fspReadFile } from "node:fs/promises";
+import {
+  mkdir as fspMkdir,
+  readFile as fspReadFile,
+  writeFile as fspWriteFile,
+} from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { discoverWebSocketUrl } from "@tw/cdp-ws";
 import type { AgentHistoryList, AgentSettings } from "@tw/core";
 import { runAgent } from "./agent-boot.js";
-import type { HostSettingsOverrides } from "./settings.js";
+import { type LaunchedChrome, launchAutoChrome } from "./auto-chrome.js";
+import {
+  applyDotEnv,
+  type HostSettingsOverrides,
+  loadHostSettings,
+  resolveEnvChain,
+} from "./settings.js";
+import { SKILL_CARD } from "./skill-card.js";
 
 export const USAGE = `用法：tc run [task] [选项]
+      tc skill install [--dir <path>] [--print]
 
-任务文本解析序：--task-file > stdin（管道）> 位置参数；三者皆无报用法错。
+任务文本解析序（run）：--task-file > stdin（管道）> 位置参数；三者皆无报用法错。
 
-选项：
+run 选项：
   --json            机器输出：stdout 只出终态 JSON（camelCase），过程日志全走 stderr
   --task-file <p>   从文件读任务文本（UTF-8，显式覆盖 stdin/argv）
   --max-steps <n>   覆盖单 run 步数预算（正整数；护栏之一）
   --allow-write <p> 文件写白名单前缀（可重复；缺省不设 = core 默认全放行）
   --allow-read <p>  文件读白名单前缀（可重复；语义同上）
   --allow-upload <p> 上传文件白名单前缀（可重复；语义同上）
+  --auto-chrome     CDP 不通时自动拉起临时 headless Chrome（run 结束回收；显式
+                    CDP_WS_URL 时为 no-op——调用方自管连接）
+  --keep-chrome     保留 --auto-chrome 拉起的实例不回收（调试用）
   -h, --help        显示本帮助
   -v, --version     显示版本
 
+skill 选项：
+  install           安装用法卡（缺省 → ~/.claude/skills/tc/SKILL.md）
+  --dir <path>      自定义安装目录
+  --print           用法卡打到 stdout（供管道进任意 agent 配置，不写文件）
+
 示例：
-  echo "帮我到 example.com 查 …" | tc run --json
+  echo "帮我到 example.com 查 …" | tc run --json --auto-chrome
   tc run "打开 example.com 并把标题告诉我"
+  tc skill install
 
 退出码：0 = done 且成功；1 = 跑完但未成功；2 = 用法/前置失败（参数错、任务文本空、
-缺 key、连不上 Chrome）。
+缺 key、连不上 Chrome、Chrome 拉起失败）。
 
-环境（cwd/.env 同名键亦可）：ZHIPU_API_KEY（必需）、LLM_MODEL / LLM_BASE_URL /
-LLM_MAX_TOKENS / FALLBACK_LLM_* / CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_* /
-AGENT_SKILLS_DIR。Chrome 需以 --remote-debugging-port=9222 运行。详见本包 README。`;
+凭据（run）：环境变量 > TC_ENV_FILE > ~/.tc/.env > cwd/.env（逐键先到先得）。
+ZHIPU_API_KEY（必需）、LLM_MODEL / LLM_BASE_URL / LLM_MAX_TOKENS / FALLBACK_LLM_* /
+CDP_HOST / CDP_PORT / CDP_WS_URL / AGENT_* / AGENT_SKILLS_DIR。详见本包 README。`;
 
 export interface CliArgs {
-  /** 位置参数拼出的任务文本（空 → null） */
+  command: "run" | "skill-install";
+  /** 位置参数拼出的任务文本（仅 run；空 → null） */
   task: string | null;
   json: boolean;
   taskFile: string | null;
@@ -44,13 +69,17 @@ export interface CliArgs {
   allowedWrite: string[] | null;
   allowedRead: string[] | null;
   allowedUpload: string[] | null;
+  autoChrome: boolean;
+  keepChrome: boolean;
+  /** skill install --dir（null = 缺省 ~/.claude/skills/tc） */
+  skillDir: string | null;
+  /** skill install --print：用法卡出 stdout（不写文件） */
+  skillPrint: boolean;
   help: boolean;
   version: boolean;
 }
 
 export type ParseResult = { ok: true; args: CliArgs } | { ok: false; message: string };
-
-const SUBCOMMAND = "run";
 
 /** argv → CliArgs（util.parseArgs strict 封装；help/version 先于子命令校验生效） */
 export function parseCliArgs(argv: string[]): ParseResult {
@@ -65,6 +94,10 @@ export function parseCliArgs(argv: string[]): ParseResult {
         "allow-write": { type: "string", multiple: true },
         "allow-read": { type: "string", multiple: true },
         "allow-upload": { type: "string", multiple: true },
+        "auto-chrome": { type: "boolean", default: false },
+        "keep-chrome": { type: "boolean", default: false },
+        dir: { type: "string" },
+        print: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
       },
@@ -83,7 +116,9 @@ export function parseCliArgs(argv: string[]): ParseResult {
     return kept.length > 0 ? kept : null;
   };
   const rawTaskFile = parsed.values["task-file"];
+  const rawSkillDir = parsed.values["dir"];
   const flags: CliArgs = {
+    command: "run",
     task: null,
     json: parsed.values.json === true,
     taskFile: typeof rawTaskFile === "string" && rawTaskFile !== "" ? rawTaskFile : null,
@@ -91,6 +126,10 @@ export function parseCliArgs(argv: string[]): ParseResult {
     allowedWrite: multi("allow-write"),
     allowedRead: multi("allow-read"),
     allowedUpload: multi("allow-upload"),
+    autoChrome: parsed.values["auto-chrome"] === true,
+    keepChrome: parsed.values["keep-chrome"] === true,
+    skillDir: typeof rawSkillDir === "string" && rawSkillDir !== "" ? rawSkillDir : null,
+    skillPrint: parsed.values.print === true,
     help: parsed.values.help === true,
     version: parsed.values.version === true,
   };
@@ -99,10 +138,17 @@ export function parseCliArgs(argv: string[]): ParseResult {
   }
   const positionals = parsed.positionals as string[];
   if (positionals.length === 0) {
-    return { ok: false, message: `缺少子命令（当前仅支持 "${SUBCOMMAND}"）` };
+    return { ok: false, message: "缺少子命令（支持 run / skill install）" };
   }
-  if (positionals[0] !== SUBCOMMAND) {
-    return { ok: false, message: `未知子命令 "${positionals[0]}"（当前仅支持 "${SUBCOMMAND}"）` };
+  if (positionals[0] === "skill") {
+    if (positionals[1] !== "install" || positionals.length > 2) {
+      return { ok: false, message: 'skill 子命令当前仅支持 "tc skill install"' };
+    }
+    flags.command = "skill-install";
+    return { ok: true, args: flags };
+  }
+  if (positionals[0] !== "run") {
+    return { ok: false, message: `未知子命令 "${positionals[0]}"（支持 run / skill install）` };
   }
   const rawSteps = parsed.values["max-steps"];
   if (rawSteps !== undefined) {
@@ -230,6 +276,19 @@ export interface MainDeps {
   err?: (line: string) => void;
   run?: typeof runAgent;
   version?: string;
+  /** env 对象（缺省 process.env；凭据链与 settings 装载都从这里读） */
+  env?: Record<string, string | undefined>;
+  /** home 目录（缺省 os.homedir；skill install 缺省目标用） */
+  home?: () => string;
+  /** 凭据链应用（缺省 applyDotEnv chain 模式；测试注入捕获） */
+  applyEnv?: (paths: string[]) => void;
+  /** CDP 发现（缺省 cdp-ws discoverWebSocketUrl） */
+  discover?: (host: string, port: number) => Promise<string>;
+  /** --auto-chrome 拉起（缺省 auto-chrome.ts launchAutoChrome） */
+  launch?: typeof launchAutoChrome;
+  /** skill install 写盘（缺省 node:fs/promises） */
+  ensureDir?: (dir: string) => Promise<void>;
+  writeFile?: (path: string, content: string) => Promise<void>;
 }
 
 const defaultStdin = (): { isTTY: boolean; text: () => Promise<string> } => ({
@@ -247,10 +306,11 @@ const defaultStdin = (): { isTTY: boolean; text: () => Promise<string> } => ({
 });
 
 /**
- * CLI 主流程：parse → help/version → 任务文本解析序 → runAgent → 按模式输出。
- * --json 模式下把 runAgent 的 log 注入为 stderr 写入——assembleAgent/attachConsole/
- * LLMClient/权限门汇总全部经该 sink，stdout 只留终态 JSON。run 抛错（缺 key、连不上
- * Chrome 的 Python 同款文案）→ stderr + exit 2。返回退出码（bin 侧置 process.exitCode）。
+ * CLI 主流程：parse → help/version → skill install → 凭据链 → 任务文本解析序 →
+ * （--auto-chrome：确保 CDP 可达）→ runAgent → 按模式输出。
+ * --json 模式下把 runAgent 的 log 注入为 stderr 写入——stdout 只留终态 JSON。
+ * run 抛错（缺 key、连不上 Chrome 的 Python 同款文案）→ stderr + exit 2。
+ * 返回退出码（bin 侧置 process.exitCode）。
  */
 export async function main(deps: MainDeps = {}): Promise<number> {
   const argv = deps.argv ?? process.argv.slice(2);
@@ -260,6 +320,8 @@ export async function main(deps: MainDeps = {}): Promise<number> {
   const err = deps.err ?? ((line) => process.stderr.write(`${line}\n`));
   const run = deps.run ?? runAgent;
   const version = deps.version ?? "unknown";
+  const env = deps.env ?? process.env;
+  const home = deps.home ?? homedir;
 
   const parsed = parseCliArgs(argv);
   if (!parsed.ok) {
@@ -276,6 +338,31 @@ export async function main(deps: MainDeps = {}): Promise<number> {
     out(version);
     return 0;
   }
+
+  if (args.command === "skill-install") {
+    if (args.skillPrint) {
+      out(SKILL_CARD.trimEnd());
+      return 0;
+    }
+    const dir = args.skillDir ?? join(home(), ".claude", "skills", "tc");
+    const target = join(dir, "SKILL.md");
+    const ensureDir = deps.ensureDir ?? ((d) => fspMkdir(d, { recursive: true }));
+    const writeFile = deps.writeFile ?? ((p, c) => fspWriteFile(p, c, "utf8"));
+    try {
+      await ensureDir(dir);
+      await writeFile(target, SKILL_CARD);
+    } catch (e) {
+      err(`[tc] skill 安装失败（${target}）：${e instanceof Error ? e.message : String(e)}`);
+      return 2;
+    }
+    err(`已安装用法卡 → ${target}`);
+    return 0;
+  }
+
+  // 凭据链（issue #26 D1，已拍板仅 CLI 面；runAgent 缺省单文件行为不变）：
+  // TC_ENV_FILE > ~/.tc/.env > cwd/.env，逐键先到先得；OS env 恒最高
+  const applyEnv = deps.applyEnv ?? ((paths: string[]) => applyDotEnv(env, paths, { chain: true }));
+  applyEnv(resolveEnvChain(env));
 
   let taskFileContent: string | null = null;
   if (args.taskFile !== null) {
@@ -311,6 +398,34 @@ export async function main(deps: MainDeps = {}): Promise<number> {
     return 2;
   }
 
+  // --auto-chrome（issue #26 D2）：无显式 CDP 目标时先发现；不通则拉起临时 headless
+  // Chrome 并把解析出的 wsUrl 显式传 runAgent（runAgent 零改动）；显式 CDP_WS_URL
+  // = 调用方自管连接，旗标 no-op。拉起的实例在 finally 按树回收（--keep-chrome 除外）。
+  const discover = deps.discover ?? discoverWebSocketUrl;
+  const launch = deps.launch ?? launchAutoChrome;
+  let wsUrl: string | undefined;
+  let chrome: LaunchedChrome | null = null;
+  const browser = loadHostSettings(env).browser;
+  if (args.autoChrome && browser.wsUrl === null) {
+    try {
+      wsUrl = await discover(browser.cdpHost, browser.cdpPort);
+    } catch {
+      try {
+        chrome = await launch({ port: browser.cdpPort, log: (m) => err(m) });
+      } catch (e) {
+        err(`[tc] ${e instanceof Error ? e.message : String(e)}`);
+        return 2;
+      }
+      try {
+        wsUrl = await discover(browser.cdpHost, browser.cdpPort);
+      } catch (e) {
+        await chrome.stop((m) => err(m));
+        err(`[tc] Chrome 拉起后 CDP 仍不可达：${e instanceof Error ? e.message : String(e)}`);
+        return 2;
+      }
+    }
+  }
+
   // 护栏透传（已拍板：AutoAllow 直用，文件面走既有白名单 settings 键）：CLI 旗标 →
   // overrides.agent（与 examples 的 runAgent overrides 同面）；未设旗标 = core 默认
   const agent: Partial<AgentSettings> = {};
@@ -333,7 +448,7 @@ export async function main(deps: MainDeps = {}): Promise<number> {
   const log = args.json ? (message: string) => err(message) : undefined;
 
   try {
-    const history = await run({ task: resolution.task, console: true, log, overrides });
+    const history = await run({ task: resolution.task, console: true, log, overrides, wsUrl });
     if (args.json) {
       out(JSON.stringify(projectRunJson(history)));
     } else {
@@ -343,5 +458,9 @@ export async function main(deps: MainDeps = {}): Promise<number> {
   } catch (e) {
     err(`[tc] ${e instanceof Error ? e.message : String(e)}`);
     return 2;
+  } finally {
+    if (chrome !== null && !args.keepChrome) {
+      await chrome.stop((m) => err(m));
+    }
   }
 }

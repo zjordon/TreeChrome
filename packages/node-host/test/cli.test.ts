@@ -68,6 +68,7 @@ describe("parseCliArgs", () => {
     expect(r).toEqual({
       ok: true,
       args: {
+        command: "run",
         task: "打开 example.com",
         json: true,
         taskFile: null,
@@ -75,10 +76,29 @@ describe("parseCliArgs", () => {
         allowedWrite: null,
         allowedRead: null,
         allowedUpload: null,
+        autoChrome: false,
+        keepChrome: false,
+        skillDir: null,
+        skillPrint: false,
         help: false,
         version: false,
       },
     });
+  });
+
+  test("auto-chrome / keep-chrome 旗标；skill 子命令解析（install/--dir/--print）", () => {
+    const r = parseCliArgs(["run", "--auto-chrome", "--keep-chrome"]);
+    expect(r.ok && r.args.autoChrome).toBe(true);
+    expect(r.ok && r.args.keepChrome).toBe(true);
+    const s = parseCliArgs(["skill", "install"]);
+    expect(s.ok && s.args.command).toBe("skill-install");
+    const sDir = parseCliArgs(["skill", "install", "--dir", "D:/skills", "--print"]);
+    expect(sDir.ok && sDir.args.skillDir).toBe("D:/skills");
+    expect(sDir.ok && sDir.args.skillPrint).toBe(true);
+    // skill 后非 install / 多余位置参数 → 用法错
+    expect(parseCliArgs(["skill"]).ok).toBe(false);
+    expect(parseCliArgs(["skill", "remove"]).ok).toBe(false);
+    expect(parseCliArgs(["skill", "install", "extra"]).ok).toBe(false);
   });
 
   test("白名单旗标可重复收集；空串条目剔除；未设为 null", () => {
@@ -254,6 +274,8 @@ describe("main（壳契约）", () => {
     out: (l) => ch.out.push(l),
     err: (l) => ch.err.push(l),
     version: "9.9.9",
+    env: {}, // hermetic：凭据链与 settings 装载不从真实 process.env 取
+    applyEnv: () => {},
     ...over,
   });
 
@@ -465,5 +487,193 @@ describe("main（壳契约）", () => {
     expect(code).toBe(2);
     expect(ch.err[0]).toContain("参数错误");
     expect(ch.out).toHaveLength(0);
+  });
+
+  test("凭据链：applyEnv 收到 TC_ENV_FILE > ~/.tc/.env > cwd/.env 序", async () => {
+    const ch = channels();
+    const applied: string[][] = [];
+    await main(
+      depsOf(ch, ["run"], {
+        env: { TC_ENV_FILE: "/x/my.env" },
+        applyEnv: (paths) => applied.push(paths),
+        stdin: pipedStdin("t"),
+        run: runCapturing(historyDone, []),
+      }),
+    );
+    expect(applied).toEqual([
+      ["/x/my.env", expect.stringContaining(".tc"), expect.stringContaining(".env")],
+    ]);
+  });
+
+  test("--auto-chrome：发现失败→拉起→复发现成功→wsUrl 显式传 run；结束按树回收", async () => {
+    const ch = channels();
+    const calls: RunAgentOptions[] = [];
+    let stopped = 0;
+    let discoverCalls = 0;
+    const discover = async () => {
+      discoverCalls += 1;
+      if (discoverCalls === 1) {
+        throw new Error("down");
+      }
+      return "ws://auto-chrome";
+    };
+    const launch = async (opts: { port: number; log?: (m: string) => void }) => {
+      opts.log?.(`[auto-chrome] 已拉起 pid=777（端口 ${opts.port}，临时 profile）`);
+      return {
+        pid: 777,
+        profileDir: "tmp-profile",
+        cdpPort: opts.port,
+        stop: async () => {
+          stopped += 1;
+        },
+      };
+    };
+    const code = await main(
+      depsOf(ch, ["run", "--auto-chrome", "--json"], {
+        stdin: pipedStdin("t"),
+        run: runCapturing(historyDone, calls),
+        discover,
+        launch,
+      }),
+    );
+    expect(code).toBe(0);
+    expect(discoverCalls).toBe(2);
+    expect(calls[0].wsUrl).toBe("ws://auto-chrome");
+    expect(stopped).toBe(1);
+    expect(ch.err.some((l) => l.includes("[auto-chrome]"))).toBe(true);
+  });
+
+  test("--keep-chrome 不回收；显式 CDP_WS_URL 时旗标 no-op（不发现不拉起）", async () => {
+    const ch = channels();
+    let stopped = 0;
+    const calls: RunAgentOptions[] = [];
+    const launch = async (opts: { port: number }) => ({
+      pid: 1,
+      profileDir: "p",
+      cdpPort: opts.port,
+      stop: async () => {
+        stopped += 1;
+      },
+    });
+    await main(
+      depsOf(ch, ["run", "--auto-chrome", "--keep-chrome"], {
+        stdin: pipedStdin("t"),
+        run: runCapturing(historyDone, calls),
+        discover: async () => "ws://x",
+        launch,
+      }),
+    );
+    expect(stopped).toBe(0);
+
+    const ch2 = channels();
+    const calls2: RunAgentOptions[] = [];
+    const discover2 = vi.fn(async () => "ws://x");
+    await main(
+      depsOf(ch2, ["run", "--auto-chrome"], {
+        env: { CDP_WS_URL: "ws://explicit" },
+        stdin: pipedStdin("t"),
+        run: runCapturing(historyDone, calls2),
+        discover: discover2,
+        launch,
+      }),
+    );
+    expect(discover2).not.toHaveBeenCalled();
+    expect(calls2[0].wsUrl).toBeUndefined(); // runAgent 自行解析显式 wsUrl
+  });
+
+  test("--auto-chrome 拉起失败 → exit 2；拉起后仍不可达 → 先回收再 exit 2", async () => {
+    const ch = channels();
+    const run = vi.fn(runCapturing(historyDone, []));
+    const code = await main(
+      depsOf(ch, ["run", "--auto-chrome"], {
+        stdin: pipedStdin("t"),
+        run,
+        discover: async () => {
+          throw new Error("down");
+        },
+        launch: async () => {
+          throw new Error("未找到 Chrome 可执行文件（设 CHROME_PATH 或安装 Chrome 后重试）");
+        },
+      }),
+    );
+    expect(code).toBe(2);
+    expect(run).not.toHaveBeenCalled();
+    expect(ch.err[0]).toContain("CHROME_PATH");
+
+    const ch2 = channels();
+    let stopped = 0;
+    const code2 = await main(
+      depsOf(ch2, ["run", "--auto-chrome"], {
+        stdin: pipedStdin("t"),
+        run: vi.fn(runCapturing(historyDone, [])),
+        discover: async () => {
+          throw new Error("down");
+        },
+        launch: async (opts: { port: number }) => ({
+          pid: 1,
+          profileDir: "p",
+          cdpPort: opts.port,
+          stop: async () => {
+            stopped += 1;
+          },
+        }),
+      }),
+    );
+    expect(code2).toBe(2);
+    expect(stopped).toBe(1);
+    expect(ch2.err.some((l) => l.includes("仍不可达"))).toBe(true);
+  });
+
+  test("skill install：缺省 ~/.claude/skills/tc；--print 走 stdout 不写盘；--dir 自定义；写失败 exit 2", async () => {
+    const writes: { path: string; content: string }[] = [];
+    const mkWrite =
+      () =>
+      async (path: string, content: string): Promise<void> => {
+        writes.push({ path, content });
+      };
+    const norm = (p: string): string => p.replaceAll("\\", "/");
+
+    const ch = channels();
+    const code = await main(
+      depsOf(ch, ["skill", "install"], {
+        home: () => "/home/u",
+        ensureDir: async () => {},
+        writeFile: mkWrite(),
+      }),
+    );
+    expect(code).toBe(0);
+    expect(norm(writes[0].path)).toBe("/home/u/.claude/skills/tc/SKILL.md");
+    expect(writes[0].content).toContain("name: tc");
+    expect(ch.out).toHaveLength(0); // 进度走 stderr，stdout 保纯净
+    expect(ch.err.some((l) => l.includes("已安装"))).toBe(true);
+
+    const chP = channels();
+    await main(depsOf(chP, ["skill", "install", "--print"], { home: () => "/h" }));
+    expect(chP.out).toHaveLength(1);
+    expect(chP.out[0]).toContain("When Not to Use");
+    expect(writes).toHaveLength(1); // --print 不写文件
+
+    const chD = channels();
+    await main(
+      depsOf(chD, ["skill", "install", "--dir", "D:/skills"], {
+        home: () => "/home/u",
+        ensureDir: async () => {},
+        writeFile: mkWrite(),
+      }),
+    );
+    expect(norm(writes[1].path)).toBe("D:/skills/SKILL.md");
+
+    const chF = channels();
+    const codeF = await main(
+      depsOf(chF, ["skill", "install"], {
+        home: () => "/home/u",
+        ensureDir: async () => {
+          throw new Error("EACCES");
+        },
+        writeFile: mkWrite(),
+      }),
+    );
+    expect(codeF).toBe(2);
+    expect(chF.err[0]).toContain("skill 安装失败");
   });
 });

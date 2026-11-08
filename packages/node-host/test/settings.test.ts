@@ -13,6 +13,7 @@ import {
   type HostSettings,
   loadHostSettings,
   mergeHostSettings,
+  resolveEnvChain,
   resolveWsUrl,
 } from "../src/settings.js";
 
@@ -346,6 +347,40 @@ describe("applyDotEnv", () => {
     const s = loadHostSettings(env);
     expect(s.llm.apiKey).toBe("from-dotenv");
     expect(s.agent).toEqual({ maxSteps: 9 });
+  });
+
+  test("chain 模式（issue #26 D1）：全部存在文件按序应用、每键先到先得、低优补缺", () => {
+    const high = join(dir, "high.env");
+    const low = join(dir, "low.env");
+    writeFileSync(high, "K1=high1\nK2=high2\n", "utf8");
+    writeFileSync(low, "K2=low2\nK3=low3\n", "utf8");
+    const env: Record<string, string | undefined> = { OS: "os-wins" };
+    applyDotEnv(env, [high, low], { chain: true });
+    expect(env.K1).toBe("high1");
+    expect(env.K2).toBe("high2"); // 高优先生效，低优先不覆盖
+    expect(env.K3).toBe("low3"); // 高优缺的键由低优补位
+    expect(env.OS).toBe("os-wins"); // 既有键（OS env）恒不被覆盖
+    // 缺省（chain=false）回归：首个存在文件即停
+    const env2: Record<string, string | undefined> = {};
+    applyDotEnv(env2, [high, low]);
+    expect(env2.K2).toBe("high2");
+    expect(env2.K3).toBeUndefined();
+  });
+
+  test("resolveEnvChain：TC_ENV_FILE 显式最高 > ~/.tc/.env > cwd/.env", () => {
+    const home = "/home/u";
+    const cwd = "/w/cwd";
+    expect(resolveEnvChain({}, home, cwd)).toEqual([join(home, ".tc", ".env"), join(cwd, ".env")]);
+    expect(resolveEnvChain({ TC_ENV_FILE: "/x/my.env" }, home, cwd)).toEqual([
+      "/x/my.env",
+      join(home, ".tc", ".env"),
+      join(cwd, ".env"),
+    ]);
+    // 空串视同未设置（shell VAR= 形态）
+    expect(resolveEnvChain({ TC_ENV_FILE: "" }, home, cwd)).toEqual([
+      join(home, ".tc", ".env"),
+      join(cwd, ".env"),
+    ]);
   });
 });
 

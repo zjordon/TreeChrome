@@ -1,136 +1,83 @@
-# SCRATCHPAD — issue #25 M1：任务级 one-shot CLI（tc run）
+# SCRATCHPAD — issue #26 M1.5：tc 供给面产品化（全局命令 + --auto-chrome + skill 分发）
 
-> 状态：**已实施并全量验证；评审循环 2 轮收敛（轮 1 三条全采纳、轮 2 零意见）。待 `/finish-issue` 收官。**
-> 基准：issue #25（可行性 + browser-use CLI 3.0 调研 + 决策点拍板评论）；`docs/architecture.md` §2 cli 宿主规划；AGENTS 新功能工作流。
-> 分支：`feat/issue-25-cli`（自 main）。计划已过人工审核（2026-11-07，bin 名 `tc`/D4 泛化/JSON 字段集一并通过）。
+> 状态：**已实施并全量验证（全仓 1869 tests 绿 + gate 0 + 四重真机 smoke 全过）；待 `/review-loop` 评审收敛。** 四决策点已拍板（a 全局直装+pack 顺带 / env 链仅 CLI / ~/.claude/skills/tc / --keep-chrome）。
+> 基准：issue #26 正文；#25 M1 已交付契约（stdin 优先序 / --json camelCase / 退出码 0-1-2）**全部不动**。
+> 分支：`feat/issue-26-cli-m15`（自 main `1ce3d2b`）。
 
 ## 目标
 
-`@tw/node-host` 提供 `tc` bin：`tc run` 从 **stdin（优先）**/argv/`--task-file` 读任务文本 → `runAgent`（AutoAllow）→ 人类可读或 `--json` 机器输出 → 退出码 0/1/2。调用方（其它 agent）零浏览器知识即可驱动本仓 agent。
-
-## 已拍板决策（issue #25 评论）
-
-1. **权限**：AutoAllow 直用；护栏 = `--max-steps` + 既有 allowedWritePaths / allowedUploadPaths（settings/env 面，不新增 CLI 专有开关）
-2. **`--json` 键形**：camelCase（评测 snake_case 轨迹转换层不混入 CLI 面）
-3. **包位**：`@tw/node-host` 加 bin（不建 apps/cli 薄壳）
-4. **任务文本**：stdin 优先（stdin > argv 位置参数；`--task-file` 为显式覆盖通道）
+把 #25 的仓内工具形态升级为 browser-use 级供给面：任意目录 `tc run --json --auto-chrome` 零前置可用 + agent 侧零学习（skill 分发）。
 
 ## 设计
 
-### D1 命令面（bin 名 `tc`）
+### D1 自包含单文件构建 + 全局命令（issue ①）
 
-- `tc run [task] [--json] [--task-file <path>] [--max-steps <n>]`；`tc --help` / `tc --version`（读包 version）
-- M1 只此一个子命令（`tc` 裸调用 → help）；M2 会话式再扩子命令面
-- 参数解析 Node 内置 `util.parseArgs`，零新依赖
+- **构建**：`packages/node-host/scripts/build-cli.mjs`（esbuild API，复用 devDep）：`src/cli-main-entry.ts`（新，`main()` 全装配 + 版本经 esbuild `define __TC_VERSION__` 构建期嵌入 + 顶层 catch=评审轮 1 [3] 同款兜底）→ `dist/tc.mjs`（bundle/format esm/platform node，自包含 core/cdp-ws；dist 在 .gitignore，按需构建不入库）
+- **staging 包**：构建同时产出 `dist/tc-package/`（package.json `{name:"tc-cli", version, bin:{tc:"tc.mjs"}}` + tc.mjs + README 拷贝）——**无 dependencies**，绕开 workspace:* 不可独立安装问题；全局安装 `npm i -g packages/node-host/dist/tc-package`（或 `npm pack` 出 tarball 分发）
+- **script 面**：package.json 增 `"build:cli": "node scripts/build-cli.mjs"`
+- **凭据链**（修「.env 按 CWD」跨项目坑）：`applyDotEnv` 增链式选项（多个文件**全部**应用、no-override=先到先得，不再「首个存在即停」——现有单文件缺省行为不变保 examples 兼容）；CLI main 按 **TC_ENV_FILE > ~/.tc/.env > cwd/.env** 序传入（OS env 恒最高——applyDotEnv 不覆盖既有键，语义天然成立）。runAgent 缺省行为**不改**（仅 CLI 面启用链）
+- 仓内 dev 形态（`node bin/tc.mjs` + loadEntry）保留不变
 
-### D2 任务文本解析序（`resolveTaskText` 纯函数）
+### D2 Chrome 自动拉起 `--auto-chrome`（issue ②）
 
-1. `--task-file` 给定 → 读文件（UTF-8；缺失/读失败 → exit 2）
-2. stdin 为 pipe（`!process.stdin.isTTY`）且内容非空白 → 用 stdin
-3. argv 位置参数非空 → 用它
-4. 皆无 → stderr 用法示例 + exit 2（browser-use 空 stdin 报错带示例同款）
+- 新模块 `src/auto-chrome.ts`（IO 全注入）：二进制发现（`CHROME_PATH` env > Win/macOS/Linux 标准路径表）、临时 profile 目录（mkdtemp）、spawn（POSIX detached 进程组）、`waitForCdp`（轮询 `/json/version`，注入 sleep）、`killTree`（win: `taskkill /PID x /T /F`；posix: 进程组 kill——**绝不按映像名杀**，只按我们 spawn 的 pid）
+- **main 接线**：`--auto-chrome` 且 settings.browser.wsUrl === null（无显式 CDP 目标）→ 先发现；失败则 spawn + 等待就绪 → 解析出 wsUrl **显式传给 runAgent**（runAgent 零改动）→ finally 按 profile 特征收尾（`--keep-chrome` 保留调试；清理失败仅告警不失败退出）
+- 显式 `CDP_WS_URL` 时 `--auto-chrome` 为 no-op（调用方自管连接，issue 已定）
 
-### D3 输出契约
+### D3 skill 用法分发（issue ③）
 
-- **人类模式（缺省）**：过程日志照常 stdout（attachConsole 面）+ 终态行（`Task completed: <finalResult>` / 未完成与失败行，对齐 examples 文案）
-- **`--json`**：**stdout 只出一个终态 JSON**；过程日志全部走 stderr——`runAgent({log})` 注入 stderr writer 即可（assembleAgent 的 `log` 与 attachConsole 的 `print` 同走该 sink，注入面已核实，零 core 改动）
-- JSON shape（camelCase，`projectRunJson(history)` 纯函数投影）：
+- `packages/node-host/skills/tc/SKILL.md`（手写中文卡，与 README 同源同步义务登记在两文件头）：frontmatter（name/description）+ **When Not to Use**（curl/fetch 能拿的别开浏览器）+ 前置（9222 或 --auto-chrome；凭据链）+ 三调用形态 + JSON 契约与退出码表 + 护栏旗标 + Windows 编码
+- `tc skill install [--dir <path>] [--print]`：缺省拷到 `~/.claude/skills/tc/SKILL.md`（Claude Code 个人 skill 目录）；`--dir` 自定义；`--print` 出 stdout 供管道进任意 agent 配置
+- parseCliArgs 扩第二子命令 `skill`（M1 的 `run` 单子命令结构顺势扩展）
 
-```json
-{
-  "isDone": true,
-  "isSuccessful": true,
-  "finalResult": "…",
-  "stopReason": null,
-  "nSteps": 7,
-  "finalizeDegradedSteps": 0,
-  "attachments": ["…"],
-  "errors": [],
-  "lastUrl": "https://…"
-}
-```
+### D4 测试
 
-- **退出码**：`0` = isDone && isSuccessful；`1` = run 跑完但未成功（含 not-done / stopReason 非空）；`2` = 用法/前置失败（参数错、任务文本空、缺 key、连不上 Chrome——沿用 runAgent 的 Python 同款文案）
-
-### D4 bin 引导（复用 boot.mjs 机制）
-
-- `boot.mjs` 泛化：抽出 `loadEntry(entryRelPath)`（`loadKit()` 收敛为其调用，签名与行为不变）；新增 `src/cli-entry.ts`（组装入口 `main()`）
-- `bin/tc.mjs`：薄壳 → `loadEntry("./src/cli-entry.ts")` → `main()`
-- 每次调用 esbuild 现打包含启动开销（~200ms 量级），M1 接受；打包缓存不做
-- `packages/node-host/package.json` 增 `"bin": {"tc": "./bin/tc.mjs"}`（private 仓不发布；workspace 内 `pnpm --filter @tw/node-host exec tc …` 直用）
-
-### D5 逻辑层拆分（`src/cli.ts`，纯函数主战场）
-
-- `parseCliArgs(argv)`：parseArgs 封装 + 校验（未知项 / `--max-steps` 非正整数 → 用法错 exit 2）
-- `resolveTaskText({taskFile, stdinText, argvTask})`：D2 解析序（IO 外置注入可测）
-- `projectRunJson(history)`：AgentHistoryList → D3 JSON（attachments 取 done 步 `r.attachments` 并集；errors 收集各步非空 `error`；lastUrl 取末步 `stateSummary.url`——键名以 finalize.ts 实际产出为准，实施时核对）
-- `exitCodeOf(history)`：D3 退出码
-- `main()`（cli-entry.ts）：resolveTaskText → `runAgent({task, log, overrides: {agent: {maxSteps}}})` → 按模式输出 → 置 `process.exitCode`
-
-### D6 测试
-
-- `cli.ts` 纯函数单测：parse 正常/边界（中文任务文本、非法 `--max-steps`、未知 flag）、resolve 四分支、project 三态（done 成功 / done 失败 / not-done）、exitCode
-- 集成：fake transport + scripted LLM（node-host 既有测试模式）跑 `--json` 全链——断言 stdout 恰一个可解析 JSON、过程行全落 stderr、退出码正确
-- 真机 smoke（手动，不入 CI）：`echo "任务" | pnpm --filter @tw/node-host exec tc run --json`（Chrome 9222 + ZHIPU_API_KEY）
-
-### D7 文档
-
-- 新建 `packages/node-host/README.md`：面向**调用方 agent** 的使用说明（对应 browser-use SKILL.md 角色）——前置（Chrome/9222、env 面）、stdin heredoc 示例、`--json` 契约与退出码表、Windows 编码注意（chcp 65001）
+- settings：applyDotEnv 链式（多文件全应用/先到先得/单文件缺省回归）
+- cli/auto-chrome：二进制发现表、main 接线（发现失败→spawn→wsUrl 显式传递→finally 清理 / keepChrome 跳过 / 显式 wsUrl no-op / spawn 失败 exit 2）——discover/spawn/kill 全注入 fake
+- skill install：注入 writeFile，断言目标路径/内容/`--print` 分支
+- **真机 smoke（手动不入 CI）**：无 Chrome 状态 `node bin/tc.mjs run --json --auto-chrome --max-steps 5` → 自动拉起→单行 JSON→零残留（进程+临时目录）；`npm i -g dist/tc-package` 后任意目录 `tc --version`
 
 ## 实施步骤
 
-1. `boot.mjs` 泛化 `loadEntry`；`src/cli.ts` 纯函数 + 单测
-2. `src/cli-entry.ts` + `bin/tc.mjs` + package.json `bin` 字段
-3. `--json` 全链集成测试；`packages/node-host/README.md`
-4. `pnpm typecheck` / `pnpm test` / `pnpm lint` 全绿；`node scripts/gate.mjs pre-commit`；真机 smoke
-5. `/review-loop` 评审收敛 → `/finish-issue` 收官
+1. settings env 链 + cli 旗标/子命令扩展 + 单测
+2. auto-chrome 模块 + main 接线 + 单测
+3. build-cli 构建脚本 + staging 包 + SKILL.md + `skill install` + 单测
+4. `pnpm typecheck/test/lint` + gate + 真机 smoke（含全局安装）
+5. `/review-loop` → `/finish-issue`
 
-## 验收
+## 验收（对齐 issue #26）
 
-- `echo "…" | tc run --json`：stdout 恰一个 camelCase JSON，过程日志全 stderr，退出码语义正确
-- 无 stdin 无参数：用法提示 + exit 2；缺 ZHIPU_API_KEY / Chrome 未起：Python 同款文案 + exit 2
-- 人类模式终态可读；`--max-steps` 透传生效（overrides 面已有机制）
-- 全仓 typecheck/test 绿；node-host 覆盖率 ≥85%；gate 全绿
+- 任意目录（非仓库 CWD、无本地 .env）：`echo 任务 | tc run --json --auto-chrome --max-steps 10` 零前置跑通，stdout 单 JSON，run 后无残留 Chrome 进程/临时目录
+- `npm i -g` 后 `tc --version` 显示构建嵌入版本；凭据解析 TC_ENV_FILE > ~/.tc/.env > cwd/.env
+- skill 卡装入一个真实 agent 目录验证（`tc skill install` → `~/.claude/skills/tc/`）
 
-## 不做（M1 边界）
+## 不做
 
-daemon/会话式（M2 另期）、MCP server、Chrome 自动拉起、npm 发布、bin 打包缓存、finalResult 额外脱敏（与 examples 同口径——sensitiveData 占位符机制在上游已处理）
+daemon/会话保持（#27）、npm 公网发布、权限模型变更、runAgent 缺省 env 行为变更、SKILL.md 自动生成（手写+同步义务登记）
 
 ## 待人工审核
 
-1. bin 名 **`tc`** 是否合意（备选 `tw` / `treewalker`）
-2. D4 boot.mjs 泛化方案（vs bin 内复制一份引导——前者单源，倾向采纳）
-3. `projectRunJson` 字段集是否够用（调用方视角：isDone/isSuccessful/finalResult/stopReason/nSteps/attachments/errors/lastUrl）
+1. **全局安装载体**：staging 目录 `npm i -g <dir>`（建议）vs 只 `npm pack` tarball vs 仅文档化 PATH
+2. **env 链范围**：仅 CLI 启用（建议，examples/runAgent 行为零变更）vs runAgent 缺省也升级
+3. **skill install 缺省目标** `~/.claude/skills/tc/`（Claude Code）+ `--dir/--print` 出路，是否合意
+4. `--keep-chrome` 命名与语义（保留拉起的 Chrome 不清理，调试用）
 
-## 实施记录（2026-11-07）
+## 实施记录（2026-11-08）
 
-**落地文件**
+**落地文件**：`src/auto-chrome.ts`（新，IO 全注入）/ `src/skill-card.ts`（新，用法卡 TS 常量单源）/ `src/cli-main-entry.ts`（新，dist 构建入口）/ `scripts/build-cli.mjs`（新）/ settings.ts（applyDotEnv chain 选项 + resolveEnvChain）/ cli.ts（run|skill 双子命令 + 凭据链 + auto-chrome 接线 + wsUrl 显式透传）/ index.ts / package.json（build:cli）/ vitest.config.ts（cli-main-entry 出覆盖率）/ 测试 134（+17）/ README 重写供给面章节。
 
-- `packages/node-host/boot.mjs`：泛化出 `loadEntry(entryRel)`（esbuild stdin re-export 形态）；`loadKit()` 收敛为其预置入口调用，examples 消费面零改动
-- `packages/node-host/src/cli.ts`（新）：纯逻辑层——`parseCliArgs`（util.parseArgs strict 封装，help/version 先于子命令校验）/ `resolveTaskText`（stdin 优先序，三通道 trim）/ `projectRunJson`（camelCase 投影）/ `exitCodeOf` / `renderHumanResult` / `main(deps)`（IO 全注入：argv/stdin/readFile/out/err/run/version）
-- `packages/node-host/bin/tc.mjs`（新）：薄壳——版本号运行时直读包 package.json（bin 不经打包器），`loadEntry("./src/cli.ts")` → `main()` → `process.exitCode`
-- `packages/node-host/package.json`：`bin: {"tc": "./bin/tc.mjs"}`
-- `packages/node-host/src/index.ts`：cli 面导出（main/纯函数/USAGE）
-- `packages/node-host/test/cli.test.ts`（新）：22 条——纯函数四组 + main 壳契约（--json stdout 恰一 JSON/过程日志走 stderr/stdin 优先/task-file 覆盖/退出码 0-1-2/护栏旗标透传 overrides）
-- `packages/node-host/README.md`（新）：面向调用方 agent 的使用说明（前置/stdin 示例/JSON 契约/退出码表/护栏/Windows 编码）
+**实施期三处裁定/修正**
 
-**对计划的两处实施期裁定**
-
-1. **白名单旗标扩展（D1 面扩大）**：计划假设文件面白名单走「既有 settings/env 面」——实施发现 `allowedWritePaths/allowedReadPaths/allowedUploadPaths` **无 env 键**（env 面只有 AGENT_MAX_STEPS 等），且 core 缺省 `null = 全放行`（`whitelistAllows(null)=true`）。CLI 调用方若无通道设白名单，AutoAllow 直用即文件面无限制，违背 issue 风险条款（"必须成为 CLI 级开关"）。落地为三个可重复旗标 `--allow-write/--allow-read/--allow-upload` → `overrides.agent.*`（暴露既有 settings 键，非新增 capability 开关；缺省不设 = core 默认，README 明示建议显式收紧）
-2. **cli-entry.ts 取消（D4 简化）**：`loadEntry` 直连 `src/cli.ts` 即可（cli.ts 自含 main 与依赖闭包），无需中间入口文件
+1. **SKILL 卡改 TS 常量单源**（`src/skill-card.ts`）：计划原写 `skills/tc/SKILL.md` 文件——但 dist 场景运行时读包内文件在 loadEntry 临时打包形态下会断（import.meta.url 指向 temp 目录）；TS 常量随 bundle 走、单源无同步义务
+2. **真机实证一（Windows import 坑）**：build-cli 动态 import esbuild 绝对路径须 `pathToFileURL`（与 boot.mjs 同款，初版漏）
+3. **真机实证二（npm shim 坑）**：dist 缺 shebang 时 npm 的 sh shim 落回 sh 解释 .mjs（`var: command not found`）——esbuild `banner` 注入 `#!/usr/bin/env node` 修复
+4. **真机实证三（句柄竞态）**：`taskkill /F` 后立即 rm 撞文件锁留残留目录——stop() 补「kill 后 300ms 短候 + rm 三次重试（500ms 步进）」，穷尽才 warn（可手删）
 
 **验证**
 
-- `pnpm --filter @tw/node-host typecheck` 绿；node-host 116 tests 全绿（cli 22），覆盖率 stmts 96.17%/branch 88.76%（阈值 85%）
-- 全仓 `pnpm test`：7 包 1851 tests 全绿；`pnpm lint` 仅 main 既有 warning（sidepanel-app.tsx 未用导入，非本次面）
-- bin 离线冒烟：`--help`/`--version`(0.2.0)/空任务→exit 2、Chrome 未起→Python 同款文案 + exit 2 且 `--json` 下 stdout 零污染
-- **真机 smoke**：临时 profile headless Chrome(9222) + .env 真实 ZHIPU_API_KEY——中文任务经 stdin → `--json` stdout 恰一行（`isDone:true/isSuccessful:true/finalResult:"Example Domain"/nSteps:1/lastUrl 正确`），16 行过程日志全落 stderr，exit 0；smoke 实例与临时目录已按 profile 特征精确清理
+- 全仓 7 包 1869 tests 绿（node-host 117→134）；覆盖率 stmts 95.9%/branch 85.8%；gate 退出码 0
+- 真机 smoke 四连：① dist 二进制跨 CWD `--auto-chrome`（Chrome 冷启动→exit 0→**零残留**）② 全局 `npm i -g` 后任意目录 `tc --version`/`tc --help` ③ `tc skill install --dir`（frontmatter 正确）④ **验收句**：任意目录 `echo 任务 | tc run --json --auto-chrome` → 单行 JSON + exit 0 + 零残留（进程/临时目录/端口全清）
 
 ## 评审轮登记
 
-- **轮 1**（2026-11-07）：3 条意见（自评 high/medium/low；triage 定级 **P1×1 + P2×2 + P3×0**）**全采纳**，25m07s：
-  1. [P1] `--task-file` 就绪时仍无条件 `await stdin.text()`——coding agent 以缺省 pipe stdio spawn（stdin 永不关闭）永久挂起。修复：task-file 通道就绪即跳过 stdin 读取（「stdin 优先」只在 stdin 与 argv 间裁决）
-  2. [P2] stdin 读取在 try 外——`error` 事件未处理拒绝崩成 exit 1，违背「前置失败=2」契约。修复：try/catch 收口 stderr + exit 2
-  3. [P2] bin/tc.mjs 顶层无兜底——esbuild 缺失等启动失败崩成 exit 1。修复：顶层 catch → stderr + exit 2（bin 在包根不入单测覆盖，代码检视级修复 + 契约同构于 [2] 的已测路径）
-  - 测试 +1（含挂起防护双分支 + EPIPE 收口）；117 全绿；双向验证过（旧实现下新测试必红）；gate 退出码 0（一次瞬态 ec=2 判定为背靠背 vitest 全量跑的覆盖率目录锁竞争，两次复跑均绿）
-- **轮 2**（2026-11-07）：**零意见、状态 complete——循环收敛出口**（增量 diff = 修复提交 033bcc7，3m54s）。插曲：首发误把增量基线写成 `lastCommit`（= 分支 tip）得 `skipped` 空档；修正为「上一轮评审覆盖到的 tip」（f6a1906）重发。累计 stats：2 轮 / 3 意见 / 采纳 3 / 驳回 0 / stale 0。
+（/review-loop 待跑）

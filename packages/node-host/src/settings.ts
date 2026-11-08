@@ -19,6 +19,8 @@
 //（config.py:501 的 env 名——env 缺省不传 = core 默认 false 生效，显式设置按场景
 // opt-in）。扩展点（随对应 example 移植进入）：
 // AGENT_JUDGE_MODEL / AGENT_LLM_SCREENSHOT_SIZE / AGENT_EXTRACT_* / SENSITIVE_DATA 等。
+// issue #26 追加（仅 tc CLI 面消费，不入 loadHostSettings）：TC_ENV_FILE（凭据链
+// 显式覆盖——链序 TC_ENV_FILE > ~/.tc/.env > cwd/.env，见 resolveEnvChain）。
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -293,6 +295,15 @@ export function mergeHostSettings(
   };
 }
 
+export interface ApplyDotEnvOptions {
+  /**
+   * 链式（issue #26 D1，CLI 凭据链用）：**全部**存在的文件按序应用（每键先到先得），
+   * 不再「首个存在的文件即停」。缺省 false = 现行为（单文件，examples/runAgent 兼容）。
+   * 调用方按优先级从高到低传 paths；OS env 恒最高（本函数不覆盖既有键）。
+   */
+  chain?: boolean;
+}
+
 /**
  * 加载 .env 到 env 对象（override=false：已存在的键不覆盖——Python load_dotenv 同款）。
  * 缺省只查 `cwd/.env`（偏离：Python 查模块根 + cwd 两处——库包内「项目根」不可判定，
@@ -302,6 +313,7 @@ export function mergeHostSettings(
 export function applyDotEnv(
   env: Record<string, string | undefined> = process.env,
   paths: string[] = [join(process.cwd(), ".env")],
+  options: ApplyDotEnvOptions = {},
 ): void {
   for (const p of paths) {
     if (!existsSync(p)) {
@@ -334,8 +346,28 @@ export function applyDotEnv(
         env[key] = value;
       }
     }
-    return; // 首个存在的文件生效（Python 同款：找到即停）
+    if (!options.chain) {
+      return; // 首个存在的文件生效（Python 同款：找到即停）
+    }
   }
+}
+
+/**
+ * CLI 凭据链（issue #26 D1，已拍板：仅 CLI 面启用，runAgent 缺省不变）：
+ * `TC_ENV_FILE`（显式）> `~/.tc/.env` > `cwd/.env`，按优先级从高到低。
+ * 配合 applyDotEnv 的 chain 模式逐键先到先得；OS 环境变量恒最高。
+ */
+export function resolveEnvChain(
+  env: Record<string, string | undefined> = process.env,
+  home: string = homedir(),
+  cwd: string = process.cwd(),
+): string[] {
+  const explicit = env.TC_ENV_FILE || undefined;
+  return [
+    ...(explicit !== undefined ? [explicit] : []),
+    join(home, ".tc", ".env"),
+    join(cwd, ".env"),
+  ];
 }
 
 export interface ReadyCheck {

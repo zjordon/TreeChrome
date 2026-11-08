@@ -14,6 +14,13 @@ export {
   type TransportFactory,
 } from "./agent-boot.js";
 export {
+  type AutoChromeDeps,
+  chromePathCandidates,
+  type LaunchedChrome,
+  launchAutoChrome,
+  resolveChromeBinary,
+} from "./auto-chrome.js";
+export {
   type CliArgs,
   exitCodeOf,
   type MainDeps,
@@ -40,6 +47,7 @@ export {
 } from "./distill-run.js";
 export { NodeFs } from "./node-fs.js";
 export {
+  type ApplyDotEnvOptions,
   applyDotEnv,
   checkReady,
   DEFAULT_LLM_BASE_URL,
@@ -51,6 +59,8 @@ export {
   mergeHostSettings,
   type ReadyCheck,
   type ResolveWsUrlDeps,
+  resolveEnvChain,
   resolveWsUrl,
 } from "./settings.js";
+export { SKILL_CARD } from "./skill-card.js";
 export { FsSkillSource, type FsTaskCardMeta } from "./skill-source.js";
