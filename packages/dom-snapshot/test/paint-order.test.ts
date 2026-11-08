@@ -32,7 +32,8 @@ describe("RectUnionPure（Python 参考值锚定）", () => {
     expect(v.contains(new Rect(6, 6, 9, 9))).toBe(false);
   });
 
-  it("MAX_RECTS=5000 安全上限：超限后 add 保守拒绝", () => {
+  // 压力用例：coverage 插桩下 5100 次 add 可超 vitest 缺省 5s，显式放宽防门禁抖动
+  it("MAX_RECTS=5000 安全上限：超限后 add 保守拒绝", { timeout: 30000 }, () => {
     const w = new RectUnionPure();
     let added = 0;
     for (let i = 0; i < 5100; i++) {
