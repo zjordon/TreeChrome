@@ -84,6 +84,13 @@ const defaultSpawnChrome = (binary: string, args: string[]): { pid: number } => 
     detached: true, // POSIX 进程组（负 pid 组杀）；Windows 无组概念但不碍 taskkill /T
     stdio: "ignore",
   });
+  // spawn 失败（路径是目录/EACCES/检查到拉起间 TOCTOU）已由 pid=-1 同步上抛收口；
+  // 吞掉异步 'error' 事件——无监听的 EventEmitter 'error' 会 throw → 整进程崩溃
+  //（评审轮 1 [1]）
+  child.on("error", () => {});
+  // 父进程不等长命子进程：--keep-chrome 下终态已打印、exitCode 已置，但事件循环
+  // 仍被 child 句柄占住 → tc 挂起不退出（两个入口均只置 process.exitCode；评审轮 1 [2]）
+  child.unref();
   return { pid: child.pid ?? -1 };
 };
 
@@ -123,6 +130,30 @@ export async function launchAutoChrome(options: {
     ((url: string) => fetch(url, { signal: AbortSignal.timeout(2000) }).then((r) => r.json()));
 
   const profileDir = mkdtemp(join(tmpdir(), "tc-auto-chrome-"));
+  const killTree = deps.killTree ?? defaultKillTree;
+  const rm = deps.rm ?? ((dir: string) => rmSync(dir, { recursive: true, force: true }));
+  // Windows：taskkill /F 后句柄异步释放，立即 rm 常撞锁（真机实证）——短候 + 三次
+  // 重试，穷尽才提示（可手删）；**清理失败绝不顶替/掩盖原始错误**（评审轮 1 [3][5]）
+  const rmBestEffort = async (dir: string, warn: (message: string) => void): Promise<void> => {
+    await sleep(300);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        rm(dir);
+        return;
+      } catch (e) {
+        if (attempt >= 2) {
+          warn(
+            `[auto-chrome] 临时 profile 清理失败（${dir}，可手删）：${
+              e instanceof Error ? e.message : String(e)
+            }`,
+          );
+          return;
+        }
+        await sleep(500);
+      }
+    }
+  };
+
   const child = spawnChrome(binary, [
     "--headless=new",
     `--remote-debugging-port=${options.port}`,
@@ -132,12 +163,12 @@ export async function launchAutoChrome(options: {
     "about:blank",
   ]);
   if (child.pid <= 0) {
+    // 拉起失败也回收 profile（mkdtemp 已建目录），不留残留；尽力清理不掩盖原始错误
+    await rmBestEffort(profileDir, log);
     throw new Error(`Chrome 拉起失败（pid=${child.pid}）`);
   }
   log(`[auto-chrome] 已拉起 pid=${child.pid}（端口 ${options.port}，临时 profile）`);
 
-  const killTree = deps.killTree ?? defaultKillTree;
-  const rm = deps.rm ?? ((dir: string) => rmSync(dir, { recursive: true, force: true }));
   const url = `http://127.0.0.1:${options.port}/json/version`;
   const deadline = Date.now() + READY_TIMEOUT_MS;
   for (;;) {
@@ -147,7 +178,7 @@ export async function launchAutoChrome(options: {
     } catch {
       if (Date.now() >= deadline) {
         await killTree(child.pid).catch(() => {});
-        rm(profileDir);
+        await rmBestEffort(profileDir, log);
         throw new Error(`Chrome CDP 就绪超时（${READY_TIMEOUT_MS / 1000}s，端口 ${options.port}）`);
       }
       await sleep(PROBE_INTERVAL_MS);
@@ -172,25 +203,7 @@ export async function launchAutoChrome(options: {
           `[auto-chrome] 进程回收失败（pid=${child.pid}）：${e instanceof Error ? e.message : String(e)}`,
         );
       }
-      // Windows：taskkill /F 后文件句柄异步释放，立即 rm 常撞锁（真机实证）——
-      // 短候后小步重试；重试穷尽才 warn（残留目录可手删，不影响 run 结果）
-      await sleep(300);
-      for (let attempt = 0; ; attempt += 1) {
-        try {
-          rm(profileDir);
-          return;
-        } catch (e) {
-          if (attempt >= 2) {
-            warn(
-              `[auto-chrome] 临时 profile 清理失败（${profileDir}，可手删）：${
-                e instanceof Error ? e.message : String(e)
-              }`,
-            );
-            return;
-          }
-          await sleep(500);
-        }
-      }
+      await rmBestEffort(profileDir, warn);
     },
   };
 }

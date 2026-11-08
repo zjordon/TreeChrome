@@ -80,4 +80,10 @@ daemon/会话保持（#27）、npm 公网发布、权限模型变更、runAgent 
 
 ## 评审轮登记
 
-（/review-loop 待跑）
+- **轮 1**（2026-11-08）：5 条意见（自评 high/medium×3/low；triage **P1×1 + P2×3 + P3×1**）**全采纳**，10m13s：
+  1. [P1] spawn 失败（路径是目录/EACCES/TOCTOU）时无监听的异步 `error` 事件 → 整进程崩 exit 1 破坏契约。修复：`child.on("error", () => {})` 吞异步（pid=-1 已同步收口）
+  2. [P2] detached 未 `unref()` → `--keep-chrome` 下终态已打印但事件循环被 child 句柄占住、tc 永不退出。修复：spawn 后 `unref()`；**真机验证过**（--keep-chrome exit 0 自行退出）
+  3. [P2] 就绪超时路径裸 `rm` 撞锁会顶替「就绪超时」原始错误。修复：抽 `rmBestEffort`（短候+三重试+吞清理失败）统一三处清理点
+  4. [P2] 测试 `AppData\\Local` 断言依赖宿主平台 join 分隔符（非 Win CI 必红）。修复：断言前归一
+  5. [P3 顺手修] pid<=0 拉起失败路径泄漏 mkdtemp 目录。修复：抛错前 `rmBestEffort`；双向验证过（还原旧实现新测试必红）
+  - 测试 +2（超时 rm 恒败不顶替 / pid<=0 回收断言）；134 全绿；gate 0；dist 已重建含修复

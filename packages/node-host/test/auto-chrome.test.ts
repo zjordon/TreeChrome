@@ -14,13 +14,13 @@ describe("chromePathCandidates / resolveChromeBinary", () => {
     const win = chromePathCandidates("win32", { CHROME_PATH: "D:/chrome.exe" }, "C:/Users/u");
     expect(win[0]).toBe("D:/chrome.exe");
     expect(win[1]).toContain("Google\\Chrome");
-    // LOCALAPPDATA 注入时进候选
+    // LOCALAPPDATA 注入时进候选（join 产物分隔符随宿主平台——断言前归一，评审轮 1 [4]）
     const winLocal = chromePathCandidates(
       "win32",
       { LOCALAPPDATA: "C:/Users/u/AppData/Local" },
       "C:/Users/u",
     );
-    expect(winLocal[0]).toContain("AppData\\Local");
+    expect(winLocal[0].replaceAll("\\", "/")).toContain("AppData/Local");
     const mac = chromePathCandidates("darwin", {}, "/Users/u");
     expect(mac).toContain("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
     const linux = chromePathCandidates("linux", {}, "/home/u");
@@ -90,9 +90,10 @@ describe("launchAutoChrome（注入面）", () => {
     await expect(launchAutoChrome({ port: 9333, deps })).rejects.toThrow("CHROME_PATH");
   });
 
-  test("pid 非法（<=0）→ 拉起失败错误", async () => {
-    const { deps } = depsOf({ spawnPid: -1 });
+  test("pid 非法（<=0）→ 拉起失败错误，且 profile 已尽力回收（不留残留，评审轮 1 [5]）", async () => {
+    const { deps, removed } = depsOf({ spawnPid: -1 });
     await expect(launchAutoChrome({ port: 9333, deps })).rejects.toThrow("拉起失败");
+    expect(removed).toHaveLength(1);
   });
 
   test("stop 回收纪律：只杀自己 spawn 的 pid + 删自己的 profile；幂等", async () => {
@@ -146,7 +147,7 @@ describe("launchAutoChrome（注入面）", () => {
     expect(warns).toHaveLength(0);
   });
 
-  test("就绪超时路径：抛错前回收（kill + rm）", async () => {
+  test("就绪超时路径：抛错前回收（kill + rm）；rm 恒败不顶替「就绪超时」原始错误（评审轮 1 [3]）", async () => {
     vi.useFakeTimers();
     try {
       const { deps, killed, removed } = depsOf({});
@@ -161,6 +162,18 @@ describe("launchAutoChrome（注入面）", () => {
       await expect(p).rejects.toThrow("就绪超时");
       expect(killed).toEqual([4242]);
       expect(removed).toHaveLength(1);
+
+      // rm 恒抛（EBUSY 竞态穷尽）：错误仍必须是「就绪超时」，不得被 rm 异常顶替
+      const b2 = depsOf({});
+      b2.deps.probe = async () => {
+        throw new Error("never ready");
+      };
+      b2.deps.rm = () => {
+        throw new Error("EBUSY");
+      };
+      const p2 = launchAutoChrome({ port: 9333, deps: b2.deps });
+      vi.setSystemTime(Date.now() + 16_000);
+      await expect(p2).rejects.toThrow("就绪超时");
     } finally {
       vi.useRealTimers();
     }
