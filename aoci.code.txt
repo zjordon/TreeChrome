@@ -12,7 +12,7 @@ package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流）：随实施持续更新——issue #26 M1.5 供给面产品化：计划+实施记录（三真机坑）+评审 2 轮收敛（轮 1 五修/轮 2 零意见），待 /finish-issue | R:code:AGENTS.md,code:_issue-cli-m15.md | A:- | S:入库文档不 gitignore（用户裁定）；分支开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流，随分支整体替换）：issue #27 M2 会话级 daemon CLI——四决策点拍板+实施记录+评审 3 轮收敛（9 条意见全采纳，P1 盲重试/布尔缺省穿透） | R:code:AGENTS.md | A:- | S:入库不 gitignore（用户裁定）；开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
@@ -298,6 +298,12 @@ _r_issue-26-cli-m15_1.md[SQ3T]: F:issue #26 评审轮 1 dump：5 条意见（P1�
 _r_issue-26-cli-m15_2.md[SQ1T]: F:issue #26 评审轮 2 dump：零意见、状态 complete（增量=修复提交 248237a，7m15s）——循环收敛轮 | R:code:docs/code-review/review-issue-26-cli-m15-2.json | A:- | S:-
 review-issue-26-cli-m15-1.json[ZQ2M]: F:ocr review 轮 1 原始输出（issue #26，base=main）：5 意见全文 | R:code:docs/code-review/_r_issue-26-cli-m15_1.md | A:- | S:含大体积 thinking 禁直接 Read——消费走 review-dump 摘要
 review-issue-26-cli-m15-2.json[ZQ1T]: F:ocr review 轮 2 原始输出（issue #26，增量 7f9ad5b..248237a）：零意见收敛 | R:code:docs/code-review/_r_issue-26-cli-m15_2.md | A:- | S:含 thinking 块禁直接 Read——消费走 review-dump 摘要
+_r_issue-27-cli-m2-daemon_1.md[SQ2T]: F:review-loop 轮 1 评审摘要 dump（全量 main..4604a9e，8 条：critical1/high4/medium3）——review-dump.mjs 提取的意见全文+分布，triage 唯一读取面 | R:code:docs/code-review/review-issue-27-cli-m2-daemon-1.json | A:- | S:评审产物不入库（仓库惯例保持未跟踪）
+_r_issue-27-cli-m2-daemon_2.md[SQ2T]: F:review-loop 轮 2 评审摘要 dump（增量 4604a9e..ea7546f，1 条 high：重发门禁探活假阴性竞态）——意见全文供 triage | R:code:docs/code-review/review-issue-27-cli-m2-daemon-2.json | A:- | S:评审产物不入库
+_r_issue-27-cli-m2-daemon_3.md[SQ2T]: F:review-loop 轮 3 评审摘要 dump（增量 ea7546f..f85352e，零意见——循环收敛出口） | R:code:docs/code-review/review-issue-27-cli-m2-daemon-3.json | A:- | S:评审产物不入库
+review-issue-27-cli-m2-daemon-1.json[SQ3L]: F:ocr 评审轮 1 原始结果（glm-5.3，17m37s，含大体积 thinking）——review-loop 自动产物，经 scripts/review-dump.mjs 转 dump 后读取 | R:- | A:- | S:含 thinking 大块禁直接 Read；不入库
+review-issue-27-cli-m2-daemon-2.json[SQ2T]: F:ocr 评审轮 2 原始结果（增量修复面，1 条 high）——经 review-dump 转 dump 后读取 | R:- | A:- | S:禁直接 Read；不入库
+review-issue-27-cli-m2-daemon-3.json[SQ2T]: F:ocr 评审轮 3 原始结果（零意见，循环收敛） | R:- | A:- | S:禁直接 Read；不入库
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
 README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
@@ -931,21 +937,21 @@ boot.mjs[OB4T]: F:全仓唯一一份散脚本 esbuild 引导：loadEntry(entryRe
 package.json[FE5T]: F:node-host 包定义：Node 宿主共享件（NodeFs/env→配置/控制台观测/Agent 装配/boot.mjs 引导）——examples 与未来 cli/web-console 共享；bin tc + build:cli 构建 + esbuild devDep | R:- | A:- | S:-
 tsconfig.json[FG2T]: F:node-host TS 配置（extends 基座） | R:- | A:- | S:-
 vitest.config.ts[FQ4T]: F:node-host 测试配置（85% 阈值；cli-main-entry 纯装配入口排除出覆盖率——真机 smoke 覆盖） | R:- | A:- | S:-
-README.md[SG5M]: F:node-host 包 README：tc CLI 供给面文档——全局安装（build:cli→npm i -g/npm pack）、--auto-chrome、凭据链、stdin 优先/--json 契约/退出码/护栏、skill install、Windows 编码 | R:code:packages/node-host/src/cli.ts | A:- | S:-
+README.md[SG5M]: F:node-host 包 README：tc CLI 供给面文档——任务级 run（全局安装/--auto-chrome/凭据链/stdin 优先/--json 契约/退出码/护栏/Windows）+ 会话级 daemon（15 动词/纪律/生命周期/端口/无鉴权安全边界） | R:code:packages/node-host/src/cli.ts | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/src/===
 agent-boot.ts[AB7S]: F:Agent 装配与 one-shot 运行（扩展 assemble.ts 同构体）：LLMClient+NodeFs+FsSkillSource+AutoAllow；issue #5 runAgent opt-in distill 钩子与 skillSource 显式 null 关闭语义 | R:code:packages/core/src/agent/agent.ts,code:packages/node-host/src/distill-run.ts,code:packages/node-host/src/settings.ts | A:assembleAgent, runAgent | S:env→配置映射在宿主侧完成；skillSource 未传时缺省按 settings.skillsDir（CWD domain-skills）装配——评测基线必须显式传 null
 boot-entry.ts[EB3T]: F:散脚本打包入口：本包 kit+core/cdp-ws 的 example 导出面 | R:code:packages/node-host/boot.mjs | A:- | S:-
 console.ts[OB4T]: F:控制台观测：EventBus 事件逐行打印+截断助手 | R:code:packages/core/src/events/event-bus.ts | A:- | S:-
-index.ts[LB5M]: F:node-host 公共导出面（NodeFs/settings/console/agent-boot/boot + distill-run 蒸馏钩子 + #25 cli 面 + #26 auto-chrome/resolveEnvChain/SKILL_CARD） | R:- | A:- | S:-
+index.ts[LB5M]: F:node-host 公共导出面：NodeFs/settings/console/agent-boot（#25 前）+ cli 面（#25）+ auto-chrome/凭据链/SKILL_CARD（#26）+ daemon client/doctor/protocol/server 全面（#27） | R:- | A:- | S:-
 node-fs.ts[PB5T]: F:NodeFs：FileSystemProvider 的 node:fs 实现（架构 §4 五接口的 Node 宿主半边） | R:code:packages/core/src/tools/fs.ts | A:NodeFs | S:-
 settings.ts[FB7L]: F:env→类型化配置（config.py load_settings 宿主侧移植）：.env 读取（chain 模式+resolveEnvChain 凭据链）+ws_url 发现+mergeHostSettings+AGENT_ENABLE_PLANNING opt-in | R:code:packages/core/src/agent/settings.ts | A:loadSettings, mergeHostSettings, resolveEnvChain | S:教训面：TreeWalker runner.py issue #1——显式传入而非全局单例；env 未设=键不进覆盖，core 默认生效（单源纪律）；chain 仅 CLI 面——runAgent 缺省单文件行为不变（#26 拍板）
 skill-source.ts[PB6S]: F:skill 宿主装载层：SkillLoader+TaskSkillLoader（loader.py/task_loader.py 读序与分段格式照搬；任务卡 \\n\\n 无头拼接口径） | R:code:packages/core/src/agent/skills/types.ts | A:FsSkillSource | S:任务卡全文 strip 后 \\n\\n 直拼（P5.5 冻结口径）——与扩展 skill-source.ts 同一契约
 distill-run.ts[AB6S]: F:runAgent 蒸馏钩子（D16）：门控→host 多数票→core distillTaskCard→目录四文件落盘（traces 并集/streak 归 0/best_steps 棘轮）；#10 门控归因单源+180s 缺省；#12 cardDistillState 读 best_steps 基线 | R:code:packages/core/src/agent/skills/distill.ts,code:packages/node-host/src/agent-boot.ts,code:packages/node-host/src/skill-source.ts | A:distillAfterRun, writeTaskCard, DistillRunOptions | S:同步 await——runAgent 返回前完成；目录形态无 provenance 面（D14 不适用）；180s 对齐扩展 worker；unchanged 路径 bump 带 steps 棘轮 best_steps=min
-cli.ts[EW7L]: F:tc CLI 逻辑层（#25 M1+#26 M1.5）：run/skill 双子命令、任务文本 stdin 优先序、camelCase JSON 投影、退出码、凭据链应用、--auto-chrome 接线（发现→拉起→wsUrl 显式透传）、skill 安装 | R:code:packages/node-host/src/agent-boot.ts | A:main, parseCliArgs, projectRunJson, resolveTaskText | S:--json 下 stdout 只出终态 JSON（log 注入走 stderr）；--task-file 就绪即跳过 stdin（spawn 永不闭管防挂起）；显式 CDP_WS_URL 时 --auto-chrome no-op
+cli.ts[EW7L]: F:tc CLI 逻辑层（#25-#27）：run/skill/daemon/会话动作四面分发；stdin 优先序；camelCase JSON 投影与退出码；凭据链（daemon 分支先应用再算端口）；--auto-chrome；serveDaemon 常驻入口；daemonDoctor 接线 daemon.json | R:code:packages/node-host/src/daemon/client.ts,code:packages/node-host/src/daemon/protocol.ts | A:main, parseCliArgs, projectRunJson, resolveTaskText, serveDaemon | S:--json 下 stdout 只出终态 JSON（log 注入走 stderr）；--task-file 就绪即跳过 stdin（spawn 永不闭管防挂起）；显式 CDP_WS_URL 时 --auto-chrome no-op；upload/save-path 相对路径 CLI 侧 resolve
 auto-chrome.ts[IR7M]: F:--auto-chrome 基建（#26 D2）：Chrome 二进制解析（CHROME_PATH>平台候选）/临时 profile headless spawn（detached+unref+吞异步 error）/CDP 就绪轮询/PID 树回收与 rmBestEffort 清理 | R:code:packages/node-host/src/cli.ts | A:launchAutoChrome, resolveChromeBinary, chromePathCandidates | S:绝不按映像名杀 Chrome——只 kill 自己 spawn 的 pid（win taskkill /T /F、posix 负 pid 组杀）；taskkill 后句柄异步释放，rm 须短候+重试且失败不得顶替原始错误（评审轮 1）
 cli-main-entry.ts[EW4T]: F:dist 构建入口（build-cli.mjs 的 entry）：main() 全装配 + __TC_VERSION__ 构建期 define + 顶层 catch 兑底 exit 2 | R:code:packages/node-host/src/cli.ts | A:- | S:纯装配入口不入单测覆盖率（vitest.config 显式排除，真机 smoke 覆盖）
-skill-card.ts[SE3T]: F:tc 用法卡单源（#26 D3）：tc skill install/--print 的 SKILL.md 内容常量（frontmatter+When Not to Use+用法+JSON 契约+护栏+Windows） | R:code:packages/node-host/src/cli.ts | A:SKILL_CARD | S:TS 常量单源不落 .md——dist/loadEntry 形态下运行时读包内文件不可靠
+skill-card.ts[SE3T]: F:tc 用法卡单源（#26 D3+#27 M2）：双形态卡——任务级 run/会话级 15 动词+「怎么选」路由阶梯（四步分流）+ When Not to Use + JSON 契约/退出码 + 凭据差异 | R:code:packages/node-host/src/cli.ts | A:SKILL_CARD | S:不落 .md（dist 读包内不可靠）；get_state 键 elementTreeText
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/test/===
 agent-boot-helpers.ts[TA4T]: F:agent-boot 系测试共享件：settings fixture/假 transport/死端点 LLMClient | R:- | A:- | S:-
@@ -1003,4 +1009,11 @@ tc.mjs[EW5T]: F:tc 命令薄壳：读包版本→loadEntry 装载 src/cli.ts→m
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/node-host/scripts/===
 build-cli.mjs[XV5T]: F:tc 自包含构建脚本（build:cli）：esbuild 打 src/cli-main-entry→dist/tc.mjs（define 嵌版本+shebang banner）+ 组装 staging 包 dist/tc-package（无依赖，npm i -g / npm pack） | R:code:packages/node-host/src/cli-main-entry.ts | A:- | S:Windows 动态 import esbuild 须 pathToFileURL；shebang 必须有——npm sh shim 靠它路由 node，缺失则 sh 解释 .mjs 崩溃（真机实证）
+
+===D:/dev/git/z_jordon/TreeChrome/packages/node-host/src/daemon/===
+client.ts[IR6M]: F:daemon HTTP 客户端与自起：requestDaemon 重发门禁——仅 ECONNREFUSED 才自 spawn 后重试，其余失败 env 信封交还调用方；ensureDaemonRunning 探活→拉起→轮询就绪；probeHealth/stopDaemon；全注入 | R:code:packages/node-host/src/daemon/protocol.ts,code:packages/node-host/src/daemon/server.ts | A:requestDaemon, ensureDaemonRunning, probeHealth, stopDaemon | S:探活假阴性不可信（1.5s 预算被事件循环阻塞击穿）——重发决策只看错误形态不看探活结果（评审轮 2 竞态）；spawn detached+unref+吞异步 error（沿 auto-chrome 纪律）
+doctor.ts[IO5M]: F:daemon 故障诊断（tc daemon --doctor）：①daemon（daemon.json+pid 活性+/health，僵死 fail）②Chrome（CDP /json/version）③端口（被占 vs 空闲）；parseDaemonInfo 坏 JSON 容错；探测面全注入 | R:code:packages/node-host/src/daemon/client.ts | A:diagnoseDaemon, parseDaemonInfo | S:readInfo 缺省不读盘——生产必须由 CLI 层接线，否则僵死诊断分支不可达（评审轮 1 教训）
+protocol.ts[LN6M]: F:daemon 协议纯函数面（CLI 与服务端共用，零 IO）：端口/空闲缺省解析（TC_DAEMON_PORT/TC_DAEMON_IDLE_SECS）、15 动词表（CLI 旗标→core 参数映射：必填/XOR/int 校验/invert 反向布尔）、HTTP 信封构造、daemon.json 形态 | R:code:packages/node-host/src/cli.ts | A:DAEMON_VERBS, buildParams, daemonPort, idleSecs, findVerb | S:parseArgs 布尔旗标 default:false——false 即未给，仅 raw===true 才置参（invert 恒产 false 会覆盖 core 缺省 true：clear/await_promise/fresh，评审轮 1 P1）；空串旗标值视同未给
+server.ts[RW7M]: F:daemon HTTP 服务端：127.0.0.1 node:http——/health、/action（FIFO 串行队列——单 Chrome 单 daemon）、/shutdown 回包后优雅关停；空闲回收；20MB 请求体上限；PortInUseError；writeInfo/clearInfo 钩子 | R:code:packages/node-host/src/daemon/session-holder.ts,code:packages/node-host/src/daemon/protocol.ts | A:startDaemonServer, PortInUseError | S:空闲回收必须 runningJobs 在途门禁+任务结束刷新活跃（否则掐断在途长动作）；/health 请求也计活跃（轮询探活会阻回收）；动作失败走 ok:true+data.error（exit 1），env/usage 才 ok:false
+session-holder.ts[IR7M]: F:daemon 会话持有：惰性单例 BrowserSession+Tools；wsUrl 解析序 CDP_WS_URL>discover>auto-chrome 自拉；死会话下一次 ensure 优雅 stop+重建；get_state 投影 elementTreeText；shutdown 幂等回收 | R:code:packages/node-host/src/daemon/server.ts | A:createDaemonSession, SessionError | S:绝不按映像名杀 Chrome——只杀自 spawn PID 树；catch 不置空 core（跳过 stop 会泄漏会话）；upload/write 白名单全 null=放行（#27 拍板：调用方 agent 即信任边界）
 
