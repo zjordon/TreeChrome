@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-10
+
+### Added
+
+- tc CLI 任务级 one-shot（#25）：`tc run`——自然语言任务经命令行委派浏览器 agent；
+  stdout 恒单 JSON 终态（camelCase）、退出码 0/1/2、任务文本 stdin 优先序、
+  护栏旗标（--max-steps / --allow-write/read/upload）。
+- tc 供给面产品化（#26）：`build:cli` 自包含单文件（约 1.3MB，零依赖安装）+
+  `npm i -g` 全局命令；凭据链（TC_ENV_FILE > ~/.tc/.env > cwd/.env，OS env 最高）；
+  `--auto-chrome`（CDP 发现→拉起临时 headless→按 PID 树回收，不碰日常 Chrome）；
+  `tc skill install / --print` 用法卡分发（TS 常量单源）。
+- tc 会话级 daemon（#27）：`tc <动作>` 15 动词直驱浏览器原语——daemon 常驻持有
+  BrowserSession+Tools（两层 selector map 进程内，跨调用保 tab），127.0.0.1:9780
+  FIFO 串行队列（TC_DAEMON_PORT）、空闲 15 分钟回收（TC_DAEMON_IDLE_SECS）、
+  ECONNREFUSED 自起与重发门禁（防非幂等动作重复执行）、`tc daemon
+  --status/--stop/--doctor` 三类故障诊断；skill 卡双形态 + 「怎么选」路由阶梯。
+
+### Changed
+
+- 工程治理：AOCI 仓库认知随各 issue 收尾增量维护（#25-#27 面 16 条目）；
+  MAX_RECTS 压力用例显式放宽超时（coverage 插桩下稳定性）。
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
