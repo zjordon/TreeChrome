@@ -21,6 +21,7 @@ import {
   main,
   PortInUseError,
   parseCliArgs,
+  parseDaemonInfo,
   probeHealth,
   requestDaemon,
   SessionError,
@@ -85,6 +86,26 @@ describe("daemon protocol", () => {
     });
     // 未设动词在表外 → null
     expect(findVerb("nope")).toBeNull();
+  });
+
+  test("buildParams：布尔 default:false 不误当已给（invert/普通）+ screenshot save-path", () => {
+    // parseArgs 布尔旗标带 default:false——false 即「未给」，不得置参（评审轮 1 [8]：
+    // clear/fresh/await_promise 被显式 false 覆盖会翻转 core 缺省 true 的行为）
+    const input = findVerb("input_text");
+    expect(input && buildParams(input, { index: "3", text: "hi", "no-clear": false })).toEqual({
+      ok: true,
+      params: { index: 3, text: "hi" },
+    });
+    const nav = findVerb("navigate");
+    expect(nav && buildParams(nav, { url: "https://a.b", "new-tab": false })).toEqual({
+      ok: true,
+      params: { url: "https://a.b" },
+    });
+    const shot = findVerb("screenshot");
+    expect(shot && buildParams(shot, { "save-path": "s.jpeg", quality: "60" })).toEqual({
+      ok: true,
+      params: { save_path: "s.jpeg", quality: 60 },
+    });
   });
 });
 
@@ -250,6 +271,24 @@ describe("daemon server", () => {
       makeSession: () => fakeSession(),
     });
     await new Promise((r) => setTimeout(r, 1800));
+    expect(await probeHealth(fetch.bind(globalThis), daemon.port)).toBeNull();
+  });
+
+  test("空闲回收门禁在途任务：长动作执行中不关停，结束后重计空闲（评审轮 1 [5]）", async () => {
+    const session = fakeSession();
+    session.delayMs = 350;
+    const daemon = await startDaemonServer({
+      port: 0,
+      env: { TC_DAEMON_IDLE_SECS: "0.1" }, // 空闲 100ms 即回收
+      idleCheckIntervalMs: 30,
+      makeSession: () => session,
+    });
+    // 任务 350ms > 空闲 100ms：无在途门禁时 closeAllConnections 会掐断在途响应
+    const res = await post(daemon.port, { action: "scroll", params: {} });
+    expect(res.ok && res.data).toMatchObject({ extractedContent: "ok:scroll" });
+    // 任务结束刷新活跃时刻 → 空闲窗重新起算后回收。静置等回收（不轮询探活——
+    // /health 请求也刷新活跃时刻，轮询会让 100ms 空闲窗永远凑不满）
+    await new Promise((r) => setTimeout(r, 500));
     expect(await probeHealth(fetch.bind(globalThis), daemon.port)).toBeNull();
   });
 
@@ -537,7 +576,8 @@ describe("daemon client", () => {
     const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
       if (url.endsWith("/health")) {
         healthProbes += 1;
-        return healthProbes <= 1
+        // 前 2 次探活失败（失败后的存活探测 + ensure 初始探测），spawn 后第 3 次就绪
+        return healthProbes <= 2
           ? Promise.reject(new TypeError("fetch failed"))
           : Promise.resolve(jsonResponse({ ok: true, data: { pid: 77 } }));
       }
@@ -588,6 +628,34 @@ describe("daemon client", () => {
     expect(ok).toBe(false);
   });
 
+  test("拉起成功但重发仍失败 → env 信封（请求失败文案）", async () => {
+    let healthProbes = 0;
+    let calls = 0;
+    const envelope = await requestDaemon(
+      9787,
+      "go_back",
+      {},
+      {
+        fetchImpl: (async (url: string) => {
+          if (url.endsWith("/health")) {
+            healthProbes += 1;
+            // 前 2 次探活失败（存活探测 + ensure 初始），spawn 轮询第 3 次起就绪
+            return healthProbes <= 2
+              ? Promise.reject(new TypeError("down"))
+              : jsonResponse({ ok: true, data: { pid: 9 } });
+          }
+          calls += 1;
+          throw new TypeError("reset"); // 首发与拉起后重发都失败
+        }) as unknown as typeof fetch,
+        spawnSelf: () => ({ pid: 9 }),
+        startupTimeoutMs: 1000,
+      },
+    );
+    expect(calls).toBe(2);
+    expect(envelope).toMatchObject({ ok: false, kind: "env" });
+    expect(envelope.error).toContain("daemon 请求失败");
+  });
+
   test("stopDaemon：连不上视作未运行", async () => {
     const r = await stopDaemon(9783, {
       fetchImpl: (async () => {
@@ -624,7 +692,7 @@ describe("daemon client", () => {
     expect(spawned).toBe(0);
   });
 
-  test("stopDaemon：可达并 200 → stopped；拉起成功但重发仍失败 → env 信封", async () => {
+  test("stopDaemon：可达并 200 → stopped；daemon 活着时失败不盲重发（评审轮 1 [4]）", async () => {
     const stopped = await stopDaemon(9784, {
       fetchImpl: (async () => jsonResponse({ ok: true })) as unknown as typeof fetch,
     });
@@ -640,15 +708,18 @@ describe("daemon client", () => {
             return jsonResponse({ ok: true, data: { pid: 1 } });
           }
           actionCalls += 1;
-          throw new TypeError("conn reset");
+          throw new TypeError("conn reset"); // 600s 超时/连接中断形态：daemon 仍存活
         }) as unknown as typeof fetch,
-        spawnSelf: () => ({ pid: 5 }),
+        spawnSelf: () => {
+          throw new Error("daemon 活着不应触发自起");
+        },
         startupTimeoutMs: 500,
       },
     );
-    expect(actionCalls).toBe(2); // 首发 + 拉起后重发各一
+    // 活着不重发——非幂等动作（click/提交）重发会被重复执行
+    expect(actionCalls).toBe(1);
     expect(envelope).toMatchObject({ ok: false, kind: "env" });
-    expect(envelope.error).toContain("daemon 请求失败");
+    expect(envelope.error).toContain("请勿盲目重试");
   });
 });
 
@@ -671,6 +742,60 @@ describe("doctor", () => {
     });
     expect(r.summary).toBe("healthy");
     expect(r.findings.map((f) => f.name)).toEqual(["daemon", "chrome"]);
+  });
+
+  test("parseDaemonInfo：合法文本 → DaemonInfo；坏 JSON/形状不对/空 → null", () => {
+    expect(parseDaemonInfo('{"pid":5,"port":9780,"startedAt":123}')).toEqual({
+      pid: 5,
+      port: 9780,
+      startedAt: 123,
+    });
+    expect(parseDaemonInfo("{nope")).toBeNull();
+    expect(parseDaemonInfo('{"pid":"5","port":9780,"startedAt":1}')).toBeNull();
+    expect(parseDaemonInfo("{}")).toBeNull();
+    expect(parseDaemonInfo("")).toBeNull();
+  });
+
+  test("缺省探测件：pidAlive 真探 / netProbe 真连（占用 vs 空闲）/ probeCdp 拒绝", async () => {
+    // defaultPidAlive：daemon 活 + daemon.json 记当前进程 pid → 无残留 warn
+    {
+      const r = await diagnoseDaemon({
+        env: { CDP_WS_URL: "ws://x" }, // 显式连接 → 跳过 CDP 真探测
+        fetchImpl: (async () =>
+          jsonResponse({ ok: true, data: { pid: process.pid } })) as unknown as typeof fetch,
+        readInfo: () => ({ pid: process.pid, port: 9780, startedAt: 1 }),
+      });
+      expect(r.findings[0]).toMatchObject({ name: "daemon", status: "ok" });
+      expect(r.findings.some((f) => f.name === "daemon.json")).toBe(false);
+    }
+    // defaultNetProbe connected：/health 死但端口被真监听 → port fail + 换端口建议
+    {
+      const holder = await startDaemonServer({
+        port: 0,
+        env: {},
+        makeSession: () => fakeSession(),
+      });
+      const r = await diagnoseDaemon({
+        env: { TC_DAEMON_PORT: String(holder.port), CDP_WS_URL: "ws://x" },
+        fetchImpl: (async () => {
+          throw new TypeError("down");
+        }) as unknown as typeof fetch,
+      });
+      expect(r.findings.find((f) => f.name === "port")).toMatchObject({ status: "fail" });
+      await holder.close();
+    }
+    // defaultNetProbe refused + defaultProbeCdp 连拒绝（端口 1 恒无人听）→ ok / warn
+    {
+      const r = await diagnoseDaemon({
+        env: { TC_DAEMON_PORT: "1", CDP_HOST: "127.0.0.1", CDP_PORT: "1" },
+        fetchImpl: (async () => {
+          throw new TypeError("down");
+        }) as unknown as typeof fetch,
+      });
+      expect(r.findings.find((f) => f.name === "port")).toMatchObject({ status: "ok" });
+      expect(r.findings.find((f) => f.name === "chrome")).toMatchObject({ status: "warn" });
+      expect(r.summary).toBe("degraded");
+    }
   });
 
   test("daemon 僵死（pid 活 /health 死）+ 端口被占 → down + 两条 fail", async () => {
@@ -792,6 +917,18 @@ describe("cli 动词/daemon 解析", () => {
     // 校验错：XOR / 必填
     expect(parseCliArgs(["click"]).ok).toBe(false);
     expect(parseCliArgs(["evaluate"]).ok).toBe(false);
+    // 生产形态：未给布尔旗标（default:false）不得混进参数——clear 被显式 false 覆盖
+    // 会让有旧值的输入框变成追加输入（评审轮 1 [8]）
+    {
+      const r = parseCliArgs(["input_text", "--index", "5", "--text", "x"]);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.args.actionParams).toEqual({ index: 5, text: "x" });
+      }
+    }
+    expect(
+      parseCliArgs(["screenshot", "--save-path", "shot.jpeg", "--quality", "60"]),
+    ).toMatchObject({ ok: true, args: { actionParams: { save_path: "shot.jpeg", quality: 60 } } });
   });
 
   test("daemon 子命令：单模式旗标；缺/多/位置参数 → 错；--daemon-port 校验", () => {
@@ -867,6 +1004,23 @@ describe("main：daemon 分发（注入假客户端）", () => {
     expect(String(seen.index)).toBe("1");
   });
 
+  test("动作：screenshot --save-path 相对路径解析为绝对路径（daemon CWD 可能不同）", async () => {
+    const c = capture();
+    let seen: Record<string, unknown> = {};
+    const code = await main({
+      ...base,
+      argv: ["screenshot", "--save-path", "./shot.jpeg", "--quality", "60"],
+      daemonCall: async (_port, _action, params) => {
+        seen = params;
+        return { ok: true, data: { extractedContent: "saved" } };
+      },
+      ...c.deps,
+    });
+    expect(code).toBe(0);
+    expect(String(seen.save_path)).toMatch(/[\\/]shot\.jpeg$/);
+    expect(seen.quality).toBe(60);
+  });
+
   test("daemon status/stop/doctor：JSON 输出 + exit 0", async () => {
     {
       const c = capture();
@@ -900,6 +1054,50 @@ describe("main：daemon 分发（注入假客户端）", () => {
       });
       expect(code).toBe(0);
       expect(JSON.parse(c.out[0])).toMatchObject({ summary: "healthy" });
+    }
+  });
+
+  test("daemon 分支：端口在凭据链应用后计算；--daemon-port 写入 env（评审轮 1 [3]）", async () => {
+    // .env 链里的 TC_DAEMON_PORT：status 面与动作面解析一致（修复前 status 探缺省 9780）
+    {
+      const c = capture();
+      const env: Record<string, string | undefined> = {};
+      let seenPort = -1;
+      const code = await main({
+        env,
+        applyEnv: () => {
+          env.TC_DAEMON_PORT = "9990"; // 模拟 ~/.tc/.env 链补键
+        },
+        stdin: ttyStdin,
+        argv: ["daemon", "--status"],
+        daemonHealth: async (port) => {
+          seenPort = port;
+          return null;
+        },
+        ...c.deps,
+      });
+      expect(code).toBe(0);
+      expect(seenPort).toBe(9990);
+      expect(JSON.parse(c.out[0])).toMatchObject({ running: false, port: 9990 });
+    }
+    // doctor 面内部从 env 取端口：显式旗标覆盖须可见
+    {
+      const c = capture();
+      const env: Record<string, string | undefined> = {};
+      let doctorEnvPort: string | undefined;
+      const code = await main({
+        env,
+        applyEnv: () => {},
+        stdin: ttyStdin,
+        argv: ["daemon", "--doctor", "--daemon-port", "9995"],
+        daemonDoctor: async () => {
+          doctorEnvPort = env.TC_DAEMON_PORT;
+          return { summary: "healthy", findings: [] };
+        },
+        ...c.deps,
+      });
+      expect(code).toBe(0);
+      expect(doctorEnvPort).toBe("9995");
     }
   });
 

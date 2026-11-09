@@ -168,6 +168,9 @@ export const DAEMON_VERBS: VerbSpec[] = [
   {
     verb: "screenshot",
     flags: [
+      // 落盘路径：core handler 无 save_path 只回字节计数回执（不落盘也不回传图片），
+      // 「看看页面」必须落盘取文件（评审轮 1 [2]）；相对路径 CLI 侧 resolve 成绝对
+      { flag: "save-path", param: "save_path", type: "str" },
       { flag: "format", param: "format", type: "str" },
       { flag: "quality", param: "quality", type: "int" },
       { flag: "full-page", param: "full_page", type: "bool" },
@@ -226,7 +229,11 @@ export function buildParams(spec: VerbSpec, values: Record<string, unknown>): Bu
       }
       params[flag.param] = n;
     } else if (flag.type === "bool") {
-      params[flag.param] = flag.invert === true ? false : raw === true;
+      // parseArgs 布尔旗标均带 default:false——false 即「未给」，仅旗标给出（true）才
+      // 置参；invert 形态给出时置 false（core 缺省 true 的参数用 --no-xx，评审轮 1 [8]）
+      if (raw === true) {
+        params[flag.param] = flag.invert !== true;
+      }
     } else if (flag.type === "str[]") {
       const list = Array.isArray(raw) ? raw : [raw];
       const kept = list.filter((v): v is string => typeof v === "string" && v !== "");

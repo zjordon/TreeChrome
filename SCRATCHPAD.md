@@ -110,3 +110,21 @@ MCP server 通道（另立）、云远端浏览器、多 Chrome 实例池、daem
 2. **upload_file 会话式白名单**：v1 不设（调用方即信任边界，建议）vs 沿用 M1 --allow-* 语义
 3. 命令面 v1 子集（15 动词）与旗标传参形态是否合意
 4. 空闲回收缺省 15 分钟、端口缺省 9780、无鉴权三处缺省值
+
+## 评审轮 1（2026-11-09，ocr 全量 main..4604a9e）
+
+8 条意见（自评 critical:1 / high:4 / medium:3）——**逐条核实全部成立，P1×2 / P2×6 全采纳，零驳回零 stale**：
+
+| # | 定级 | 修复 |
+|---|---|---|
+| 8 布尔缺省穿透（critical） | P1 | protocol.ts buildParams：parseArgs 布尔 default:false 被「未给」守卫放过，invert 旗标恒产 false 覆盖 core 缺省 true（input_text 变追加输入 / evaluate 不等 promise / read_grid 不清过滤器）。改 raw===true 才置参 |
+| 4 盲重试重复执行（high） | P1 | client.ts requestDaemon：失败后先探活——daemon 活着（600s 超时/连接中断）不重发（动作可能已执行或在 FIFO 队列），env 信封提示勿盲目重试；死了才自起重试 |
+| 1 卡片键名不符（high） | P2 | skill 卡/USAGE/README 三处 element_tree_text → elementTreeText（实际返回键） |
+| 2 截图承诺落空（high） | P2 | screenshot 补 --save-path 旗标（core 无 save_path 只回字节回执）；相对路径 CLI 侧 resolve；卡/USAGE/README 示例更新 |
+| 3 端口解析时序（medium） | P2 | daemon 分支 applyEnv 提前到端口计算前，status/stop/serve/doctor 四模式统一（.env 写 TC_DAEMON_PORT 不再分裂）；--daemon-port 显式覆盖写入 env 供 doctor 面取用 |
+| 5 空闲回收杀在途（medium） | P2 | server.ts runningJobs 在途/排队门禁 + 任务结束刷新 lastActivity |
+| 6+7 doctor readInfo 未接线（med+high） | P2 | doctor.ts 增 parseDaemonInfo（坏 JSON/形状 → null）；cli.ts daemonDoctor 缺省接线读 ~/.tc/daemon/daemon.json——僵死诊断生产可达 |
+
+验证：红→绿双向（新测试对未修复代码 7 红→修复后全绿）；node-host 164→171 tests 全绿，覆盖率全维度过线（functions 86.55%）；全仓 8 面 2066 tests 绿；typecheck/biome/gate exit 0。
+
+附带观察（不实施，P3 级）：/health 探测也刷新活跃时刻——外部持续 status 轮询会阻空闲回收（15min 缺省下无实际影响，轮询者即关心者）。

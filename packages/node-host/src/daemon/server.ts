@@ -68,20 +68,27 @@ export async function startDaemonServer(options: ServerOptions): Promise<Running
     return session;
   };
 
+  // 活跃时刻：请求到达 + 每个任务结束时刷新；在途/排队计数门禁空闲回收（评审轮 1 [5]：
+  // 长动作执行中不得回收——closeAllConnections 会掐断在途响应并杀正在执行的会话）
+  let lastActivity = now();
+  let runningJobs = 0;
+  let closing = false;
+  let closed = false;
+
   // 串行队列：promise 链 FIFO——并发请求排队执行，天然无重入
   let tail: Promise<unknown> = Promise.resolve();
   const enqueue = <T>(job: () => Promise<T>): Promise<T> => {
-    const run = tail.then(job, job);
+    runningJobs += 1;
+    const run = tail.then(job, job).finally(() => {
+      runningJobs -= 1;
+      lastActivity = now();
+    });
     tail = run.then(
       () => undefined,
       () => undefined,
     );
     return run;
   };
-
-  let lastActivity = now();
-  let closing = false;
-  let closed = false;
 
   const readBody = (req: http.IncomingMessage): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -202,7 +209,7 @@ export async function startDaemonServer(options: ServerOptions): Promise<Running
   };
 
   const idleTimer = setInterval(() => {
-    if (closing || idleLimitSecs <= 0) {
+    if (closing || idleLimitSecs <= 0 || runningJobs > 0) {
       return;
     }
     if (now() - lastActivity >= idleLimitSecs * 1000) {

@@ -116,8 +116,10 @@ export async function stopDaemon(
 }
 
 /**
- * 单命令调用：POST /action；网络层失败（连不上）→ 自动拉起 daemon → 重试一次。
- * 拉起后仍不可达 → env 类错误信封（CLI exit 2）；服务端信封原样透传。
+ * 单命令调用：POST /action；网络层失败后先探活——daemon 不在（ECONNREFUSED）才自动
+ * 拉起并重试一次；daemon 仍存活（600s 超时/连接中断）则不盲重发（动作可能已在服务端
+ * 执行或仍在 FIFO 队列，非幂等动作重发会被重复执行——评审轮 1 [4]），把重试决策交还
+ * 调用方。拉起后仍不可达 / 存活但请求失败 → env 类错误信封（CLI exit 2）。
  */
 export async function requestDaemon(
   port: number,
@@ -137,8 +139,16 @@ export async function requestDaemon(
   };
   try {
     return await post();
-  } catch {
-    // 网络层失败（ECONNREFUSED/超时）→ 自起后重试一次
+  } catch (e) {
+    // 存活探测：daemon 活着说明失败是超时/中断而非未启动——动作可能已执行或仍在队列
+    if ((await probeHealth(fetchImpl, port)) !== null) {
+      return daemonErr(
+        `daemon 请求失败（127.0.0.1:${port}）——daemon 仍存活，动作可能已在服务端执行或仍在队列，请勿盲目重试：${
+          e instanceof Error ? e.message : String(e)
+        }`,
+        "env",
+      );
+    }
   }
   const running = await ensureDaemonRunning(port, deps);
   if (!running) {

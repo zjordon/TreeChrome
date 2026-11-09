@@ -100,10 +100,11 @@ tab（**必须 daemon 化的根因**）；`get_state` 返回的 `elementTreeText
 
 ```bash
 tc navigate --url https://example.com   # 首次调用自动拉起 daemon
-tc get_state                            # element_tree_text + url/title/tabs/currentTargetId
+tc get_state                            # elementTreeText + url/title/tabs/currentTargetId
 tc click --index 12                     # 用 get_state 树里的 [12] 索引
 tc input_text --index 8 --text "关键词"
 tc evaluate --code "return document.title"
+tc screenshot --save-path shot.jpeg     # 截图落盘（不给 --save-path 只回字节数回执）
 tc tabs && tc switch_tab --tab-id 1a2b  # id 取 tabs 输出 targetId 后 4 位
 tc daemon --status                      # pid/端口/空闲计时
 tc daemon --doctor                      # 三类故障诊断：Chrome 没起 / daemon 僵死 / 端口占用

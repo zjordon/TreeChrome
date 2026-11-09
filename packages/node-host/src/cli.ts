@@ -5,6 +5,7 @@
 // 调用方 LLM 直驱浏览器原语，daemon 内部无 LLM）。IO 一律经 MainDeps 注入（可测）；
 // bin/tc.mjs 与 dist 构建入口共用。
 
+import { readFileSync } from "node:fs";
 import {
   appendFile as fspAppendFile,
   mkdir as fspMkdir,
@@ -20,7 +21,7 @@ import type { AgentHistoryList, AgentSettings } from "@tw/core";
 import { runAgent } from "./agent-boot.js";
 import { type LaunchedChrome, launchAutoChrome } from "./auto-chrome.js";
 import { probeHealth, requestDaemon, stopDaemon } from "./daemon/client.js";
-import { type DoctorResult, diagnoseDaemon } from "./daemon/doctor.js";
+import { type DoctorResult, diagnoseDaemon, parseDaemonInfo } from "./daemon/doctor.js";
 import { buildParams, type DaemonEnvelope, daemonPort, findVerb } from "./daemon/protocol.js";
 import { PortInUseError, startDaemonServer } from "./daemon/server.js";
 import { createDaemonSession } from "./daemon/session-holder.js";
@@ -65,7 +66,7 @@ daemon 选项（单例：127.0.0.1，缺省端口 9780 / TC_DAEMON_PORT；首次
   --daemon-port <n> 覆盖端口（动作动词同用）
 
 会话式动作（15 动词；stdout 恒单 JSON。index 类动作前先 get_state 刷新元素索引）：
-  get_state                                   # element_tree_text（核心供给物）+ url/title/tabs
+  get_state                                   # elementTreeText（核心供给物）+ url/title/tabs
   navigate --url <u> [--new-tab]
   click (--index N | --element-id N)          # 二选一
   input_text (--index N | --element-id N) --text <t> [--no-clear]  # 缺省先清空再输入
@@ -75,7 +76,8 @@ daemon 选项（单例：127.0.0.1，缺省端口 9780 / TC_DAEMON_PORT；首次
   read_grid [--namespace ns] [--search kw] [--sorting "字段 desc"] [--page N]
             [--page-size N] [--fields f1] [--fields f2] [--no-fresh] [--group-count f]
   evaluate --code <js> [--no-await] [--timeout-ms N] [--user-gesture]
-  screenshot [--format png|jpeg|webp] [--quality 0-100] [--full-page]
+  screenshot [--save-path <file>] [--format png|jpeg|webp] [--quality 0-100] [--full-page]
+            # 不给 --save-path 只回字节数回执（不落盘不回传图片）；相对路径按调用方 CWD 解析
   upload_file --index N --path <file>         # 相对路径按调用方 CWD 解析为绝对路径
   go_back
   tabs                                        # 列表 + 当前 attached tab
@@ -182,6 +184,7 @@ export function parseCliArgs(argv: string[]): ParseResult {
         format: { type: "string" },
         quality: { type: "string" },
         "full-page": { type: "boolean", default: false },
+        "save-path": { type: "string" },
         path: { type: "string" },
       },
       allowPositionals: true,
@@ -515,14 +518,35 @@ export async function main(deps: MainDeps = {}): Promise<number> {
   const daemonHealth =
     deps.daemonHealth ?? ((port) => probeHealth(globalThis.fetch.bind(globalThis), port));
   const daemonStopFn = deps.daemonStopFn ?? ((port) => stopDaemon(port, clientDeps));
-  const daemonDoctor = deps.daemonDoctor ?? (() => diagnoseDaemon(clientDeps));
+  const daemonInfoPath = () => join(home(), ".tc", "daemon", "daemon.json");
+  const daemonDoctor =
+    deps.daemonDoctor ??
+    (() =>
+      diagnoseDaemon({
+        ...clientDeps,
+        // 读 serve 面写入的运行态（daemon.json 僵死诊断依赖）；不存在/坏文件 → null
+        //（评审轮 1 [6][7]：此前生产路径从未注入 readInfo，僵死诊断不可达）
+        readInfo: () => {
+          try {
+            return parseDaemonInfo(readFileSync(daemonInfoPath(), "utf8"));
+          } catch {
+            return null;
+          }
+        },
+      }));
   const portOf = (flag: number | null): number => flag ?? daemonPort(env);
 
   // ── daemon 子命令（#27）：管理面 ─────────────────────────────────────────
   if (args.command === "daemon") {
+    // 凭据链先于端口计算：TC_DAEMON_PORT 可写在 .env 链（USAGE 已把它列入凭据链键），
+    // status/stop/serve/doctor 四模式与动作面解析必须一致（评审轮 1 [3]）；显式
+    // --daemon-port 覆盖时写入 env——doctor 面内部从 env 取端口
+    applyEnv(resolveEnvChain(env));
+    if (args.daemonPortFlag !== null) {
+      env.TC_DAEMON_PORT = String(args.daemonPortFlag);
+    }
     const port = portOf(args.daemonPortFlag);
     if (args.daemonMode === "serve") {
-      applyEnv(resolveEnvChain(env));
       return serveDaemon({ deps, env, port, err, home });
     }
     if (args.daemonMode === "status") {
@@ -548,8 +572,7 @@ export async function main(deps: MainDeps = {}): Promise<number> {
       }
       return 0;
     }
-    // doctor
-    applyEnv(resolveEnvChain(env));
+    // doctor（凭据链已在分支顶部应用）
     const result = await daemonDoctor();
     out(JSON.stringify(result));
     for (const f of result.findings) {
@@ -565,9 +588,12 @@ export async function main(deps: MainDeps = {}): Promise<number> {
     applyEnv(resolveEnvChain(env));
     const port = portOf(args.daemonPortFlag);
     const params = { ...(args.actionParams ?? {}) };
-    // upload_file 相对路径按调用方 CWD 解析（daemon 的 CWD 可能不同）
+    // upload_file / screenshot 相对路径按调用方 CWD 解析（daemon 的 CWD 可能不同）
     if (typeof params.path === "string" && params.path !== "") {
       params.path = resolve(params.path);
+    }
+    if (typeof params.save_path === "string" && params.save_path !== "") {
+      params.save_path = resolve(params.save_path);
     }
     const envelope = await daemonCall(port, args.actionVerb, params);
     if (envelope.ok) {

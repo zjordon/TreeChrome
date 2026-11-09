@@ -19,7 +19,7 @@ export interface DoctorResult {
 }
 
 export interface DoctorDeps extends ClientDeps {
-  /** 读 ~/.tc/daemon/daemon.json（缺省 null = 不读盘，serve 面外诊断够用） */
+  /** 读 ~/.tc/daemon/daemon.json（缺省 null = 不读盘；生产由 CLI 层接 parseDaemonInfo） */
   readInfo?: () => DaemonInfo | null;
   pidAlive?: (pid: number) => boolean;
   /** TCP 连通探测：refused = 端口空闲；connected = 有进程在听 */
@@ -38,6 +38,24 @@ const defaultPidAlive = (pid: number): boolean => {
     return false;
   }
 };
+
+/** daemon.json 文本 → DaemonInfo；坏 JSON/形状不对 → null（评审轮 1 [6][7]：CLI 层
+ * 读盘后经此解析接 readInfo——此前生产路径从未注入，僵死诊断（pid 活 /health 死）不可达） */
+export function parseDaemonInfo(text: string): DaemonInfo | null {
+  try {
+    const raw = JSON.parse(text) as Partial<DaemonInfo>;
+    if (
+      typeof raw.pid !== "number" ||
+      typeof raw.port !== "number" ||
+      typeof raw.startedAt !== "number"
+    ) {
+      return null;
+    }
+    return { pid: raw.pid, port: raw.port, startedAt: raw.startedAt };
+  } catch {
+    return null;
+  }
+}
 
 const defaultNetProbe = (port: number): Promise<"refused" | "connected" | "error"> =>
   new Promise((resolve) => {

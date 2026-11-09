@@ -72,11 +72,12 @@ daemon 首次调用**自动拉起**（127.0.0.1:9780 / TC_DAEMON_PORT），空�
 
 \`\`\`bash
 tc navigate --url https://example.com     # 打开页
-tc get_state                              # ← 核心：element_tree_text + url/title/tabs
+tc get_state                              # ← 核心：elementTreeText + url/title/tabs
 tc click --index 12                       # 按 get_state 里的 [12] 索引点击
 tc input_text --index 8 --text "关键词"
 tc evaluate --code "return document.title"
-tc screenshot --format jpeg --quality 60  # 截图（viewport）
+tc screenshot --save-path shot.jpeg --format jpeg --quality 60
+                                          # 截图落盘（不给 --save-path 只回字节数回执）
 tc tabs && tc switch_tab --tab-id 1a2b    # 多 tab；id 取 tabs 输出后 4 位
 \`\`\`
 

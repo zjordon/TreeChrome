@@ -49,6 +49,7 @@ export {
   type DoctorFinding,
   type DoctorResult,
   diagnoseDaemon,
+  parseDaemonInfo,
 } from "./daemon/doctor.js";
 export {
   buildParams,
