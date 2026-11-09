@@ -115,11 +115,25 @@ export async function stopDaemon(
   }
 }
 
+/** fetch 网络层「连接被拒」判定——唯一可证明请求从未到达 daemon（重发必安全）的失败
+ * 形态：undici 包一层 TypeError("fetch failed") + cause.code，原生 Error 直接看 code */
+const isConnectionRefused = (e: unknown): boolean => {
+  if (!(e instanceof Error)) {
+    return false;
+  }
+  const codes = [
+    (e as NodeJS.ErrnoException).code,
+    e.cause instanceof Error ? (e.cause as NodeJS.ErrnoException).code : undefined,
+  ];
+  return codes.includes("ECONNREFUSED");
+};
+
 /**
- * 单命令调用：POST /action；网络层失败后先探活——daemon 不在（ECONNREFUSED）才自动
- * 拉起并重试一次；daemon 仍存活（600s 超时/连接中断）则不盲重发（动作可能已在服务端
- * 执行或仍在 FIFO 队列，非幂等动作重发会被重复执行——评审轮 1 [4]），把重试决策交还
- * 调用方。拉起后仍不可达 / 存活但请求失败 → env 类错误信封（CLI exit 2）。
+ * 单命令调用：POST /action。失败重发门禁（评审轮 1 [4] + 轮 2 [1]）：**仅 ECONNREFUSED
+ * （连接被拒 = 请求从未到达）**才自动拉起 daemon 并重试一次；其余失败（600s 超时/连接
+ * 中断/响应截断——动作可能已在服务端执行或仍在 FIFO 队列）一律不重发，探活仅用于信封
+ * 文案区分（存活 vs 已退出），重试决策交还调用方——探活假阴性（事件循环被长任务阻塞
+ * 超 1.5s 探测预算）不再能击穿门禁。拉起后仍失败 → env 类错误信封（CLI exit 2）。
  */
 export async function requestDaemon(
   port: number,
@@ -140,12 +154,15 @@ export async function requestDaemon(
   try {
     return await post();
   } catch (e) {
-    // 存活探测：daemon 活着说明失败是超时/中断而非未启动——动作可能已执行或仍在队列
-    if ((await probeHealth(fetchImpl, port)) !== null) {
+    // 非连接被拒 → 不可证明动作未执行，绝不重发（非幂等动作重发会被重复执行）
+    if (!isConnectionRefused(e)) {
+      const alive = (await probeHealth(fetchImpl, port)) !== null;
       return daemonErr(
-        `daemon 请求失败（127.0.0.1:${port}）——daemon 仍存活，动作可能已在服务端执行或仍在队列，请勿盲目重试：${
-          e instanceof Error ? e.message : String(e)
-        }`,
+        `daemon 请求失败（127.0.0.1:${port}）——${
+          alive
+            ? "daemon 仍存活，动作可能已在服务端执行或仍在队列"
+            : "daemon 已不可达，动作执行状态未知"
+        }，请确认副作用后手动重发：${e instanceof Error ? e.message : String(e)}`,
         "env",
       );
     }

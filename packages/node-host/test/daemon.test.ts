@@ -568,22 +568,28 @@ const jsonResponse = (body: unknown, ok = true) =>
     headers: { "content-type": "application/json" },
   });
 
+/** undici 形态的连接被拒错误（TypeError 外壳 + cause.code=ECONNREFUSED） */
+const refusedErr = () =>
+  new TypeError("fetch failed", {
+    cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1"), { code: "ECONNREFUSED" }),
+  });
+
 describe("daemon client", () => {
-  test("requestDaemon：可达直发；不可达 → 自动拉起 → 重试一次", async () => {
+  test("requestDaemon：可达直发；连接被拒 → 自动拉起 → 重试一次", async () => {
     const spawned: number[] = [];
     let actionCalls = 0;
     let healthProbes = 0;
     const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
       if (url.endsWith("/health")) {
         healthProbes += 1;
-        // 前 2 次探活失败（失败后的存活探测 + ensure 初始探测），spawn 后第 3 次就绪
+        // 前 2 次探活失败（ensure 初始探测 + spawn 轮询第 1 次），第 3 次起就绪
         return healthProbes <= 2
           ? Promise.reject(new TypeError("fetch failed"))
           : Promise.resolve(jsonResponse({ ok: true, data: { pid: 77 } }));
       }
       actionCalls += 1;
       if (actionCalls === 1) {
-        throw new TypeError("fetch failed"); // 模拟 ECONNREFUSED
+        throw refusedErr(); // 连接被拒：请求从未到达 daemon，重发安全
       }
       expect(init?.method).toBe("POST");
       return jsonResponse({ ok: true, data: { fine: true } });
@@ -612,13 +618,14 @@ describe("daemon client", () => {
       {},
       {
         fetchImpl: (async () => {
-          throw new TypeError("down");
+          throw refusedErr();
         }) as unknown as typeof fetch,
         spawnSelf: () => ({ pid: -1 }),
         startupTimeoutMs: 100,
       },
     );
     expect(envelope).toMatchObject({ ok: false, kind: "env" });
+    expect(envelope.error).toContain("自动拉起失败");
     const ok = await ensureDaemonRunning(9782, {
       fetchImpl: (async () => {
         throw new TypeError("down");
@@ -639,13 +646,16 @@ describe("daemon client", () => {
         fetchImpl: (async (url: string) => {
           if (url.endsWith("/health")) {
             healthProbes += 1;
-            // 前 2 次探活失败（存活探测 + ensure 初始），spawn 轮询第 3 次起就绪
+            // 前 2 次探活失败（ensure 初始 + spawn 轮询第 1 次），第 3 次起就绪
             return healthProbes <= 2
               ? Promise.reject(new TypeError("down"))
               : jsonResponse({ ok: true, data: { pid: 9 } });
           }
           calls += 1;
-          throw new TypeError("reset"); // 首发与拉起后重发都失败
+          if (calls === 1) {
+            throw refusedErr(); // 首发被拒 → 拉起重发
+          }
+          throw new TypeError("reset"); // 重发仍失败
         }) as unknown as typeof fetch,
         spawnSelf: () => ({ pid: 9 }),
         startupTimeoutMs: 1000,
@@ -716,10 +726,42 @@ describe("daemon client", () => {
         startupTimeoutMs: 500,
       },
     );
-    // 活着不重发——非幂等动作（click/提交）重发会被重复执行
+    // 非「连接被拒」一律不重发——非幂等动作（click/提交）重发会被重复执行
     expect(actionCalls).toBe(1);
     expect(envelope).toMatchObject({ ok: false, kind: "env" });
-    expect(envelope.error).toContain("请勿盲目重试");
+    expect(envelope.error).toContain("daemon 仍存活");
+    expect(envelope.error).toContain("请确认副作用后手动重发");
+  });
+
+  test("连接中断且 daemon 已死 → 不重发不自起（动作执行状态未知，评审轮 2 [1]）", async () => {
+    let calls = 0;
+    let spawns = 0;
+    const envelope = await requestDaemon(
+      9788,
+      "click",
+      { index: 7 },
+      {
+        fetchImpl: (async (url: string) => {
+          if (url.endsWith("/health")) {
+            throw new TypeError("down"); // 探活失败——但连接中断非「被拒」，不得自起重发
+          }
+          calls += 1;
+          throw new TypeError("fetch failed", {
+            cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+          });
+        }) as unknown as typeof fetch,
+        spawnSelf: () => {
+          spawns += 1;
+          return { pid: 5 };
+        },
+        startupTimeoutMs: 500,
+      },
+    );
+    // 探活假阴性竞态收口：即使 daemon 全程存活只是探测超时，非被拒失败也绝不重发
+    expect(calls).toBe(1);
+    expect(spawns).toBe(0);
+    expect(envelope).toMatchObject({ ok: false, kind: "env" });
+    expect(envelope.error).toContain("动作执行状态未知");
   });
 });
 

@@ -128,3 +128,13 @@ MCP server 通道（另立）、云远端浏览器、多 Chrome 实例池、daem
 验证：红→绿双向（新测试对未修复代码 7 红→修复后全绿）；node-host 164→171 tests 全绿，覆盖率全维度过线（functions 86.55%）；全仓 8 面 2066 tests 绿；typecheck/biome/gate exit 0。
 
 附带观察（不实施，P3 级）：/health 探测也刷新活跃时刻——外部持续 status 轮询会阻空闲回收（15min 缺省下无实际影响，轮询者即关心者）。
+
+## 评审轮 2（2026-11-09，ocr 增量 4604a9e..ea7546f，只审轮 1 修复）
+
+1 条意见（high/bug）——**采纳（P2），换更强机制实施**：
+
+- [1] 重发门禁的探活假阴性竞态：probeHealth 仅 1.5s 预算，daemon 事件循环被长任务阻塞/瞬时抖动 → 假阴性 → ensureDaemonRunning 宽容轮询（20s）探活成功而未 spawn → 外层仍无条件重发 → 非幂等动作重复执行（轮 1 [4] 要消除的失效模式复活）。评审建议 marker 标记「确曾 spawn 才重发」，但该方案留有残余：两次探活都假阴性时 spawn 撞 EADDRINUSE 幂等退出，daemon 恢复后仍重发。**改用更严门禁：仅 ECONNREFUSED（连接被拒 = 可证明请求从未到达 daemon）才自起重发**，其余失败（超时/连接中断/响应截断）一律不重发、信封给「存活/已退出」区分文案交还调用方——两类竞态一并封死，且无需改 ensureDaemonRunning 签名。行为变化：daemon 中途死亡（连接中断而非被拒）不再自动重试——动作执行状态未知时重试本就有重复执行风险，信封明示「确认副作用后手动重发」。
+
+验证：红→绿双向（stash 修复后新用例红：旧代码自起重发；修复后绿）；node-host 171→172 tests，覆盖率全维度过线（functions 86.77%）；typecheck/biome 绿。
+
+（过程笔误：轮 2 首发误把 --from 设为 lastCommit（=当前 HEAD）得空 range 被 ocr skipped，零消耗；改基线为上轮已审 tip 4604a9e 重发。）
