@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-10-13T12:30:11Z",
-  "updated_at": "2026-11-08T03:33:07Z",
+  "updated_at": "2026-11-09T04:17:05Z",
   "files": {
     ".archify/architecture-treechrome-20261018-093945/candidate.json": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "SCRATCHPAD.md": {
       "role": "index",
-      "sha256": "f82083d2784491bbd26135bd2d2d995e8fd320696797acb8d51806822fa2ef59",
-      "size": 8917,
-      "normalized_sha256": "f82083d2784491bbd26135bd2d2d995e8fd320696797acb8d51806822fa2ef59"
+      "sha256": "799fa469ae7583531ae34857e63b1b5ade29802eae985bf902495495e97eeeee",
+      "size": 12540,
+      "normalized_sha256": "799fa469ae7583531ae34857e63b1b5ade29802eae985bf902495495e97eeeee"
     },
     "_cascade-check.html": {
       "role": "index",
@@ -257,9 +257,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "b0f9b4c9911322357486f998431da48b6e6f82cda0c4a67ba38d807cc5f0ba7a",
-      "size": 173660,
-      "normalized_sha256": "b0f9b4c9911322357486f998431da48b6e6f82cda0c4a67ba38d807cc5f0ba7a"
+      "sha256": "951905956661cc51c6aea4afac3939c1d337a12c21f36fc6057cd950c5c064e1",
+      "size": 178249,
+      "normalized_sha256": "951905956661cc51c6aea4afac3939c1d337a12c21f36fc6057cd950c5c064e1"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -923,6 +923,24 @@
       "size": 177,
       "normalized_sha256": "ab6dba0e74a8c3bb117a8361f784301a1155d7874c077042dda1e96aed2b8d38"
     },
+    "docs/code-review/_r_issue-27-cli-m2-daemon_1.md": {
+      "role": "index",
+      "sha256": "481ec1f376a5a472b83fc5fe99a3d056d2bc3bf1b1faa8103f30cdcf7142c3a6",
+      "size": 13450,
+      "normalized_sha256": "481ec1f376a5a472b83fc5fe99a3d056d2bc3bf1b1faa8103f30cdcf7142c3a6"
+    },
+    "docs/code-review/_r_issue-27-cli-m2-daemon_2.md": {
+      "role": "index",
+      "sha256": "db87f4b5b29505b31adcb4637438eba324ac7bf163ce2f8ab80b5ae61d3f3cf7",
+      "size": 2360,
+      "normalized_sha256": "db87f4b5b29505b31adcb4637438eba324ac7bf163ce2f8ab80b5ae61d3f3cf7"
+    },
+    "docs/code-review/_r_issue-27-cli-m2-daemon_3.md": {
+      "role": "index",
+      "sha256": "55a99e434a8fe63f9dc885c163dbd40a211a569f951382ac618b65e4ca752085",
+      "size": 183,
+      "normalized_sha256": "55a99e434a8fe63f9dc885c163dbd40a211a569f951382ac618b65e4ca752085"
+    },
     "docs/code-review/_r_issue-5-self-evolution_1.md": {
       "role": "index",
       "sha256": "7a76d39027eb53d313c63365c6e46e4bb838c159cb8db981639bbd9b262ee7b5",
@@ -1558,6 +1576,24 @@
       "sha256": "4d2ad0ec85fea461936a55b713c157943bedd25adf3bed9fec4c6fe6b285ba6b",
       "size": 4831,
       "normalized_sha256": "4d2ad0ec85fea461936a55b713c157943bedd25adf3bed9fec4c6fe6b285ba6b"
+    },
+    "docs/code-review/review-issue-27-cli-m2-daemon-1.json": {
+      "role": "index",
+      "sha256": "8a5b3fec1f80122ec341e27d83bd4417df0996dff8aeda80953982f552c8cfad",
+      "size": 86344,
+      "normalized_sha256": "8a5b3fec1f80122ec341e27d83bd4417df0996dff8aeda80953982f552c8cfad"
+    },
+    "docs/code-review/review-issue-27-cli-m2-daemon-2.json": {
+      "role": "index",
+      "sha256": "bcb20e997ef51275b55e6de778e9c6b559e692c1ebf5ddefe3cfb1c934adb0b5",
+      "size": 13084,
+      "normalized_sha256": "bcb20e997ef51275b55e6de778e9c6b559e692c1ebf5ddefe3cfb1c934adb0b5"
+    },
+    "docs/code-review/review-issue-27-cli-m2-daemon-3.json": {
+      "role": "index",
+      "sha256": "d583d9727c3300300314307a2851093a57c611b288881a0c6b007eab05e6dfc0",
+      "size": 3162,
+      "normalized_sha256": "d583d9727c3300300314307a2851093a57c611b288881a0c6b007eab05e6dfc0"
     },
     "docs/code-review/review-issue-5-self-evolution-1.json": {
       "role": "index",
@@ -5041,9 +5077,9 @@
     },
     "packages/node-host/README.md": {
       "role": "index",
-      "sha256": "ec6813a59379c0efdb3a32163739a3e48391f22ca18e9f34357f3e4cce67a99b",
-      "size": 4523,
-      "normalized_sha256": "ec6813a59379c0efdb3a32163739a3e48391f22ca18e9f34357f3e4cce67a99b"
+      "sha256": "6e585cffe781dbe3e2d571b6d517e6fc434471b940380d5fc35636ee54981e95",
+      "size": 7476,
+      "normalized_sha256": "6e585cffe781dbe3e2d571b6d517e6fc434471b940380d5fc35636ee54981e95"
     },
     "packages/node-host/bin/tc.mjs": {
       "role": "index",
@@ -5095,15 +5131,45 @@
     },
     "packages/node-host/src/cli.ts": {
       "role": "index",
-      "sha256": "46570d91a9145eae8aa99c6dea4545adf4ec8bbcd1c9dffe068bffe6e620b9b5",
-      "size": 18260,
-      "normalized_sha256": "46570d91a9145eae8aa99c6dea4545adf4ec8bbcd1c9dffe068bffe6e620b9b5"
+      "sha256": "f18c232f0d61709f658e11f918bb6fa9dc238c6b4bb2bf7ff71272a64f881433",
+      "size": 32211,
+      "normalized_sha256": "f18c232f0d61709f658e11f918bb6fa9dc238c6b4bb2bf7ff71272a64f881433"
     },
     "packages/node-host/src/console.ts": {
       "role": "index",
       "sha256": "028dbd7cce60f33a7b78d32e75f143351105851599b2a0ade1694ba9056c7ad1",
       "size": 2509,
       "normalized_sha256": "028dbd7cce60f33a7b78d32e75f143351105851599b2a0ade1694ba9056c7ad1"
+    },
+    "packages/node-host/src/daemon/client.ts": {
+      "role": "index",
+      "sha256": "ed0f0b4baac7668dc1cb59de58f1a5c9cf242f78432bd435eb0637f07b77603e",
+      "size": 7119,
+      "normalized_sha256": "ed0f0b4baac7668dc1cb59de58f1a5c9cf242f78432bd435eb0637f07b77603e"
+    },
+    "packages/node-host/src/daemon/doctor.ts": {
+      "role": "index",
+      "sha256": "1bdcc169b6b6c952a040734436f84809740e06b28a19f23de0853bc9d5ebadec",
+      "size": 6602,
+      "normalized_sha256": "1bdcc169b6b6c952a040734436f84809740e06b28a19f23de0853bc9d5ebadec"
+    },
+    "packages/node-host/src/daemon/protocol.ts": {
+      "role": "index",
+      "sha256": "bd694ae445c1ed05d469eb4f24380e0af8c81511708f6129082daa66c93cf2d7",
+      "size": 8866,
+      "normalized_sha256": "bd694ae445c1ed05d469eb4f24380e0af8c81511708f6129082daa66c93cf2d7"
+    },
+    "packages/node-host/src/daemon/server.ts": {
+      "role": "index",
+      "sha256": "48ca3cc0acf5eea569058d3dbb4acf16f0a226f32b4e37491cc9c0885c0bb338",
+      "size": 8263,
+      "normalized_sha256": "48ca3cc0acf5eea569058d3dbb4acf16f0a226f32b4e37491cc9c0885c0bb338"
+    },
+    "packages/node-host/src/daemon/session-holder.ts": {
+      "role": "index",
+      "sha256": "d58dcdc6748e477a872f8e3a2c681062c2264e910b15a5d2b6c67baf5f233f57",
+      "size": 8633,
+      "normalized_sha256": "d58dcdc6748e477a872f8e3a2c681062c2264e910b15a5d2b6c67baf5f233f57"
     },
     "packages/node-host/src/distill-run.ts": {
       "role": "index",
@@ -5113,9 +5179,9 @@
     },
     "packages/node-host/src/index.ts": {
       "role": "index",
-      "sha256": "659aa9b2f60e320acb368852b29ebae0c664542aecb0915a2e65de5dec19e537",
-      "size": 1659,
-      "normalized_sha256": "659aa9b2f60e320acb368852b29ebae0c664542aecb0915a2e65de5dec19e537"
+      "sha256": "06c1a4bc7251b105ca5b7a166accb02430033d553a01696f18f2f3756489559f",
+      "size": 2499,
+      "normalized_sha256": "06c1a4bc7251b105ca5b7a166accb02430033d553a01696f18f2f3756489559f"
     },
     "packages/node-host/src/node-fs.ts": {
       "role": "index",
@@ -5131,9 +5197,9 @@
     },
     "packages/node-host/src/skill-card.ts": {
       "role": "index",
-      "sha256": "2cacbdc793e35b49b32299d49b8c33ed4d430e1d3253be894e81e1a10b5436fb",
-      "size": 2338,
-      "normalized_sha256": "2cacbdc793e35b49b32299d49b8c33ed4d430e1d3253be894e81e1a10b5436fb"
+      "sha256": "68e4e26f25bb7f5558b8c8b9687b52248af3650a2942d6f7fac86b2ac88ce1f8",
+      "size": 5466,
+      "normalized_sha256": "68e4e26f25bb7f5558b8c8b9687b52248af3650a2942d6f7fac86b2ac88ce1f8"
     },
     "packages/node-host/src/skill-source.ts": {
       "role": "index",
@@ -5173,15 +5239,21 @@
     },
     "packages/node-host/test/cli.test.ts": {
       "role": "observe",
-      "sha256": "675e0952f86c314fa58d185e692d690767f6d241434736a7bfa5b315be173283",
-      "size": 22684,
-      "normalized_sha256": "675e0952f86c314fa58d185e692d690767f6d241434736a7bfa5b315be173283"
+      "sha256": "425cf84c5334e5d9f3b4d0803181e7dd7b94572cca72ab6f8e95e6900462f807",
+      "size": 22794,
+      "normalized_sha256": "425cf84c5334e5d9f3b4d0803181e7dd7b94572cca72ab6f8e95e6900462f807"
     },
     "packages/node-host/test/console.test.ts": {
       "role": "observe",
       "sha256": "a46036d2e858d1cc08876c841e66c350234b676900eb84924119002e47f63683",
       "size": 4079,
       "normalized_sha256": "a46036d2e858d1cc08876c841e66c350234b676900eb84924119002e47f63683"
+    },
+    "packages/node-host/test/daemon.test.ts": {
+      "role": "observe",
+      "sha256": "c8dce65eca31981774db40d2a33c9f769cd7e6fc11b70be56f5a54443ba6c8ab",
+      "size": 43506,
+      "normalized_sha256": "c8dce65eca31981774db40d2a33c9f769cd7e6fc11b70be56f5a54443ba6c8ab"
     },
     "packages/node-host/test/node-fs.test.ts": {
       "role": "observe",

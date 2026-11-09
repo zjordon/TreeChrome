@@ -1,90 +1,140 @@
-# SCRATCHPAD — issue #26 M1.5：tc 供给面产品化（全局命令 + --auto-chrome + skill 分发）
+# SCRATCHPAD — issue #27 M2：会话级 daemon CLI（browser-use 3.0 同款常驻会话）
 
-> 状态：**已实施并全量验证；评审循环 2 轮收敛（轮 1 五条全采纳、轮 2 零意见）。待 `/finish-issue` 收官。** 四决策点已拍板（a 全局直装+pack 顺带 / env 链仅 CLI / ~/.claude/skills/tc / --keep-chrome）。
-> 基准：issue #26 正文；#25 M1 已交付契约（stdin 优先序 / --json camelCase / 退出码 0-1-2）**全部不动**。
-> 分支：`feat/issue-26-cli-m15`（自 main `1ce3d2b`）。
+> 状态：**已实施并全量验证（node-host 134→164 tests 绿 / 覆盖率过线 + 真机 smoke 六连含 dist 二进制）；待 `/review-loop` 评审收敛。** 四决策点已拍板（HTTP 9780 / 会话式无白名单 / 15 动词 / 缺省三件）。
+> 基准：issue #27 正文；#25/#26 已交付（one-shot run / 全局命令 / --auto-chrome / skill 分发）全部复用不动。
+> 分支：`feat/issue-27-cli-m2-daemon`（自 main `9158a93`）。
 
 ## 目标
 
-把 #25 的仓内工具形态升级为 browser-use 级供给面：任意目录 `tc run --json --auto-chrome` 零前置可用 + agent 侧零学习（skill 分发）。
+控制权反转：调用方 agent 的 LLM 直接驱动本仓浏览器原语——`tc <动作>` 单命令单 JSON，常驻 daemon 持有
+BrowserSession（两层 selector map / element index 活在进程内——**必须 daemon 化的根因**），跨调用保持 tab，
+`element_tree_text` 成为核心供给物，daemon 内部无 LLM。
 
 ## 设计
 
-### D1 自包含单文件构建 + 全局命令（issue ①）
+### D1 IPC：localhost HTTP（127.0.0.1，建议项 a）
 
-- **构建**：`packages/node-host/scripts/build-cli.mjs`（esbuild API，复用 devDep）：`src/cli-main-entry.ts`（新，`main()` 全装配 + 版本经 esbuild `define __TC_VERSION__` 构建期嵌入 + 顶层 catch=评审轮 1 [3] 同款兜底）→ `dist/tc.mjs`（bundle/format esm/platform node，自包含 core/cdp-ws；dist 在 .gitignore，按需构建不入库）
-- **staging 包**：构建同时产出 `dist/tc-package/`（package.json `{name:"tc-cli", version, bin:{tc:"tc.mjs"}}` + tc.mjs + README 拷贝）——**无 dependencies**，绕开 workspace:* 不可独立安装问题；全局安装 `npm i -g packages/node-host/dist/tc-package`（或 `npm pack` 出 tarball 分发）
-- **script 面**：package.json 增 `"build:cli": "node scripts/build-cli.mjs"`
-- **凭据链**（修「.env 按 CWD」跨项目坑）：`applyDotEnv` 增链式选项（多个文件**全部**应用、no-override=先到先得，不再「首个存在即停」——现有单文件缺省行为不变保 examples 兼容）；CLI main 按 **TC_ENV_FILE > ~/.tc/.env > cwd/.env** 序传入（OS env 恒最高——applyDotEnv 不覆盖既有键，语义天然成立）。runAgent 缺省行为**不改**（仅 CLI 面启用链）
-- 仓内 dev 形态（`node bin/tc.mjs` + loadEntry）保留不变
+- **HTTP**（建议）：可 curl 调试、跨平台零差异、与 CLI 的 JSON 契约同构；代价是占端口
+- 备选 named pipe / unix socket：不占端口但平台 API 分叉、难调试——不建议
+- 细节：绑定恒 `127.0.0.1`（不接受外网）；缺省端口 `9780`，`TC_DAEMON_PORT` 覆盖；
+  运行态写 `~/.tc/daemon/daemon.json`（port/pid/wsUrl/startedAt）供 CLI 发现与 doctor 诊断；
+  **v1 不加鉴权**（与本机 CDP 9222 暴露面同级，登记偏离并写入文档）
 
-### D2 Chrome 自动拉起 `--auto-chrome`（issue ②）
+### D2 daemon 进程与生命周期
 
-- 新模块 `src/auto-chrome.ts`（IO 全注入）：二进制发现（`CHROME_PATH` env > Win/macOS/Linux 标准路径表）、临时 profile 目录（mkdtemp）、spawn（POSIX detached 进程组）、`waitForCdp`（轮询 `/json/version`，注入 sleep）、`killTree`（win: `taskkill /PID x /T /F`；posix: 进程组 kill——**绝不按映像名杀**，只按我们 spawn 的 pid）
-- **main 接线**：`--auto-chrome` 且 settings.browser.wsUrl === null（无显式 CDP 目标）→ 先发现；失败则 spawn + 等待就绪 → 解析出 wsUrl **显式传给 runAgent**（runAgent 零改动）→ finally 按 profile 特征收尾（`--keep-chrome` 保留调试；清理失败仅告警不失败退出）
-- 显式 `CDP_WS_URL` 时 `--auto-chrome` 为 no-op（调用方自管连接，issue 已定）
+- 新模块 `src/daemon/`（node-host 包内，IO 全注入）：
+  - `server.ts`——node:http 服务：路由分发 + **串行队列**（单 Chrome 单 daemon，多调用方 FIFO 排队，
+    对齐 browser-use 纪律：并发切 tab 会竞态）；每请求单 JSON 应答（camelCase）+ ok/error 信封
+  - `session-holder.ts`——BrowserSession 生命周期：resolve wsUrl（`CDP_WS_URL` > 9222 discover > 复用
+    #26 auto-chrome 拉起）→ start → 常驻；daemon 拥有的自拉 Chrome 在 daemon 退出/空闲回收时按 PID 树回收
+    （复用 LaunchedChrome.stop，绝不按映像名杀）；空闲回收（缺省 15 分钟无请求 → 优雅退出，`TC_DAEMON_IDLE_SECS` 覆盖）
+  - `lifecycle.ts`——单例守卫（daemon.json + 端口探活：已活着则 no-op）、日志 `~/.tc/daemon/daemon.log`、
+    detached+unref+吞异步 error（沿 #26 auto-chrome 同款纪律）
+- **CLI 面自动启动**：任一动作命令发现 daemon 不可达（ECONNREFUSED）→ 自动拉起（等待 /health 就绪）→ 重发；
+  daemon 被杀后下一次调用自愈（验收 3）
 
-### D3 skill 用法分发（issue ③）
+### D3 命令面（v1 子集，等真实调用方反馈再扩）
 
-- `packages/node-host/skills/tc/SKILL.md`（手写中文卡，与 README 同源同步义务登记在两文件头）：frontmatter（name/description）+ **When Not to Use**（curl/fetch 能拿的别开浏览器）+ 前置（9222 或 --auto-chrome；凭据链）+ 三调用形态 + JSON 契约与退出码表 + 护栏旗标 + Windows 编码
-- `tc skill install [--dir <path>] [--print]`：缺省拷到 `~/.claude/skills/tc/SKILL.md`（Claude Code 个人 skill 目录）；`--dir` 自定义；`--print` 出 stdout 供管道进任意 agent 配置
-- parseCliArgs 扩第二子命令 `skill`（M1 的 `run` 单子命令结构顺势扩展）
+- 动作动词（顶层级，与 run/skill/daemon 保留字并存）：`get_state` / `navigate` / `click` / `input_text` /
+  `select_dropdown` / `scroll` / `find_text` / `read_grid` / `evaluate` / `screenshot` / `upload_file` /
+  `go_back` / `tabs` / `switch_tab` / `close_tab`
+- 参数走类型化旗标（`tc click --index 5`、`tc input_text --index 3 --text "…"`、`tc navigate --url …`），
+  中文值经 stdin/旗标均可（UTF-8）
+- **tab 语义**：daemon 记住当前 attached tab，跨调用不重开；`tabs/switch_tab/close_tab` 透传 BrowserSession
+  既有能力；后台操作不抢前台焦点（无 focus 副作用的动作序列）
+- **upload_file 语义（建议项 b）**：会话式 v1 **不设白名单**——调用方 agent 即信任边界（本机同权进程），
+  skill 卡写明；M1 的 --allow-* 护栏仍属 run 子命令面不动
+- `tc daemon [--status|--stop|--doctor]`：status 报 pid/port/wsUrl/空闲计时；stop 优雅退出（含自拉 Chrome 回收）；
+  **doctor** 三类故障诊断（Chrome 没起 / daemon 僵死 / 端口占用）+ 给出动作
+- 输出契约：单命令单 JSON（stdout 仅终态 JSON）+ 退出码 0 成功 / 1 执行失败 / 2 用法与环境失败（沿 M1）
 
-### D4 测试
+### D4 skill 卡与文档
 
-- settings：applyDotEnv 链式（多文件全应用/先到先得/单文件缺省回归）
-- cli/auto-chrome：二进制发现表、main 接线（发现失败→spawn→wsUrl 显式传递→finally 清理 / keepChrome 跳过 / 显式 wsUrl no-op / spawn 失败 exit 2）——discover/spawn/kill 全注入 fake
-- skill install：注入 writeFile，断言目标路径/内容/`--print` 分支
-- **真机 smoke（手动不入 CI）**：无 Chrome 状态 `node bin/tc.mjs run --json --auto-chrome --max-steps 5` → 自动拉起→单行 JSON→零残留（进程+临时目录）；`npm i -g dist/tc-package` 后任意目录 `tc --version`
+- `skill-card.ts` 增「会话式」章节（daemon 语义/动作表/tab 保持/串行纪律/When-Not-To-Use 保持），
+  `tc skill install` 既有管道不变；README 供给面章节同步
+
+### D5 测试
+
+- node-host 单测全注入（不起真 Chrome/真端口绑死）：server 路由与串行队列、session-holder 生命周期
+  （wsUrl 解析序/自拉 Chrome 回收/空闲退出）、CLI 客户端（请求构造/退出码映射/ECONNREFUSED 自动拉起重试）、
+  doctor 三类诊断分支
+- 真机 smoke（手动不入 CI）：①两次连续调用共享 tab ②并发三调用被串行化 ③kill daemon 后下一调用自愈
+  ④doctor 三故障注入 ⑤自拉 Chrome 场景 daemon 退出零残留
 
 ## 实施步骤
 
-1. settings env 链 + cli 旗标/子命令扩展 + 单测
-2. auto-chrome 模块 + main 接线 + 单测
-3. build-cli 构建脚本 + staging 包 + SKILL.md + `skill install` + 单测
-4. `pnpm typecheck/test/lint` + gate + 真机 smoke（含全局安装）
-5. `/review-loop` → `/finish-issue`
+1. daemon server（路由+串行队列+JSON 信封）+ 单测
+2. session-holder（wsUrl 解析/BrowserSession 常驻/自拉 Chrome 回收/空闲退出）+ 单测
+3. CLI 动作动词与 daemon 子命令（自动启动/退出码映射）+ 单测
+4. skill 卡会话式章节 + README + build:cli 顺带验证
+5. `pnpm typecheck/test/lint` + gate + 真机 smoke 五连
+6. `/review-loop` → `/finish-issue`
 
-## 验收（对齐 issue #26）
+## 验收（对齐 issue #27）
 
-- 任意目录（非仓库 CWD、无本地 .env）：`echo 任务 | tc run --json --auto-chrome --max-steps 10` 零前置跑通，stdout 单 JSON，run 后无残留 Chrome 进程/临时目录
-- `npm i -g` 后 `tc --version` 显示构建嵌入版本；凭据解析 TC_ENV_FILE > ~/.tc/.env > cwd/.env
-- skill 卡装入一个真实 agent 目录验证（`tc skill install` → `~/.claude/skills/tc/`）
+- 两次连续 CLI 调用共享同一 tab/会话（第二次可见第一次的页面状态）
+- 并发调用被 daemon 串行化，无 tab 竞态
+- daemon 被杀后下一次调用自动恢复（重拉 Chrome + 新会话）
+- `tc daemon --doctor` 诊断三类故障并给出动作
 
 ## 不做
 
-daemon/会话保持（#27）、npm 公网发布、权限模型变更、runAgent 缺省 env 行为变更、SKILL.md 自动生成（手写+同步义务登记）
-
-## 待人工审核
-
-1. **全局安装载体**：staging 目录 `npm i -g <dir>`（建议）vs 只 `npm pack` tarball vs 仅文档化 PATH
-2. **env 链范围**：仅 CLI 启用（建议，examples/runAgent 行为零变更）vs runAgent 缺省也升级
-3. **skill install 缺省目标** `~/.claude/skills/tc/`（Claude Code）+ `--dir/--print` 出路，是否合意
-4. `--keep-chrome` 命名与语义（保留拉起的 Chrome 不清理，调试用）
+MCP server 通道（另立）、云远端浏览器、多 Chrome 实例池、daemon 鉴权（v1 登记）、npm 公网发布
 
 ## 实施记录（2026-11-08）
 
-**落地文件**：`src/auto-chrome.ts`（新，IO 全注入）/ `src/skill-card.ts`（新，用法卡 TS 常量单源）/ `src/cli-main-entry.ts`（新，dist 构建入口）/ `scripts/build-cli.mjs`（新）/ settings.ts（applyDotEnv chain 选项 + resolveEnvChain）/ cli.ts（run|skill 双子命令 + 凭据链 + auto-chrome 接线 + wsUrl 显式透传）/ index.ts / package.json（build:cli）/ vitest.config.ts（cli-main-entry 出覆盖率）/ 测试 134（+17）/ README 重写供给面章节。
+**落地文件**：`src/daemon/`（新五件：protocol 纯函数面 / session-holder 会话持有 / server HTTP+串行队列 / client 自起客户端 / doctor 三诊断）；`src/cli.ts`（run|skill|daemon|动作动词四面分发 + serveDaemon 常驻入口）；`src/skill-card.ts`（双形态卡）；`src/index.ts` 导出面；测试 `test/daemon.test.ts`（新 30 用例）+ `cli.test.ts` 补字段；README 会话级章节。
 
-**实施期三处裁定/修正**
+**实施期裁定（计划未明确处的落定）**
 
-1. **SKILL 卡改 TS 常量单源**（`src/skill-card.ts`）：计划原写 `skills/tc/SKILL.md` 文件——但 dist 场景运行时读包内文件在 loadEntry 临时打包形态下会断（import.meta.url 指向 temp 目录）；TS 常量随 bundle 走、单源无同步义务
-2. **真机实证一（Windows import 坑）**：build-cli 动态 import esbuild 绝对路径须 `pathToFileURL`（与 boot.mjs 同款，初版漏）
-3. **真机实证二（npm shim 坑）**：dist 缺 shebang 时 npm 的 sh shim 落回 sh 解释 .mjs（`var: command not found`）——esbuild `banner` 注入 `#!/usr/bin/env node` 修复
-4. **真机实证三（句柄竞态）**：`taskkill /F` 后立即 rm 撞文件锁留残留目录——stop() 补「kill 后 300ms 短候 + rm 三次重试（500ms 步进）」，穷尽才 warn（可手删）
+1. **布尔反向旗标**：core 缺省 true 的参数（clear/fresh/await_promise）用 `--no-clear/--no-fresh/--no-await` 形态（parseArgs 布尔旗标无法传 false）；protocol VerbFlag 增 `invert`
+2. **信封语义**：动作执行失败（ActionResult.error）走 `ok:true + data.error`（stdout 仍有 JSON、exit 1——与 M1「1=跑完未成功带 JSON」同构）；`ok:false` 仅 env/usage（exit 2）
+3. **连接中断处理**：catch 不自作主张置空 core——下一次 ensure 检测 isConnected 做「优雅 stop + 重建」，避免跳过 stop 泄漏
+4. **upload 相对路径**：CLI 侧 `path.resolve` 成绝对路径再发（daemon CWD 可能与调用方不同）
+5. **serve 幂等**：EADDRINUSE → 「已在运行」exit 0（双拉起竞态收口）；SIGTERM/SIGINT 优雅关停
+6. **空串旗标值视同未给**（与 allow-* 收集口径一致），修掉 select_dropdown `--value ""` 误触 XOR
+7. **skill 卡增「怎么选」路由阶梯**（实施后用户追加裁定）：自然语言任务在调用方 agent 分流——
+   不需要浏览器→不用；目标+验收一句话写清→run；一步完事/探索诊断/要看路/内外交织/多轮同页→会话级；
+   模糊默认 run 并告知形态；run 失败读 stopReason/errors 再决定重发或切会话级诊断
 
 **验证**
 
-- 全仓 7 包 1869 tests 绿（node-host 117→134）；覆盖率 stmts 95.9%/branch 85.8%；gate 退出码 0
-- 真机 smoke 四连：① dist 二进制跨 CWD `--auto-chrome`（Chrome 冷启动→exit 0→**零残留**）② 全局 `npm i -g` 后任意目录 `tc --version`/`tc --help` ③ `tc skill install --dir`（frontmatter 正确）④ **验收句**：任意目录 `echo 任务 | tc run --json --auto-chrome` → 单行 JSON + exit 0 + 零残留（进程/临时目录/端口全清）
+- node-host 134→164 tests 全绿（+30：protocol/server 真 HTTP 临时端口/session-holder 全分支/client 自起重试/doctor 三诊/CLI 解析与 main 分发）；覆盖率过 85% 阈值；全仓 7 包 + 扩展 110 test files 绿
+- 真机 smoke 六连（隔离端口 daemon 9790/9791 + CDP 9333 强制冷启动，不碰 9222）：
+  ① 两次独立 CLI 调用共享同一 tab/会话（第二次见第一次的页面与索引）② 并发三命令 FIFO 串行全成 ③ taskkill 硬杀 daemon 后下一命令自愈重拉（pid 25044）④ status/doctor 三类诊断工作 ⑤ --stop 优雅关停零残留（进程/端口/临时目录/daemon.json 全清）⑥ dist 自包含二进制同链路过（自拉 daemon→动作→关停）
+- 真机实证两笔：example.com 此网络不可达（动作 exit 1 + error JSON 契约面顺便验证）；③ 自愈场景的 daemon 由无 CDP_PORT 环境的 CLI 拉起 → 回落缺省 9222，恰逢用户调试 Chrome 已下线而在 9222 起了临时实例（随后优雅回收，用户实例未受影响——taskkill 只杀自己 spawn 的树）
 
-## 评审轮登记
+## 待人工审核
 
-- **轮 1**（2026-11-08）：5 条意见（自评 high/medium×3/low；triage **P1×1 + P2×3 + P3×1**）**全采纳**，10m13s：
-  1. [P1] spawn 失败（路径是目录/EACCES/TOCTOU）时无监听的异步 `error` 事件 → 整进程崩 exit 1 破坏契约。修复：`child.on("error", () => {})` 吞异步（pid=-1 已同步收口）
-  2. [P2] detached 未 `unref()` → `--keep-chrome` 下终态已打印但事件循环被 child 句柄占住、tc 永不退出。修复：spawn 后 `unref()`；**真机验证过**（--keep-chrome exit 0 自行退出）
-  3. [P2] 就绪超时路径裸 `rm` 撞锁会顶替「就绪超时」原始错误。修复：抽 `rmBestEffort`（短候+三重试+吞清理失败）统一三处清理点
-  4. [P2] 测试 `AppData\\Local` 断言依赖宿主平台 join 分隔符（非 Win CI 必红）。修复：断言前归一
-  5. [P3 顺手修] pid<=0 拉起失败路径泄漏 mkdtemp 目录。修复：抛错前 `rmBestEffort`；双向验证过（还原旧实现新测试必红）
-  - 测试 +2（超时 rm 恒败不顶替 / pid<=0 回收断言）；134 全绿；gate 0；dist 已重建含修复
-- **轮 2**（2026-11-08）：**零意见、状态 complete——循环收敛出口**（增量 diff = 修复提交 248237a，7m15s）。累计 stats：2 轮 / 5 意见 / 采纳 5 / 驳回 0 / stale 0。
+1. **IPC 选型**：localhost HTTP 127.0.0.1:9780 + daemon.json 发现（建议）vs named pipe/unix socket
+2. **upload_file 会话式白名单**：v1 不设（调用方即信任边界，建议）vs 沿用 M1 --allow-* 语义
+3. 命令面 v1 子集（15 动词）与旗标传参形态是否合意
+4. 空闲回收缺省 15 分钟、端口缺省 9780、无鉴权三处缺省值
+
+## 评审轮 1（2026-11-09，ocr 全量 main..4604a9e）
+
+8 条意见（自评 critical:1 / high:4 / medium:3）——**逐条核实全部成立，P1×2 / P2×6 全采纳，零驳回零 stale**：
+
+| # | 定级 | 修复 |
+|---|---|---|
+| 8 布尔缺省穿透（critical） | P1 | protocol.ts buildParams：parseArgs 布尔 default:false 被「未给」守卫放过，invert 旗标恒产 false 覆盖 core 缺省 true（input_text 变追加输入 / evaluate 不等 promise / read_grid 不清过滤器）。改 raw===true 才置参 |
+| 4 盲重试重复执行（high） | P1 | client.ts requestDaemon：失败后先探活——daemon 活着（600s 超时/连接中断）不重发（动作可能已执行或在 FIFO 队列），env 信封提示勿盲目重试；死了才自起重试 |
+| 1 卡片键名不符（high） | P2 | skill 卡/USAGE/README 三处 element_tree_text → elementTreeText（实际返回键） |
+| 2 截图承诺落空（high） | P2 | screenshot 补 --save-path 旗标（core 无 save_path 只回字节回执）；相对路径 CLI 侧 resolve；卡/USAGE/README 示例更新 |
+| 3 端口解析时序（medium） | P2 | daemon 分支 applyEnv 提前到端口计算前，status/stop/serve/doctor 四模式统一（.env 写 TC_DAEMON_PORT 不再分裂）；--daemon-port 显式覆盖写入 env 供 doctor 面取用 |
+| 5 空闲回收杀在途（medium） | P2 | server.ts runningJobs 在途/排队门禁 + 任务结束刷新 lastActivity |
+| 6+7 doctor readInfo 未接线（med+high） | P2 | doctor.ts 增 parseDaemonInfo（坏 JSON/形状 → null）；cli.ts daemonDoctor 缺省接线读 ~/.tc/daemon/daemon.json——僵死诊断生产可达 |
+
+验证：红→绿双向（新测试对未修复代码 7 红→修复后全绿）；node-host 164→171 tests 全绿，覆盖率全维度过线（functions 86.55%）；全仓 8 面 2066 tests 绿；typecheck/biome/gate exit 0。
+
+附带观察（不实施，P3 级）：/health 探测也刷新活跃时刻——外部持续 status 轮询会阻空闲回收（15min 缺省下无实际影响，轮询者即关心者）。
+
+## 评审轮 2（2026-11-09，ocr 增量 4604a9e..ea7546f，只审轮 1 修复）
+
+1 条意见（high/bug）——**采纳（P2），换更强机制实施**：
+
+- [1] 重发门禁的探活假阴性竞态：probeHealth 仅 1.5s 预算，daemon 事件循环被长任务阻塞/瞬时抖动 → 假阴性 → ensureDaemonRunning 宽容轮询（20s）探活成功而未 spawn → 外层仍无条件重发 → 非幂等动作重复执行（轮 1 [4] 要消除的失效模式复活）。评审建议 marker 标记「确曾 spawn 才重发」，但该方案留有残余：两次探活都假阴性时 spawn 撞 EADDRINUSE 幂等退出，daemon 恢复后仍重发。**改用更严门禁：仅 ECONNREFUSED（连接被拒 = 可证明请求从未到达 daemon）才自起重发**，其余失败（超时/连接中断/响应截断）一律不重发、信封给「存活/已退出」区分文案交还调用方——两类竞态一并封死，且无需改 ensureDaemonRunning 签名。行为变化：daemon 中途死亡（连接中断而非被拒）不再自动重试——动作执行状态未知时重试本就有重复执行风险，信封明示「确认副作用后手动重发」。
+
+验证：红→绿双向（stash 修复后新用例红：旧代码自起重发；修复后绿）；node-host 171→172 tests，覆盖率全维度过线（functions 86.77%）；typecheck/biome 绿。
+
+（过程笔误：轮 2 首发误把 --from 设为 lastCommit（=当前 HEAD）得空 range 被 ocr skipped，零消耗；改基线为上轮已审 tip 4604a9e 重发。）
