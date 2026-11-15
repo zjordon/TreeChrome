@@ -7,12 +7,12 @@ AGENTS.md[SG9M]: F:项目规范基准：架构铁律、设计模式映射、代�
 CHANGELOG.md[SV4T]: F:Keep a Changelog 风格变更记录：v0.1.0 首版全量+v0.2.0 增量（自进化闭环 #5/UI 重构 #20 等）+v0.3.0（tc run #25/供给面产品化 #26/会话级 daemon #27） | R:- | A:- | S:版本号格式 [X.Y.Z] 不带 v（git tag 才带 v）
 CLAUDE.md[SG3T]: F:Claude Code 项目指令入口，单行 @AGENTS.md 引用——不重复维护规范 | R:code:AGENTS.md | A:- | S:-
 README.md[SG6T]: F:仓库总览：平台无关核心包+多宿主 monorepo 设计原则、快速开始命令与包布局状态表 | R:code:docs/architecture.md | A:- | S:布局表状态标记滞后于实际进度（如 core 已实现仍标规划）——权威以 docs/architecture.md 为准
-biome.json[FG8T]: F:Biome lint/format 配置：2 空格/双引号/分号/行宽 100/trailingCommas all；核心四包 overrides 禁 chrome/node:process/process 全局；files 排除 test fixtures/docs/domain-skills/两沙箱/.aoci | R:code:scripts/gate.mjs,code:AGENTS.md | A:- | S:overrides 按路径生效（AST 级权威，gate.mjs 正则只是即时反馈）；测试文件关 noNonNullAssertion；沙箱（_self-evolution/_douyin）是蒸馏运行时产物——JSON.stringify 数组布局会撞全仓 format 检查（#12 实录），排除与 domain-skills 同性质
+biome.json[FG8T]: F:Biome lint/format 配置：2 空格/双引号/行宽 100；核心四包 overrides 禁 chrome/node:process 全局；files 排除 test fixtures/docs/domain-skills/两沙箱/.aoci/.archify | R:code:scripts/gate.mjs,code:AGENTS.md | A:- | S:overrides 按路径生效（AST 级权威，gate.mjs 正则只是即时反馈）；测试文件关 noNonNullAssertion；不入库本地产物目录（沙箱/archify）不排除会撞全仓 format 检查（#12 实录）
 package.json[FV6T]: F:monorepo 根定义：pnpm workspace、engines node≥22、prepare 装 git hooks、test 先跑 gate 测试再递归各包 | R:code:scripts/gate.mjs,code:.githooks/pre-commit | A:- | S:根版本号即发布版本（CHANGELOG 不带 v/git tag 带 v）
 pnpm-lock.yaml[FV4L]: F:pnpm 锁文件（入库——AGENTS 约定） | R:- | A:- | S:-
 pnpm-workspace.yaml[FV2T]: F:workspace 定义+allowBuilds（vitest→esbuild 平台二进制显式放行——pnpm 11 供应链策略） | R:- | A:- | S:新依赖需 postinstall 时在此登记 allowBuilds
 tsconfig.base.json[FV4T]: F:TS 基座配置（strict 全开；各包 extends） | R:- | A:- | S:-
-SCRATCHPAD.md[SW4S]: F:实施计划草稿（AGENTS 新工作流，随分支整体替换）：issue #27 M2 会话级 daemon CLI——四决策点拍板+实施记录+评审 3 轮收敛（9 条意见全采纳，P1 盲重试/布尔缺省穿透） | R:code:AGENTS.md | A:- | S:入库不 gitignore（用户裁定）；开篇整体替换为当期计划，历史在各分支可溯
+SCRATCHPAD.md[SW4S]: F:实施计划草稿（随分支整体替换）：issue #31 扩展 mcp-bridge M1——四决策点拍板+watch_task 修订+P0-P5 实施记录+评审 3 轮收敛（6 条全采纳：P1 re-pair 死锁+P2×5） | R:code:AGENTS.md | A:- | S:入库不 gitignore（用户裁定）；开篇整体替换为当期计划，历史在各分支可溯
 _dump_bestsellers.txt[ZQ2T]: F:Bestsellers 页 element_tree_text 一次性转储（dump-model-page-view 产物，issue #6 诊断证据）：修复前控件行可见 options 而 Period 当前值不可见——感知盲区定位依据 | R:code:examples/dump-model-page-view.mjs | A:- | S:-
 _issue-self-evolution.md[SW2T]: F:issue #5（自进化闭环）创建前的草稿正文：可行性评估、积木盘点、蒸馏器落点/存储/MV3 异步方案与工作项拆分——定稿后经 gh api 发布为正式 issue | R:- | A:- | S:-
 _issue5-comment.md[SW2T]: F:issue #5 阶段 0 质量门评论草稿：真机 A/B 对拍数据（12→6 步/token 约 -51%）与闭环链路验证、卡质量人工核查、随跑修订两条——发布后留存的临时件 | R:- | A:- | S:-
@@ -22,12 +22,13 @@ _issue-cli-m15.md[SW2T]: F:issue #26（M1.5 供给面产品化）发布底稿：
 _issue-cli-m2-daemon.md[SW2T]: F:issue #27（M2 会话级 daemon CLI）发布底稿：daemon 常驻根因（selector map 活在进程内）/IPC 选型/命令面子集草案/串行与 tab 语义——前置依赖 #26，经 gh api 发布 | R:code:_issue-cli-host.md | A:- | S:-
 _issue-ext-mcp-m1.md[SW2S]: F:issue #31（扩展 mcp-bridge M1）发布底稿：qz 桥接调研+独立包 packages/mcp-bridge（tc-bridge、18730、MCP /mcp+私线、安全四件套）+扩展长轮询 runtime+任务级三件 run_task/get_snapshot/stop_run | R:code:_issue-ext-mcp-m2.md | A:- | S:四决策点已拍板（独立包/最小三件/CLI URL 配对/18730）；M2 决策点走 #32 评论
 _issue-ext-mcp-m2.md[SW2T]: F:issue #32（扩展 mcp-bridge M2 会话级直驱）发布底稿：SW 内 session-holder 同构体（chrome.debugger+keepalive hold）+15 动词翻 MCP tools+epoch 失效语义+PolicyGate 远程策略——四决策点开放待评论拍板 | R:code:_issue-ext-mcp-m1.md | A:- | S:前置依赖 #31；epoch 失效是倾向案未拍板，实施前看 issue 评论
+_issue31-comment.md[SW2T]: F:issue #31 决策点 2 修订评论底稿：任务级工具面从最小三件扩为三件+watch_task 长观察（对齐 qz waitForTask——挂起至终态+progress 过程流，只读边界绝不杀 run）——发布后留存的记录件 | R:code:_issue-ext-mcp-m1.md | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/.githooks/===
 pre-commit[OQ7T]: F:版本化 git pre-commit 钩子：校验 node≥22 后 exec scripts/gate.mjs pre-commit，人工提交与 agent 提交走同一道门 | R:code:scripts/gate.mjs | A:- | S:启用需每克隆一次 git config core.hooksPath .githooks（pnpm install 的 prepare 自动执行）
 
 ===D:/dev/git/z_jordon/TreeChrome/.opencodereview/===
-rule.json[FQ6T]: F:open-code-review 扫描规则：include 真实代码、exclude docs/运行时产物，全局严重度边界——只报有失效场景的必改问题 | R:- | A:- | S:改顶层目录结构时须同步维护 include/exclude，否则新目录逃逸评审扫描
+rule.json[FQ6T]: F:open-code-review 扫描规则：include 真实代码（含 packages/*/bin/*.mjs 与 boot.mjs）、exclude docs/运行时产物，全局严重度边界——只报有失效场景的必改问题 | R:- | A:- | S:改顶层目录结构时须同步维护 include/exclude，否则新目录逃逸评审扫描
 
 ===D:/dev/git/z_jordon/TreeChrome/.zcode/commands/===
 finish-issue.md[XW6S]: F:/finish-issue 斜杠命令：issue 四步收尾（总结评论→建 PR→squash 合并→删分支），先展示计划等确认再执行写操作 | R:code:.claude/commands/finish-issue.md | A:- | S:中文标题/body 必须走 gh api --input UTF-8 JSON 文件（PowerShell 传参乱码）；commit message 用 git commit -F UTF-8 文件；与 .claude 副本同源双栖须同步改
@@ -46,9 +47,10 @@ smoke-sw-runtime.mjs[TB7M]: F:D5 SW 运行时全链 smoke：mock LLM 剧本三�
 smoke-ui.mjs[TU6M]: F:E5 真 UI smoke：CDP DOM 驱动真侧边栏页——输入→开始→权限卡代答→时间线→done；M4 增 ⑤ 设置 overlay 冒烟（设置钮→sheet 四区 tab+dialog→Esc 关） | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/e2e/smoke-sw-runtime.mjs | A:- | S:React 受控组件输入须 native setter + input 事件；overlay Esc 用 window.dispatchEvent
 smoke-attachments.mjs[TU5S]: F:附件分块传输 e2e smoke：真 SW+Port 驱动 begin→begun→chunk→commit（微型/8MB 多块/超限拒绝/多件并存）；diag echo 探针实证通道序列化行为 | R:code:apps/extension/e2e/lib-harness.mjs,code:apps/extension/src/host/attachment-registry.ts | A:- | S:通道实证留痕——chrome.runtime 消息 JSON 序列化，ArrayBuffer 克隆不可用（块载荷因此是 base64）
 smoke-self-evolution.mjs[TB7M]: F:e2e 全链 smoke（issue #5 M7 验收句）：mock LLM 四面路由（主循环步/judge/matcher/蒸馏）→成功 run→IDB 草稿+skill-drafts 广播→options op 采纳→二跑 skill_active(taskSlug) 注入断言 | R:code:apps/extension/e2e/lib-harness.mjs | A:- | S:-
+smoke-bridge.mjs[TE7M]: F:#31 M1 e2e 全链 smoke：真桥子进程+headless+扩展——配对真链路（tabs 捕获 t）→MCP initialize/run/watch（progress）→fixture 副作用→杀 SW 恢复 interrupted | R:code:apps/extension/e2e/lib-harness.mjs,code:packages/mcp-bridge/bin/tc-bridge.mjs | A:- | S:mock 挂起判定按任务文本精确匹配（judge 调用也带 tools）；杀 SW 前须等 journal 防抖落盘（running 态 200ms）
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/===
-background.ts[EW9M]: F:MV3 SW 壳：消息路由先注册再 boot 装配全套件；issue #5 蒸馏链（队列/worker/alarm 兜底 drain/skill-drafts 广播）+issue #9 notifyDrafts 计数与 onPhase 过程拍广播；diag 与 SW 被杀恢复 | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/message-router.ts,code:apps/extension/src/runtime/port-server.ts,code:apps/extension/src/runtime/distill-worker.ts,code:apps/extension/src/runtime/options-handler.ts | A:defineBackground, boot, recoverInterruptedRuns, refreshBuiltins | S:MV3 纪律：全部事件监听器须在首个 await 前同步注册（晚注册丢事件无自愈）；openSkillDb 是 boot 唯一 await 点置于尾部；IDB 打不开降级内存空库不拖垮 run
+background.ts[EW9M]: F:MV3 SW 壳：消息路由先注册再 boot 装配全套件；issue #5 蒸馏链（队列/worker/alarm 兜底）+issue #9 notifyDrafts 计数与过程拍广播；issue #31 boot 同步段挂 bridge-runtime；diag 与 SW 被杀恢复 | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/message-router.ts,code:apps/extension/src/runtime/port-server.ts,code:apps/extension/src/runtime/distill-worker.ts,code:apps/extension/src/runtime/options-handler.ts,code:apps/extension/src/runtime/bridge-runtime.ts | A:defineBackground, boot, recoverInterruptedRuns, refreshBuiltins | S:MV3 纪律：全部事件监听器须在首个 await 前同步注册（晚注册丢事件无自愈）；openSkillDb 是 boot 唯一 await 点置于尾部；IDB 打不开降级内存空库不拖垮 run
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/entrypoints/options/===
 App.tsx[EU5T]: F:options 页粘合层（M4 双宿主薄壳）：ThemedRoot+页面壳在外（OptionsApp 已不带主题壳），sendMessage 单发工厂注入 | R:code:apps/extension/src/ui-glue/options-app.tsx | A:App, request | S:request 须模块级稳定引用——refresh 依赖其身份；主题壳在宿主是双宿主前提
@@ -62,7 +64,7 @@ main.tsx[EU4T]: F:侧边栏 React 挂载入口（theme.css+sidepanel.css 页面 
 sidepanel.css[FU3T]: F:侧边栏页面级 reset（html/body/#root 满高）+ 视口滚动条 4px webkit 定制（auto 跟随系统双套） | R:code:packages/console-ui/src/theme/tokens.css | A:- | S:视口条挂 html；不设标准 scrollbar 属性（121+ 抑制 webkit）
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/===
-package.json[FE6T]: F:扩展宿主包定义：WXT 构建、workspace 依赖（core/protocol/cdp-chrome/console-ui）与 e2e 脚本面（smoke/probe/runtime/ui/attachments/self-evolution） | R:- | A:- | S:typecheck 先 wxt prepare 生成 .wxt 类型再 tsc --noEmit
+package.json[FE6T]: F:扩展宿主包定义：WXT 构建、workspace 依赖（core/protocol/cdp-chrome/console-ui）与 e2e 脚本面（smoke/probe/runtime/ui/attachments/self-evolution/bridge） | R:- | A:- | S:typecheck 先 wxt prepare 生成 .wxt 类型再 tsc --noEmit
 tsconfig.json[FG3T]: F:扩展 TS 配置：extends 基座+.wxt 生成配置，jsx react-jsx，include entrypoints/src | R:- | A:- | S:-
 vitest.config.ts[FQ5T]: F:扩展单测配置：runtime 全件 fake chrome 注入单测；覆盖率 85% 阈值，排除 chrome-apis 真绑定与 *-app.tsx 组态薄层 | R:- | A:- | S:ui-glue *-app.tsx 组态薄层不入覆盖率（真机 smoke 覆盖）；纯适配器 port-client/sidepanel-state 全测
 wxt.config.ts[FE7T]: F:WXT 配置：React 插件+关 auto-import+manifest 权限面；buildStart 跑 embed-skills；resolve 收口 wxt/browser 别名 + react/react-dom dedupe | R:code:apps/extension/scripts/embed-skills.mjs | A:- | S:resolve.dedupe react/react-dom 不可删——pnpm 严格隔离根 node_modules 无 react，peer 解析爬出仓库命中兄弟仓 react 成双实例白屏（2026-10-22 实证）；wxt/browser 别名收口 WXT 虚拟模块解析虚警
@@ -72,7 +74,7 @@ embed-skills.mjs[OV6S]: F:构建期打包脚本：domain-skills/ 三套 185 文�
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/src/host/===
 attachment-registry.ts[MD6M]: F:SW 附件注册表（pending→committed 状态机）：begin 预检+预分配（单件/总量含 pending 占位）→append 严格顺序 base64 块→commit 转正 att_N；budget()/remove/resolve（attachment:<id>→base64） | R:code:apps/extension/src/runtime/assemble.ts,code:apps/extension/src/runtime/run-manager.ts | A:AttachmentRegistry, MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES, ATTACHMENT_TRANSFER_TIMEOUT_MS | S:SW 被杀即丢字节（有意不持久化）；错位/超时（60s 无活动）即废整条 pending 不占预算；总量预检含在途 pending——并发 begin 竞态封死
-chrome-apis.ts[IG8S]: F:chrome API 注入面：storage/alarms（含 onAlarm 监听——蒸馏兜底唤醒）/runtime/tabs 依赖收口为窄接口+globalThis.chrome 结构化收窄真绑定 | R:code:apps/extension/entrypoints/background.ts,code:apps/extension/src/host/settings-store.ts,code:apps/extension/src/host/keepalive.ts | A:chromeStorageLocal, chromeAlarms, chromeOnConnect, chromeTabsQuery, chromeTabsOnRemoved, chromeOnInstalled | S:chrome.tabs 须返回原生对象不解构方法（receiver 检查）；src/host/ 与 entrypoints/ 是扩展内唯一合法 chrome.* 区域
+chrome-apis.ts[IG8S]: F:chrome API 注入面：storage（local+onChanged 热更新）/alarms（onAlarm）/runtime（id）/tabs（query/onUpdated/onRemoved）窄接口收口+globalThis.chrome 结构化收窄真绑定 | R:code:apps/extension/entrypoints/background.ts,code:apps/extension/src/host/settings-store.ts,code:apps/extension/src/host/keepalive.ts,code:apps/extension/src/runtime/bridge-runtime.ts | A:chromeStorageLocal, chromeAlarms, chromeTabsQuery, chromeTabsOnUpdated, chromeStorageOnChanged, chromeRuntimeId | S:chrome.tabs 须返回原生对象不解构方法（receiver 检查）；src/host/ 与 entrypoints/ 是扩展内唯一合法 chrome.* 区域；tabs.query 的 active 是过滤器——传布尔只匹配该子集，省略才匹配全部
 debugger-api.ts[IN6T]: F:cdp-chrome 工厂绑定：对绑定 tabId 构造 ChromeDebuggerTransport 工厂（run 装配消费；SW 内存态无复用价值） | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/assemble.ts | A:makeDebuggerTransportFactory, DebuggerTransportDeps | S:-
 grant-store.ts[PI6T]: F:GrantStore 的 chrome.storage 实现：tc_permissions 键直存 always 授权数组（once 在 PolicyGate 内存不落盘），读侧 isGrantLike 过滤 | R:code:apps/extension/src/host/chrome-apis.ts,code:apps/extension/entrypoints/background.ts | A:ChromeGrantStore, PERMISSIONS_KEY | S:存储不可读时抛——由 PolicyGate.loadAlways 的 try/catch 按空授权降级
 keepalive.ts[RR5T]: F:SW 存活兜底：run 期 30s 周期 alarms 唤醒、结束清除；issue #5 hold/release 引用计数——蒸馏期保活（run 与 hold 任一在位、全退场才清） | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/distill-worker.ts | A:KeepaliveController, KEEPALIVE_ALARM, KEEPALIVE_PERIOD_MINUTES | S:-
@@ -94,6 +96,8 @@ task-text.ts[CG5T]: F:任务文本附件清单拼接：[Attachments] 段+attachm
 distill-queue.ts[RW6S]: F:蒸馏持久队列 tc_distillQueue（chrome.storage）：runId 幂等/上限 10 丢最老/peek-ack/fail 记账 attempts≤2 超限丢弃/坏形态防御；RMW 内建串行链（enqueue 与 ack/fail 并发防丢更新） | R:code:apps/extension/src/runtime/distill-worker.ts,code:apps/extension/src/runtime/run-manager.ts | A:DistillQueue, DistillJob, DISTILL_QUEUE_KEY | S:-
 distill-worker.ts[AW7S]: F:蒸馏 worker：drain 防重入+保活→LLM 装配→distillTaskCard（D14/D17/#12 效率基线透传）→draft 落库/unchanged bump（带 stepCount 棘轮 bestSteps）/skip；异常 fail 记账；180s 超时；issue #9 onPhase 过程拍 | R:code:apps/extension/src/runtime/distill-queue.ts,code:packages/core/src/agent/skills/distill.ts,code:packages/protocol/src/index.ts | A:DistillWorker | S:saveDraft 后 notify(count) 与 done 拍独立并存——skill-drafts 是当前待审数、distill-status 是过程态，互不替代；空队列 drain 不发拍
 options-handler.ts[AW7S]: F:options 请求处理器（自 background.ts 迁出换可测面）：settings 读写/grants 撤销（串行）/skills/test-card/蒸馏草稿三操作；issue #9 adopt/discard 成功经必填 notifyDrafts 广播计数（异常兜底） | R:code:apps/extension/src/host/skill-store.ts,code:apps/extension/src/host/settings-store.ts,code:apps/extension/src/runtime/mutation-queue.ts | A:handleOptionsRequest, OptionsFace | S:revoke 的 removed 须在 saveAlways 前求值——loadAlways 返回活引用时 splice 后算恒 0（迁移测试实抓）；通知失败只记日志不得吞掉已成功的采纳
+bridge-gateway.ts[AE7S]: F:#31 桥命令面 dispatch：run_task 复用 control("start") 单飞互斥（前置非终态→RUN_IN_PROGRESS）；get_snapshot=journal 只读投影（camelCase 终态口径+尾 5 条 160 字符截断）；stop_run=control("stop") | R:code:apps/extension/src/runtime/run-manager.ts,code:apps/extension/src/runtime/journal.ts | A:createBridgeGateway, projectSnapshot, BridgeGatewayError | S:lastUrl 恒 null——journal 无该聚合，#32 评估；stopReason 仅非 done 收口携带（isDone 时恒 null）
+bridge-runtime.ts[AE8L]: F:#31 扩展侧桥 runtime：与 tc-bridge 回环连接状态机——探活/配对三路（tabs 捕获 t/冷启动扫描/token re-pair）/5s 短轮询领批回投/cancel_request 中止/重试预算→paused→alarm 自愈；零 chrome 依赖全注入 | R:code:apps/extension/src/host/chrome-apis.ts,code:packages/protocol/src/bridge-wire.ts,code:apps/extension/src/runtime/bridge-gateway.ts | A:BridgeRuntime, BRIDGE_STORAGE_KEY, BRIDGE_POLL_ALARM, DEFAULT_BRIDGE_ENDPOINT, pairingTokenFromUrl, canonicalConfigJson | S:SW 的 fetch 与 chrome API 均 receiver 敏感（裸传 Illegal invocation）；storage 回读键字母序重排——回声判定须 canonicalConfigJson 递归比较；在途 fetch 不维持 SW 生命期故轮询取 5s；pair 的 t 有效邀请优先（防旧 token 失效死锁）
 
 ===D:/dev/git/z_jordon/TreeChrome/apps/extension/src/ui-glue/===
 card-mutation.ts[DC6T]: F:卡片保存变更计划纯函数：撞名统一判定（新增路径 originalName=null）、activeCard 单点计算（自动激活+改名指针重定向合一防互覆） | R:code:apps/extension/src/ui-glue/options-app.tsx,code:apps/extension/src/host/settings-store.ts | A:planCardMutation, CardMutationPlan | S:对象展开后者胜——activeCard 自动激活与改名重定向须单点合一计算，拆回两个条件展开会互覆
@@ -110,7 +114,7 @@ ui-refactor-reference.md[SU5S]: F:UI 重构参照档案（qz-browser-agent）：
 cli-dual-form-design.md[SG4L]: F:CLI 双形态供给面移植设计文档（Python 版，对齐 v0.3.0）：双形态根因/路由阶梯/安全边界、daemon 仅 ECONNREFUSED 重发门禁、argparse 布尔缺省陷阱、Python 适配要点与十条教训对照表、四决策点 | R:code:packages/node-host/src/daemon/protocol.ts,code:packages/node-host/src/skill-card.ts | A:- | S:公司内部 Python 项目移植参照——tc 供给面演进后需人工同步；§2.8 布尔旗标陷阱最易踩
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/code-review/===
-_r12c1.md[SQ3S]: F:p1.2-collector 评审轮 1 dump：11 条意见（glm-5.3，16m46s），覆盖 dom-snapshot collector 等 8 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
+_r12c1.md[SQ3M]: F:p1.2-collector 评审轮 1 dump：11 条意见（glm-5.3，16m46s），覆盖 dom-snapshot collector 等 8 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
 _r12c2.md[SQ2T]: F:p1.2-collector 评审轮 2 dump：2 条意见，覆盖 9 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
 _r12c3.md[SQ3T]: F:p1.2-collector 评审轮 3 dump：4 条意见，覆盖 9 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
 _r12c4.md[SQ3S]: F:p1.2-collector 评审轮 4 dump：8 条意见，覆盖 10 文件 | R:code:.zcode/commands/review-loop.md | A:- | S:-
@@ -255,11 +259,11 @@ _r_issue-2-attachments_1.md[SQ3T]: F:issue-2-attachments 评审轮 1 dump：3 �
 _r_issue-2-attachments_2.md[SQ1T]: F:issue-2-attachments 评审轮 2 dump：零意见（增量复核轮 1 修复提交——循环收敛轮） | R:code:.zcode/commands/review-loop.md | A:- | S:-
 review-issue-2-attachments-1.json[ZQ2M]: F:open-code-review 原始输出（issue-2-attachments 轮 1，3 条意见）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
 review-issue-2-attachments-2.json[ZQ2T]: F:open-code-review 原始输出（issue-2-attachments 轮 2，0 条意见——收敛轮）——含大体积 thinking 块 | R:code:scripts/review-dump.mjs | A:- | S:禁止直接 Read——须先经 review-dump.mjs 转 dump 再读
-_r_issue-6-form-control-state_1.md[SQ3S]: F:issue #6 评审轮 1 摘要（review-dump 产物）：3 条意见——P1×2 同根（Step 5 真值判断漏空态，陈旧初始值不清）+P2（toJson ax_node 投影泄 value 键），全采纳修复于 2b1315c | R:code:docs/code-review/review-issue-6-form-control-state-1.json | A:- | S:-
+_r_issue-6-form-control-state_1.md[SQ3T]: F:issue #6 评审轮 1 摘要（review-dump 产物）：3 条意见——P1×2 同根（Step 5 真值判断漏空态，陈旧初始值不清）+P2（toJson ax_node 投影泄 value 键），全采纳修复于 2b1315c | R:code:docs/code-review/review-issue-6-form-control-state-1.json | A:- | S:-
 _r_issue-6-form-control-state_2.md[SQ2T]: F:issue #6 评审轮 2 摘要（review-dump 产物）：零意见、状态 complete——review-loop 收敛出口；累计 2 轮 3 意见全采纳 | R:code:docs/code-review/review-issue-6-form-control-state-2.json | A:- | S:-
 review-issue-6-form-control-state-1.json[ZQ2S]: F:ocr review 轮 1 原始输出（issue #6，base=main）：3 条意见全文，含评审 thinking 与修复建议片段 | R:code:docs/code-review/_r_issue-6-form-control-state_1.md | A:- | S:含大体积thinking，禁直接Read——消费走review-dump摘要
 review-issue-6-form-control-state-2.json[ZQ2S]: F:ocr review 轮 2 原始输出（issue #6，增量 88aee16..2b1315c）：零意见收敛 | R:code:docs/code-review/_r_issue-6-form-control-state_2.md | A:- | S:含thinking块，禁直接Read——消费走review-dump摘要
-_r_issue-5-self-evolution_1.md[SQ3S]: F:issue #5 评审轮 1 摘要（review-dump 产物）：9 条意见（P1×2 串行面失效/基线污染 + P2×7）全采纳于 e7be1d5 | R:code:docs/code-review/review-issue-5-self-evolution-1.json | A:- | S:-
+_r_issue-5-self-evolution_1.md[SQ3M]: F:issue #5 评审轮 1 摘要（review-dump 产物）：9 条意见（P1×2 串行面失效/基线污染 + P2×7）全采纳于 e7be1d5 | R:code:docs/code-review/review-issue-5-self-evolution-1.json | A:- | S:-
 _r_issue-5-self-evolution_2.md[SQ2T]: F:issue #5 评审轮 2 摘要（review-dump 产物）：零意见收敛 | R:code:docs/code-review/review-issue-5-self-evolution-2.json | A:- | S:-
 review-issue-5-self-evolution-1.json[ZQ2L]: F:ocr review 轮 1 原始输出（issue #5，base=main）：9 意见全文含 thinking 与修复建议 | R:code:docs/code-review/_r_issue-5-self-evolution_1.md | A:- | S:含大体积 thinking，禁直接 Read——消费走 review-dump 摘要
 review-issue-5-self-evolution-2.json[ZQ2S]: F:ocr review 轮 2 原始输出（issue #5，增量 661e6ac..e7be1d5）：零意见 | R:code:docs/code-review/_r_issue-5-self-evolution_2.md | A:- | S:含 thinking 块，禁直接 Read——消费走 review-dump 摘要
@@ -307,6 +311,12 @@ _r_issue-27-cli-m2-daemon_3.md[SQ2T]: F:review-loop 轮 3 评审摘要 dump（�
 review-issue-27-cli-m2-daemon-1.json[SQ3L]: F:ocr 评审轮 1 原始结果（glm-5.3，17m37s，含大体积 thinking）——review-loop 自动产物，经 scripts/review-dump.mjs 转 dump 后读取 | R:- | A:- | S:含 thinking 大块禁直接 Read；不入库
 review-issue-27-cli-m2-daemon-2.json[SQ2T]: F:ocr 评审轮 2 原始结果（增量修复面，1 条 high）——经 review-dump 转 dump 后读取 | R:- | A:- | S:禁直接 Read；不入库
 review-issue-27-cli-m2-daemon-3.json[SQ2T]: F:ocr 评审轮 3 原始结果（零意见，循环收敛） | R:- | A:- | S:禁直接 Read；不入库
+_r_issue-31-mcp-bridge_1.md[SQ3T]: F:review-loop 轮 1 评审摘要 dump（全量 main..bd867a2，5 条：high1/medium3/low1——P1 re-pair 死锁+P2×4 全采纳于 8c14395）——意见全文供 triage | R:code:docs/code-review/review-issue-31-mcp-bridge-1.json | A:- | S:评审产物不入库（仓库惯例保持未跟踪）
+_r_issue-31-mcp-bridge_2.md[SQ2T]: F:review-loop 轮 2 评审摘要 dump（增量 bd867a2..8c14395，1 条 medium——watch 截止预算未钳制，P2 采纳于 b33c171） | R:code:docs/code-review/review-issue-31-mcp-bridge-2.json | A:- | S:评审产物不入库
+_r_issue-31-mcp-bridge_3.md[SQ1T]: F:review-loop 轮 3 评审摘要 dump（增量 8c14395..b33c171，零意见 complete——循环收敛出口；累计 3 轮 6 意见全采纳） | R:code:docs/code-review/review-issue-31-mcp-bridge-3.json | A:- | S:评审产物不入库
+review-issue-31-mcp-bridge-1.json[ZQ2M]: F:ocr 评审轮 1 原始结果（glm-5.3，21m53s，含大体积 thinking）——经 review-dump 转 dump 后读取 | R:- | A:- | S:禁直接 Read；不入库
+review-issue-31-mcp-bridge-2.json[ZQ2S]: F:ocr 评审轮 2 原始结果（增量=轮 1 修复提交，1 条 medium，12m40s）——经 review-dump 转 dump 后读取 | R:- | A:- | S:禁直接 Read；不入库
+review-issue-31-mcp-bridge-3.json[ZQ1T]: F:ocr 评审轮 3 原始结果（零意见，1m53s——循环收敛轮） | R:- | A:- | S:禁直接 Read；不入库
 
 ===D:/dev/git/z_jordon/TreeChrome/docs/implement-plan/examples/===
 README.md[SG6L]: F:examples 移植实施计划与完成记录：六批 27 示例（getting-started/features/custom-functions/file-system/use-cases/upload）逐旋钮核对与限制登记 | R:code:packages/node-host/boot.mjs | A:- | S:逐旋钮核对以 TreeWalker 640d52a 为基准；AGENT_UPLOAD_VERIFY_* env 面 TS 不存在——要改只能经 AgentOptions.tools 注入自构 Tools
@@ -634,7 +644,7 @@ quirks.md[SD3T]: F:任务坑：邮箱不在列表中须进 Edit 详情页；「�
 selectors.md[SD3T]: F:任务指纹：详情页邮箱字段定位 | R:- | A:- | S:-
 
 ===D:/dev/git/z_jordon/TreeChrome/domain-skills/member.bilibili.com/===
-_sop.md[SD4S]: F:B 站投稿与存草稿流程：创作中心首页→视频上传→表单填写 | R:- | A:- | S:-
+_sop.md[SD4T]: F:B 站投稿与存草稿流程：创作中心首页→视频上传→表单填写 | R:- | A:- | S:-
 quirks.md[SD4T]: F:B 站站点坑：多文件输入陷阱（上传 input 与全局残留 name=buploader 区分）；标签提交方式特殊 | R:- | A:- | S:-
 selectors.md[SD4T]: F:B 站元素指纹：上传 input 按 accept 扩展名、标题/创作声明/标签按 placeholder、简介 contenteditable | R:- | A:- | S:-
 
@@ -929,7 +939,7 @@ sha256.ts[KB4T]: F:同步 SHA-256 纯 TS 实现（无平台依赖——Node/扩�
 types.ts[FB8L]: F:DOM 数据模型（models.py 忠实 TS 移植）：EnhancedDOMTreeNode/AXNode/SnapshotNode 族+stable_hash bigint+toJson snake_case；issue #6 增 EnhancedAXNode.value（仅 Step 5 消费） | R:code:packages/dom-snapshot/src/serializer.ts | A:DomNode 等 | S:toJson 键名保持 Python __json__ snake_case——golden 逐字节对拍依赖；EnhancedAXNode.value 为 TS 先行扩展，toJson ax_node 投影剔除该键（Python asdict 无此字段），勿在投影回填
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/test/===
-fake-cdp.ts[TB4T]: F:测试假 CDP 客户端：按方法名分发固定响应+记录调用序列（fixture input 即 Python 录的真实 CDP 响应原样回放） | R:code:packages/dom-snapshot/src/protocol.ts | A:- | S:-
+fake-cdp.ts[TB4T]: F:测试假 CDP 客户端：按方法名分发固定响应+记录调用序列（fixture 即 Python 录制回放） | R:code:packages/dom-snapshot/src/protocol.ts | A:- | S:-
 golden-fixture.ts[TB5S]: F:golden fixture schema 与加载器（gen_fixtures.py 产物形状单一来源）+expectByteEqual 逐字节对拍 | R:code:packages/dom-snapshot/tools/gen_fixtures.py | A:expectByteEqual | S:三处共用（golden.test/collector.test/fake-cdp）防口径漂移
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/dom-snapshot/tools/===
@@ -965,7 +975,8 @@ tsconfig.json[FG2T]: F:protocol TS 配置（extends 基座） | R:- | A:- | S:-
 vitest.config.ts[FQ3T]: F:protocol 测试配置（纯类型包——骨架测试） | R:- | A:- | S:纯类型文件不参与覆盖率统计
 
 ===D:/dev/git/z_jordon/TreeChrome/packages/protocol/src/===
-index.ts[LM6M]: F:事件协议类型包（core 事件 re-export 单源+SW/UI 信封）：附件分块；issue #5 skill-drafts/OPTIONS_OPS 6→9/judgement 入快照；issue #9 distill-status 过程拍与 DistillPhase | R:code:packages/core/src/events/events.ts | A:- | S:UI_TO_SW_KINDS 是 Port 面路由白名单；块载荷 base64（chrome.runtime JSON 通道，ArrayBuffer 不可用）；distill-status 与 skill-drafts 正交——过程拍/待审数独立并存
+index.ts[LM6M]: F:事件协议类型包（core 事件 re-export 单源+SW/UI 信封）：附件分块；issue #5 skill-drafts/judgement 入快照；issue #9 distill-status 过程拍；#31 re-export bridge-wire 桥 wire 纯类型 | R:code:packages/core/src/events/events.ts | A:- | S:UI_TO_SW_KINDS 是 Port 面路由白名单；块载荷 base64（chrome.runtime JSON 通道，ArrayBuffer 不可用）；distill-status 与 skill-drafts 正交——过程拍/待审数独立并存
+bridge-wire.ts[LE5S]: F:桥 wire 纯类型（13 类）：pair/poll/result 信封、命令动词（run_task/get_snapshot/stop_run/cancel_request）、BridgeRunSnapshot camelCase 终态口径——协议层零运行时照旧 | R:code:packages/protocol/src/index.ts | A:- | S:两侧各自防御收窄（扩展惯例）——类型不参与运行时校验
 
 ===D:/dev/git/z_jordon/TreeChrome/scripts/===
 gate.mjs[XQ8M]: F:共用门禁脚本（ZCode hooks+git pre-commit 双消费）：biome/typecheck/test/覆盖率 85%/行数≤3000/staged 边界（_ 前缀/.env/产物） | R:code:.zcode/config.json,code:.githooks/pre-commit,code:package.json | A:- | S:退出码必须真实（不接管道——review-loop 轮 12 教训）；AST 检查在 biome.json（本脚本的 chrome 正则是快而粗的即时反馈）
@@ -1037,4 +1048,22 @@ treechrome.finalize.json[OG2L]: F:archify review-2 finalize 全量回执（已�
 treechrome.browser-check.json[OG3L]: F:archify review-3（定稿轮）浏览器检查回执：恢复 v4 布局重新 finalize 的 browser-check 通过证据+产物哈希绑定 | R:code:.archify/architecture-treechrome-20261115-095234/review-3/treechrome.finalize.json | A:- | S:-
 treechrome.finalize-summary.json[OG3S]: F:archify review-3 定稿摘要回执：四门 pass+视觉信号 4 交叉/3 绕行（advisory）——最终定稿版 | R:code:.archify/architecture-treechrome-20261115-095234/review-3/treechrome.finalize.json | A:- | S:机器门全过不含视觉认账——advisory 交叉未目检前不宣称达标
 treechrome.finalize.json[OG3L]: F:archify review-3 finalize 全量回执：恢复备份后重新 finalize 的四门 pass、阶段明细与哈希绑定（最终定稿） | R:code:.archify/architecture-treechrome-20261115-095234/treechrome.html | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/mcp-bridge/bin/===
+tc-bridge.mjs[EE4T]: F:tc-bridge 命令薄壳：读包版本→boot.mjs esbuild 引导装载 src/cli.ts→runBridgeCli；启动失败兜底 stderr+exit 2（对齐 bin/tc.mjs 评审先例） | R:code:packages/mcp-bridge/boot.mjs,code:packages/mcp-bridge/src/cli.ts | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/mcp-bridge/===
+boot.mjs[EE4T]: F:esbuild 运行时引导（stdin re-export 形态，对齐 node-host 先例——@tw/* 源码直发 Node import 不了 TS）：打包装载相对包根的 TS 入口，临时目录用毕即清 | R:code:packages/mcp-bridge/bin/tc-bridge.mjs | A:loadEntry | S:自包含 dist 产品化（#26 build:cli 形态）列为 M1 后续项
+package.json[FE5T]: F:mcp-bridge 包定义（@tw/mcp-bridge）：bin tc-bridge；runtime 依赖 @modelcontextprotocol/sdk 1.x（本包专属）+@tw/protocol；esbuild devDep | R:- | A:- | S:MCP SDK 只进本包——核心包零 LLM/MCP SDK 铁律不动
+tsconfig.json[FG2T]: F:mcp-bridge TS 配置（extends 基座，types node，include src/test） | R:- | A:- | S:-
+vitest.config.ts[FQ4T]: F:mcp-bridge 测试配置：fake timers+全注入单测；覆盖率 85% 阈值（默认开启随 pnpm test 生效） | R:- | A:- | S:-
+
+===D:/dev/git/z_jordon/TreeChrome/packages/mcp-bridge/src/===
+cli.ts[EE6S]: F:tc-bridge CLI：serve（serveBridge 装配，instanceId 单源）/connect（admin 签发邀请打印 URL）/status；--port/--pairing-path；TC_BRIDGE_PORT 缺省 18730；环境问题 exit 2 | R:code:packages/mcp-bridge/src/server.ts,code:packages/mcp-bridge/src/state.ts | A:runBridgeCli, serveBridge, resolveBridgePort, newPairingToken, FsPairingStore, defaultPairingPath | S:配对落盘 ~/.tc/bridge/pairing.json（与 tc daemon 同根不同目录）
+connect-page.ts[FU4T]: F:配对页 HTML 常量+CSP 收口（default-src 'none'）：同源轮询 /tc-connect/state?t 至扩展完成 pair——页面零权限零跨源请求 | R:code:packages/mcp-bridge/src/server.ts | A:CONNECT_PAGE, CONNECT_PAGE_CSP | S:expiresAt null 即邀请失效提示重跑 connect；别家占用不冒领（completedT 语义）
+index.ts[LE5T]: F:mcp-bridge 公共出口：server（startBridge/门禁）/state（BridgeState）/cli（runBridgeCli/serveBridge）/connect-page/tools（createMcpServer）/watch（watchTask）全量 | R:code:packages/mcp-bridge/src/server.ts,code:packages/mcp-bridge/src/state.ts | A:- | S:-
+server.ts[IE8L]: F:桥服务端（仅回环）：门禁链（Host 421→Origin 双门禁——/mcp 拒一切、/v1/* 仅扩展 Origin；POST 415）+/health+/tc-connect+/admin/pairing+/v1/tc/* 私线+/mcp（StreamableHTTP 会话簿+断连转 cancelled） | R:code:packages/mcp-bridge/src/state.ts,code:packages/mcp-bridge/src/tools.ts,code:packages/mcp-bridge/src/connect-page.ts | A:startBridge, isExtensionBridgeOrigin, listeningPort, DEFAULT_BRIDGE_PORT, BRIDGE_SERVICE, BridgeServer | S:/mcp 无令牌——回环+无 Origin 即边界（#31 拍板，与 tc daemon 同级信任）；同源 GET 浏览器不发 Origin（/tc-connect/state 放行空 Origin）；非回环 host 直接抛
+state.ts[DE8M]: F:桥状态机：配对（一次性邀请 t+双向核验+落盘 re-pair 免确认+completedT 防配对页冒领）、单扩展租约（IN_USE）、命令队列（长轮询领取/回投/180s 超时/中断即 cancel_request） | R:code:packages/mcp-bridge/src/server.ts,code:packages/mcp-bridge/src/tools.ts | A:BridgeState, BridgeStateError, DEFAULT_COMMAND_TIMEOUT_MS, PAIRING_TTL_MS, clampPollTimeoutMs | S:instanceId 单源（poll 校验与 /health 呈现同一进程身份）；enqueue 的 signal abort 立即失权并补发 cancel_request（只撤该条）
+tools.ts[AE7S]: F:MCP 工具面：5 工具（tc_bridge_status/run_task 异步受理/get_snapshot/watch_task/stop_run）+错误信封带 code；watch 接线 budget 只收紧不放宽（min 钳制） | R:code:packages/mcp-bridge/src/state.ts,code:packages/mcp-bridge/src/watch.ts | A:createMcpServer, BRIDGE_TOOLS, toolErrorPayload | S:watch 的 signal 即工具调用 signal——断连转 cancelled 链路依赖它；结果恒单 text JSON
+watch.ts[AE6S]: F:watch_task 观察循环：反复入队 get_snapshot 至终态——首拍全量时间线/后续 seq 增量；截止剩余量作快照预算，预算耗尽且有历史快照转写 TIMEOUT+lastSnapshot | R:code:packages/mcp-bridge/src/tools.ts,code:packages/protocol/src/bridge-wire.ts | A:watchTask, WatchTimeoutError, DEFAULT_WATCH_POLL_INTERVAL_MS | S:只读边界——超时/中断只结束观察绝不杀 run；无历史快照的预算超时原样透传（不虚报观察超时）
 
