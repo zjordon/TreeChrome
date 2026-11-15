@@ -19,8 +19,11 @@ import {
   chromeAlarms,
   chromeOnConnect,
   chromeOnInstalled,
+  chromeRuntimeId,
   chromeStorageLocal,
+  chromeStorageOnChanged,
   chromeTabsOnRemoved,
+  chromeTabsOnUpdated,
   chromeTabsQuery,
 } from "../src/host/chrome-apis.js";
 import { makeDebuggerTransportFactory } from "../src/host/debugger-api.js";
@@ -36,6 +39,8 @@ import {
   SkillStore,
 } from "../src/host/skill-store.js";
 import { activeProviderCard } from "../src/runtime/assemble.js";
+import { createBridgeGateway } from "../src/runtime/bridge-gateway.js";
+import { BridgeRuntime } from "../src/runtime/bridge-runtime.js";
 import { DISTILL_ALARM_NAME, DistillQueue } from "../src/runtime/distill-queue.js";
 import { DistillWorker } from "../src/runtime/distill-worker.js";
 import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
@@ -270,6 +275,27 @@ async function boot(): Promise<Booted> {
     const reason = (details as { reason?: unknown } | null)?.reason;
     if (reason === "install" || reason === "update") void refreshSkills();
   });
+
+  // —— 桥 runtime（issue #31 M1）：与本地 tc-bridge 的长轮询连接。构造与 start()
+  //    全同步——tabs/storage/alarms 监听器在 boot 首个 await 前注册（MV3 纪律，
+  //    SW 被杀唤醒后不丢事件）；dispatch 经 gateway 走 RunManager 同一单飞互斥
+  //    （sidepanel 与远程不可能并发两个 run；确认卡 fail-closed 语义不变）——
+  const bridgeRuntime = new BridgeRuntime({
+    storage,
+    storageOnChanged: chromeStorageOnChanged(),
+    alarms: alarmsApi,
+    tabsOnUpdated: chromeTabsOnUpdated(),
+    tabsQuery: chromeTabsQuery(),
+    // SW 的 fetch 同 chrome API 一样 receiver 敏感——裸传方法丢 this 会 Illegal
+    // invocation（e2e 探针实证），箭头函数保全局接收者
+    fetch: (input, init) => fetch(input, init),
+    extensionId: chromeRuntimeId(),
+    newId: () => crypto.randomUUID(),
+    now: () => Date.now(),
+    dispatch: createBridgeGateway({ runManager, journal, log }),
+    log,
+  });
+  bridgeRuntime.start();
 
   // SW 被杀恢复：非终态 journal 且无活 run → interrupted（README 决策 5：不续跑）
   void recoverInterruptedRuns(storage, runManager);

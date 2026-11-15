@@ -11,6 +11,8 @@
     "packages/*/test/**/*.{ts,mts}",
     "packages/*/vitest.config.ts",
     "packages/*/tools/**/*.py",
+    "packages/*/bin/*.mjs",
+    "packages/*/boot.mjs",
     "apps/*/src/**/*.{ts,tsx,mts}",
     "scripts/**/*.mjs",
     "package.json",

@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "e2e:runtime": "node e2e/smoke-sw-runtime.mjs",
+    "e2e:bridge": "node e2e/smoke-bridge.mjs",
     "e2e:ui": "node e2e/smoke-ui.mjs",
     "e2e:attachments": "node e2e/smoke-attachments.mjs",
     "e2e:self-evolution": "node e2e/smoke-self-evolution.mjs"
