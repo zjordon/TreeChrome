@@ -47,7 +47,8 @@ export interface TabsOnRemovedApi {
 /** chrome.tabs.query 同形（start 绑定活动 tab；url 需 "tabs" 权限——manifest 已声明） */
 export interface TabsQueryApi {
   query(info: {
-    active: boolean;
+    /** 过滤器语义：true/false 都只匹配对应子集，省略才匹配全部——扫描别乱传 */
+    active?: boolean;
     currentWindow?: boolean;
     lastFocusedWindow?: boolean;
     /** issue #31：SW 冷启动后扫描仍开着的配对页（URL 前缀匹配） */

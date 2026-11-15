@@ -189,7 +189,7 @@ describe("配对", () => {
     expect(response.connectionId).toBe("");
   });
 
-  it("pairingStatus：邀请有效/失效/已配对三态", async () => {
+  it("pairingStatus：邀请有效/失效/被消费三态——仅消费本轮邀请的 t 报 paired", async () => {
     const { state, advance } = makeState();
     const invitation = state.beginPairing();
     expect(state.pairingStatus(invitation.t)).toEqual({
@@ -200,8 +200,59 @@ describe("配对", () => {
     expect(state.pairingStatus("wrong").expiresAt).toBeNull();
     advance(PAIRING_TTL_MS + 1);
     expect(state.pairingStatus(invitation.t).expiresAt).toBeNull();
-    await pairFresh(state);
-    expect(state.pairingStatus("whatever")).toEqual({ ok: true, paired: true, expiresAt: null });
+    const consumed = state.beginPairing();
+    await state.pair({
+      t: consumed.t,
+      extensionId: "ext-1",
+      name: "TreeChrome",
+      pairingToken: "ptoken",
+      connectionId: "c-1",
+    });
+    expect(state.pairingStatus(consumed.t)).toEqual({ ok: true, paired: true, expiresAt: null });
+    // 别的 t（含曾有效的旧邀请）不冒领——已配对但非本轮邀请
+    expect(state.pairingStatus("whatever")).toEqual({ ok: true, paired: false, expiresAt: null });
+  });
+
+  it("别家已占用：邀请未被消费 → connect 页不冒领（持续 paired:false 到失效）", async () => {
+    const { state } = makeState({
+      pairingToken: "ptoken-a",
+      extensionId: "ext-a",
+      name: "A",
+    });
+    await state.init();
+    const invitation = state.beginPairing();
+    await expect(
+      state.pair({
+        t: invitation.t,
+        extensionId: "ext-b",
+        name: "B",
+        pairingToken: "ptoken-b",
+        connectionId: "c-b",
+      }),
+    ).rejects.toMatchObject({ code: "BRIDGE_CLIENT_IN_USE" });
+    expect(state.pairingStatus(invitation.t)).toEqual({
+      ok: true,
+      paired: false,
+      expiresAt: invitation.expiresAt,
+    });
+  });
+
+  it("re-pair 消费同 t 的在途邀请：桥重启后重开 connect 页能显示完成", async () => {
+    const { state } = makeState({
+      pairingToken: "ptoken",
+      extensionId: "ext-1",
+      name: "TreeChrome",
+    });
+    await state.init();
+    const invitation = state.beginPairing();
+    await state.pair({
+      t: invitation.t,
+      extensionId: "ext-1",
+      name: "TreeChrome",
+      pairingToken: "ptoken",
+      connectionId: "c-2",
+    });
+    expect(state.pairingStatus(invitation.t).paired).toBe(true);
   });
 });
 

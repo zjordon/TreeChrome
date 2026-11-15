@@ -225,12 +225,66 @@ describe("配对全链（默认 enabled → 探活 → 捕获 t → pair → pol
     expect(h.runtime.status().instanceId).toBe("inst-2");
   });
 
-  it("冷启动扫描：SW 睡眠期间打开的配对页仍开着——恢复即捕获", async () => {
+  it('桥侧配对记录丢失（pair 409）后捕获新邀请 → t 用真邀请（不死锁在 t:""）', async () => {
     const h = harness();
-    const tabUrls = [`${DEFAULT_BRIDGE_ENDPOINT}/tc-connect?t=late9`];
+    h.store.set(
+      BRIDGE_STORAGE_KEY,
+      pairedConfig({ instanceId: "", state: "connecting", pairingToken: "tok-known" }),
+    );
+    const pairBodies: Array<Record<string, unknown>> = [];
+    h.setRouter((url, body) => {
+      if (url.pathname === "/health")
+        return jsonRes({ instanceId: "inst-9", pendingPairing: true });
+      if (url.pathname === "/v1/tc/pair") {
+        pairBodies.push(body as Record<string, unknown>);
+        if ((body as { t?: unknown }).t !== "fix1")
+          return jsonRes({ code: "BRIDGE_PAIRING_REQUIRED", error: "no record" }, 409);
+        return jsonRes({ ok: true, instanceId: "inst-9", connectionId: "c-9" });
+      }
+      return jsonRes({ requests: [] });
+    });
+    h.runtime.start();
+    await h.advance(0); // 首拍：持旧 token re-pair（t:""）→ 桥侧记录已丢 409 → 收敛重试
+    expect(h.runtime.status()).toMatchObject({
+      state: "reconnecting",
+      lastError: { code: "BRIDGE_PAIRING_REQUIRED" },
+    });
+    h.runtime.handleTabUrl(`${DEFAULT_BRIDGE_ENDPOINT}/tc-connect?t=fix1`);
+    await h.advance(0); // 捕获有效邀请 → t 用真值 → 配对成功
+    expect(pairBodies.map((b) => b.t)).toEqual(["", "fix1"]);
+    expect(h.runtime.status()).toMatchObject({ state: "connected", instanceId: "inst-9" });
+  });
+
+  it("探活等待稳态不重复落盘（persist 只在转移时）", async () => {
+    const h = harness();
+    h.setRouter((url) =>
+      url.pathname === "/health"
+        ? jsonRes({ instanceId: "inst-1", pendingPairing: false })
+        : jsonRes({ error: "not found" }, 404),
+    );
+    const setSpy = vi.spyOn(h.deps.storage, "set");
+    h.runtime.start();
+    await h.advance(0); // 首轮：restore bootstrap 落盘缺省配置恰 1 次
+    await h.advance(2_000);
+    await h.advance(2_000);
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(h.runtime.status()).toMatchObject({ state: "connecting", enabled: true });
+  });
+
+  it("冷启动扫描：SW 睡眠期间打开的（活动）配对页仍开着——恢复即捕获", async () => {
+    const h = harness();
+    // chrome.tabs.query 过滤器语义同形：active 传布尔只匹配对应子集——用户地址栏/
+    // 新标签页打开的配对页恰是活动页，{active:false} 会把它滤掉（评审轮 1 实录）
+    const tabs = [
+      { id: 1, url: `${DEFAULT_BRIDGE_ENDPOINT}/tc-connect?t=late9`, active: true },
+      { id: 2, url: "https://elsewhere.example/", active: false },
+    ];
     let pairBody: Record<string, unknown> | undefined;
     h.deps.tabsQuery = {
-      query: async () => tabUrls.map((url) => ({ id: 1, url })),
+      query: async (info) =>
+        tabs
+          .filter((t) => (typeof info.active === "boolean" ? t.active === info.active : true))
+          .map((t) => ({ id: t.id, url: t.url })),
     };
     h.setRouter((url, body) => {
       if (url.pathname === "/health")

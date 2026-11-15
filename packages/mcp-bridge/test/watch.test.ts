@@ -141,4 +141,59 @@ describe("watchTask", () => {
       }),
     ).rejects.toMatchObject({ code: "TASK_CHANGED" });
   });
+
+  it("截止传导：快照请求带剩余预算；预算耗尽的请求超时 → WatchTimeoutError 携带最后快照", async () => {
+    const { BridgeStateError } = await import("../src/index.js");
+    let clock = 1_000;
+    const running = snap({ timeline: [{ seq: 1, type: "step", summary: "s1" }] });
+    const budgets: Array<number | undefined> = [];
+    let call = 0;
+    const attempt = watchTask({
+      waitTimeoutSeconds: 10,
+      signal: controller().signal,
+      now: () => clock,
+      sleep: async () => {
+        clock += 10_000; // sleep 跨过截止
+      },
+      getSnapshot: async (_signal, budgetMs) => {
+        budgets.push(budgetMs);
+        call += 1;
+        if (call === 1) return running;
+        throw new BridgeStateError("BRIDGE_REQUEST_TIMEOUT", "The browser operation timed out.");
+      },
+    });
+    const rejection = expect(attempt).rejects.toBeInstanceOf(WatchTimeoutError);
+    await rejection;
+    try {
+      await attempt;
+    } catch (error) {
+      expect((error as WatchTimeoutError).lastSnapshot.runId).toBe("r-1");
+    }
+    expect(budgets).toEqual([10_001, 1]);
+  });
+
+  it("首拍即超预算且无历史快照 → 原样透传 BRIDGE_REQUEST_TIMEOUT（不虚报观察超时）", async () => {
+    const { BridgeStateError } = await import("../src/index.js");
+    await expect(
+      watchTask({
+        waitTimeoutSeconds: 5,
+        signal: controller().signal,
+        getSnapshot: async () => {
+          throw new BridgeStateError("BRIDGE_REQUEST_TIMEOUT", "The browser operation timed out.");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "BRIDGE_REQUEST_TIMEOUT" });
+  });
+
+  it("无截止 → 快照请求不带预算（用单命令缺省）", async () => {
+    const budgets: Array<number | undefined> = [];
+    await watchTask({
+      signal: controller().signal,
+      getSnapshot: async (_signal, budgetMs) => {
+        budgets.push(budgetMs);
+        return snap({ isDone: true, status: "done" });
+      },
+    });
+    expect(budgets).toEqual([undefined]);
+  });
 });

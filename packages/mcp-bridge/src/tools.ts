@@ -92,8 +92,9 @@ async function executeTool(
   const enqueue = (
     method: BridgeCommandMethod,
     params: Record<string, unknown>,
+    timeoutMs?: number,
   ): Promise<unknown> =>
-    deps.state.enqueue(method, params, { timeoutMs: deps.requestTimeoutMs, signal });
+    deps.state.enqueue(method, params, { timeoutMs: timeoutMs ?? deps.requestTimeoutMs, signal });
   const requirePaired = (): void => {
     if (!deps.state.paired) {
       throw new BridgeStateError(
@@ -127,8 +128,10 @@ async function executeTool(
       waitTimeoutSeconds:
         typeof args.waitTimeoutSeconds === "number" ? args.waitTimeoutSeconds : null,
       signal,
-      // watch 的 signal 即工具调用 signal——快照请求与观察同生共死，无需再传一层
-      getSnapshot: () => enqueue("get_snapshot", {}) as Promise<BridgeRunSnapshot>,
+      // watch 的 signal 即工具调用 signal——快照请求与观察同生共死；budgetMs 是
+      // 截止剩余量（watch.ts 逐拍传入），未给则用单命令缺省预算
+      getSnapshot: (_signal, budgetMs) =>
+        enqueue("get_snapshot", {}, budgetMs) as Promise<BridgeRunSnapshot>,
       onUpdate: args.stream === true ? onUpdate : undefined,
       pollIntervalMs: deps.watchPollIntervalMs,
     });

@@ -254,7 +254,8 @@ export class BridgeRuntime {
     if (this.config.instanceId === "" && this.deps.tabsQuery !== undefined) {
       try {
         const tabs = await this.deps.tabsQuery.query({
-          active: false,
+          // 不过滤 active：用户地址栏/新标签页打开的配对页恰是活动页——
+          // {active:false} 在 chrome.tabs.query 语义里是「仅非活动页」过滤器
           url: `${this.config.endpoint}/tc-connect*`,
         });
         if (!this.alive(generation)) return;
@@ -343,12 +344,16 @@ export class BridgeRuntime {
     if (!wantRePair && !(health.pendingPairing === true && tValid)) {
       // 桥在线但没有给我们的邀请——继续探（用户没跑 connect 或 t 已过期）
       this.retryBudget = RETRY_LIMIT;
-      this.persist({ state: "connecting" });
+      // 只在转移时落盘（缺省态就是 connecting——同值每 2s 全量写盘违背 persist 不变量）
+      if (this.config.state !== "connecting") this.persist({ state: "connecting" });
       this.schedule(PROBE_INTERVAL_MS);
       return;
     }
     const body = {
-      t: wantRePair ? "" : (captured as CapturedT).t,
+      // 有效邀请 t 优先（即使持有旧 token）：桥侧配对记录丢失（pairing.json 被删/
+      // 换 --pairing-path/disconnect 过）时 t:"" 必 409 成死锁；t 与旧 token 并存
+      // 时桥侧按同 token 幂等 re-pair 不受影响
+      t: tValid ? (captured as CapturedT).t : "",
       extensionId: config.extensionId,
       name: config.name,
       pairingToken: config.pairingToken !== "" ? config.pairingToken : this.newPairingToken(),

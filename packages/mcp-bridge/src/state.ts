@@ -97,6 +97,8 @@ export function clampPollTimeoutMs(value: number): number {
 
 export class BridgeState {
   private invitation: PendingInvitation | null = null;
+  /** 完成本轮配对所消费的邀请 t——connect 页凭它区分「本轮邀请成功」与「别家已占用」 */
+  private completedT: string | null = null;
   private pairedState: PairedClient | null = null;
   private readonly queue: BridgeCommandRequest[] = [];
   private readonly inflight = new Map<string, InflightCommand>();
@@ -127,9 +129,12 @@ export class BridgeState {
     return { t, expiresAt: this.invitation.expiresAt };
   }
 
-  /** connect 页轮询的配对进度（同源限定端点消费） */
+  /** connect 页轮询的配对进度：仅当「本轮邀请被消费且落成当前配对」才报 paired——
+   *  别家扩展已占用时不冒领（页继续等到邀请失效，不误导用户已连接到本浏览器） */
   pairingStatus(t: string): { ok: true; paired: boolean; expiresAt: number | null } {
-    if (this.pairedState !== null) return { ok: true, paired: true, expiresAt: null };
+    if (this.pairedState !== null && this.completedT === t) {
+      return { ok: true, paired: true, expiresAt: null };
+    }
     const invitation = this.invitation;
     const valid =
       invitation !== null && invitation.t === t && invitation.expiresAt >= this.deps.now();
@@ -163,6 +168,12 @@ export class BridgeState {
         );
       }
       this.invitation = null;
+      this.completedT = request.t;
+    } else if (this.invitation !== null && this.invitation.t === request.t) {
+      // re-pair 同时消费本轮邀请（扩展带旧 token 重开 connect URL 的场景——
+      // connect 页凭 completedT 才能正确显示完成）
+      this.invitation = null;
+      this.completedT = request.t;
     }
     this.pairedState = {
       pairingToken: request.pairingToken,

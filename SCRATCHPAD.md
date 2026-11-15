@@ -204,4 +204,29 @@ protocol 类型 ~120 行、测试 ~1400 行（覆盖 85% 门禁照常）。
 
 ## 9. 评审记录
 
-（/review-loop 轮次登记——待实施完成后）
+- **轮 1（2026-11-15，glm-5.3，21m53s，5 条意见全采纳 P1×1/P2×4，无驳回无 stale）**：
+  1. **[P1] re-pair 死锁**：扩展持旧 token 时 pair body.t 恒 ""——桥侧配对记录丢失
+     （pairing.json 被删/换 --pairing-path/disconnect 过）后 pair 必 409，新邀请永
+     不被消费：8 次重试→paused→alarm 重置预算→无限循环，M1 无 UI 可自愈。修复：
+     有效邀请 t 优先（`t: tValid ? captured.t : ""`；t 与旧 token 并存时桥侧同
+     token 幂等分支不受影响）。
+  2. [P2] watch 截止不约束快照请求：getSnapshot 走 enqueue 缺省 180s 预算——扩展
+     失联时越截止最多 180s 才回 BRIDGE_REQUEST_TIMEOUT（丢 lastSnapshot 续接）。
+     修复：`WatchOptions.getSnapshot` 增 budgetMs（剩余预算透传 enqueue timeoutMs）；
+     预算耗尽且有历史快照 → 转写 WatchTimeoutError（TIMEOUT+lastSnapshot）；无
+     历史快照原样透传（连一拍都拿不到是桥路事实，不虚报观察超时）。
+  3. [P2] probeAndPair 等待稳态每 2s 无条件 `persist({state:"connecting"})`（桥在
+     线未 connect 期间约 4.3 万次写盘/天，违背 persist「只在转移时」不变量）。
+     修复：`state !== "connecting"` 转移守卫。
+  4. [P2] 冷启动扫描 `tabs.query({active:false})` 误当「不过滤」——chrome 语义是
+     「仅非活动页」，用户地址栏/新标签页打开的配对页恰是活动页被滤掉。修复：去掉
+     active（`TabsQueryApi.query.active` 改可选）；测试假件升级为过滤器语义同形。
+  5. [P2] pairingStatus 已配对时无视 t 恒 paired:true——别家浏览器 connect 页误显
+     示「已连接 ✓」而任务实际落占用方浏览器。修复：completedT 语义——仅消费本轮
+     邀请才报 paired；re-pair 携同 t 也消费邀请（桥重启后重开 connect 页能正确
+     显示完成）；占用场景页面按邀请失效路径呈现。
+  测试 +7（mcp-bridge 74→79 / extension 190→192），双向验证通过（还原旧实现
+  6 条判别用例必红、25+20 旧用例仍绿）；全仓 typecheck + test 全绿，覆盖率过线。
+  **P3 backlog**：connect 页对「别家已占用」无显式提示（现等邀请失效后提示重跑
+  connect，语义正确但不含占用信息）。
+

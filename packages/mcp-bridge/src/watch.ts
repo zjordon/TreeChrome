@@ -30,7 +30,8 @@ export interface WatchOptions {
   /** 秒；null/缺省 = 无截止（挂到终态——调用方自担） */
   waitTimeoutSeconds?: number | null;
   signal: AbortSignal;
-  getSnapshot(signal: AbortSignal): Promise<BridgeRunSnapshot>;
+  /** budgetMs：本次快照请求的预算上限（截止剩余量）——扩展失联时不越截止挂满缺省超时 */
+  getSnapshot(signal: AbortSignal, budgetMs?: number): Promise<BridgeRunSnapshot>;
   onUpdate?(update: WatchUpdate): void;
   pollIntervalMs?: number;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -64,9 +65,32 @@ export async function watchTask(options: WatchOptions): Promise<BridgeRunSnapsho
     options.waitTimeoutSeconds == null ? null : now() + options.waitTimeoutSeconds * 1_000;
   let lastSeq = -1;
   let first = true;
+  let lastSnapshot: BridgeRunSnapshot | undefined;
 
   for (;;) {
-    const snapshot = await options.getSnapshot(options.signal);
+    const remainingMs = deadline === null ? Number.POSITIVE_INFINITY : deadline - now();
+    let snapshot: BridgeRunSnapshot;
+    try {
+      // 快照请求受剩余预算约束：截止前必返回（扩展失联时挂到期即出，不吃满缺省 180s）
+      snapshot = await options.getSnapshot(
+        options.signal,
+        Number.isFinite(remainingMs) ? Math.max(1, Math.ceil(remainingMs) + 1) : undefined,
+      );
+    } catch (error) {
+      // 预算耗尽的快照超时转写为观察超时（携最后快照续接）；无历史快照则原样透传——
+      // 「连一拍都拿不到」是桥路事实，不虚报观察超时
+      if (
+        lastSnapshot !== undefined &&
+        deadline !== null &&
+        deadline - now() <= 0 &&
+        error instanceof BridgeStateError &&
+        error.code === "BRIDGE_REQUEST_TIMEOUT"
+      ) {
+        throw new WatchTimeoutError(lastSnapshot);
+      }
+      throw error;
+    }
+    lastSnapshot = snapshot;
     if (
       options.runId !== undefined &&
       snapshot.runId !== null &&
