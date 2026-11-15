@@ -13,9 +13,10 @@ export interface StorageArea {
 export interface AlarmsApi {
   create(name: string, info: { periodInMinutes: number }): void;
   clear(name: string): Promise<boolean>;
-  /** issue #5 S4：蒸馏兜底唤醒（tc_distill 周期 alarm 触发 drain） */
+  /** issue #5 S4：蒸馏兜底唤醒（tc_distill 周期 alarm 触发 drain）；issue #31：bridge 兜底 */
   onAlarm?: {
     addListener(callback: (alarm: { name: string }) => void): void;
+    removeListener?(callback: (alarm: { name: string }) => void): void;
   };
 }
 
@@ -46,10 +47,35 @@ export interface TabsOnRemovedApi {
 /** chrome.tabs.query 同形（start 绑定活动 tab；url 需 "tabs" 权限——manifest 已声明） */
 export interface TabsQueryApi {
   query(info: {
-    active: boolean;
+    /** 过滤器语义：true/false 都只匹配对应子集，省略才匹配全部——扫描别乱传 */
+    active?: boolean;
     currentWindow?: boolean;
     lastFocusedWindow?: boolean;
+    /** issue #31：SW 冷启动后扫描仍开着的配对页（URL 前缀匹配） */
+    url?: string | string[];
   }): Promise<Array<{ id: number | undefined; url?: string }>>;
+}
+
+/** chrome.storage.onChanged 同形（issue #31：bridge 配置热更新） */
+export interface StorageOnChangedApi {
+  addListener(
+    callback: (
+      changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
+      areaName: string,
+    ) => void,
+  ): void;
+  removeListener(
+    callback: (
+      changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
+      areaName: string,
+    ) => void,
+  ): void;
+}
+
+/** chrome.tabs.onUpdated 同形（issue #31：捕获用户打开的配对 URL——t 只经 URL 传递） */
+export interface TabsOnUpdatedApi {
+  addListener(callback: (tabId: number, changeInfo: { url?: string }) => void): void;
+  removeListener(callback: (tabId: number, changeInfo: { url?: string }) => void): void;
 }
 
 /** chrome.runtime.onInstalled/onMessage 同形（message-router 消费） */
@@ -58,15 +84,16 @@ export interface RuntimeEventApi {
 }
 
 interface ChromeLike {
-  storage?: { local?: StorageArea };
+  storage?: { local?: StorageArea; onChanged?: StorageOnChangedApi };
   alarms?: AlarmsApi;
   runtime?: {
     onConnect?: OnConnectApi;
     onInstalled?: RuntimeEventApi;
     onMessage?: unknown;
+    id?: string;
   };
-  // query 是方法（receiver 敏感——绑定须返回原生对象）；onRemoved 是事件对象
-  tabs?: { onRemoved?: TabsOnRemovedApi } & TabsQueryApi;
+  // query 是方法（receiver 敏感——绑定须返回原生对象）；onRemoved/onUpdated 是事件对象
+  tabs?: { onRemoved?: TabsOnRemovedApi; onUpdated?: TabsOnUpdatedApi } & TabsQueryApi;
 }
 
 function chromeLike(): ChromeLike | null {
@@ -110,5 +137,24 @@ export function chromeTabsQuery(): TabsQueryApi {
 export function chromeOnInstalled(): RuntimeEventApi {
   const api = chromeLike()?.runtime?.onInstalled;
   if (api === undefined) throw new Error("chrome.runtime.onInstalled unavailable");
+  return api;
+}
+
+/** 扩展自身 ID（bridge 配对身份上报；扩展上下文内必有） */
+export function chromeRuntimeId(): string {
+  const id = chromeLike()?.runtime?.id;
+  if (typeof id !== "string" || id === "") throw new Error("chrome.runtime.id unavailable");
+  return id;
+}
+
+export function chromeStorageOnChanged(): StorageOnChangedApi {
+  const api = chromeLike()?.storage?.onChanged;
+  if (api === undefined) throw new Error("chrome.storage.onChanged unavailable");
+  return api;
+}
+
+export function chromeTabsOnUpdated(): TabsOnUpdatedApi {
+  const api = chromeLike()?.tabs?.onUpdated;
+  if (api === undefined) throw new Error("chrome.tabs.onUpdated unavailable");
   return api;
 }
