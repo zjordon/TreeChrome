@@ -6,7 +6,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { BridgeCommandMethod, BridgeRunSnapshot } from "@tw/protocol";
-import { type BridgeState, BridgeStateError } from "./state.js";
+import { type BridgeState, BridgeStateError, DEFAULT_COMMAND_TIMEOUT_MS } from "./state.js";
 import { WatchTimeoutError, type WatchUpdate, watchTask } from "./watch.js";
 
 export interface BridgeToolDeps {
@@ -129,9 +129,13 @@ async function executeTool(
         typeof args.waitTimeoutSeconds === "number" ? args.waitTimeoutSeconds : null,
       signal,
       // watch 的 signal 即工具调用 signal——快照请求与观察同生共死；budgetMs 是
-      // 截止剩余量（watch.ts 逐拍传入），未给则用单命令缺省预算
-      getSnapshot: (_signal, budgetMs) =>
-        enqueue("get_snapshot", {}, budgetMs) as Promise<BridgeRunSnapshot>,
+      // 截止剩余量（watch.ts 逐拍传入）——只收紧不放宽：大于单命令预算时仍守
+      // 上限，扩展失联时错误按预算暴露而非拖到截止全长（轮 2 实录）
+      getSnapshot: (_signal, budgetMs) => {
+        const cap = deps.requestTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+        const timeoutMs = budgetMs === undefined ? undefined : Math.min(budgetMs, cap);
+        return enqueue("get_snapshot", {}, timeoutMs) as Promise<BridgeRunSnapshot>;
+      },
       onUpdate: args.stream === true ? onUpdate : undefined,
       pollIntervalMs: deps.watchPollIntervalMs,
     });

@@ -229,4 +229,12 @@ protocol 类型 ~120 行、测试 ~1400 行（覆盖 85% 门禁照常）。
   6 条判别用例必红、25+20 旧用例仍绿）；全仓 typecheck + test 全绿，覆盖率过线。
   **P3 backlog**：connect 页对「别家已占用」无显式提示（现等邀请失效后提示重跑
   connect，语义正确但不含占用信息）。
+- **轮 2（2026-11-15，glm-5.3，12m40s，1 条意见采纳 P2×1）**：轮 1 修复自身的
+  缺陷——budgetMs（截止剩余量）未钳制直接作 enqueue timeoutMs，大截止
+  （waitTimeoutSeconds: 600）+ 扩展失联时单命令超时被放宽到截止全长（~10 分钟
+  无响应），违背 requestTimeoutMs「单命令往返预算」契约（budget 应只收紧不
+  放宽；修复前同场景 180s 即暴露）。修复：tools.ts 接线处 `Math.min(budgetMs,
+  cap)`（cap = requestTimeoutMs ?? 180s 缺省）。新增 1 用例（mcp-bridge 80），
+  双向验证通过（未钳制实现下必红）。另记：本轮首次发起因 `--from` 误传分支
+  tip 致 range 为空被 ocr skipped——正确基线是上一轮评审覆盖到的 reviewedTip。
 

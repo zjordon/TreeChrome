@@ -238,4 +238,25 @@ describe("watch_task", () => {
     const result = await call;
     expect(textOf(result)).toMatchObject({ isDone: true });
   });
+
+  it("大截止不放宽单命令预算：budget 只收紧——失联时按 requestTimeoutMs 上限暴露", async () => {
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const call = client
+        .callTool({ name: "watch_task", arguments: { waitTimeoutSeconds: 600 } })
+        .then((r) => {
+          settled = true;
+          return r;
+        });
+      // 不 serveNext——扩展失联；connect() 注入的 requestTimeoutMs=5s 是单命令预算
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(settled).toBe(true); // 未钳制时会挂到 600s 截止——此处即红
+      const result = await call;
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toMatchObject({ code: "BRIDGE_REQUEST_TIMEOUT" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
