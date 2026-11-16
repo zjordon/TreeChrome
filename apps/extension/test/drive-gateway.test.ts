@@ -106,6 +106,9 @@ function harness(
         get active() {
           return active;
         },
+        get busy() {
+          return active;
+        },
         get epoch() {
           return epoch;
         },
@@ -291,6 +294,40 @@ describe("session_stop 与审计", () => {
     };
     expect(second.stopped).toBe(false);
     expect(h.audit.at(-1)).toMatchObject({ verb: "session_stop", ok: true });
+  });
+
+  it("session_stop 撞在途 create（busy=true, active=false）→ stopped:true（评审轮 1 [2]）", async () => {
+    let busy = true;
+    let stopCalls = 0;
+    const gateway = createDriveGateway({
+      session: {
+        get active() {
+          return false;
+        },
+        get busy() {
+          return busy;
+        },
+        epoch: 3,
+        ensure: async () => {
+          throw new Error("ensure must not be called by session_stop");
+        },
+        touch: () => {},
+        stop: async () => {
+          busy = false;
+          stopCalls += 1;
+        },
+      },
+      journal: { current: () => null },
+      hasSidepanel: () => true,
+      audit: () => {},
+      now: () => 0,
+    });
+    const result = (await gateway(req("session_stop", {}), signal())) as {
+      stopped: boolean;
+      epoch: number;
+    };
+    expect(result).toEqual({ stopped: true, epoch: 3 });
+    expect(stopCalls).toBe(1);
   });
 
   it("upload_file：在场 + epoch → 执行且审计 detail 记完整路径（决策点 ④）", async () => {

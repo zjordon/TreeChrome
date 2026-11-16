@@ -41,6 +41,7 @@ import {
 import { activeProviderCard } from "../src/runtime/assemble.js";
 import { createBridgeGateway } from "../src/runtime/bridge-gateway.js";
 import { BridgeRuntime } from "../src/runtime/bridge-runtime.js";
+import { createMutatingDispatchChain } from "../src/runtime/dispatch-chain.js";
 import { DISTILL_ALARM_NAME, DistillQueue } from "../src/runtime/distill-queue.js";
 import { DistillWorker } from "../src/runtime/distill-worker.js";
 import {
@@ -321,7 +322,9 @@ async function boot(): Promise<Booted> {
   const m1Gateway = createBridgeGateway({
     runManager,
     journal,
-    isDriveActive: () => driveSession.active,
+    // busy（在位或创建在途）——ensure 数百 ms 在途期 core 仍空，只看 active 会让
+    // 并发 run_task 穿透互斥双 attach 互踢（评审轮 1 [1]）
+    isDriveActive: () => driveSession.busy,
     log,
   });
   const bridgeRuntime = new BridgeRuntime({
@@ -336,10 +339,13 @@ async function boot(): Promise<Booted> {
     extensionId: chromeRuntimeId(),
     newId: () => crypto.randomUUID(),
     now: () => Date.now(),
-    dispatch: (request, signal) =>
+    // run_task ↔ drive/session_stop 串行链（评审轮 1 [1]）：同批/跨批并发派发下
+    // 双向门控检查都存在 await 间隙，串行化让前者状态先可见再检查
+    dispatch: createMutatingDispatchChain((request, signal) =>
       request.method === "drive" || request.method === "session_stop"
         ? driveGateway(request, signal)
         : m1Gateway(request, signal),
+    ),
     log,
   });
   bridgeRuntime.start();

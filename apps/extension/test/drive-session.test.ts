@@ -252,6 +252,135 @@ describe("drive-session 空闲回收", () => {
   });
 });
 
+describe("drive-session 并发收口与失效防护（评审轮 1）", () => {
+  it("[1] busy：空闲 false → 创建在途 true → 在位 true → stop 后 false", async () => {
+    const h = harness();
+    expect(h.session.busy).toBe(false);
+    const ensuring = h.session.ensure();
+    expect(h.session.busy).toBe(true); // creating 在首个 await 前同步置位
+    await ensuring;
+    expect(h.session.busy).toBe(true);
+    await h.session.stop();
+    expect(h.session.busy).toBe(false);
+  });
+
+  it("[2] 死会话收口挂起期间并发 ensure 不双建：单飞行收口+重建，epoch 不跳步", async () => {
+    const h = harness();
+    await h.session.ensure();
+    const first = h.cores[0];
+    if (first === undefined) throw new Error("first core missing");
+    first.browser.isConnected = false;
+    let releaseStop: (() => void) | undefined;
+    first.browser.stop = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseStop = resolve;
+        }),
+    );
+    const a = h.session.ensure();
+    await Promise.resolve();
+    await Promise.resolve();
+    // A 挂在旧会话 browser.stop() 上（core 已置空）——B 不得凭双空直闯 create()
+    const b = h.session.ensure();
+    releaseStop?.();
+    const [coreA, coreB] = await Promise.all([a, b]);
+    expect(coreA).toBe(coreB);
+    expect(h.cores).toHaveLength(2); // 旧实现：3（双建互踢 + 孤儿附着）
+    expect(h.session.epoch).toBe(2); // 旧实现：3
+  });
+
+  it("[2] create 在途 stop()：并入 flight 等落成再收口——不空操作", async () => {
+    let releaseStart: (() => void) | undefined;
+    const landed: Array<{ stop: ReturnType<typeof vi.fn> }> = [];
+    const store = new Map<string, unknown>();
+    const session = new DriveSession({
+      tabsQuery: { query: async () => [{ id: 1, url: "https://x/" }] },
+      makeTransportFactory: () => async () => ({}) as never,
+      makeCore: () => {
+        const core = fakeCore();
+        core.browser.start = vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              releaseStart = resolve;
+            }),
+        );
+        landed.push(core.browser);
+        return { browser: core.browser as unknown as BrowserSession, tools: core.tools };
+      },
+      keepalive: new KeepaliveController({
+        create: () => {},
+        clear: async () => true,
+        onAlarm: { addListener: () => {}, removeListener: () => {} },
+      }),
+      storage: {
+        get: async (keys) => {
+          const key = typeof keys === "string" ? keys : String(keys);
+          const value = store.get(key);
+          return value === undefined ? {} : { [key]: value };
+        },
+        set: async (items) => {
+          for (const [key, value] of Object.entries(items)) store.set(key, value);
+        },
+      },
+      now: () => 0,
+    });
+    const ensuring = session.ensure();
+    expect(session.busy).toBe(true);
+    // 冲微任务直到 create 走到挂起的 browser.start（makeCore 在 pick/epoch-load
+    // 两个 await 之后才执行——releaseStart 就位前 stop 不得先行）
+    for (let i = 0; i < 20 && releaseStart === undefined; i += 1) await Promise.resolve();
+    const stopping = session.stop();
+    releaseStart?.();
+    await ensuring;
+    await stopping;
+    expect(session.active).toBe(false); // 旧实现：create 落成持 hold，active true
+    expect(landed[0]?.stop).toHaveBeenCalledTimes(1);
+    expect(store.get("tc_driveEpoch")).toBe(1);
+  });
+
+  it("[3] epoch 持久化失败 fail-closed：上抛 + 计数回滚 + 会话回收 + 恢复后可用", async () => {
+    const store = new Map<string, unknown>([["tc_driveEpoch", 5]]);
+    let failSet = true;
+    const landed: Array<{ browser: FakeBrowser }> = [];
+    const session = new DriveSession({
+      tabsQuery: { query: async () => [{ id: 1, url: "https://x/" }] },
+      makeTransportFactory: () => async () => ({}) as never,
+      makeCore: () => {
+        const core = fakeCore();
+        landed.push(core);
+        return { browser: core.browser as unknown as BrowserSession, tools: core.tools };
+      },
+      keepalive: new KeepaliveController({
+        create: () => {},
+        clear: async () => true,
+        onAlarm: { addListener: () => {}, removeListener: () => {} },
+      }),
+      storage: {
+        get: async (keys) => {
+          const key = typeof keys === "string" ? keys : String(keys);
+          const value = store.get(key);
+          return value === undefined ? {} : { [key]: value };
+        },
+        set: async (items) => {
+          if (failSet) throw new Error("quota exceeded");
+          for (const [key, value] of Object.entries(items)) store.set(key, value);
+        },
+      },
+      now: () => 0,
+    });
+    await expect(session.ensure()).rejects.toMatchObject({ code: "SESSION_START_FAILED" });
+    expect(session.active).toBe(false);
+    // 计数回滚与存储旧值一致——SW 死后新 SW 不会重新算出已用过的代次（假匹配链断根）
+    expect(session.epoch).toBe(5);
+    expect(store.get("tc_driveEpoch")).toBe(5);
+    expect(landed[0]?.browser.stop).toHaveBeenCalledTimes(1);
+    failSet = false;
+    await session.ensure();
+    expect(session.epoch).toBe(6);
+    expect(store.get("tc_driveEpoch")).toBe(6);
+  });
+});
+
 describe("tab-pick 降级链", () => {
   it("currentWindow 空 → lastFocused 命中；全链空 → tabId undefined", async () => {
     const queries: Array<{

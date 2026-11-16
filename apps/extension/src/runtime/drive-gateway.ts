@@ -24,7 +24,10 @@ import type { StorageArea } from "../host/chrome-apis.js";
 import type { DriveCore, DriveSession } from "./drive-session.js";
 
 /** gateway 消费的最小会话面（DriveSession 结构性满足；测试可注入假件） */
-export type DriveSessionFace = Pick<DriveSession, "active" | "epoch" | "ensure" | "touch" | "stop">;
+export type DriveSessionFace = Pick<
+  DriveSession,
+  "active" | "busy" | "epoch" | "ensure" | "touch" | "stop"
+>;
 
 /** run 互斥判定面（RunJournal 结构性满足） */
 export interface DriveJournalFace {
@@ -71,11 +74,14 @@ export function createDriveGateway(
   let lastState: BrowserStateSummary | null = null;
   return async (request) => {
     if (request.method === "session_stop") {
-      const wasActive = deps.session.active;
+      // busy（在位或创建在途）：stop() 会并入在途 flight 等落成再收口——
+      // stopped 如实反映（评审轮 1 [2]：只看 active 时撞上在途 create 会假报
+      // stopped:false，随后会话落成持 hold 困住 run_task）
+      const wasBusy = deps.session.busy;
       const epoch = deps.session.epoch;
       await deps.session.stop();
       deps.audit({ at: deps.now(), verb: "session_stop", ok: true });
-      const result: BridgeSessionStopResult = { stopped: wasActive, epoch };
+      const result: BridgeSessionStopResult = { stopped: wasBusy, epoch };
       return result;
     }
     const wire = request.params;

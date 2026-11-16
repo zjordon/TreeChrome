@@ -200,4 +200,27 @@ e2e ~300）。
 
 ## 9. 评审记录
 
-（/review-loop 轮次登记——待实施完成后）
+- **轮 1（2026-11-16，glm-5.3，17m，全量 main..分支 26 文件）**：3 条意见
+  （high 1 / medium 2）**全部采纳**——三条并发正确性缺陷，全部代码级核实成立：
+  1. **[P1] run ↔ drive 双向 TOCTOU**（bridge-gateway.ts:80）：bridge-runtime 同批
+     命令并发派发下双向门控检查都穿透——run 侧 isDriveActive 只看 active
+     （core!==null），ensure 在途数百 ms 为假；drive 侧 BUSY 查 journal 而
+     RunManager.starting 同步占位、journal.begin 晚两个 await → 两路先后 attach
+     同一 tab 互踢。修复三层：DriveSession 增 `busy`（core!==null ||
+     creating!==null）；run_task/drive/session_stop 经 `dispatch-chain.ts` 串行链
+     派发（前者 resolve 时状态已可见——get_snapshot 只读保持并发）；
+     isDriveActive 改接 busy。
+  2. **[P1] ensure/stop 并发不闭合**（drive-session.ts:79）：死会话收口挂在
+     browser.stop() 期间 core/creating 双空，并发 ensure 直闯 create() → 双建
+     （epoch 跳步/双 attach 互踢/孤儿附着）；session_stop 撞在途 create 空操作
+     假报 stopped:false 困住 run_task 15min。修复：「条件 stop+create」整体进
+     flight（creating 首个 await 前同步置位）；stop() 先并入在途 flight 再收口；
+     session_stop 用 busy 判定 stopped。
+  3. **[P2] epoch 持久化失败静默吞掉**（drive-session.ts:155）：原注释「失配方向
+     仍是失配」不成立——桥 lastEpoch 由响应信封学得，persist 失败的会话照常以
+     E 服务，SW 死后新 SW 冷启载 E-1 再 +1=E → **假匹配**（旧 map 索引点错
+     元素）。修复：fail-closed——await persist，失败回滚计数+回收会话+
+     SESSION_START_FAILED 上抛（宁不可用不可错点）。
+  测试 +8（drive-session 4 / dispatch-chain 3 新文件 / drive-gateway 1），
+  扩展 222→230 全绿；双向验证：还原旧实现 5 条新测试恰全红、28 条既有全绿。
+  修复提交 `<待填>`。

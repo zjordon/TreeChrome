@@ -57,6 +57,12 @@ export class DriveSession {
     return this.core !== null;
   }
 
+  /** 会话在位或创建在途（run_task 互斥判定面——ensure 挑 tab+attach 可达数百
+   *  ms，在途期 core 仍空，只看 active 会放行 run_task 造成双 attach 互踢） */
+  get busy(): boolean {
+    return this.core !== null || this.creating !== null;
+  }
+
   /** 当前代次（0 = 尚未创建过会话；每次创建单调 +1 且持久化） */
   get epoch(): number {
     return this.epochValue;
@@ -77,13 +83,19 @@ export class DriveSession {
       return this.core;
     }
     if (this.creating !== null) return await this.creating;
-    if (this.core !== null) await this.stop();
-    const attempt = this.create();
+    // 「条件 stop + create」整体进 flight（creating 在任何 await 前同步置位——
+    // 评审轮 1 [2]）：死会话收口挂在 browser.stop() 期间 core 已置空，并发
+    // ensure 会凭「core/creating 双空」直闯 create() → 双建（epoch 跳双步、
+    // 双 attach 互踢、先落成的 core 成孤儿附着）
+    const attempt = (async () => {
+      if (this.core !== null) await this.stop();
+      return await this.create();
+    })();
     this.creating = attempt;
     try {
       return await attempt;
     } finally {
-      this.creating = null;
+      if (this.creating === attempt) this.creating = null;
     }
   }
 
@@ -92,8 +104,18 @@ export class DriveSession {
     this.lastActivity = this.deps.now();
   }
 
-  /** 幂等回收：stop 会话 + release hold + 清计时（epoch 不变——下次创建才 +1） */
+  /** 幂等回收：stop 会话 + release hold + 清计时（epoch 不变——下次创建才 +1）。
+   *  创建在途时先并入 flight 等其落成/失败再收口——否则 session_stop 撞上在途
+   *  create 会空操作返回，随后 create 落成持 hold，客户端被困到空闲回收（评审轮 1 [2]）。 */
   async stop(): Promise<void> {
+    const flight = this.creating;
+    if (flight !== null) {
+      try {
+        await flight;
+      } catch {
+        // 创建失败按无会话收口（flight 内部已清理）
+      }
+    }
     if (this.idleTimer !== undefined) {
       clearInterval(this.idleTimer);
       this.idleTimer = undefined;
@@ -150,9 +172,24 @@ export class DriveSession {
       );
     }
     this.epochValue += 1;
-    // 持久化失败不阻塞会话（下次冷启 epoch 回退风险由「创建即写」的次序兜底——
-    // 极端场景失配方向仍是失配，不产生假匹配）
-    void this.deps.storage.set({ [DRIVE_EPOCH_KEY]: this.epochValue }).catch(() => {});
+    try {
+      await this.deps.storage.set({ [DRIVE_EPOCH_KEY]: this.epochValue });
+    } catch (error) {
+      // fail-closed（评审轮 1 [3]）：静默放过则存储停留旧值——SW 死后新 SW 冷启
+      // 从旧值重新算出同一代次，与桥侧 lastEpoch（由响应信封学得）假相等 →
+      // EPOCH_STALE 假阴性 → 旧 map 索引点错元素。回滚计数、回收刚启动的会话并
+      // 失败上抛（存储恢复前直驱不可用——宁不可用，不可错点）
+      this.epochValue -= 1;
+      try {
+        await core.browser.stop();
+      } catch {
+        // 清理路径不抛
+      }
+      throw Object.assign(
+        new Error(`epoch 持久化失败：${error instanceof Error ? error.message : String(error)}`),
+        { code: "SESSION_START_FAILED" },
+      );
+    }
     this.core = core;
     if (!this.held) {
       this.deps.keepalive.hold();
