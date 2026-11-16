@@ -72,6 +72,8 @@ class Agent { constructor(opts: { task, llm, browser, settings }); run(opts?: { 
 
 首期移植 10 个核心动作：navigate / click / input_text / scroll / extract / wait / go_back / switch_tab / send_keys / done。其余 15 个（search / close_tab / find_elements / find_text / screenshot / save_as_pdf / dropdown_options / select_dropdown / upload_file / write_file / read_file / replace_file / evaluate / search_page / read_grid）在 **P4b** 补全（动作清单与依赖族见 `docs/implement-plan/p4/02` §7）——评测 Tier1 的 CDPPageAdapter 依赖其中的 evaluate 增强通道。`ACTION_DEFINITIONS` 三元组扩为四元组：`(params 模型, 描述, terminates_sequence, capability)`。`page_patterns` 只影响 LLM 可见性不拦截执行——**不能当权限用**（运行时强制由权限门负责）。
 
+**会话级直驱动词面（#32，非 TreeWalker 移植来源的新导出）**：`core/src/tools/verb-specs.ts` 导出 tc 会话级 15 动词的宿主中立规格 `DRIVE_VERBS`——动词 → Tools 动作名或 BrowserSession 特殊面（get_state/tabs）；参数名（snake_case）/类型/必填/XOR；`locator` 标记 = 参数含 selector map 索引/element_id（epoch 簿记对象）；另导出直驱响应投影（`projectDriveActionResult/State/Tabs`，camelCase JSON 形态，与 daemon 会话输出同形）。daemon CLI 解析层（node-host `daemon/protocol.ts`）保持不动，其旗标表与本表由 node-host 侧 verb-parity 测试锚定同步；扩展 MCP 面（`@tw/mcp-bridge`）的 inputSchema 由本表生成。工具动词执行仍走 Tools 注册表校验（双保险）。
+
 ### 3.4 LLM 客户端（多协议）
 
 原生 fetch（无 SDK，既有决策），**兼容主流三种协议**，Strategy 模式一协议一适配器：

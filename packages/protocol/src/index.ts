@@ -408,13 +408,17 @@ export type UiToSwMessage =
   | UiOptionsRequestMessage
   | UiDiagMessage;
 
-// —— 桥↔扩展私线 wire 类型（issue #31 M1，type-only）——
+// —— 桥↔扩展私线 wire 类型（issue #31 M1 + #32 M2 直驱面，type-only）——
 export type {
   BridgeClientConfig,
   BridgeCommandMethod,
   BridgeCommandRequest,
   BridgeCommandResult,
   BridgeConnectionState,
+  BridgeDriveError,
+  BridgeDriveOk,
+  BridgeDriveParams,
+  BridgeDriveResult,
   BridgeHealthResponse,
   BridgePairRequest,
   BridgePairResponse,
@@ -422,5 +426,6 @@ export type {
   BridgePollResponse,
   BridgeRunSnapshot,
   BridgeRunTaskResult,
+  BridgeSessionStopResult,
   BridgeWireError,
 } from "./bridge-wire.js";

@@ -333,6 +333,34 @@ describe("轮询与分发", () => {
     expect(h.dispatchSignals[0]?.aborted).toBe(true);
   });
 
+  it("drive/session_stop 过白名单进 dispatch（#32 M2 直驱命令）", async () => {
+    const h = harness();
+    h.store.set(BRIDGE_STORAGE_KEY, pairedConfig());
+    let pollCount = 0;
+    h.setRouter((url) => {
+      if (url.pathname === "/v1/tc/poll") {
+        pollCount += 1;
+        return pollCount === 1
+          ? jsonRes({
+              requests: [
+                {
+                  id: "d1",
+                  method: "drive",
+                  params: { verb: "get_state", args: {} },
+                  timeoutMs: 5_000,
+                },
+                { id: "s1", method: "session_stop", params: {}, timeoutMs: 5_000 },
+              ],
+            })
+          : jsonRes({ requests: [] });
+      }
+      return jsonRes({ requests: [] });
+    });
+    h.runtime.start();
+    await h.advance(0);
+    expect(h.dispatched.map((r) => r.method)).toEqual(["drive", "session_stop"]);
+  });
+
   it("dispatch 抛错 → result 回投 ok:false 错误信封", async () => {
     const h = harness();
     h.store.set(BRIDGE_STORAGE_KEY, pairedConfig());

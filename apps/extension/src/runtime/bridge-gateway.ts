@@ -11,6 +11,8 @@ import type { RunManager } from "./run-manager.js";
 export interface BridgeGatewayDeps {
   runManager: RunManager;
   journal: RunJournal;
+  /** 直驱会话在位 → run_task 拒（issue #32：run ↔ drive 双向互斥） */
+  isDriveActive?: () => boolean;
   log?(message: string): void;
 }
 
@@ -74,6 +76,12 @@ export function createBridgeGateway(
       const task = typeof request.params.task === "string" ? request.params.task : "";
       if (task.trim() === "") {
         throw new BridgeGatewayError("INVALID_ARGUMENTS", "task must be a non-empty string.");
+      }
+      if (deps.isDriveActive?.() === true) {
+        throw new BridgeGatewayError(
+          "DRIVE_SESSION_ACTIVE",
+          "Direct-drive session active — call session_stop first.",
+        );
       }
       const current = deps.journal.current();
       if (current !== null && !TERMINAL_STATUS.has(current.status)) {

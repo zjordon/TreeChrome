@@ -41,6 +41,13 @@ export {
   toolErrorPayload,
 } from "./tools.js";
 export {
+  buildDriveTools,
+  camelOf,
+  DRIVE_TOOLS,
+  type DriveToolSpec,
+  snakeOf,
+} from "./verbs.js";
+export {
   DEFAULT_WATCH_POLL_INTERVAL_MS,
   type WatchOptions,
   WatchTimeoutError,

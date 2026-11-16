@@ -30,6 +30,8 @@ interface McpSession {
   activeResponses: number;
   idleTimer: ReturnType<typeof setTimeout> | undefined;
   closed: boolean;
+  /** 会话级直驱 epoch 簿记（#32 决策点 ①：drive 响应信封更新，locator 动词附带） */
+  lastEpoch: number | null;
 }
 
 /** Chrome 扩展 Origin 白名单形态：chrome-extension:// + 32 位 a-p（打包 ID 字符集） */
@@ -372,15 +374,24 @@ export async function startBridge(options: BridgeServerOptions): Promise<BridgeS
         isJSONRPCRequestSafe(body) &&
         isInitializeRequest(body)
       ) {
-        const mcp = createMcpServer({ state, version: options.version ?? "0.0.0" });
-        // 先建会话壳再补 transport（回调闭包引用非空 session；TS 收窄不到跨闭包赋值）
-        const created: McpSession = {
-          mcp,
+        const createdShell = (): McpSession => ({
+          mcp: undefined as unknown as McpServerInstance,
           transport: undefined as unknown as StreamableHTTPServerTransport,
           activeResponses: 0,
           idleTimer: undefined,
           closed: false,
-        };
+          lastEpoch: null,
+        });
+        const created = createdShell();
+        const mcp = createMcpServer({
+          state,
+          version: options.version ?? "0.0.0",
+          driveEpoch: () => created.lastEpoch ?? undefined,
+          onDriveEpoch: (epoch) => {
+            created.lastEpoch = epoch;
+          },
+        });
+        created.mcp = mcp;
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (id) => {

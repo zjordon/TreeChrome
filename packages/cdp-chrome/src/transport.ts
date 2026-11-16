@@ -287,10 +287,24 @@ export class ChromeDebuggerTransport implements CdpTransport {
   }
 }
 
-/** 工厂（core TransportFactory 形态）：attach 成功才返回 transport；附着失败原文上抛 */
+/** 工厂（core TransportFactory 形态）：attach 成功才返回 transport；附着失败原文上抛。
+ * SW 死亡后本扩展的旧 attach 会残留（Chrome 不随 SW 回收释放）——新进程重挂报
+ * "Another debugger is already attached"（#32 e2e 实证）：先强制 detach 回收残骸
+ * 再重试一次；其余失败原文上抛。 */
 export async function createChromeDebuggerTransport(
   options: ChromeDebuggerTransportOptions,
 ): Promise<ChromeDebuggerTransport> {
-  await options.api.attach({ tabId: options.tabId }, "1.3");
+  try {
+    await options.api.attach({ tabId: options.tabId }, "1.3");
+  } catch (error) {
+    if (!/already attached/i.test(errText(error))) throw error;
+    try {
+      await options.api.detach({ tabId: options.tabId });
+    } catch {
+      // 残骸拿不掉——上抛原始 attach 错误
+      throw error;
+    }
+    await options.api.attach({ tabId: options.tabId }, "1.3");
+  }
   return new ChromeDebuggerTransport(options);
 }

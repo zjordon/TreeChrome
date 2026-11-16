@@ -77,6 +77,17 @@ describe("run_task", () => {
     expect(control).not.toHaveBeenCalled();
   });
 
+  it("直驱会话在位 → DRIVE_SESSION_ACTIVE（#32：run ↔ drive 双向互斥）", async () => {
+    const control = vi.fn(async () => ({ ok: true as const }));
+    const runManager = { control } as unknown as RunManager;
+    const journal = { current: () => null, runId: null } as unknown as RunJournal;
+    const dispatch = createBridgeGateway({ runManager, journal, isDriveActive: () => true });
+    expect(await errorCode(dispatch(req("run_task", { task: "x" }), okSignal()))).toBe(
+      "DRIVE_SESSION_ACTIVE",
+    );
+    expect(control).not.toHaveBeenCalled();
+  });
+
   it("control 拒绝（如并发窗口单飞）→ RUN_START_FAILED 带原文案", async () => {
     const control = vi.fn(async () => ({ ok: false as const, error: "请先停止当前任务" }));
     const runManager = { control } as unknown as RunManager;
