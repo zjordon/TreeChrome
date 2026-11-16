@@ -446,6 +446,43 @@ describe("stop 与工厂", () => {
     ).rejects.toThrow("cannot attach");
   });
 
+  it("工厂：SW 死亡残留旧附着（already attached）→ 强制 detach 回收后重挂成功（#32 e2e 实证）", async () => {
+    const env = fakeApis(PAGES);
+    const calls: string[] = [];
+    let attachedStale = true; // 模拟旧 SW 残留的附着
+    const originalAttach = env.api.attach;
+    const originalDetach = env.api.detach;
+    env.api.attach = async (debuggee, version) => {
+      calls.push("attach");
+      if (attachedStale) {
+        throw new Error("Another debugger is already attached to the tab with id: 2001280601.");
+      }
+      return await originalAttach(debuggee, version);
+    };
+    env.api.detach = async (debuggee) => {
+      calls.push("detach");
+      attachedStale = false; // 强拆回收残骸
+      return await originalDetach(debuggee);
+    };
+    const t = await createChromeDebuggerTransport({ api: env.api, tabs: env.tabs, tabId: 11 });
+    expect(t.tabId).toBe(11);
+    expect(calls).toEqual(["attach", "detach", "attach"]);
+    t.stop().catch(() => {});
+  });
+
+  it("工厂：already attached 且残骸拿不掉（detach 也败）→ 上抛原始 attach 错误", async () => {
+    const env = fakeApis(PAGES);
+    env.api.attach = async () => {
+      throw new Error("Another debugger is already attached to the tab with id: 1.");
+    };
+    env.api.detach = async () => {
+      throw new Error("not attached");
+    };
+    await expect(
+      createChromeDebuggerTransport({ api: env.api, tabs: env.tabs, tabId: 11 }),
+    ).rejects.toThrow("already attached");
+  });
+
   it("stop 后 send 拒绝（含原因 stopped）", async () => {
     const { t } = makeTransport();
     await t.stop();

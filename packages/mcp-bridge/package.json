@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@tw/core": "workspace:*",
     "@tw/protocol": "workspace:*"
   },
   "devDependencies": {

@@ -122,7 +122,7 @@ afterEach(async () => {
 });
 
 describe("工具目录", () => {
-  it("5 工具齐备", async () => {
+  it("21 工具齐备（M1 任务级 5 + M2 直驱 15 + session_stop）", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([
       "tc_bridge_status",
@@ -130,6 +130,22 @@ describe("工具目录", () => {
       "get_snapshot",
       "watch_task",
       "stop_run",
+      "get_state",
+      "navigate",
+      "click",
+      "input_text",
+      "select_dropdown",
+      "scroll",
+      "find_text",
+      "read_grid",
+      "evaluate",
+      "screenshot",
+      "upload_file",
+      "go_back",
+      "tabs",
+      "switch_tab",
+      "close_tab",
+      "session_stop",
     ]);
   });
 });
@@ -258,5 +274,119 @@ describe("watch_task", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("会话级直驱（#32 M2 P3）", () => {
+  interface EpochRef {
+    value: number | undefined;
+  }
+
+  async function connectDrive(state2: BridgeState): Promise<{ client: Client; epoch: EpochRef }> {
+    const epoch: EpochRef = { value: undefined };
+    const server = createMcpServer({
+      state: state2,
+      version: "test",
+      requestTimeoutMs: 5_000,
+      watchPollIntervalMs: 5,
+      driveEpoch: () => epoch.value,
+      onDriveEpoch: (value) => {
+        epoch.value = value;
+      },
+    });
+    const client = new Client({ name: "test", version: "0" }, { capabilities: {} });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+    return { client, epoch };
+  }
+
+  it("get_state → 信封解包返回 data 且簿记 epoch；后续 click 自动附 epoch", async () => {
+    const { client, epoch } = await connectDrive(state);
+    const first = client.callTool({ name: "get_state", arguments: {} });
+    const seen1 = await serveNext(state, {
+      ok: true,
+      data: { elementTreeText: "[0] btn", currentTargetId: "T1" },
+      epoch: 7,
+    });
+    void seen1;
+    const result = await first;
+    expect(textOf(result)).toEqual({ elementTreeText: "[0] btn", currentTargetId: "T1" });
+    expect(epoch.value).toBe(7);
+
+    const second = client.callTool({ name: "click", arguments: { index: 3 } });
+    // 领取 drive 命令：locator 动词已自动附 epoch=7（调用方未传）
+    const pollResult = await state.poll(EXT_AUTH, new AbortController().signal);
+    const drive = pollResult.requests[0];
+    expect(drive.method).toBe("drive");
+    expect(drive.params).toMatchObject({ verb: "click", args: { index: 3 }, epoch: 7 });
+    state.complete({
+      requestId: drive.id,
+      ok: true,
+      result: { ok: true, data: { isDone: false, denied: false }, epoch: 7 },
+      durationMs: 1,
+    });
+    const clicked = await second;
+    expect(textOf(clicked)).toMatchObject({ isDone: false });
+  });
+
+  it("locator 无簿记 → 本地快速失败 INDEX_REQUIRES_STATE（不入队）", async () => {
+    const fresh = makeState();
+    await pairFresh(fresh);
+    const { client } = await connectDrive(fresh);
+    const result = await client.callTool({ name: "click", arguments: { index: 1 } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatchObject({ code: "INDEX_REQUIRES_STATE" });
+    expect(fresh.status().queueDepth).toBe(0);
+  });
+
+  it("扩展侧领域错信封 → isError + code 透传，epoch 仍簿记（自动愈合面）", async () => {
+    const { client, epoch } = await connectDrive(state);
+    epoch.value = 1;
+    const call = client.callTool({ name: "click", arguments: { index: 1 } });
+    await serveNext(state, {
+      ok: false,
+      error: { code: "EPOCH_STALE", message: "Session rebuilt (epoch 2 now...)" },
+      epoch: 2,
+    });
+    const result = await call;
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatchObject({ code: "EPOCH_STALE" });
+    expect(epoch.value).toBe(2);
+  });
+
+  it("camel 入参 → snake 派发；未知参数拒绝且不入队", async () => {
+    const { client } = await connectDrive(state);
+    // evaluate 非 locator——不带 epoch 键，完整断言 params 形状；顺带覆盖三个 camel 参数
+    const call = client.callTool({
+      name: "evaluate",
+      arguments: { code: "1+1", awaitPromise: false, timeoutMs: 500 },
+    });
+    const pollResult = await state.poll(EXT_AUTH, new AbortController().signal);
+    const drive = pollResult.requests[0];
+    if (drive === undefined) throw new Error("drive command not enqueued");
+    expect(drive.params).toEqual({
+      verb: "evaluate",
+      args: { code: "1+1", await_promise: false, timeout_ms: 500 },
+    });
+    state.complete({
+      requestId: drive.id,
+      ok: true,
+      result: { ok: true, data: { isDone: false }, epoch: 3 },
+      durationMs: 1,
+    });
+    expect(textOf(await call)).toEqual({ isDone: false });
+
+    const bad = await client.callTool({ name: "click", arguments: { who: 1, index: 1 } });
+    expect(bad.isError).toBe(true);
+    expect(textOf(bad)).toMatchObject({ code: "INVALID_ARGUMENTS" });
+  });
+
+  it("session_stop：命令往返 + epoch 簿记", async () => {
+    const { client, epoch } = await connectDrive(state);
+    const call = client.callTool({ name: "session_stop", arguments: {} });
+    await serveNext(state, { stopped: true, epoch: 9 });
+    const result = await call;
+    expect(textOf(result)).toEqual({ stopped: true, epoch: 9 });
+    expect(epoch.value).toBe(9);
   });
 });

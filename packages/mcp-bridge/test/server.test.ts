@@ -553,7 +553,7 @@ describe("MCP 面（P2：Streamable HTTP 全链）", () => {
     expect(ready.status).toBe(202);
   });
 
-  it("tools/list → 5 工具", async () => {
+  it("tools/list → 21 工具（M1 5 件 + M2 直驱 16 件）", async () => {
     const res = await rpc("tools/list", {});
     expect(res.status).toBe(200);
     const body = await readRpc(res);
@@ -564,7 +564,72 @@ describe("MCP 面（P2：Streamable HTTP 全链）", () => {
       "get_snapshot",
       "watch_task",
       "stop_run",
+      "get_state",
+      "navigate",
+      "click",
+      "input_text",
+      "select_dropdown",
+      "scroll",
+      "find_text",
+      "read_grid",
+      "evaluate",
+      "screenshot",
+      "upload_file",
+      "go_back",
+      "tabs",
+      "switch_tab",
+      "close_tab",
+      "session_stop",
     ]);
+  });
+
+  it("tools/call 直驱全链：get_state 记 epoch → click 自动附带（#32 会话簿记）", async () => {
+    const pollAndComplete = async (
+      result: unknown,
+      check: (params: Record<string, unknown>) => void,
+    ): Promise<void> => {
+      const poll = await fetch(`${bridge.endpoint}/v1/tc/poll`, {
+        method: "POST",
+        headers: { origin: EXT_ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({
+          connectionId: "c-1",
+          pairingToken: "ptoken",
+          instanceId: "inst-mcp",
+          pollTimeoutMs: 1_000,
+          maxBatch: 4,
+        }),
+      });
+      const { requests } = (await poll.json()) as {
+        requests: Array<{ id: string; method: string; params: Record<string, unknown> }>;
+      };
+      expect(requests[0]?.method).toBe("drive");
+      check(requests[0].params);
+      const post = await fetch(`${bridge.endpoint}/v1/tc/result`, {
+        method: "POST",
+        headers: { origin: EXT_ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({ requestId: requests[0].id, ok: true, result, durationMs: 2 }),
+      });
+      expect(post.status).toBe(200);
+    };
+
+    const call1 = rpc("tools/call", { name: "get_state", arguments: {} });
+    await pollAndComplete(
+      { ok: true, data: { elementTreeText: "[0] button" }, epoch: 11 },
+      (params) => expect(params).toEqual({ verb: "get_state", args: {} }),
+    );
+    const res1 = await call1;
+    const body1 = await readRpc(res1);
+    const result1 = body1.result as { content: Array<{ text: string }> };
+    expect(JSON.parse(result1.content[0].text)).toEqual({ elementTreeText: "[0] button" });
+
+    const call2 = rpc("tools/call", { name: "click", arguments: { index: 5 } });
+    await pollAndComplete({ ok: true, data: { isDone: false }, epoch: 11 }, (params) =>
+      expect(params).toEqual({ verb: "click", args: { index: 5 }, epoch: 11 }),
+    );
+    const res2 = await call2;
+    const body2 = await readRpc(res2);
+    const result2 = body2.result as { content: Array<{ text: string }> };
+    expect(JSON.parse(result2.content[0].text)).toEqual({ isDone: false });
   });
 
   it("tools/call run_task：MCP → 队列 → 扩展 poll → result 回投 → MCP 应答", async () => {

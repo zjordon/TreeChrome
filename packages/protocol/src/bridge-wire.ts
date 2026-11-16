@@ -68,7 +68,13 @@ export interface BridgeCommandRequest {
   timeoutMs: number;
 }
 
-export type BridgeCommandMethod = "run_task" | "get_snapshot" | "stop_run" | "cancel_request";
+export type BridgeCommandMethod =
+  | "run_task"
+  | "get_snapshot"
+  | "stop_run"
+  | "cancel_request"
+  | "drive"
+  | "session_stop";
 
 /** POST /v1/tc/poll 请求体 */
 export interface BridgePollRequest {
@@ -110,4 +116,38 @@ export interface BridgeRunSnapshot {
   lastUrl: string | null;
   /** 时间线尾部摘要（最近 N 条事件的紧凑投影） */
   timeline: Array<{ seq: number; type: string; summary: string }>;
+}
+
+// ── 会话级直驱（issue #32 M2；决策点 1/3/4 的 wire 形态）─────────────────────
+
+/** method="drive" 的 params 形状：动词 + 已校验参数 + 桥侧簿记的会话代次 */
+export interface BridgeDriveParams {
+  verb: string;
+  args: Record<string, unknown>;
+  /** locator 类动词必携：桥侧 lastObservedEpoch（不符 → EPOCH_STALE） */
+  epoch?: number;
+}
+
+/** drive 成功信封：恒携 epoch——桥侧据此更新 lastObservedEpoch（决策点 1 簿记） */
+export interface BridgeDriveOk {
+  ok: true;
+  data?: unknown;
+  epoch: number;
+}
+
+/** drive 失败信封（code：EPOCH_STALE / SIDEPANEL_REQUIRED / BUSY /
+ *  DRIVE_SESSION_ACTIVE / INDEX_REQUIRES_STATE / INVALID_ARGUMENTS / 执行错） */
+export interface BridgeDriveError {
+  ok: false;
+  error: BridgeWireError;
+  /** 尽力携带——EPOCH_STALE 时必携（当前代次供诊断） */
+  epoch?: number;
+}
+
+export type BridgeDriveResult = BridgeDriveOk | BridgeDriveError;
+
+/** session_stop 结果（幂等——未开会话也返回 stopped） */
+export interface BridgeSessionStopResult {
+  stopped: boolean;
+  epoch: number;
 }

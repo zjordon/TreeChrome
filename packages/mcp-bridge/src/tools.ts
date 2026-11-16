@@ -1,12 +1,21 @@
-// MCP 工具面（issue #31 M1 P2）：5 工具——tc_bridge_status / run_task / get_snapshot /
-// watch_task / stop_run。命令三件经 state.enqueue 走私线到扩展（未配对快速失败）；
-// watch 是 get_snapshot 的桥侧编排（watch.ts）。结果恒单 text JSON；错误信封带 code。
-// 移植 qz tools.mjs 骨架（Apache-2.0），裁剪为单 run 形态（无 drive 目录/无资源工具）。
+// MCP 工具面（issue #31 M1 P2 + #32 M2 P3）：任务级 5 工具（tc_bridge_status /
+// run_task / get_snapshot / watch_task / stop_run）+ 会话级直驱 16 件（15 动词 +
+// session_stop，DRIVE_TOOLS 由 core 规格生成）。命令走私线到扩展（未配对快速
+// 失败）；watch 是 get_snapshot 的桥侧编排（watch.ts）；直驱的 locator 动词由
+// 桥侧 epoch 簿记自动附代次（调用方零新参数）。结果恒单 text JSON；错误信封
+// 带 code。移植 qz tools.mjs 骨架（Apache-2.0）。
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { BridgeCommandMethod, BridgeRunSnapshot } from "@tw/protocol";
+import { findDriveVerb, validateDriveParams } from "@tw/core";
+import type {
+  BridgeCommandMethod,
+  BridgeDriveResult,
+  BridgeRunSnapshot,
+  BridgeSessionStopResult,
+} from "@tw/protocol";
 import { type BridgeState, BridgeStateError, DEFAULT_COMMAND_TIMEOUT_MS } from "./state.js";
+import { DRIVE_TOOLS } from "./verbs.js";
 import { WatchTimeoutError, type WatchUpdate, watchTask } from "./watch.js";
 
 export interface BridgeToolDeps {
@@ -16,6 +25,9 @@ export interface BridgeToolDeps {
   requestTimeoutMs?: number;
   /** watch 轮询间隔（测试注小值） */
   watchPollIntervalMs?: number;
+  /** 会话级直驱 epoch 簿记（#32 决策点 ①：server 按 MCP 会话接线；缺省无簿记） */
+  driveEpoch?: () => number | undefined;
+  onDriveEpoch?: (epoch: number) => void;
 }
 
 interface ToolSpec {
@@ -140,6 +152,59 @@ async function executeTool(
       pollIntervalMs: deps.watchPollIntervalMs,
     });
   }
+  if (DRIVE_TOOLS.some((tool) => tool.name === name)) {
+    requirePaired();
+    if (name === "session_stop") {
+      const envelope = (await enqueue("session_stop", {})) as BridgeSessionStopResult;
+      if (typeof envelope?.epoch === "number") deps.onDriveEpoch?.(envelope.epoch);
+      return envelope;
+    }
+    const spec = findDriveVerb(name);
+    if (spec === null) {
+      throw new BridgeStateError("INVALID_ARGUMENTS", `Unknown tool: ${name}.`);
+    }
+    // camelCase 入参 → snake_case core 参数名；未知参数拒绝（typed 面不吞错）
+    const snake: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(args)) {
+      const snakeKey = key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+      if (!spec.params.some((param) => param.name === snakeKey)) {
+        throw new BridgeStateError(
+          "INVALID_ARGUMENTS",
+          `drive verb ${name}: unknown argument ${key}.`,
+        );
+      }
+      snake[snakeKey] = value;
+    }
+    const validated = validateDriveParams(spec, snake);
+    if (!validated.ok) {
+      throw new BridgeStateError("INVALID_ARGUMENTS", validated.message);
+    }
+    // locator 动词附桥侧簿记的代次（决策点 ①：无观察记录 → 本地快速失败）
+    const epoch = spec.locator === true ? deps.driveEpoch?.() : undefined;
+    if (spec.locator === true && epoch === undefined) {
+      throw new BridgeStateError(
+        "INDEX_REQUIRES_STATE",
+        "Run get_state first — locator actions need fresh indexes (epoch bookkeeping).",
+      );
+    }
+    const envelope = (await enqueue("drive", {
+      verb: name,
+      args: validated.params,
+      ...(spec.locator === true ? { epoch } : {}),
+    })) as BridgeDriveResult;
+    if (isRecord(envelope) && typeof envelope.epoch === "number") {
+      deps.onDriveEpoch?.(envelope.epoch);
+    }
+    if (!isRecord(envelope) || envelope.ok !== true) {
+      // 扩展侧领域错信封（EPOCH_STALE/SIDEPANEL_REQUIRED/BUSY/…）转 MCP 错误信封
+      const error = isRecord(envelope) && isRecord(envelope.error) ? envelope.error : {};
+      throw new BridgeStateError(
+        typeof error.code === "string" ? error.code : "DRIVE_FAILED",
+        typeof error.message === "string" ? error.message : "Drive command failed.",
+      );
+    }
+    return envelope.data ?? {};
+  }
   throw new BridgeStateError("INVALID_ARGUMENTS", `Unknown tool: ${name}.`);
 }
 
@@ -151,11 +216,16 @@ export function createMcpServer(deps: BridgeToolDeps): Server {
       instructions:
         "TreeChrome 扩展桥：run_task 委派任务到日常 Chrome（扩展内 agent 循环执行，异步受理返回 runId）；" +
         "get_snapshot 读进度；watch_task 挂起至终态（stream=true 逐事件 progress）；stop_run 停跑。" +
+        "会话级直驱（#32）：get_state 取元素树后用 click/input_text 等逐步驱动（写类动作需侧边栏" +
+        "在场；索引过期返回 EPOCH_STALE——重跑 get_state 即恢复）；session_stop 结束直驱会话。" +
         "观察只读——超时/取消不影响浏览器内任务。",
     },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: BRIDGE_TOOLS.map((tool) => ({ ...tool, inputSchema: { ...tool.inputSchema } })),
+    tools: [...BRIDGE_TOOLS, ...DRIVE_TOOLS].map((tool) => ({
+      ...tool,
+      inputSchema: { ...tool.inputSchema },
+    })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const progressToken = (request.params._meta as { progressToken?: unknown } | undefined)

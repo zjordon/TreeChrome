@@ -10,7 +10,7 @@ import {
   chromeTabsApi,
   createChromeDebuggerTransport,
 } from "@tw/cdp-chrome";
-import { LLMClient } from "@tw/core";
+import { BrowserSession as BrowserSessionClass, LLMClient, Tools } from "@tw/core";
 import type { RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
@@ -41,8 +41,15 @@ import {
 import { activeProviderCard } from "../src/runtime/assemble.js";
 import { createBridgeGateway } from "../src/runtime/bridge-gateway.js";
 import { BridgeRuntime } from "../src/runtime/bridge-runtime.js";
+import { createMutatingDispatchChain } from "../src/runtime/dispatch-chain.js";
 import { DISTILL_ALARM_NAME, DistillQueue } from "../src/runtime/distill-queue.js";
 import { DistillWorker } from "../src/runtime/distill-worker.js";
+import {
+  createDriveAuditWriter,
+  createDriveGateway,
+  driveUploadFs,
+} from "../src/runtime/drive-gateway.js";
+import { DriveSession } from "../src/runtime/drive-session.js";
 import { DebounceScheduler, RunJournal } from "../src/runtime/journal.js";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
 import { handleOptionsRequest, type OptionsFace } from "../src/runtime/options-handler.js";
@@ -276,10 +283,50 @@ async function boot(): Promise<Booted> {
     if (reason === "install" || reason === "update") void refreshSkills();
   });
 
-  // —— 桥 runtime（issue #31 M1）：与本地 tc-bridge 的长轮询连接。构造与 start()
-  //    全同步——tabs/storage/alarms 监听器在 boot 首个 await 前注册（MV3 纪律，
-  //    SW 被杀唤醒后不丢事件）；dispatch 经 gateway 走 RunManager 同一单飞互斥
-  //    （sidepanel 与远程不可能并发两个 run；确认卡 fail-closed 语义不变）——
+  // —— 桥 runtime（issue #31 M1 + #32 M2）：与本地 tc-bridge 的长轮询连接。构造与
+  //    start() 全同步——tabs/storage/alarms 监听器在 boot 首个 await 前注册（MV3
+  //    纪律，SW 被杀唤醒后不丢事件）；dispatch 按 method 分流——任务级三件走
+  //    bridge-gateway（RunManager 同一单飞互斥），drive/session_stop 走
+  //    drive-gateway（直驱会话；run ↔ drive 双向互斥）——
+  const driveSession = new DriveSession({
+    tabsQuery: chromeTabsQuery(),
+    makeTransportFactory: (tabId) => makeDebuggerTransportFactory(tabId, {}, log),
+    makeCore: (transportFactory, coreLog) => ({
+      browser: new BrowserSessionClass(
+        transportFactory,
+        {},
+        {
+          log: (m: string) => coreLog(`[browser] ${m}`),
+        },
+      ),
+      // 会话式拍板（#32 决策点 ④）：upload 路径模式、白名单全不设（调用方即信任
+      // 边界，与 #27 daemon 同款）；fs=driveUploadFs(OPFS)——OS 绝对路径放行由
+      // Chrome 读盘，OPFS 虚拟工作区（screenshot save_path）照常
+      tools: new Tools({ fs: driveUploadFs(fs), log: (m: string) => coreLog(`[action] ${m}`) }),
+    }),
+    keepalive,
+    storage,
+    now: () => Date.now(),
+    log,
+  });
+  const driveGateway = createDriveGateway({
+    session: driveSession,
+    journal,
+    // 决策点 ② 在场门：PortServer.hasPorts（晚绑定 ref——portServer 在
+    // runManager 之后构造）
+    hasSidepanel: () => portServerRef?.hasPorts ?? false,
+    audit: createDriveAuditWriter(storage, log),
+    now: () => Date.now(),
+    log,
+  });
+  const m1Gateway = createBridgeGateway({
+    runManager,
+    journal,
+    // busy（在位或创建在途）——ensure 数百 ms 在途期 core 仍空，只看 active 会让
+    // 并发 run_task 穿透互斥双 attach 互踢（评审轮 1 [1]）
+    isDriveActive: () => driveSession.busy,
+    log,
+  });
   const bridgeRuntime = new BridgeRuntime({
     storage,
     storageOnChanged: chromeStorageOnChanged(),
@@ -292,7 +339,13 @@ async function boot(): Promise<Booted> {
     extensionId: chromeRuntimeId(),
     newId: () => crypto.randomUUID(),
     now: () => Date.now(),
-    dispatch: createBridgeGateway({ runManager, journal, log }),
+    // run_task ↔ drive/session_stop 串行链（评审轮 1 [1]）：同批/跨批并发派发下
+    // 双向门控检查都存在 await 间隙，串行化让前者状态先可见再检查
+    dispatch: createMutatingDispatchChain((request, signal) =>
+      request.method === "drive" || request.method === "session_stop"
+        ? driveGateway(request, signal)
+        : m1Gateway(request, signal),
+    ),
     log,
   });
   bridgeRuntime.start();

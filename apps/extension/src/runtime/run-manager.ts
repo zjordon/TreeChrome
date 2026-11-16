@@ -30,6 +30,7 @@ import type { DistillJobInput } from "./distill-queue.js";
 import { EventForwarder } from "./event-forwarder.js";
 import type { RunJournal } from "./journal.js";
 import { SidepanelPolicyBridge } from "./policy-bridge.js";
+import { pickActiveDrivableTab } from "./tab-pick.js";
 
 export type ControlResult = { ok: true } | { ok: false; error: string };
 
@@ -301,21 +302,12 @@ export class RunManager {
     let tabId: number | undefined;
     let sawRestricted = false;
     try {
-      // headless/SW 语境 currentWindow 可能为空（无聚焦窗口）——降级链：
-      // currentWindow → lastFocusedWindow → 任意窗口的 active tab；每级先取可
-      // 驱动页（http/https）——chrome:// 等内部页面 chrome.debugger 拒绝附着
-      // （段 F 验收：在 chrome://extensions 重载扩展后直接开跑即
-      // "Cannot access a chrome:// URL"）。url 不可读（权限缺失/注入测试）时
-      // 保持原行为（不判形态）
-      let tabs = await this.deps.tabsQuery.query({ active: true, currentWindow: true });
-      let pick = drivableOf(tabs);
-      if (pick === undefined) {
-        tabs = await this.deps.tabsQuery.query({ active: true, lastFocusedWindow: true });
-        pick = drivableOf(tabs);
-      }
-      if (pick === undefined) tabs = await this.deps.tabsQuery.query({ active: true });
-      sawRestricted = tabs.some((t) => t.url !== undefined && !isDrivableUrl(t.url));
-      tabId = pick?.id ?? drivableOf(tabs)?.id;
+      // 降级链挑选（issue #32 抽出 tab-pick 共享——drive-session 同款）：
+      // currentWindow → lastFocusedWindow → 任意窗口 active；每级先取可驱动页
+      // （http/https——chrome:// 等内部页 chrome.debugger 拒绝附着）
+      const pick = await pickActiveDrivableTab(this.deps.tabsQuery);
+      tabId = pick.tabId;
+      sawRestricted = pick.sawRestricted;
     } catch {
       tabId = undefined;
     }
@@ -552,17 +544,7 @@ export class RunManager {
   }
 }
 
-/** 可驱动 URL 判定：http/https（chrome://、edge://、about:、devtools:// 等
- *  内部页面 chrome.debugger 拒绝附着）；url 未知（undefined）不判形态 */
-function isDrivableUrl(url: string): boolean {
-  return url.startsWith("http://") || url.startsWith("https://");
-}
-
-function drivableOf(
-  tabs: Array<{ id: number | undefined; url?: string }>,
-): { id: number | undefined; url?: string } | undefined {
-  return tabs.find((t) => t.url === undefined || isDrivableUrl(t.url));
-}
+/** 可驱动 tab 挑选（降级链）已抽出 tab-pick.ts 共享（issue #32）——run 与直驱同款 */
 
 function isConnectionLost(e: unknown): boolean {
   const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();

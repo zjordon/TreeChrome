@@ -219,3 +219,20 @@ export {
 export type { ToolsOptions, ToolsTruncationSettings } from "./tools/settings.js";
 export { DEFAULT_TRUNCATION_SETTINGS } from "./tools/settings.js";
 export type { ActionHandler, ToolsBrowser } from "./tools/types.js";
+export type {
+  DriveActionResultOut,
+  DriveParamSpec,
+  DriveParamType,
+  DriveStateOut,
+  DriveTabsOut,
+  DriveVerbSpec,
+} from "./tools/verb-specs.js";
+// —— 会话级直驱动词面（#32 决策点 3；非 TreeWalker 移植来源，架构 §3.3 登记）——
+export {
+  DRIVE_VERBS,
+  findDriveVerb,
+  projectDriveActionResult,
+  projectDriveState,
+  projectDriveTabs,
+  validateDriveParams,
+} from "./tools/verb-specs.js";

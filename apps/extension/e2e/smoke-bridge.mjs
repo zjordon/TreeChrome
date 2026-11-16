@@ -274,7 +274,11 @@ try {
   });
   const tools = await rpc("tools/list", {}, sessionId);
   const toolNames = (tools.response?.result?.tools ?? []).map((t) => t.name);
-  if (toolNames.join(",") !== "tc_bridge_status,run_task,get_snapshot,watch_task,stop_run") {
+  // #32 后 21 件（M1 五件序不变 + M2 直驱 16 件）
+  if (
+    toolNames.length !== 21 ||
+    toolNames.slice(0, 5).join(",") !== "tc_bridge_status,run_task,get_snapshot,watch_task,stop_run"
+  ) {
     failures.push(`tools/list = ${toolNames.join(",")}`);
   }
 

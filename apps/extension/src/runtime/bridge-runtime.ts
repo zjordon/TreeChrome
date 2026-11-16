@@ -95,7 +95,14 @@ export function parseBridgeConfig(
 
 const STATES = new Set<string>(["disabled", "connecting", "connected", "reconnecting", "paused"]);
 /** 桥侧命令动词白名单（wire 信任边界：未知动词直接丢弃不 dispatch） */
-const COMMAND_METHODS = new Set<string>(["run_task", "get_snapshot", "stop_run", "cancel_request"]);
+const COMMAND_METHODS = new Set<string>([
+  "run_task",
+  "get_snapshot",
+  "stop_run",
+  "cancel_request",
+  "drive",
+  "session_stop",
+]);
 
 /** 从 connect URL 提取一次性 t（仅本桥 endpoint 前缀——不为他桥代配） */
 export function pairingTokenFromUrl(url: string | undefined, endpoint: string): string | null {
