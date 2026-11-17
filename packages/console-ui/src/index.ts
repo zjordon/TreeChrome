@@ -68,6 +68,6 @@ export { ThemedRoot } from "./themed-root.js";
 export type { RunBlockItem, TranscriptItem, UserTurnItem } from "./transcript.js";
 export { projectTranscript } from "./transcript.js";
 export type { TranscriptViewProps } from "./transcript-view.js";
-export { TranscriptView } from "./transcript-view.js";
+export { FOLLOW_BOTTOM_THRESHOLD_PX, isAtBottom, TranscriptView } from "./transcript-view.js";
 export type { WelcomePanelProps } from "./welcome-panel.js";
 export { WelcomePanel } from "./welcome-panel.js";

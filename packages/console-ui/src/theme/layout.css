@@ -244,11 +244,34 @@
   text-decoration: underline;
 }
 
-/* —— 转录（#35 U1b TranscriptView）—— */
+/* —— 转录（#35 U1b TranscriptView + #37 批 D 滚动面）—— */
 .tc-transcript {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* 滚动意图（#37 批 D）：转录自有滚动面——跟随/解除/浮钮的容器 */
+.tc-transcript--scroll {
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+/* 回底浮钮：解除跟随时出现（流式新事件提示） */
+.tc-transcript-jump {
+  position: sticky;
+  bottom: 6px;
+  align-self: flex-end;
+  margin-left: auto;
+  margin-top: -4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-bg-elevated);
+  color: var(--tc-accent);
+  cursor: pointer;
 }
 
 /* 用户气泡：右对齐轻底（归档 run 块居左——对话方向感的最小实现） */

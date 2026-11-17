@@ -5,20 +5,21 @@
   "type": "module",
   "description": "TreeChrome 扩展宿主（WXT：SW 壳 + sidepanel + options + run journal；架构 §2 apps/extension）",
   "scripts": {
+    "e2e:smoke": "node e2e/smoke-cdp-chrome.mjs",
+    "e2e:ui": "node e2e/smoke-ui.mjs",
+    "e2e:attachments": "node e2e/smoke-attachments.mjs",
+    "e2e:self-evolution": "node e2e/smoke-self-evolution.mjs",
+    "e2e:bridge": "node e2e/smoke-bridge.mjs",
+    "e2e:drive": "node e2e/smoke-drive.mjs",
+    "e2e:queue": "node e2e/smoke-queue.mjs",
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
-    "e2e:smoke": "node e2e/smoke-cdp-chrome.mjs",
     "e2e:probe": "node e2e/probe-debugger.mjs && node e2e/probe-debugger2.mjs",
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "e2e:runtime": "node e2e/smoke-sw-runtime.mjs",
-    "e2e:bridge": "node e2e/smoke-bridge.mjs",
-    "e2e:drive": "node e2e/smoke-drive.mjs",
-    "e2e:ui": "node e2e/smoke-ui.mjs",
-    "e2e:attachments": "node e2e/smoke-attachments.mjs",
-    "e2e:self-evolution": "node e2e/smoke-self-evolution.mjs"
+    "e2e:runtime": "node e2e/smoke-sw-runtime.mjs"
   },
   "dependencies": {
     "@tw/cdp-chrome": "workspace:*",

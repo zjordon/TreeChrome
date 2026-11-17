@@ -1,7 +1,8 @@
-// TranscriptView（issue #35 U1b B2）：转录条目渲染——用户气泡（task 原文 + 非
-// done 状态章）+ run 块（状态头 + 复用 RunTimeline 事件面 + 终态复用 FinalResult）。
-// 零 chrome；事件条目的分色/折叠/未知回退由 RunTimeline 既有面承载。
+// TranscriptView（issue #35 U1b B2 + #37 批 D 滚动意图）：转录条目渲染——用户气泡
+// （task 原文 + 非 done 状态章）+ run 块（状态头 + 复用 RunTimeline 事件面 + 终态
+// 复用 FinalResult）。零 chrome；事件条目的分色/折叠/未知回退由 RunTimeline 承载。
 
+import { useEffect, useRef, useState } from "react";
 import { FinalResult } from "./final-result.js";
 import { Badge } from "./primitives.js";
 import { RunTimeline } from "./run-timeline.js";
@@ -71,17 +72,77 @@ export interface TranscriptViewProps {
   items: TranscriptItem[];
 }
 
+/** 解除跟随的距底阈值（qz 同值 28px） */
+export const FOLLOW_BOTTOM_THRESHOLD_PX = 28;
+
+/** 距底判定（纯函数——jsdom 无真实布局，组件测试经此锚定语义） */
+export function isAtBottom(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+  threshold = FOLLOW_BOTTOM_THRESHOLD_PX,
+): boolean {
+  return scrollHeight - scrollTop - clientHeight <= threshold;
+}
+
+/** 滚动意图裁剪版（#37 批 D）：容器自有滚动面——尾部跟随 + 上滚解除（>28px）+
+ *  回底恢复 + 解除期间新事件浮钮「↓」。跟随判定挂容器 scroll 事件与 items 变更
+ *  双路径；空转录维持原占位不渲染滚动容器。 */
 export function TranscriptView({ items }: TranscriptViewProps) {
+  const container = useRef<HTMLDivElement>(null);
+  // 初始跟随（首屏在底）；scrollTop 初始 0 且内容未超视口时 isAtBottom 恒真
+  const [following, setFollowing] = useState(true);
+  const followingRef = useRef(true);
+  followingRef.current = following;
+
+  const syncFollow = (): void => {
+    const el = container.current;
+    if (el === null) return;
+    const next = isAtBottom(el.scrollTop, el.scrollHeight, el.clientHeight);
+    if (next !== followingRef.current) setFollowing(next);
+  };
+
+  // items 增长时：跟随中则贴底（流式内容增高不跳走——qz 滚动意图的核心）。
+  // items 是纯触发器（体内容由 key 稳定的子项承载）——显式消费让依赖必要性成立
+  useEffect(() => {
+    void items.length;
+    const el = container.current;
+    if (el === null || !followingRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [items]);
+
   if (items.length === 0) return <p className="tc-ev-muted">（尚无对话）</p>;
   return (
-    <div className="tc-transcript" data-testid="transcript-view">
-      {items.map((item) =>
-        item.kind === "user-turn" ? (
-          <UserBubble key={item.turnId} item={item} />
-        ) : (
-          <RunBlock key={item.runId} item={item} />
-        ),
-      )}
-    </div>
+    <>
+      <div
+        ref={container}
+        className="tc-transcript tc-transcript--scroll"
+        data-testid="transcript-view"
+        onScroll={syncFollow}
+      >
+        {items.map((item) =>
+          item.kind === "user-turn" ? (
+            <UserBubble key={item.turnId} item={item} />
+          ) : (
+            <RunBlock key={item.runId} item={item} />
+          ),
+        )}
+      </div>
+      {!following ? (
+        <button
+          type="button"
+          className="tc-transcript-jump"
+          data-testid="transcript-jump"
+          aria-label="回到底部"
+          onClick={() => {
+            const el = container.current;
+            if (el !== null) el.scrollTop = el.scrollHeight;
+            setFollowing(true);
+          }}
+        >
+          ↓ 新消息
+        </button>
+      ) : null}
+    </>
   );
 }
