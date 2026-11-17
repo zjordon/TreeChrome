@@ -70,9 +70,9 @@
 
 - [x] 批 A markdown 渲染管线 + 复制钮：console-ui 增 react-markdown/remark-gfm/rehype-highlight；MarkdownText（双闸：raw HTML 不渲染 + safeUrlTransform 协议白名单）+ CodeBlock（语言标签/复制钮/textContent 兜底）+ CopyButton（ClipboardUtil 收口，不可用静默降级）；FinalResult.finalResult 走 markdown（复制钮在头部行尾）、UserBubble 复制钮；markdown.css（排版 + hljs token 双主题派生配色）。**偏离 D7**：next_goal 保持行内文本（每步一行×几十步，块级 markdown 纵向炸开；qz 同为单行）。
 - [x] 批 B PageRegistry + header tab + 技能页 + 调试日志页：PageRegistration/PageTabs（tablist 语义 + roving 键盘焦点，toggle 由宿主裁决）；SkillPage（list-skills/list-skill-drafts 双拉 + 采纳/丢弃经 OPTIONS_OPS——与 options 双宿主同面）；DebugLogPage（seq 排序原始事件流 + 快照头部 + 未知类型回退）；RunPanelHeader 增 tabs 插槽；sidepanel 静态注册（任务 10/技能 40/调试 50，isEnabled 由注入面推导）+ 列表钮退役（tab 承载）。
-- [ ] 批 C 字号 + 会话标题条收拢
+- [x] 批 C 字号 + 会话标题条收拢：FontSizePopover（Aa 弹卡三档 sm/md/lg，localStorage `tc:font-size` 持久化，档位类挂 documentElement——base.css html 档位规则缩放 .tc-root，双主题 token 继承）；SessionTitleBar（标题行内重命名 Enter/Escape/isComposing 三路径 + actions 插槽）；sidepanel 聊天区顶部条件渲染（有会话非落地页），actions=字号（导出批 D 接入）。
 - [ ] 批 D 产物索引 + 导出 HTML + 验收自查
-- 测试总账：console-ui 110→132（批 A +9、批 B +13）；extension 290 不变
+- 测试总账：console-ui 110→139（批 A +9、批 B +13、批 C +7）；extension 290 不变
 
 ## 5. 评审轮次登记（review-loop 填写）
 

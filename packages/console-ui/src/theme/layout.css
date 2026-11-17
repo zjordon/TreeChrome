@@ -81,6 +81,56 @@
   border-color: var(--tc-accent);
 }
 
+/* —— 字号弹卡（#39 U3 批 C）：Aa 钮弹出三档 —— */
+.tc-font-popover {
+  position: absolute;
+  right: 0;
+  top: 26px;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--tc-bg-elevated);
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-sm);
+  box-shadow: var(--tc-overlay-shadow);
+}
+
+/* —— 会话标题条（#39 U3 批 C）：行内重命名 + 动作区（字号/导出） —— */
+.tc-session-title-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tc-session-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  font-weight: var(--tc-control-weight);
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: inherit;
+  cursor: text;
+  text-align: left;
+  border-radius: var(--tc-radius-sm);
+}
+
+.tc-session-title:hover {
+  background: var(--tc-bg-muted);
+}
+
+.tc-session-title-actions {
+  flex: none;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
 .tc-port-dot {
   flex: none;
   width: 8px;

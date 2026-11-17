@@ -15,6 +15,7 @@ import {
   DebugLogPage,
   ExternalDriveCard,
   FinalResult,
+  FontSizePopover,
   formatBytes,
   GoalStrip,
   ModelSwitcher,
@@ -27,6 +28,7 @@ import {
   RunStatusBar,
   RunTimeline,
   SessionsPage,
+  SessionTitleBar,
   SettingsOverlay,
   SkillPage,
   SubmitCard,
@@ -585,6 +587,19 @@ export function SidepanelApp({
           <activePage.Component />
         ) : (
           <>
+            {/* 会话标题条（#39 批 C）：行内重命名 + 字号（导出批 D 接入） */}
+            {state.currentSessionId !== null && !landing ? (
+              <SessionTitleBar
+                title={state.sessionRecord?.meta.title ?? "会话"}
+                onRename={(title) => {
+                  void sessionRequest?.("session-rename", {
+                    sessionId: state.currentSessionId,
+                    title,
+                  }).catch(() => {});
+                }}
+                actions={<FontSizePopover />}
+              />
+            ) : null}
             {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}
             {external ? (
               <ExternalDriveCard sessionTitle={state.sessionRecord?.meta.title ?? null} />

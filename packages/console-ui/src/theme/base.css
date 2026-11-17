@@ -18,6 +18,17 @@
   min-height: 100%;
 }
 
+/* 字号档位（#39 U3 批 C）：档位类挂 html（documentElement）——FontPopover 写入。
+   md=缺省无类（13px 基线）；sm/lg 全树缩放（token/em 尺寸随基线联动，双主题继承） */
+html.tc-font-sm .tc-root,
+.tc-font-sm.tc-root {
+  font-size: 12px;
+}
+html.tc-font-lg .tc-root,
+.tc-font-lg.tc-root {
+  font-size: 15px;
+}
+
 /* 作用域 border-box reset（评审轮 1 [1][2]）：控件尺寸 token（高度/宽度）一律指含边框总尺寸——
    content-box 下 1px 边框会外扩 2px 破坏 32px 契约。结构参照 alibaba/qz-browser-agent（Apache-2.0）。 */
 .tc-root *,
