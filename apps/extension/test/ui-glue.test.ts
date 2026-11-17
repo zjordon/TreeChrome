@@ -585,3 +585,104 @@ describe("hello 空载荷保留终态视图（段 F 验收：SW 休眠重连不�
     expect(state.snapshot?.runId).toBe("r2");
   });
 });
+
+describe("sidepanel reducer 会话面（#35 U1b）", () => {
+  const snapS = (sessionId: string | undefined, runId = "r1"): never =>
+    ({
+      runId,
+      tabId: 1,
+      status: "running",
+      seq: 1,
+      ackedSeq: 0,
+      discardedBeforeSeq: 0,
+      events: [],
+      task: "t",
+      startedAt: 1,
+      endedAt: null,
+      finalResult: null,
+      isDone: false,
+      isSuccessful: null,
+      stepCount: 1,
+      lastError: null,
+      attachments: [],
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    }) as never;
+
+  it("session-updated 只推进 rev（触发器语义——fetch 走单发应答）", () => {
+    const base = ingestSidepanel(initialSidepanelState, {
+      kind: "session-updated",
+      sessionId: "s1",
+      reason: "archive",
+    }).state;
+    expect(base.sessionRev).toBe(1);
+    const again = ingestSidepanel(base, {
+      kind: "session-updated",
+      reason: "index",
+    }).state;
+    expect(again.sessionRev).toBe(2);
+  });
+
+  it("session-index / session-record / session-current 基线", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "session-index",
+      sessions: [],
+    }).state;
+    expect(state.sessions).toEqual([]);
+    state = ingestSidepanel(state, { kind: "session-current", sessionId: "s1" }).state;
+    expect(state.currentSessionId).toBe("s1");
+    state = ingestSidepanel(state, {
+      kind: "session-record",
+      record: null,
+    }).state;
+    // record null 且会话不存在 → 连当前指向一起清（LRU/删除竞态回落地页）
+    expect(state.sessionRecord).toBeNull();
+    expect(state.currentSessionId).toBeNull();
+  });
+
+  it("session-current 同值幂等；切会话清归档视图（fetch 在途不闪旧内容）", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "session-index",
+      sessions: [],
+    }).state;
+    state = ingestSidepanel(state, { kind: "session-current", sessionId: "s1" }).state;
+    const tagged = ingestSidepanel(state, {
+      kind: "session-record",
+      record: { meta: { sessionId: "s1" }, turns: [], runs: [] } as never,
+    }).state;
+    const switched = ingestSidepanel(tagged, { kind: "session-current", sessionId: "s2" }).state;
+    expect(switched.currentSessionId).toBe("s2");
+    expect(switched.sessionRecord).toBeNull();
+    const same = ingestSidepanel(switched, { kind: "session-current", sessionId: "s2" }).state;
+    expect(same).toBe(switched); // 引用不变——幂等
+  });
+
+  it("hello / journal-snapshot 携 sessionId → currentSessionId 跟随（换会话清归档）", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "session-index",
+      sessions: [],
+    }).state;
+    state = ingestSidepanel(state, {
+      kind: "hello",
+      runId: "r1",
+      snapshot: snapS("s1"),
+    }).state;
+    expect(state.currentSessionId).toBe("s1");
+    const tagged = ingestSidepanel(state, {
+      kind: "session-record",
+      record: { meta: { sessionId: "s1" }, turns: [], runs: [] } as never,
+    }).state;
+    // 旧快照无 sessionId：不动当前指向
+    const legacy = ingestSidepanel(tagged, {
+      kind: "journal-snapshot",
+      snapshot: snapS(undefined, "r2"),
+    }).state;
+    expect(legacy.currentSessionId).toBe("s1");
+    // bridge 起的 run（他会话）→ 面板跟随切换
+    const bridge = ingestSidepanel(legacy, {
+      kind: "journal-snapshot",
+      snapshot: snapS("s9", "r3"),
+    }).state;
+    expect(bridge.currentSessionId).toBe("s9");
+    expect(bridge.sessionRecord).toBeNull();
+  });
+});

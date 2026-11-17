@@ -82,9 +82,37 @@
 - `pnpm typecheck` + `pnpm test` + `node scripts/gate.mjs pre-commit` 全绿
 - 验收①②④⑤有单测锚点；验收③（重命名/删除生效）session-handler 测试覆盖（UI 入口 U1b）
 
-## 2. U1b UI 面（U1a 合并后另分支；开工前细化）
+## 2. U1b UI 面（同分支续作——闸门二，2026-11-17 细化）
 
-范围（方案 §6 U1）：sidepanel-state reducer 扩展（session-updated 摄取 + session 单发面客户端）/ AppShell 六区壳（header 单 tab + 新对话/设置钮）/ TaskBar→Composer（Enter/Shift+Enter/自适应高度）/ TranscriptView v1 + projectTranscript 纯函数（console-ui，零 chrome）/ WelcomePanel 二态 / 任务页 v0（列表+重命名+删除+切换，入口=header 列表钮或落地页链接）。
+范围（方案 §6 U1）：reducer 扩展 / 六区壳起步（header 动作钮 + 视图切换）/ Composer / TranscriptView v1 + projectTranscript / WelcomePanel 二态 / 任务页 v0。
+
+工作项（闸门分支内序）：
+
+- **B1 转录投影纯函数**（console-ui `transcript.ts`）：`TranscriptItem = user-turn | run-block`；`projectTranscript(record, snapshot, liveEvents)`——归档 turns 按序出用户气泡；turn 终态 → 配对 RunArchive 出 run 块（事件 + finalResult + lastError）；turn 是活动 run（snapshot.runId 匹配）→ 事件取 liveEvents（UI 状态已合并 hello 尾巴 + live 追加）、终态字段取快照。零 chrome。
+- **B2 TranscriptView**（`transcript-view.tsx`）：用户气泡（task 原文 + 非 done 状态章）；run 块 = 状态头 + 复用 `RunTimeline`（事件）+ 终态复用 `FinalResult`。未知事件可读回退由 RunTimeline 既有 default 分支承载。
+- **B3 Composer**（`composer.tsx`）：自适应高度 textarea（rows=1，min 20px / max 120px，dir=auto）+ Enter 发送 / Shift+Enter 换行 + 发送钮（空输入禁用）+ 提示行。附件清单/预算/拒绝明细行维持现有渲染位（sidepanel-app 组合，组件不管附件）。
+- **B4 SessionsPage**（`sessions-page.tsx`）：索引列表（title/runCount/lastStatus/updatedAt）+ 打开切换 + 行内重命名（input 替换，Enter 提交）+ 删除（二次确认钮）+ 新对话钮。
+- **B5 header/欢迎屏扩展**：RunPanelHeader 加 onNewChat（⊕）/onOpenTasks（☰）图标钮；WelcomePanel 加 historyCount/onOpenHistory（二态：无历史纯欢迎 / 有历史带「查看历史会话」链接）。
+- **B6 reducer 扩展**（sidepanel-state.ts）：state 加 sessions/sessionRecord/currentSessionId/sessionRev；actions 加 `session-updated`（rev+1——摄取 SwToUiMessage 新 kind）/`session-index`/`session-record`/`session-current`；hello 与 journal-snapshot 携 sessionId 时同步 currentSessionId。
+- **B7 sidepanel-app 组态**：sessionRequest 注入（entrypoints 加 sendMessage kind:"session" 工厂）；sessionRev/portStatus online → session-list 补查 + currentSessionId → session-open；主区二视图（chat：landing（transcript 空且无 run）↔ TranscriptView；tasks：SessionsPage）；起跑带 sessionId（currentSessionId 非空时显式传——切换会话后续跑该会话，SW 侧 rebind）；新对话 = session-new（tabId 0 未绑定）→ 置当前 → 下一次 start 显式 sessionId 触发 rebind 绑 tab。TaskBar 退役（组件保留导出——web-console 预留），附件面保持原渲染位。
+- **B8 测试**：transcript 纯函数（归档/活动合并/空）/TranscriptView/Composer（Enter/Shift+Enter/禁用态）/SessionsPage（列表/切换/行内重命名/删除）/header 新钮/reducer 扩展（ui-glue.test.ts）。
+
+### U1b 进度
+
+- [x] B1 transcript.ts（projectTranscript + 5 用例：归档-only/活动合流/他会话不串/残留 running/空态）
+- [x] B2 TranscriptView（用户气泡+状态章；run 块复用 RunTimeline/FinalResult；4 用例）
+- [x] B3 Composer（自适应高度/Enter/Shift+Enter/禁用态；4 用例；Button 原件）
+- [x] B4 SessionsPage（列表投影/打开/行内重命名三路径/两段删除/空态；4 用例）
+- [x] B5 header 新对话+任务列表钮（用例入 run-panel-header.test）；WelcomePanel 二态（historyCount/onOpenHistory）
+- [x] B6 reducer：sessions/sessionRecord/currentSessionId/sessionRev + hello/journal-snapshot sessionId 跟随（4 用例入 ui-glue.test）
+- [x] B7 sidepanel-app 组态：二视图（chat/tasks）、转录+live 合流、归档未就绪回退旧时间线、Composer+附件条收编、新对话/切换/删除流、sessionRequest 注入（entrypoints）
+- [x] B8 测试：extension 266→270、console-ui 87→93 全绿；覆盖率 extension 96.75%/86.2%、console-ui 98.12%/89.91%
+- 备注：顺手清了 sidepanel-app.tsx 的 SidepanelState 未用导入（既有 E 档告警）；theme/layout.css 补 tc-transcript/tc-session-row 等新类
+
+设计决策（U1b 增补）：
+- D8 活动 run 事件源 = UI 侧 state.events（hello 尾巴合并 + live 去重已在 reducer 完成）——投影不再自行合并，避免双源分叉。
+- D9 「新对话」不建空会话常驻：session-new(tabId 0) 后若用户不发任务，空会话留在索引是可接受的噪声（LRU 兜底）；避免「隐式建会话再回滚」的复杂度。
+- D10 切换会话后起跑显式带 sessionId（SW rebindTab 跟随当前 tab）——与「省略=续 tab 最新」语义并存不冲突。
 
 ## 3. 设计决策记录
 

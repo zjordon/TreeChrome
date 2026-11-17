@@ -6,7 +6,7 @@
 
 import { AgentHistoryList } from "@tw/core";
 import type { RunJournalSnapshot, SessionRecord, SwToUiMessage } from "@tw/protocol";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { AttachmentRegistry } from "../src/host/attachment-registry.js";
 import type { StorageAreaWithRemove } from "../src/host/chrome-apis.js";
 import type { KeepaliveController } from "../src/host/keepalive.js";
