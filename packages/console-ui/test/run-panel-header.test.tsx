@@ -51,4 +51,19 @@ describe("RunPanelHeader", () => {
     rerender(<RunPanelHeader title="t" />);
     expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
   });
+
+  it("新对话/任务列表入口（#35 U1b）：回调触发；缺省不渲染", () => {
+    const onNewChat = vi.fn();
+    const onOpenTasks = vi.fn();
+    const { rerender } = render(
+      <RunPanelHeader title="t" onNewChat={onNewChat} onOpenTasks={onOpenTasks} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "任务列表" }));
+    expect(onNewChat).toHaveBeenCalledTimes(1);
+    expect(onOpenTasks).toHaveBeenCalledTimes(1);
+    rerender(<RunPanelHeader title="t" />);
+    expect(screen.queryByRole("button", { name: "新对话" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "任务列表" })).toBeNull();
+  });
 });

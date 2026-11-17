@@ -10,6 +10,8 @@ import type {
   DistillPhase,
   JournalEvent,
   RunJournalSnapshot,
+  SessionMeta,
+  SessionRecord,
   SwPermissionRequestMessage,
   SwSubmitRequestMessage,
   SwToUiMessage,
@@ -35,6 +37,13 @@ export interface SidepanelState {
   /** 蒸馏过程状态拍（issue #9 D5：null = 无过程在跟踪。failed 常驻到下一 run——
    *  journal-snapshot runChanged / hello 换 run 时清空，新 run 不背旧失败） */
   distill: { phase: DistillPhase; detail: string | null } | null;
+  /** 会话索引（issue #35 U1b：session-list 应答；空 = 未拉到/无会话） */
+  sessions: SessionMeta[];
+  /** 当前会话归档（session-open 应答；null = 未打开） */
+  sessionRecord: SessionRecord | null;
+  currentSessionId: string | null;
+  /** session-updated 计数（变更是 fetch 触发器——载荷只带定位摘要，D8 单源） */
+  sessionRev: number;
 }
 
 export const initialSidepanelState: SidepanelState = {
@@ -47,6 +56,10 @@ export const initialSidepanelState: SidepanelState = {
   submit: null,
   draftCount: null,
   distill: null,
+  sessions: [],
+  sessionRecord: null,
+  currentSessionId: null,
+  sessionRev: 0,
 };
 
 /** 本地动作（确认卡 resolve 后乐观清除——SW 不广播 resolve 回执；拒绝明细的
@@ -58,7 +71,19 @@ export type SidepanelAction =
   | { kind: "attachment-rejection-dismissed"; index: number }
   | { kind: "attachment-rejections-cleared" }
   /** 本地组装的拒绝（读文件失败等无 SW 广播的失败面——与 SW 拒绝同形同位展示） */
-  | { kind: "attachment-rejected-local"; rejection: AttachmentRejection };
+  | { kind: "attachment-rejected-local"; rejection: AttachmentRejection }
+  /** session-list 应答（issue #35 U1b） */
+  | { kind: "session-index"; sessions: SessionMeta[] }
+  /** session-open 应答（null = 会话已不存在——清空当前视图） */
+  | {
+      kind: "session-record";
+      record: SessionRecord | null;
+      /** 发起 session-open 时的会话（迟到应答防串台——评审轮 2 [8]；record null
+       *  = 确认不存在（notFound），清当前指向回落地页） */
+      forSessionId: string;
+    }
+  /** 当前会话切换（null = 无当前——落地页态） */
+  | { kind: "session-current"; sessionId: string | null };
 
 /** live TwEvent → journal 条目形态（ts 取接收时刻墙上钟——展示序不参与协议；
  *  step 已随 compactEventData 进 data——JournalEvent 顶层无 step 字段） */
@@ -96,6 +121,44 @@ export function ingestSidepanel(
           attachments: snap.attachments,
           // 换 run（如 SW 休眠期间新 run 已起）——旧 run 的蒸馏状态一并作废
           ...(sameRun ? {} : { distill: null }),
+          // 会话归属同步（#35：SW 侧受理时已写——面板跟随；换会话连归档一起清
+          // 防串台，与 journal-snapshot 分支对齐——评审轮 2 [4]）
+          ...(snap.sessionId !== undefined && snap.sessionId !== state.currentSessionId
+            ? { currentSessionId: snap.sessionId, sessionRecord: null }
+            : snap.sessionId !== undefined
+              ? { currentSessionId: snap.sessionId }
+              : {}),
+        },
+        ack: null,
+      };
+    }
+    case "session-updated": {
+      // 变更合并推送只做触发器（载荷是定位摘要非全量——UI 按需补查，D8）
+      return { state: { ...state, sessionRev: state.sessionRev + 1 }, ack: null };
+    }
+    case "session-index":
+      return { state: { ...state, sessions: action.sessions }, ack: null };
+    case "session-record": {
+      // 迟到应答防串台（评审轮 2 [8]）：effect 的 cancelled 旗要到 cleanup 才置位，
+      // 应答宏任务可先到——切会话/自动跟随后旧会话的应答（record 或 notFound 清空）
+      // 一律按 forSessionId 归属丢弃
+      if (action.forSessionId !== state.currentSessionId) return { state, ack: null };
+      if (action.record === null) {
+        return {
+          state: { ...state, sessionRecord: null, currentSessionId: null },
+          ack: null,
+        };
+      }
+      return { state: { ...state, sessionRecord: action.record }, ack: null };
+    }
+    case "session-current": {
+      // 切会话：归档视图即时清（fetch 在途不闪旧会话内容）
+      if (action.sessionId === state.currentSessionId) return { state, ack: null };
+      return {
+        state: {
+          ...state,
+          currentSessionId: action.sessionId,
+          sessionRecord: null,
         },
         ack: null,
       };
@@ -117,10 +180,18 @@ export function ingestSidepanel(
       // 终态快照只更新视图字段（评审轮 1 [6]：不重建则新 run 事件被 seq 去重
       // 全部丢弃、时间线显示旧 run）
       const runChanged = state.snapshot?.runId !== action.snapshot.runId;
+      const nextSessionId =
+        action.snapshot.sessionId !== undefined ? action.snapshot.sessionId : null;
       return {
-        state: runChanged
-          ? { ...state, snapshot: action.snapshot, events: action.snapshot.events, distill: null }
-          : { ...state, snapshot: action.snapshot },
+        state: {
+          ...(runChanged
+            ? { ...state, snapshot: action.snapshot, events: action.snapshot.events, distill: null }
+            : { ...state, snapshot: action.snapshot }),
+          // 会话归属跟随（#35：bridge/远端发起的 run 面板自动切换视图）
+          ...(nextSessionId !== null && nextSessionId !== state.currentSessionId
+            ? { currentSessionId: nextSessionId, sessionRecord: null }
+            : {}),
+        },
         ack: null,
       };
     }

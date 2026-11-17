@@ -1,7 +1,8 @@
-// 侧边栏粘合层（m5/05 §2 + issue #20 M4）：chrome 交互只在此文件——Port 连接工厂 +
-// 草稿数查询 + options 单发请求工厂注入 SidepanelApp（组件与状态机零 chrome，可单测）。
+// 侧边栏粘合层（m5/05 §2 + issue #20 M4 + #35 U1b）：chrome 交互只在此文件——Port
+// 连接工厂 + 草稿数查询 + options/session 单发请求工厂注入 SidepanelApp（组件与
+// 状态机零 chrome，可单测）。
 
-import type { OptionsOp } from "@tw/protocol";
+import type { OptionsOp, SessionOp } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import type { UiPort } from "../../src/ui-glue/port-client.js";
 import { SidepanelApp } from "../../src/ui-glue/sidepanel-app.js";
@@ -31,12 +32,21 @@ const optionsRequest = (op: OptionsOp, payload?: unknown): Promise<unknown> =>
     ...(payload !== undefined ? { payload } : {}),
   });
 
+// session 单发请求工厂（issue #35 U1b 会话面）：同 options 模式——模块级稳定引用
+const sessionRequest = (op: SessionOp, payload?: unknown): Promise<unknown> =>
+  browser.runtime.sendMessage({
+    kind: "session",
+    op,
+    ...(payload !== undefined ? { payload } : {}),
+  });
+
 export function App() {
   return (
     <SidepanelApp
       connect={connect}
       fetchDraftCount={fetchDraftCount}
       optionsRequest={optionsRequest}
+      sessionRequest={sessionRequest}
       onOpenSettings={() => void browser.runtime.openOptionsPage()}
     />
   );

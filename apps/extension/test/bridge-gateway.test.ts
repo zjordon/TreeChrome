@@ -37,14 +37,18 @@ function snap(over: Partial<RunJournalSnapshot> = {}): RunJournalSnapshot {
 }
 
 function makeGateway(current: RunJournalSnapshot | null, runId = "r-9") {
+  // run_task 走 startRun（issue #35：bridge origin 受理面）；stop_run 走 control("stop")
+  const startRun = vi.fn(async (_task: string, _origin: "user" | "bridge") => ({
+    ok: true as const,
+  }));
   const control = vi.fn(async () => ({ ok: true as const }));
-  const runManager = { control } as unknown as RunManager;
+  const runManager = { startRun, control } as unknown as RunManager;
   const journal = {
     current: () => current,
     runId,
   } as unknown as RunJournal;
   const dispatch = createBridgeGateway({ runManager, journal });
-  return { dispatch, control };
+  return { dispatch, control, startRun };
 }
 
 const req = (method: string, params: Record<string, unknown> = {}): BridgeCommandRequest =>
@@ -62,19 +66,20 @@ async function errorCode(promise: Promise<unknown>): Promise<string> {
 }
 
 describe("run_task", () => {
-  it("终态/无 run 时受理：control('start', task) → {accepted, runId}", async () => {
-    const { dispatch, control } = makeGateway(snap());
+  it("终态/无 run 时受理：startRun(task, 'bridge') → {accepted, runId}", async () => {
+    const { dispatch, control, startRun } = makeGateway(snap());
     const result = await dispatch(req("run_task", { task: "查价" }), okSignal());
     expect(result).toEqual({ accepted: true, runId: "r-9" });
-    expect(control).toHaveBeenCalledWith("start", "查价");
+    expect(startRun).toHaveBeenCalledWith("查价", "bridge");
+    expect(control).not.toHaveBeenCalled();
   });
 
-  it("run 进行中 → RUN_IN_PROGRESS（control 不被调——与 sidepanel 同一互斥）", async () => {
-    const { dispatch, control } = makeGateway(snap({ status: "running", isDone: false }));
+  it("run 进行中 → RUN_IN_PROGRESS（startRun 不被调——与 sidepanel 同一互斥）", async () => {
+    const { dispatch, startRun } = makeGateway(snap({ status: "running", isDone: false }));
     expect(await errorCode(dispatch(req("run_task", { task: "x" }), okSignal()))).toBe(
       "RUN_IN_PROGRESS",
     );
-    expect(control).not.toHaveBeenCalled();
+    expect(startRun).not.toHaveBeenCalled();
   });
 
   it("直驱会话在位 → DRIVE_SESSION_ACTIVE（#32：run ↔ drive 双向互斥）", async () => {
@@ -88,9 +93,9 @@ describe("run_task", () => {
     expect(control).not.toHaveBeenCalled();
   });
 
-  it("control 拒绝（如并发窗口单飞）→ RUN_START_FAILED 带原文案", async () => {
-    const control = vi.fn(async () => ({ ok: false as const, error: "请先停止当前任务" }));
-    const runManager = { control } as unknown as RunManager;
+  it("startRun 拒绝（如并发窗口单飞）→ RUN_START_FAILED 带原文案", async () => {
+    const startRun = vi.fn(async () => ({ ok: false as const, error: "请先停止当前任务" }));
+    const runManager = { startRun } as unknown as RunManager;
     const journal = { current: () => null, runId: null } as unknown as RunJournal;
     const dispatch = createBridgeGateway({ runManager, journal });
     expect(await errorCode(dispatch(req("run_task", { task: "x" }), okSignal()))).toBe(

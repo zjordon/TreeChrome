@@ -48,6 +48,10 @@ export interface RunPanelHeaderProps {
   onOpenSettings?: () => void;
   /** 草稿徽标点击（M4 接设置 overlay；缺省回退 onOpenSettings） */
   onReviewDrafts?: () => void;
+  /** 新对话（issue #35 U1b：会话模型入口；缺省不渲染） */
+  onNewChat?: () => void;
+  /** 任务页（会话列表）入口；缺省不渲染 */
+  onOpenTasks?: () => void;
 }
 
 export function RunPanelHeader({
@@ -57,6 +61,8 @@ export function RunPanelHeader({
   draftCount,
   onOpenSettings,
   onReviewDrafts,
+  onNewChat,
+  onOpenTasks,
 }: RunPanelHeaderProps) {
   return (
     <>
@@ -87,6 +93,32 @@ export function RunPanelHeader({
         >
           📝 {draftCount} 草稿
         </button>
+      ) : null}
+      {onNewChat !== undefined ? (
+        <IconButton label="新对话" size="sm" variant="secondary" onClick={onNewChat}>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+          >
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+          </svg>
+        </IconButton>
+      ) : null}
+      {onOpenTasks !== undefined ? (
+        <IconButton label="任务列表" size="sm" variant="secondary" onClick={onOpenTasks}>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+          >
+            <path d="M4 6h16M4 12h16M4 18h10" strokeLinecap="round" />
+          </svg>
+        </IconButton>
       ) : null}
       {onOpenSettings !== undefined ? (
         <IconButton label="设置" size="sm" variant="secondary" onClick={onOpenSettings}>

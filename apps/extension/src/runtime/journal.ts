@@ -14,6 +14,8 @@ export const JOURNAL_PERSIST_RETRY_BUDGET = 128 * 1024;
 export const JOURNAL_PERSIST_DELAY_MS = 200;
 /** 单事件消息体护栏（Port 消息无硬限但防御性截断——model_result 长文本） */
 export const JOURNAL_EVENT_JSON_LIMIT = 1024 * 1024;
+/** 归档缓冲条数上限（issue #35：单 run 4K 事件——超限丢最老，首丢 seq 记账） */
+export const JOURNAL_ARCHIVE_EVENT_LIMIT = 4096;
 
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}…` : s);
 
@@ -133,12 +135,23 @@ export interface RunJournalOptions {
   retryBudget?: number;
 }
 
+/** 归档缓冲读数（issue #35：takeArchiveBuffer 的返回形态） */
+export interface ArchiveBuffer {
+  events: JournalEvent[];
+  /** 缓冲自身淘汰前的首条 seq（0 = 无淘汰——全量） */
+  discardedBeforeSeq: number;
+}
+
 export class RunJournal {
   private snapshot: RunJournalSnapshot | null = null;
   private readonly scheduler: JournalPersistScheduler | null;
   private readonly now: () => number;
   private readonly budget: number;
   private readonly retryBudget: number;
+  /** 归档缓冲（issue #35 U1a：record 时与环同步收集，独立于环淘汰——>256 场景
+   *  归档不丢；上限 4096 丢最老记账）。run-manager 终态 takeArchiveBuffer 取走 */
+  private archiveEvents: JournalEvent[] = [];
+  private archiveDiscardedBeforeSeq = 0;
 
   constructor(options: RunJournalOptions = {}) {
     this.scheduler = options.scheduler ?? null;
@@ -164,7 +177,11 @@ export class RunJournal {
     tabId: number;
     task: string;
     attachments: RunJournalSnapshot["attachments"];
+    sessionId?: string;
+    origin?: RunJournalSnapshot["origin"];
   }): void {
+    this.archiveEvents = [];
+    this.archiveDiscardedBeforeSeq = 0;
     this.snapshot = {
       runId: input.runId,
       tabId: input.tabId,
@@ -182,11 +199,14 @@ export class RunJournal {
       stepCount: 0,
       lastError: null,
       attachments: input.attachments,
+      ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+      ...(input.origin !== undefined ? { origin: input.origin } : {}),
     };
     this.persistDeferred();
   }
 
-  /** 事件记录：seq 编号 + 压缩投影 + 环淘汰；返回 JournalEvent（转发用） */
+  /** 事件记录：seq 编号 + 压缩投影 + 环淘汰；返回 JournalEvent（转发用）。
+   *  归档缓冲同步收集（环淘汰独立——见字段注释） */
   record(event: TwEvent): JournalEvent | null {
     const snap = this.snapshot;
     if (snap === null) return null;
@@ -197,6 +217,11 @@ export class RunJournal {
       ts: this.now(),
       data: compactEventData(event),
     };
+    this.archiveEvents.push(entry);
+    if (this.archiveEvents.length > JOURNAL_ARCHIVE_EVENT_LIMIT) {
+      const dropped = this.archiveEvents.shift();
+      if (dropped !== undefined) this.archiveDiscardedBeforeSeq = dropped.seq;
+    }
     snap.events.push(entry);
     if (snap.events.length > JOURNAL_EVENT_LIMIT) {
       const removed = snap.events.splice(0, snap.events.length - JOURNAL_EVENT_LIMIT);
@@ -237,6 +262,18 @@ export class RunJournal {
 
   current(): RunJournalSnapshot | null {
     return this.snapshot === null ? null : structuredCopy(this.snapshot);
+  }
+
+  /** 取走归档缓冲（run 终态收口用——run-manager 组装 RunArchive；取后清空，
+   *  二次调用回空）。恢复路径不经过此面（SW 重生缓冲已丢，archive 取自快照事件） */
+  takeArchiveBuffer(): ArchiveBuffer {
+    const out: ArchiveBuffer = {
+      events: this.archiveEvents,
+      discardedBeforeSeq: this.archiveDiscardedBeforeSeq,
+    };
+    this.archiveEvents = [];
+    this.archiveDiscardedBeforeSeq = 0;
+    return out;
   }
 
   /** SW 重启恢复（run-manager 消费：非终态且无活 run → 置 interrupted） */
