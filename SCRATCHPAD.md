@@ -174,3 +174,7 @@
 - **[9] P2** session-delete 应答未判 ok——失败也清当前指向致 UI 与 SW 脱同步。修复：ok 才清。
 
 测试账目：extension 270→272、console-ui 93→95；覆盖率 extension 96.73%/86.17%。修复提交见本轮 commit。
+
+### 轮 3（修复增量，range 605b91a..deb1aea）
+
+零意见（complete，7 文件，3m43s；首次发轮误用分支 tip 作基线致空 range skipped——按 reviewedTip 重发）。**循环收敛**：3 轮累计 9 意见全采纳（P1×2 / P2×7），零驳回零 stale。
