@@ -11,6 +11,8 @@ import {
   AppShell,
   Button,
   Composer,
+  type ContextUsage,
+  ExternalDriveCard,
   FinalResult,
   formatBytes,
   PermissionCard,
@@ -110,6 +112,28 @@ export function SidepanelApp({
       })
       .catch(() => {});
   }, [portStatus, fetchDraftCount]);
+
+  // 活跃卡上下文窗口（#37 批 B 验收④分母）：上线/设置关闭后热读一次（SW 单一写者）
+  const [contextWindow, setContextWindow] = useState<number | null>(null);
+  useEffect(() => {
+    if (portStatus !== "online" || optionsRequest === undefined) return;
+    void optionsRequest("get-settings")
+      .then((res) => {
+        const s = res as {
+          ok?: boolean;
+          settings?: {
+            providerCards?: Array<{ name?: unknown; contextWindow?: unknown }>;
+            activeCard?: unknown;
+          };
+        };
+        if (s?.ok !== true || s.settings === undefined) return;
+        const card = (s.settings.providerCards ?? []).find(
+          (c) => c.name === s.settings?.activeCard,
+        );
+        setContextWindow(typeof card?.contextWindow === "number" ? card.contextWindow : null);
+      })
+      .catch(() => {});
+  }, [portStatus, optionsRequest, settingsOpen]);
 
   // 会话面拉取（#35 U1b）：上线 / session-updated 变更 / 切换当前会话时补查索引
   // 与归档（session-updated 载荷只是定位摘要——全量经单发应答，D8 单源）
@@ -240,9 +264,24 @@ export function SidepanelApp({
   const running = snap !== null && !terminal;
   const transcript = projectTranscript(state.sessionRecord, snap, state.events);
   const landing = transcript.length === 0 && snap === null && state.events.length === 0;
-  // 运行中仍可输入（#37 批 A：发送→入队而非禁用）；仅附件在途禁发（起跑/入队丢字节）
-  const canSend = uploads.length === 0;
+  // 运行中仍可输入（#37 批 A：发送→入队而非禁用）；仅附件在途禁发（起跑/入队丢字节）。
+  // 外部直驱只读（#37 批 B）：bridge 会话禁输入——查看态，停止权保留
+  const external = snap?.origin === "bridge";
+  const canSend = uploads.length === 0 && !external;
   const queuedTurns = state.sessionRecord?.turns.filter((t) => t.status === "queued") ?? [];
+  // 上下文用量（验收④）：最近一次 model_result 的 inputTokens（多轮拼接模式下即
+  // 拼接后 prompt 的实证）——从事件流倒序取首个带值者
+  let latestUsage: ContextUsage | undefined;
+  for (let i = state.events.length - 1; i >= 0; i -= 1) {
+    const e = state.events[i];
+    if (e === undefined) continue;
+    if (e.type !== "model_result" || typeof e.data !== "object" || e.data === null) continue;
+    const tokens = (e.data as { inputTokens?: unknown }).inputTokens;
+    if (typeof tokens === "number") {
+      latestUsage = { inputTokens: tokens, contextWindow };
+      break;
+    }
+  }
   // 回退时间线面的会话语境门（评审轮 2 [3]）：snap 属当前会话/无会话语境
   // （旧数据）才承载；新对话/他会话时旧 run 视图不串入
   const runViewEligible =
@@ -282,6 +321,7 @@ export function SidepanelApp({
                 stepCount={snap.stepCount}
                 startedAt={snap.startedAt}
                 endedAt={snap.endedAt}
+                usage={latestUsage}
                 onStop={() => send({ kind: "control", action: "stop" })}
               />
             ) : null}
@@ -467,6 +507,10 @@ export function SidepanelApp({
           />
         ) : (
           <>
+            {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}
+            {external ? (
+              <ExternalDriveCard sessionTitle={state.sessionRecord?.meta.title ?? null} />
+            ) : null}
             {landing ? (
               <WelcomePanel
                 title="TreeChrome"

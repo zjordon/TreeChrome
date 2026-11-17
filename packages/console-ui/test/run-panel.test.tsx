@@ -3,7 +3,13 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { FinalResult, formatSeconds, RunStatusBar } from "../src/index.js";
+import {
+  ExternalDriveCard,
+  FinalResult,
+  formatSeconds,
+  formatTokens,
+  RunStatusBar,
+} from "../src/index.js";
 
 describe("RunStatusBar", () => {
   it("状态文案 + 步数·耗时（endedAt 注入）；等待态警示点", () => {
@@ -117,5 +123,71 @@ describe("FinalResult.lastError（段 F 验收反馈：错误原因可见性）"
     render(<FinalResult finalResult="ok" isSuccessful attachments={[]} lastError={null} />);
     expect(screen.getByText("✓ 成功")).toBeDefined();
     expect(screen.queryByText("✗ 失败原因")).toBeNull();
+  });
+});
+
+describe("RunStatusBar 上下文用量 pill（#37 批 B）", () => {
+  it("usage 注入：数值+分母短写；≥90% 警色类", () => {
+    const { container, rerender } = render(
+      <RunStatusBar
+        status="running"
+        stepCount={1}
+        startedAt={0}
+        endedAt={1000}
+        usage={{ inputTokens: 9_800, contextWindow: 128_000 }}
+      />,
+    );
+    const pill = container.querySelector(".tc-runstatus-usage");
+    expect(pill?.textContent).toBe("上下文 9.8k / 128k");
+    expect(pill?.className).not.toContain("tc-runstatus-usage--warn");
+    rerender(
+      <RunStatusBar
+        status="running"
+        stepCount={1}
+        startedAt={0}
+        endedAt={1000}
+        usage={{ inputTokens: 120_000, contextWindow: 128_000 }}
+      />,
+    );
+    const warn = container.querySelector(".tc-runstatus-usage");
+    expect(warn?.textContent).toBe("上下文 120k / 128k");
+    expect(warn?.className).toContain("tc-runstatus-usage--warn");
+  });
+
+  it("contextWindow null：只显绝对量不显分母；usage 缺省不渲染 pill", () => {
+    const { container } = render(
+      <RunStatusBar
+        status="running"
+        stepCount={1}
+        startedAt={0}
+        endedAt={1000}
+        usage={{ inputTokens: 500, contextWindow: null }}
+      />,
+    );
+    expect(container.querySelector(".tc-runstatus-usage")?.textContent).toBe("上下文 500");
+    const bare = render(<RunStatusBar status="running" stepCount={1} startedAt={0} endedAt={1} />);
+    expect(bare.container.querySelector(".tc-runstatus-usage")).toBeNull();
+  });
+
+  it("formatTokens 短写梯度：999/1.2k/12k/1.2M", () => {
+    expect(formatTokens(999)).toBe("999");
+    expect(formatTokens(1234)).toBe("1.2k");
+    expect(formatTokens(12_340)).toBe("12k");
+    expect(formatTokens(1_234_000)).toBe("1.2M");
+  });
+});
+
+describe("ExternalDriveCard（#37 批 B）", () => {
+  it("外部直驱说明卡：标题/会话名/只读说明/停止留权文案", () => {
+    render(<ExternalDriveCard sessionTitle="外部查价" />);
+    expect(screen.getByText("外部客户端直驱中")).toBeTruthy();
+    expect(screen.getByText("会话：外部查价")).toBeTruthy();
+    expect(screen.getByText(/这里只能查看/)).toBeTruthy();
+    expect(screen.getByText(/仍可随时/)).toBeTruthy();
+  });
+
+  it("sessionTitle 缺省不渲染会话行", () => {
+    render(<ExternalDriveCard />);
+    expect(screen.queryByText(/^会话：/)).toBeNull();
   });
 });
