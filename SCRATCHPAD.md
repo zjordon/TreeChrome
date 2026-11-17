@@ -96,3 +96,8 @@ run 进行中可发后续任务入队可视化、终态后自动续跑；上下�
 - **[1] P2 退避计数跨代沿用**：drainAttempts 清零只在 drainQueue 三出口——queueRemove（撤销头 turn）与 stop→cancelQueue（清空队列）均不清零，且 stop 清 timer 连「队列空兜底出口」一并取消。头 turn 被拒 2 次后换代，新任务首拒即 3 达上限被静默取消（违背三次语义）。修复：queueRemove/cancelQueue 成功即 delete(sessionId)（用户干预重置计数；换代必经三出口——append 只尾插不改头，boot cancelAllQueued 时实例已新建）。测试锚定拒绝日志计数（旧 1 + 新 3 = 4；修复前 3）。双向验证：破坏清零 → 用例必红（3≠4）。
 - **操作修正**：轮 2 首发误用 lastCommit（= 分支 tip）作 --from → range 空 skipped（#35 轮 3 同款）；改用 reviewedTip e667605 重发。已同步修正 .claude/.zcode 双栖 review-loop 命令文档（diffBase 基线改 reviewedTip + 状态文件字段补登）。
 - 测试总账：extension 289→290；门禁 exit 0。
+
+### 轮 3（2026-11-17，零意见——循环收敛）
+
+- complete / 0 条（增量 = 轮 2 修复提交单提交，实审 1 文件 1m31s）——按「意见数 0」收敛判据终止。
+- 累计：3 轮 / 11 条全采纳（P1×2 + P2×9）/ 驳回 0 / stale 0；extension 283→290、console-ui 110 不变；分支 7 提交（计划+四批+进度 + 两轮修复）；覆盖率 96.35/85.81；全程门禁 exit 0。
