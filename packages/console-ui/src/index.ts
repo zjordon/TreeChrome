@@ -5,6 +5,7 @@
 export type { AppShellProps } from "./app-shell.js";
 export { AppShell } from "./app-shell.js";
 export { formatBytes } from "./bytes.js";
+export { ClipboardUtil } from "./clipboard.js";
 export type { ComposerProps } from "./composer.js";
 export { COMPOSER_MAX_HEIGHT, COMPOSER_MIN_HEIGHT, Composer } from "./composer.js";
 export type { ExternalDriveCardProps } from "./external-card.js";
@@ -17,6 +18,7 @@ export type { GrantsViewProps } from "./grants-view.js";
 export { GrantsView } from "./grants-view.js";
 export type { IconButtonProps } from "./icon-button.js";
 export { IconButton } from "./icon-button.js";
+export { CopyButton, MarkdownText, safeUrlTransform } from "./markdown.js";
 export type { ModelSwitcherProps } from "./model-switcher.js";
 export { ModelSwitcher } from "./model-switcher.js";
 export type { PermissionCardProps } from "./permission-card.js";

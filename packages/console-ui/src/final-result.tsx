@@ -1,9 +1,10 @@
-// FinalResult（m5/05 §1）：done 后 final_result 展示（is_successful 着色 + 附件
-// 清单链接位——M5 只列名，不实现打开）。error/interrupted 终态时渲染 lastError
-//（段 F 验收反馈：错误原因原先无处显示——用户只见「出错 步数 0」）。
+// FinalResult（m5/05 §1 + #39 U3 批 A）：done 后 final_result 展示（markdown 渲染
+// + 复制钮；is_successful 着色 + 附件清单链接位——只列名）。error/interrupted 终态
+// 时渲染 lastError（纯文本——D6 不做 markdown）。
 
 import type { AttachmentInfo } from "@tw/protocol";
 import { formatBytes } from "./bytes.js";
+import { CopyButton, MarkdownText } from "./markdown.js";
 import { Badge } from "./primitives.js";
 
 export interface FinalResultProps {
@@ -53,6 +54,11 @@ export function FinalResult({
             <Badge tone="danger">✗ Judge 未通过</Badge>
           )
         ) : null}
+        {finalResult !== null ? (
+          <span style={{ marginLeft: "auto" }}>
+            <CopyButton text={finalResult} label="复制结果" />
+          </span>
+        ) : null}
       </div>
       {judgement !== undefined && judgement !== null && judgement.verdict === false ? (
         // 拒绝判词可长——折叠展示（蒸馏门控为什么没过的直接答案）
@@ -80,9 +86,7 @@ export function FinalResult({
           {lastError}
         </p>
       ) : null}
-      {finalResult !== null ? (
-        <p style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{finalResult}</p>
-      ) : null}
+      {finalResult !== null ? <MarkdownText>{finalResult}</MarkdownText> : null}
       {attachments.length > 0 ? (
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           {attachments.map((a) => (

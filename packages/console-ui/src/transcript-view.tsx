@@ -1,9 +1,11 @@
-// TranscriptView（issue #35 U1b B2 + #37 批 D 滚动意图）：转录条目渲染——用户气泡
-// （task 原文 + 非 done 状态章）+ run 块（状态头 + 复用 RunTimeline 事件面 + 终态
-// 复用 FinalResult）。零 chrome；事件条目的分色/折叠/未知回退由 RunTimeline 承载。
+// TranscriptView（issue #35 U1b B2 + #37 批 D 滚动意图 + #39 批 A 复制钮）：转录
+// 条目渲染——用户气泡（task 原文 + 非 done 状态章 + 复制钮）+ run 块（状态头 +
+// 复用 RunTimeline 事件面 + 终态复用 FinalResult）。零 chrome；事件条目的分色/
+// 折叠/未知回退由 RunTimeline 承载。
 
 import { useEffect, useRef, useState } from "react";
 import { FinalResult } from "./final-result.js";
+import { CopyButton } from "./markdown.js";
 import { Badge } from "./primitives.js";
 import { RunTimeline } from "./run-timeline.js";
 import type { RunBlockItem, TranscriptItem, UserTurnItem } from "./transcript.js";
@@ -27,7 +29,10 @@ const RUN_STATUS_LABEL: Record<RunBlockItem["status"], string> = {
 function UserBubble({ item }: { item: UserTurnItem }) {
   return (
     <div className="tc-transcript-user" data-testid={`turn-${item.turnId}`}>
-      <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.task}</div>
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+        <div style={{ flex: 1, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.task}</div>
+        <CopyButton text={item.task} label="复制任务原文" />
+      </div>
       {item.status !== "done" ? (
         <Badge tone={item.status === "error" ? "danger" : "accent"}>
           {TURN_STATUS_LABEL[item.status]}
