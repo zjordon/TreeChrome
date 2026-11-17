@@ -21,6 +21,8 @@ export const SESSIONS_INDEX_KEY = "tc_sessions:index";
 export const sessionKey = (sessionId: string): string => `tc_session:${sessionId}`;
 export const SESSION_INDEX_LIMIT = 50;
 export const SESSION_BUDGET_BYTES = 1024 * 1024;
+/** 单会话排队上限（U2 批 A：入队拒绝面） */
+export const SESSION_QUEUE_LIMIT = 5;
 /** turn 任务原文留存上限（超长输入先于事件降级裁剪——转录用户气泡够用） */
 export const TURN_TASK_CLIP = 8000;
 
@@ -401,6 +403,133 @@ export class SessionRepository {
       await this.area.remove(sessionKey(sessionId));
       await this.writeIndex(index.filter((m) => m.sessionId !== sessionId));
       return true;
+    });
+  }
+
+  // —— 排队面（issue #37 U2 批 A）：queued turn 的入队/激活/撤销/清空 ——
+
+  /** 入队（上限 5）：追加 queued turn（runId null——出队激活时回填） */
+  appendQueuedTurn(
+    sessionId: string,
+    input: { task: string; attachments: AttachmentInfo[] },
+  ): Promise<{ ok: true; turn: SessionTurn } | { ok: false; error: "not-found" | "queue-full" }> {
+    return this.enqueue(async () => {
+      const record = await this.readRecord(sessionId);
+      if (record === null) return { ok: false as const, error: "not-found" as const };
+      if (record.turns.filter((t) => t.status === "queued").length >= SESSION_QUEUE_LIMIT) {
+        return { ok: false as const, error: "queue-full" as const };
+      }
+      const turn: SessionTurn = {
+        turnId: this.newTurnId(),
+        sessionId,
+        runId: null,
+        task:
+          input.task.length > TURN_TASK_CLIP
+            ? `${input.task.slice(0, TURN_TASK_CLIP)}…`
+            : input.task,
+        status: "queued",
+        attachments: input.attachments,
+        createdAt: this.now(),
+        endedAt: null,
+      };
+      const next: SessionRecord = {
+        meta: { ...record.meta, updatedAt: this.now() },
+        turns: [...record.turns, turn],
+        runs: record.runs,
+      };
+      await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      return { ok: true as const, turn };
+    });
+  }
+
+  /** 出队取首：最早的 queued turn（FIFO） */
+  firstQueuedTurn(sessionId: string): Promise<SessionTurn | null> {
+    return this.enqueue(async () => {
+      const record = await this.readRecord(sessionId);
+      if (record === null) return null;
+      return record.turns.find((t) => t.status === "queued") ?? null;
+    });
+  }
+
+  /** 激活：queued→running 并回填 runId（startInner 消费——排队的 turn 复用为
+   *  本 run 的正式 turn，不另 beginRun） */
+  activateQueuedTurn(sessionId: string, turnId: string, runId: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const record = await this.readRecord(sessionId);
+      if (record === null) return false;
+      let hit = false;
+      const turns = record.turns.map((t) => {
+        if (t.turnId !== turnId || t.status !== "queued") return t;
+        hit = true;
+        return { ...t, status: "running" as const, runId };
+      });
+      if (!hit) return false;
+      const next: SessionRecord = {
+        meta: { ...record.meta, updatedAt: this.now() },
+        turns,
+        runs: record.runs,
+      };
+      await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      return true;
+    });
+  }
+
+  /** 撤销单条排队（转 cancelled 留转录痕——不从记录中删除） */
+  cancelQueuedTurn(sessionId: string, turnId: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const record = await this.readRecord(sessionId);
+      if (record === null) return false;
+      let hit = false;
+      const turns = record.turns.map((t) => {
+        if (t.turnId !== turnId || t.status !== "queued") return t;
+        hit = true;
+        return { ...t, status: "cancelled" as const, endedAt: this.now() };
+      });
+      if (!hit) return false;
+      const next: SessionRecord = { ...record, turns };
+      await this.writeRecord(next);
+      return true;
+    });
+  }
+
+  /** 清空一会话的全部排队（stop 连播语义 D2：用户叫停的是这个会话的后续任务） */
+  cancelQueued(sessionId: string): Promise<number> {
+    return this.enqueue(async () => {
+      const record = await this.readRecord(sessionId);
+      if (record === null) return 0;
+      let count = 0;
+      const turns = record.turns.map((t) => {
+        if (t.status !== "queued") return t;
+        count += 1;
+        return { ...t, status: "cancelled" as const, endedAt: this.now() };
+      });
+      if (count === 0) return 0;
+      await this.writeRecord({ ...record, turns });
+      return count;
+    });
+  }
+
+  /** SW 重启兜底（D3）：全部会话的 queued→cancelled（与「run 不续跑」同构——
+   *  无人值守自动起跑撞权限卡模型不可接受）；返回清除数供 boot 日志 */
+  cancelAllQueued(): Promise<number> {
+    return this.enqueue(async () => {
+      const index = await this.readIndex();
+      let count = 0;
+      for (const meta of index) {
+        const record = await this.readRecord(meta.sessionId);
+        if (record === null) continue;
+        let hit = false;
+        const turns = record.turns.map((t) => {
+          if (t.status !== "queued") return t;
+          hit = true;
+          count += 1;
+          return { ...t, status: "cancelled" as const, endedAt: this.now() };
+        });
+        if (hit) await this.writeRecord({ ...record, turns });
+      }
+      return count;
     });
   }
 }

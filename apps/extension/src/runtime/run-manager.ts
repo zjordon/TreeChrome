@@ -22,6 +22,7 @@ import {
   serializeTraceForPrompt,
 } from "@tw/core";
 import type {
+  AttachmentInfo,
   RunJournalSnapshot,
   SessionOrigin,
   SwToUiMessage,
@@ -79,6 +80,8 @@ export interface RunManagerDeps {
   /** 会话存储面（issue #35 U1a：缺省 null = 会话面禁用降级——旧单测兼容；
    *  background 生产装配必须注入，漏注入由 boot 日志确认） */
   sessions?: SessionRepository | null;
+  /** 终态→排队续播的节流毫秒（#37 批 A：缺省 2000——测试注入小值） */
+  drainDelayMs?: number;
   now?: () => number;
   newRunId?: () => string;
   log?: (message: string) => void;
@@ -295,6 +298,9 @@ export class RunManager {
       // agent.stop() 只置标志位——挂在桥 pending 上的 run 要等收口才解除（最长
       // 300s gate 兜底），此处同步 deny 未决确认（评审轮 1 [17]）
       active.bridge.cancelAll();
+      // 连播语义（#37 D2）：叫停的是这个会话的整个队列——排队 turns 标 cancelled
+      this.clearDrainTimer();
+      if (active.sessionId !== null) void this.cancelQueue(active.sessionId);
       return { ok: true };
     }
     if (action === "pause") {
@@ -312,7 +318,7 @@ export class RunManager {
 
   private async start(
     task: string,
-    options: { origin: SessionOrigin; sessionId?: string },
+    options: { origin: SessionOrigin; sessionId?: string; queueTurnId?: string },
   ): Promise<ControlResult> {
     if (this.active !== null || this.starting) {
       return { ok: false, error: "请先停止当前任务" };
@@ -327,7 +333,7 @@ export class RunManager {
 
   private async startInner(
     task: string,
-    options: { origin: SessionOrigin; sessionId?: string },
+    options: { origin: SessionOrigin; sessionId?: string; queueTurnId?: string },
   ): Promise<ControlResult> {
     if (task.trim() === "") {
       return { ok: false, error: "任务不能为空" };
@@ -408,18 +414,43 @@ export class RunManager {
     if (startSnapshot !== null) {
       this.deps.broadcast({ kind: "journal-snapshot", snapshot: startSnapshot });
     }
-    // 记用户 turn（task 原文——转录用户气泡来源；前情块只进 prompt 不回写 turn）
+    // 记用户 turn（task 原文——转录用户气泡来源；前情块只进 prompt 不回写 turn）。
+    // 排队出队路径（queueTurnId）复用既有 queued turn 激活，不另 beginRun
     let turnId: string | null = null;
     if (session !== null) {
       const sessions = this.deps.sessions;
       if (sessions != null) {
         try {
-          const turn = await sessions.beginRun(session.sessionId, {
-            runId,
-            task,
-            attachments: this.deps.attachments.list(),
-          });
-          turnId = turn?.turnId ?? null;
+          if (options.queueTurnId !== undefined) {
+            turnId = (await sessions.activateQueuedTurn(
+              session.sessionId,
+              options.queueTurnId,
+              runId,
+            ))
+              ? options.queueTurnId
+              : null;
+            if (turnId === null) {
+              // 激活失败（已撤销/竞态）——回落新建 turn，任务不丢
+              this.deps.log?.(`queue activate missed: ${options.queueTurnId}`);
+              turnId =
+                (
+                  await sessions.beginRun(session.sessionId, {
+                    runId,
+                    task,
+                    attachments: this.deps.attachments.list(),
+                  })
+                )?.turnId ?? null;
+            }
+          } else {
+            turnId =
+              (
+                await sessions.beginRun(session.sessionId, {
+                  runId,
+                  task,
+                  attachments: this.deps.attachments.list(),
+                })
+              )?.turnId ?? null;
+          }
         } catch (e) {
           this.deps.log?.(`session beginRun failed: ${e instanceof Error ? e.message : String(e)}`);
         }
@@ -589,6 +620,8 @@ export class RunManager {
       // 会话终态收口（issue #35 U1a：turn 置终态 + run 归档——fail-soft D3，
       // 失败只记日志不改变 run 终态广播）
       await this.archiveActiveRun(active);
+      // 排队续播（#37 批 A）：终态收口后 2s 节流出队同会话下一条 queued turn
+      if (active.sessionId !== null) this.scheduleDrain(active.sessionId);
       // 终态广播（sidepanel 收 journal-snapshot 收口视图）
       const snapshot = journal.current();
       if (snapshot !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot });
@@ -608,6 +641,101 @@ export class RunManager {
    * 后连同终态字段写 SessionRepository。fail-soft（D3）：失败记日志，不影响 run
    * 终态与广播——转录缺本 run 归档可容忍，run 崩不可容忍。
    */
+  // —— 排队面（#37 U2 批 A）：入队/出队/清空（D1 内聚 run-manager——出队即 start
+  //     语义，互斥/节流/收口都在本类生命周期内）——
+
+  /** 入队受理（session-handler queue-add 消费）；入队即尝试出队（空闲时立刻跑） */
+  async queueFollowUp(
+    sessionId: string,
+    task: string,
+    attachments: AttachmentInfo[] = [],
+  ): Promise<{ ok: true; turnId: string } | { ok: false; error: string }> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return { ok: false, error: "会话面未启用" };
+    if (task.trim() === "") return { ok: false, error: "任务不能为空" };
+    try {
+      const r = await sessions.appendQueuedTurn(sessionId, { task, attachments });
+      if (!r.ok) {
+        return {
+          ok: false,
+          error: r.error === "queue-full" ? "排队已满（上限 5 条）" : "会话不存在",
+        };
+      }
+      this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      this.scheduleDrain(sessionId, 0);
+      return { ok: true, turnId: r.turn.turnId };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** 撤销单条排队（queue-remove 消费） */
+  async queueRemove(sessionId: string, turnId: string): Promise<boolean> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return false;
+    try {
+      const ok = await sessions.cancelQueuedTurn(sessionId, turnId);
+      if (ok) this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /** stop 连播语义（D2）：清空一会话全部排队 */
+  private async cancelQueue(sessionId: string): Promise<void> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return;
+    try {
+      const n = await sessions.cancelQueued(sessionId);
+      if (n > 0) {
+        this.deps.log?.(`queue cancelled (${n}): ${sessionId}`);
+        this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      }
+    } catch (e) {
+      this.deps.log?.(`queue cancel failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** 出队节流（#37 批 A）：单一在途 timer——终态收口 2s / 入队即时（0ms）双触发。
+   *  延迟可注入（测试用小值免假钟；缺省 2000） */
+  private drainTimer: ReturnType<typeof setTimeout> | null = null;
+  private scheduleDrain(sessionId: string, delayMs?: number): void {
+    if (this.drainTimer !== null) return;
+    const delay = delayMs ?? this.deps.drainDelayMs ?? 2000;
+    this.drainTimer = setTimeout(() => {
+      this.drainTimer = null;
+      void this.drainQueue(sessionId);
+    }, delay);
+  }
+
+  private clearDrainTimer(): void {
+    if (this.drainTimer === null) return;
+    clearTimeout(this.drainTimer);
+    this.drainTimer = null;
+  }
+
+  private async drainQueue(sessionId: string): Promise<void> {
+    if (this.active !== null || this.starting) return;
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return;
+    try {
+      const turn = await sessions.firstQueuedTurn(sessionId);
+      if (turn === null) return;
+      const r = await this.start(turn.task, {
+        origin: "user",
+        sessionId,
+        queueTurnId: turn.turnId,
+      });
+      if (!r.ok) {
+        // 出队失败（无 tab/无卡等）：turn 留在队列（转录可见「排队中」），下个触发点重试
+        this.deps.log?.(`queue dequeue rejected: ${r.error}`);
+      }
+    } catch (e) {
+      this.deps.log?.(`queue drain failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   private async archiveActiveRun(active: ActiveRun): Promise<void> {
     const sessions = this.deps.sessions ?? null;
     if (sessions === null || active.sessionId === null || active.turnId === null) return;

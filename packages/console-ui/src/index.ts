@@ -31,6 +31,8 @@ export {
 } from "./provider-card-form.js";
 export type { ProviderListProps } from "./provider-list.js";
 export { ProviderList } from "./provider-list.js";
+export type { QueueStripProps } from "./queue-strip.js";
+export { QueueStrip } from "./queue-strip.js";
 export type { DistillState, PortStatus, RunPanelHeaderProps } from "./run-panel-header.js";
 export { distillStatusText, RunPanelHeader } from "./run-panel-header.js";
 export type { RunStatusBarProps } from "./run-status-bar.js";

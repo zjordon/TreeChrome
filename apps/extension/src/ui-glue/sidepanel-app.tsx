@@ -15,6 +15,7 @@ import {
   formatBytes,
   PermissionCard,
   projectTranscript,
+  QueueStrip,
   RunPanelHeader,
   RunStatusBar,
   RunTimeline,
@@ -239,7 +240,9 @@ export function SidepanelApp({
   const running = snap !== null && !terminal;
   const transcript = projectTranscript(state.sessionRecord, snap, state.events);
   const landing = transcript.length === 0 && snap === null && state.events.length === 0;
-  const canSend = !running && uploads.length === 0;
+  // 运行中仍可输入（#37 批 A：发送→入队而非禁用）；仅附件在途禁发（起跑/入队丢字节）
+  const canSend = uploads.length === 0;
+  const queuedTurns = state.sessionRecord?.turns.filter((t) => t.status === "queued") ?? [];
   // 回退时间线面的会话语境门（评审轮 2 [3]）：snap 属当前会话/无会话语境
   // （旧数据）才承载；新对话/他会话时旧 run 视图不串入
   const runViewEligible =
@@ -358,11 +361,34 @@ export function SidepanelApp({
                 ))}
               </ul>
             ) : null}
+            {/* 排队消息条（#37 批 A）：当前会话 queued turns——撤销即 queue-remove */}
+            {queuedTurns.length > 0 && sessionRequest !== undefined ? (
+              <QueueStrip
+                turns={queuedTurns}
+                onRemove={(turnId) => {
+                  const sessionId = currentSessionIdRef.current;
+                  if (sessionId === null) return;
+                  void sessionRequest("queue-remove", { sessionId, turnId }).catch(() => {});
+                }}
+              />
+            ) : null}
             <Composer
               task={task}
               onTaskChange={setTask}
               canSend={canSend}
               onSend={() => {
+                // 运行中发送 = 入队（#37 批 A：连播而非禁用/拒绝）
+                if (running) {
+                  const sessionId = currentSessionIdRef.current;
+                  if (sessionId !== null && sessionRequest !== undefined) {
+                    void sessionRequest("queue-add", { sessionId, task })
+                      .then((res) => {
+                        if ((res as { ok?: boolean }).ok === true) setTask("");
+                      })
+                      .catch(() => {});
+                  }
+                  return;
+                }
                 dispatch({ kind: "attachment-rejections-cleared" });
                 send({
                   kind: "control",

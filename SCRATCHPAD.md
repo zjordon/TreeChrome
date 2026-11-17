@@ -68,10 +68,11 @@ run 进行中可发后续任务入队可视化、终态后自动续跑；上下�
 
 ## 4. 进度
 
-- [ ] 批 A 排队全链
+- [x] 批 A 排队全链：repo 六方法（appendQueuedTurn/firstQueuedTurn/activateQueuedTurn/cancelQueuedTurn/cancelQueued/cancelAllQueued，上限 5）；run-manager 队列器（queueFollowUp 入队即试出队/终态 2s 节流续播/stop 连播清空/queueTurnId 激活复用+回落新建/出队失败留队重试）；session-handler 实装 queue-add/remove（SessionQueueFace 注入）；background 接线 + boot cancelAllQueued 兜底（D3）；UI 发送分流（运行中→入队）+ QueueStrip；测试 extension 280 / console-ui 97 全绿（新增：repo 4 + run-manager 4 + handler 1 改 + QueueStrip 2）
 - [ ] 批 B usage pill + 只读态
 - [ ] 批 C 目标条 + commands + 预设
 - [ ] 批 D 滚动意图
+- [ ] e2e 冒烟（smoke-queue：3 条入队中途 stop 全状态断言）——调整至批 D 后统一做（跨批验收⑤）
 - [ ] 全量验收自查（§0 五条）
 
 ## 5. 评审轮次登记（review-loop 填写）

@@ -371,6 +371,16 @@ async function boot(): Promise<Booted> {
 
   // SW 被杀恢复：非终态 journal 且无活 run → interrupted（README 决策 5：不续跑）
   void recoverInterruptedRuns(storage, runManager);
+  // 排队兜底（#37 D3）：SW 死亡丢失内存 drain 定时器——重启时 queued→cancelled
+  // （无人值守自动起跑撞权限卡模型不可接受，与「run 不续跑」同构）
+  void sessionRepo
+    .cancelAllQueued()
+    .then((n) => {
+      if (n > 0) log(`queue boot-cancelled: ${n} turns`);
+    })
+    .catch((e: unknown) =>
+      log(`queue boot-cancel failed: ${e instanceof Error ? e.message : String(e)}`),
+    );
 
   // —— boot 唯一 await 点（尾部；失败降级内存空库——评审轮 1 [13]）——
   let store: SkillStore;
@@ -443,6 +453,11 @@ async function boot(): Promise<Booted> {
         } catch (e) {
           log(`session notify failed: ${e instanceof Error ? e.message : String(e)}`);
         }
+      },
+      // 排队受理（#37 批 A）：入队即尝试出队/节流续播都在 run-manager 队列器
+      queue: {
+        add: (sessionId, task) => runManager.queueFollowUp(sessionId, task),
+        remove: (sessionId, turnId) => runManager.queueRemove(sessionId, turnId),
       },
     },
   };

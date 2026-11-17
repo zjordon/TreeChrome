@@ -1,11 +1,21 @@
-// 会话单发处理器（issue #35 U1a W6）：镜像 options-handler 形态——session-new/
-// list/open/rename/delete 请求-应答（sendMessage 单发，Port 只承载推送广播）；
-// queue-add/remove 协议预留回 not-supported（U2 实现——D6 防先型 breaking）。
-// 全路径 fail-soft：异常/坏载荷回 {ok:false,error} 不炸通道。notifyUpdated 广播
-// session-updated（实现侧必须自吞异常——通知失败不改变 op 结果，notifyDrafts 先例）。
+// 会话单发处理器（issue #35 U1a W6 + #37 U2 批 A）：镜像 options-handler 形态——
+// session-new/list/open/rename/delete + queue-add/queue-remove 请求-应答（sendMessage
+// 单发，Port 只承载推送广播）。排队受理走注入的 queue 面（run-manager 队列器——
+// 入队即尝试出队/节流续播/撤销）。全路径 fail-soft：异常/坏载荷回 {ok:false,error}
+// 不炸通道。notifyUpdated 广播 session-updated（实现侧必须自吞异常——通知失败不改
+// 变 op 结果，notifyDrafts 先例）。
 
 import type { SessionOp } from "@tw/protocol";
 import type { SessionRepository } from "./session-repo.js";
+
+/** queue 面（#37 批 A）：run-manager 的排队受理（boot 闭包接线） */
+export interface SessionQueueFace {
+  add: (
+    sessionId: string,
+    task: string,
+  ) => Promise<{ ok: true; turnId: string } | { ok: false; error: string }>;
+  remove: (sessionId: string, turnId: string) => Promise<boolean>;
+}
 
 /** session 面：宿主 boot 装配注入 */
 export interface SessionFace {
@@ -15,6 +25,8 @@ export interface SessionFace {
     sessionId: string | undefined,
     reason: "turn" | "archive" | "index" | "queue",
   ) => void;
+  /** 排队受理（缺省不注入 = 排队面禁用——旧装配/测试兼容） */
+  queue?: SessionQueueFace;
 }
 
 export async function handleSessionRequest(
@@ -78,10 +90,31 @@ export async function handleSessionRequest(
         if (deleted) face.notifyUpdated(sessionId, "index");
         return { ok: deleted };
       }
-      case "queue-add":
-      case "queue-remove":
-        // 协议先型预留（D6）：U2 落地排队面——本期明确回 not-supported
-        return { ok: false, error: "排队功能尚未提供（U2）——请等本轮结束或停止后重发" };
+      case "queue-add": {
+        if (face.queue === undefined) {
+          return { ok: false, error: "排队面未启用" };
+        }
+        const p = payload as { sessionId?: unknown; task?: unknown } | null;
+        if (typeof p?.sessionId !== "string" || p.sessionId === "") {
+          return { ok: false, error: "queue-add 需要 {sessionId, task}" };
+        }
+        if (typeof p?.task !== "string" || p.task.trim() === "") {
+          return { ok: false, error: "queue-add 需要 {sessionId, task}" };
+        }
+        // 变更广播在 queue.add 内（入队成功才推 reason:"queue"）
+        return face.queue.add(p.sessionId, p.task);
+      }
+      case "queue-remove": {
+        if (face.queue === undefined) {
+          return { ok: false, error: "排队面未启用" };
+        }
+        const p = payload as { sessionId?: unknown; turnId?: unknown } | null;
+        if (typeof p?.sessionId !== "string" || typeof p?.turnId !== "string") {
+          return { ok: false, error: "queue-remove 需要 {sessionId, turnId}" };
+        }
+        const ok = await face.queue.remove(p.sessionId, p.turnId);
+        return { ok };
+      }
       default:
         return { ok: false, error: `未知操作：${op}` };
     }

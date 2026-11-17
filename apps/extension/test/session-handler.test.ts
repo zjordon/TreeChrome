@@ -95,13 +95,44 @@ describe("handleSessionRequest", () => {
     expect(await handleSessionRequest("session-delete", null, f)).toMatchObject({ ok: false });
   });
 
-  it("queue-add/queue-remove：协议预留回 not-supported（U2）", async () => {
+  it("queue-add/queue-remove：受理走注入 queue 面（#37 批 A）；缺注入/坏载荷回错", async () => {
+    const noQueue = face();
+    expect(
+      await handleSessionRequest("queue-add", { sessionId: "s1", task: "t" }, noQueue),
+    ).toMatchObject({ ok: false, error: "排队面未启用" });
+    const added: Array<{ sessionId: string; task: string }> = [];
+    const removed: Array<{ sessionId: string; turnId: string }> = [];
     const f = face();
-    for (const op of ["queue-add", "queue-remove"] as const) {
-      const res = (await handleSessionRequest(op, {}, f)) as { ok: boolean; error?: string };
-      expect(res.ok).toBe(false);
-      expect(res.error).toContain("U2");
-    }
+    const withQueue = {
+      ...f,
+      queue: {
+        add: async (sessionId: string, task: string) => {
+          added.push({ sessionId, task });
+          return { ok: true as const, turnId: "t9" };
+        },
+        remove: async (sessionId: string, turnId: string) => {
+          removed.push({ sessionId, turnId });
+          return true;
+        },
+      },
+    };
+    expect(
+      await handleSessionRequest("queue-add", { sessionId: "s1", task: "跟进任务" }, withQueue),
+    ).toEqual({ ok: true, turnId: "t9" });
+    expect(
+      await handleSessionRequest("queue-remove", { sessionId: "s1", turnId: "t9" }, withQueue),
+    ).toEqual({
+      ok: true,
+    });
+    expect(added).toEqual([{ sessionId: "s1", task: "跟进任务" }]);
+    expect(removed).toEqual([{ sessionId: "s1", turnId: "t9" }]);
+    // 坏载荷
+    expect(await handleSessionRequest("queue-add", { sessionId: "s1" }, withQueue)).toMatchObject({
+      ok: false,
+    });
+    expect(await handleSessionRequest("queue-remove", { turnId: "t9" }, withQueue)).toMatchObject({
+      ok: false,
+    });
   });
 
   it("未知 op 与 repo 抛错均 fail-soft 回 {ok:false}", async () => {
