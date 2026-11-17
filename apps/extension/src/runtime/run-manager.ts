@@ -4,6 +4,9 @@
 // pause/resume 接 core Agent.stop()/pause()/resume()；绑定 tab onRemoved → abort
 // （interrupted）；SW 被杀 → 初始化时读 journal 非终态且无活 run → interrupted
 // （不做消息历史 checkpoint 续跑——README 决策 5，续跑能力后置登记）。
+// issue #35 U1a：start 受理面挂会话模型——记 UserTurn（task 原文）、前情块拼接
+// （continuity，core 零改动）、终态归档（journal 归档缓冲 → SessionRepository）；
+// 全部 fail-soft（转录缺档可容忍，run 终态不可逆——D3）。
 
 import {
   type AgentHistoryList,
@@ -18,7 +21,13 @@ import {
   type SkillSource,
   serializeTraceForPrompt,
 } from "@tw/core";
-import type { RunJournalSnapshot, SwToUiMessage, UiToSwMessage } from "@tw/protocol";
+import type {
+  RunJournalSnapshot,
+  SessionOrigin,
+  SwToUiMessage,
+  TerminalRunStatus,
+  UiToSwMessage,
+} from "@tw/protocol";
 import type { AttachmentRegistry } from "../host/attachment-registry.js";
 import type { TabsOnRemovedApi, TabsQueryApi } from "../host/chrome-apis.js";
 import type { KeepaliveController } from "../host/keepalive.js";
@@ -26,10 +35,17 @@ import type { OpfsFs } from "../host/opfs-fs.js";
 import type { ExtensionSettings, SettingsStore } from "../host/settings-store.js";
 import { selfEvolutionOf, sensitiveSpecsOf } from "../host/settings-store.js";
 import { type AssembledRun, assembleRun } from "./assemble.js";
+import { buildContinuityBlock, type ContinuityTurn, withContinuity } from "./continuity.js";
 import type { DistillJobInput } from "./distill-queue.js";
 import { EventForwarder } from "./event-forwarder.js";
 import type { RunJournal } from "./journal.js";
 import { SidepanelPolicyBridge } from "./policy-bridge.js";
+import {
+  compressArchiveEvents,
+  type RunArchiveInput,
+  type SessionRepository,
+  sumUsage,
+} from "./session-repo.js";
 import { pickActiveDrivableTab } from "./tab-pick.js";
 
 export type ControlResult = { ok: true } | { ok: false; error: string };
@@ -60,6 +76,9 @@ export interface RunManagerDeps {
     enqueue: (job: DistillJobInput) => Promise<void>;
     kick: () => void;
   };
+  /** 会话存储面（issue #35 U1a：缺省 null = 会话面禁用降级——旧单测兼容；
+   *  background 生产装配必须注入，漏注入由 boot 日志确认） */
+  sessions?: SessionRepository | null;
   now?: () => number;
   newRunId?: () => string;
   log?: (message: string) => void;
@@ -80,6 +99,11 @@ interface ActiveRun {
   /** stop 请求来源标记（终态判定：interrupted vs done） */
   interruptReason: string | null;
   onTabRemoved: (tabId: number) => void;
+  /** 会话归属（issue #35；null = 会话面禁用/写失败降级——run 照常） */
+  sessionId: string | null;
+  /** 本 run 的用户 turn（null = 未记上，终态归档跳过） */
+  turnId: string | null;
+  origin: SessionOrigin;
 }
 
 /** 终态集合（awaiting-* 是挂起态可回 running） */
@@ -165,7 +189,7 @@ export class RunManager {
         this.active?.bridge.resolveSubmit(message.token, message.approved);
         return;
       case "control":
-        void this.control(message.action, message.task)
+        void this.control(message.action, message.task, message.sessionId)
           .then((r) => {
             if (!r.ok) this.deps.log?.(`control ${message.action} rejected: ${r.error}`);
           })
@@ -213,6 +237,8 @@ export class RunManager {
         return; // 热读面：每次 start 前 load——运行中不换卡（run 装配一次性）
       case "options":
         return; // options 是 sendMessage 单发应答面（message-router 分发）——Port 不受理
+      case "session":
+        return; // session 同为 sendMessage 单发应答面（session-handler）——Port 不受理
       case "diag":
         return;
     }
@@ -249,12 +275,18 @@ export class RunManager {
     });
   }
 
-  /** control 面（start/stop/pause/resume）；拒绝文案直回 UI 层呈现 */
+  /** control 面（start/stop/pause/resume + steer 预留）；拒绝文案直回 UI 层呈现。
+   *  start 的 sessionId 缺省 = 续当前 tab 绑定会话（issue #35 U1 语义） */
   async control(
-    action: "start" | "stop" | "pause" | "resume",
+    action: "start" | "stop" | "pause" | "resume" | "steer",
     task?: string,
+    sessionId?: string,
   ): Promise<ControlResult> {
-    if (action === "start") return this.start(task ?? "");
+    if (action === "steer") {
+      // 协议预留（D6）：core 无 mid-run 注入——U2 排队面先行吸收，L2 远期提案
+      return { ok: false, error: "运行中插话（steering）尚未支持——请等待本轮结束或停止后重发" };
+    }
+    if (action === "start") return this.start(task ?? "", { origin: "user", sessionId });
     const active = this.active;
     if (active === null) return { ok: false, error: "当前没有运行中的任务" };
     if (action === "stop") {
@@ -273,19 +305,30 @@ export class RunManager {
     return { ok: true };
   }
 
-  private async start(task: string): Promise<ControlResult> {
+  /** bridge run_task 受理面（issue #35：origin=bridge 进快照与会话——外部直驱标识） */
+  startRun(task: string, origin: SessionOrigin): Promise<ControlResult> {
+    return this.start(task, { origin });
+  }
+
+  private async start(
+    task: string,
+    options: { origin: SessionOrigin; sessionId?: string },
+  ): Promise<ControlResult> {
     if (this.active !== null || this.starting) {
       return { ok: false, error: "请先停止当前任务" };
     }
     this.starting = true;
     try {
-      return await this.startInner(task);
+      return await this.startInner(task, options);
     } finally {
       this.starting = false;
     }
   }
 
-  private async startInner(task: string): Promise<ControlResult> {
+  private async startInner(
+    task: string,
+    options: { origin: SessionOrigin; sessionId?: string },
+  ): Promise<ControlResult> {
     if (task.trim() === "") {
       return { ok: false, error: "任务不能为空" };
     }
@@ -322,6 +365,9 @@ export class RunManager {
     }
     const settings = await this.deps.settingsStore.load();
     const runId = this.deps.newRunId?.() ?? `run_${Date.now().toString(16)}`;
+    // 会话解析 + 前情块（issue #35 U1a：fail-soft——失败回 null，run 照常无会话语义）
+    const session = await this.resolveSession(tabId, task, options);
+    const effectiveTask = withContinuity(task, session?.continuity ?? null);
     // 确认卡桥先建（journal/broadcast/端口态均已就绪——桥只在请求时点读写 journal，
     // 不要求 begin 已发生）；装配带门 → begin → forwarder 接线（首事件前快照在位）
     const bridge = new SidepanelPolicyBridge({
@@ -334,7 +380,7 @@ export class RunManager {
     const assembleFn = this.deps.assemble ?? assembleRun;
     try {
       assembled = assembleFn(
-        { task, tabId, settings },
+        { task: effectiveTask, tabId, settings },
         {
           transportFactory: this.deps.transportFactoryFor(tabId),
           fs: this.deps.fs,
@@ -354,12 +400,37 @@ export class RunManager {
       tabId,
       task: assembled.taskText,
       attachments: this.deps.attachments.list(),
+      ...(session !== null ? { sessionId: session.sessionId, origin: options.origin } : {}),
     });
     // 起始快照广播（评审轮 1 [6]）：journal.begin 重置 seq——不广播则保持连接的
     // UI 侧 seq 去重把新 run 事件全部判为旧 run 补发重复而丢弃
     const startSnapshot = this.deps.journal.current();
     if (startSnapshot !== null) {
       this.deps.broadcast({ kind: "journal-snapshot", snapshot: startSnapshot });
+    }
+    // 记用户 turn（task 原文——转录用户气泡来源；前情块只进 prompt 不回写 turn）
+    let turnId: string | null = null;
+    if (session !== null) {
+      const sessions = this.deps.sessions;
+      if (sessions != null) {
+        try {
+          const turn = await sessions.beginRun(session.sessionId, {
+            runId,
+            task,
+            attachments: this.deps.attachments.list(),
+          });
+          turnId = turn?.turnId ?? null;
+        } catch (e) {
+          this.deps.log?.(`session beginRun failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        if (turnId !== null) {
+          this.deps.broadcast({
+            kind: "session-updated",
+            sessionId: session.sessionId,
+            reason: "turn",
+          });
+        }
+      }
     }
     const forwarder = new EventForwarder(assembled.bus, this.deps.journal, this.deps.broadcast);
     forwarder.start();
@@ -376,6 +447,9 @@ export class RunManager {
       bridge,
       interruptReason: null,
       onTabRemoved: () => {},
+      sessionId: session?.sessionId ?? null,
+      turnId,
+      origin: options.origin,
     };
     active.onTabRemoved = (removed: number): void => {
       if (removed !== tabId) return;
@@ -391,6 +465,63 @@ export class RunManager {
 
     void this.drive(active);
     return { ok: true };
+  }
+
+  /**
+   * 会话解析与前情块（issue #35 U1a W5）：显式 sessionId 优先（tab 错位容忍——
+   * tab 绑定只是 follow-up 解析的缺省依据）；否则取 tab 最新会话；无则建新（标题 =
+   * 任务前 30 字符）。前情块只取该会话既有终态 turn（任务 + 对应归档 finalResult）。
+   * 全程 fail-soft（D3）：任何失败回 null——run 照常，仅无会话语义。
+   */
+  private async resolveSession(
+    tabId: number,
+    task: string,
+    options: { origin: SessionOrigin; sessionId?: string },
+  ): Promise<{ sessionId: string; continuity: string | null } | null> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return null;
+    const createNew = async (): Promise<string> => {
+      const meta = await sessions.createSession({
+        tabId,
+        origin: options.origin,
+        title: task.slice(0, 30),
+      });
+      this.deps.broadcast({ kind: "session-updated", sessionId: meta.sessionId, reason: "index" });
+      return meta.sessionId;
+    };
+    try {
+      let sessionId = options.sessionId ?? null;
+      if (sessionId === null) {
+        sessionId = (await sessions.resolveSessionForTab(tabId))?.sessionId ?? null;
+      }
+      if (sessionId === null) {
+        return { sessionId: await createNew(), continuity: null };
+      }
+      const record = await sessions.open(sessionId);
+      if (record === null) {
+        // 显式指定但已删（LRU/用户删除）——按新会话续跑
+        return { sessionId: await createNew(), continuity: null };
+      }
+      // 显式续跑跟随当前 tab（目标 tab 重绑——follow-up 缺省解析不脱节）
+      if (record.meta.tabId !== tabId) {
+        await sessions.rebindTab(sessionId, tabId);
+        this.deps.broadcast({ kind: "session-updated", sessionId, reason: "index" });
+      }
+      const resultByTurn = new Map(record.runs.map((r) => [r.turnId, r.finalResult]));
+      const priorTurns: ContinuityTurn[] = record.turns
+        .filter((t) => t.status === "done" || t.status === "error" || t.status === "interrupted")
+        .map((t) => ({
+          task: t.task,
+          finalResult: resultByTurn.get(t.turnId) ?? null,
+          status: t.status,
+        }));
+      return { sessionId, continuity: buildContinuityBlock(priorTurns) };
+    } catch (e) {
+      this.deps.log?.(
+        `session resolve failed (run continues without session): ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
   }
 
   /** run 驱动与终态收口（fire-and-forget；异常全吞在 journal 终态里） */
@@ -455,6 +586,9 @@ export class RunManager {
       if (this.active === active) {
         this.active = null;
       }
+      // 会话终态收口（issue #35 U1a：turn 置终态 + run 归档——fail-soft D3，
+      // 失败只记日志不改变 run 终态广播）
+      await this.archiveActiveRun(active);
       // 终态广播（sidepanel 收 journal-snapshot 收口视图）
       const snapshot = journal.current();
       if (snapshot !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot });
@@ -466,6 +600,46 @@ export class RunManager {
       ) {
         this.deps.log?.(`run failed: ${snapshot?.lastError ?? "unknown"}`);
       }
+    }
+  }
+
+  /**
+   * 会话终态归档（issue #35 U1a）：journal 归档缓冲（环淘汰独立——全量事件）压缩
+   * 后连同终态字段写 SessionRepository。fail-soft（D3）：失败记日志，不影响 run
+   * 终态与广播——转录缺本 run 归档可容忍，run 崩不可容忍。
+   */
+  private async archiveActiveRun(active: ActiveRun): Promise<void> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null || active.sessionId === null || active.turnId === null) return;
+    try {
+      const snapshot = this.deps.journal.current();
+      if (snapshot === null) return;
+      const buffer = this.deps.journal.takeArchiveBuffer();
+      const events = compressArchiveEvents(buffer.events);
+      // 终态收窄（防御：archiveActiveRun 只在终态后调用——非终态值兜底 interrupted）
+      const status: TerminalRunStatus =
+        snapshot.status === "done" || snapshot.status === "error" ? snapshot.status : "interrupted";
+      const archive: RunArchiveInput = {
+        runId: active.runId,
+        startedAt: snapshot.startedAt,
+        endedAt: snapshot.endedAt ?? this.now(),
+        status,
+        finalResult: snapshot.finalResult,
+        lastError: snapshot.lastError,
+        events,
+        usage: sumUsage(events),
+        discardedBeforeSeq: buffer.discardedBeforeSeq,
+      };
+      await sessions.completeRun(active.sessionId, { turnId: active.turnId, archive });
+      this.deps.broadcast({
+        kind: "session-updated",
+        sessionId: active.sessionId,
+        reason: "archive",
+      });
+    } catch (e) {
+      this.deps.log?.(
+        `session archive failed (transcript may lack this run): ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
@@ -529,7 +703,10 @@ export class RunManager {
     return this.active?.bridge.pendingCards() ?? [];
   }
 
-  /** SW 重启恢复：非终态快照且无活 run → interrupted（SW 被杀即终态——不续跑） */
+  /** SW 重启恢复：非终态快照且无活 run → interrupted（SW 被杀即终态——不续跑）。
+   *  会话对账（issue #35 U1a）：半途 run 的 turn 置 interrupted + 环幸存事件归档
+   *  （归档缓冲随 SW 死亡丢失——discardedBeforeSeq 如实记账；无 sessionId 的旧
+   *  快照跳过对账） */
   recoverInterrupted(snapshot: RunJournalSnapshot | null): void {
     if (this.active !== null) return;
     if (snapshot === null) return;
@@ -541,6 +718,39 @@ export class RunManager {
     });
     const updated = this.deps.journal.current();
     if (updated !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot: updated });
+    void this.reconcileInterruptedSession(snapshot);
+  }
+
+  /** 恢复对账的会话面（fire-and-forget；fail-soft 同 D3） */
+  private async reconcileInterruptedSession(snapshot: RunJournalSnapshot): Promise<void> {
+    const sessions = this.deps.sessions ?? null;
+    const sessionId = snapshot.sessionId;
+    if (sessions === null || sessionId === undefined) return;
+    try {
+      const record = await sessions.open(sessionId);
+      if (record === null) return;
+      const turn =
+        record.turns.find((t) => t.runId === snapshot.runId && t.status === "running") ?? null;
+      if (turn === null) return;
+      const events = compressArchiveEvents(snapshot.events);
+      await sessions.completeRun(sessionId, {
+        turnId: turn.turnId,
+        archive: {
+          runId: snapshot.runId,
+          startedAt: snapshot.startedAt,
+          endedAt: this.now(),
+          status: "interrupted",
+          finalResult: snapshot.finalResult,
+          lastError: "Service worker was killed during the run",
+          events,
+          usage: sumUsage(events),
+          discardedBeforeSeq: snapshot.discardedBeforeSeq,
+        },
+      });
+      this.deps.broadcast({ kind: "session-updated", sessionId, reason: "archive" });
+    } catch (e) {
+      this.deps.log?.(`session reconcile failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 }
 

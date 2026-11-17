@@ -262,3 +262,60 @@ describe("DebounceScheduler（真调度器：注入定时器）", () => {
     await new Promise((r) => setTimeout(r, 10));
   });
 });
+
+describe("RunJournal 归档缓冲（issue #35 U1a）", () => {
+  it(">256 事件：环淘汰照旧，归档缓冲恒全量（验收②单测锚点）", () => {
+    const journal = new RunJournal();
+    begin(journal);
+    for (let i = 0; i < JOURNAL_EVENT_LIMIT + 44; i += 1) {
+      journal.record({ eventType: "step_start", step: i + 1, sessionId: "s" });
+    }
+    const snap = journal.current()!;
+    expect(snap.events).toHaveLength(JOURNAL_EVENT_LIMIT); // 环照旧淘汰
+    expect(snap.discardedBeforeSeq).toBe(44);
+    const buffer = journal.takeArchiveBuffer();
+    expect(buffer.events).toHaveLength(JOURNAL_EVENT_LIMIT + 44); // 归档全量不丢
+    expect(buffer.discardedBeforeSeq).toBe(0);
+    expect(buffer.events[0]?.seq).toBe(1);
+  });
+
+  it("begin 重置缓冲；take 取后清空（二次回空）", () => {
+    const journal = new RunJournal();
+    begin(journal);
+    journal.record({ eventType: "step_start", step: 1, sessionId: "s" });
+    expect(journal.takeArchiveBuffer().events).toHaveLength(1);
+    expect(journal.takeArchiveBuffer().events).toHaveLength(0);
+    begin(journal); // 新 run 重置
+    journal.record({ eventType: "step_start", step: 1, sessionId: "s" });
+    expect(journal.takeArchiveBuffer().events).toHaveLength(1);
+  });
+
+  it("超 4096 条：缓冲自淘汰最老并记首丢 seq", () => {
+    const journal = new RunJournal();
+    begin(journal);
+    for (let i = 0; i < 4100; i += 1) {
+      journal.record({ eventType: "step_start", step: 1, sessionId: "s" });
+    }
+    const buffer = journal.takeArchiveBuffer();
+    expect(buffer.events).toHaveLength(4096);
+    expect(buffer.discardedBeforeSeq).toBe(4);
+    expect(buffer.events[0]?.seq).toBe(5);
+  });
+
+  it("begin 携带 sessionId/origin 进快照（旧调用面缺省不带）", () => {
+    const journal = new RunJournal();
+    journal.begin({
+      runId: "r",
+      tabId: 3,
+      task: "T",
+      attachments: [],
+      sessionId: "s9",
+      origin: "bridge",
+    });
+    expect(journal.current()).toMatchObject({ sessionId: "s9", origin: "bridge" });
+    begin(journal); // 既有调用面（无会话字段）
+    const snap = journal.current();
+    expect(snap?.sessionId).toBeUndefined();
+    expect(snap?.origin).toBeUndefined();
+  });
+});

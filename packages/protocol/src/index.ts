@@ -43,6 +43,7 @@ export const SW_TO_UI_KINDS = [
   "attachment-rejected",
   "skill-drafts",
   "distill-status",
+  "session-updated",
 ] as const;
 
 export const UI_TO_SW_KINDS = [
@@ -57,6 +58,7 @@ export const UI_TO_SW_KINDS = [
   "attachment-remove",
   "settings-changed",
   "options",
+  "session",
   "diag",
 ] as const;
 
@@ -167,6 +169,88 @@ export interface RunJournalSnapshot {
     reasoning: string | null;
     failureReason: string | null;
   } | null;
+  /** run 归属会话（issue #35 U1：缺省 = 改版前的旧快照——无会话语义） */
+  sessionId?: string;
+  /** run 发起方（issue #35 U1：sidepanel/桥 run_task 同一 run-manager 受理面） */
+  origin?: SessionOrigin;
+}
+
+// —— 会话模型（issue #35 U1：转录骨架的持久层类型）——
+
+/** run 发起方：user = sidepanel 输入；bridge = tc-bridge run_task（外部直驱） */
+export type SessionOrigin = "user" | "bridge";
+
+/** 会话内用户 turn 状态（queued 供 U2 排队面预留——数据面先行定型） */
+export type SessionTurnStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "error"
+  | "interrupted"
+  | "cancelled";
+
+/** 用户 turn：SW 受理 control.start / bridge run_task 时的 task 原文（不进 core
+ *  事件流——转录投影的用户气泡来源；前情块等 prompt 拼接不回写此字段） */
+export interface SessionTurn {
+  turnId: string;
+  sessionId: string;
+  /** 关联 run（queued 态尚无 run）；与 RunArchive.runId 对应 */
+  runId: string | null;
+  /** 用户原文（含附件清单拼接前的原始输入） */
+  task: string;
+  status: SessionTurnStatus;
+  attachments: AttachmentInfo[];
+  createdAt: number;
+  /** 终态时间（非终态 null） */
+  endedAt: number | null;
+}
+
+/** run 终态集（归档/turn 终态的 status 域——awaiting-* 是挂起态不进档） */
+export type TerminalRunStatus = "done" | "error" | "interrupted";
+
+/** run 归档 token 用量（事件流汇总——model_result 逐次累加） */
+export interface RunArchiveUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** run 终态归档：转录回放的真相源（journal 环是 UI 实时投影窗，不作归档——
+ *  环淘汰前 archiveSink 已同步收全量事件） */
+export interface RunArchive {
+  runId: string;
+  turnId: string;
+  startedAt: number;
+  endedAt: number;
+  status: TerminalRunStatus;
+  finalResult: string | null;
+  lastError: string | null;
+  /** 压缩后事件（tool 明细按预算降级为标题行） */
+  events: JournalEvent[];
+  usage: RunArchiveUsage;
+  /** 环淘汰记账带入（恢复对账场景下环外事件已丢——如实记录） */
+  discardedBeforeSeq: number;
+}
+
+/** 会话索引条目（tc_sessions:index 的元素；列表页数据面） */
+export interface SessionMeta {
+  sessionId: string;
+  /** 会话目标 tab（首 run 绑定；follow-up 默认同 tab） */
+  tabId: number;
+  title: string;
+  origin: SessionOrigin;
+  runCount: number;
+  lastStatus: RunStatus | null;
+  createdAt: number;
+  updatedAt: number;
+  /** 会话累计 token（run 终态累加） */
+  usageTokens: number;
+}
+
+/** 完整会话记录（tc_session:<sessionId> 的落盘形态） */
+export interface SessionRecord {
+  meta: SessionMeta;
+  turns: SessionTurn[];
+  runs: RunArchive[];
 }
 
 /** provider 卡片的存储/表单形态（单一事实源 = core ProviderConfig；扩展 chrome.storage
@@ -220,6 +304,21 @@ export const OPTIONS_OPS = [
 ] as const;
 
 export type OptionsOp = (typeof OPTIONS_OPS)[number];
+
+/** 会话单发面操作（issue #35 U1：镜像 options 模式——sendMessage 请求-应答，
+ *  Port 只承载推送广播）。queue-add/queue-remove 协议先型预留（U2 实现——SW 本期
+ *  回 not-supported，防后续 breaking） */
+export const SESSION_OPS = [
+  "session-new",
+  "session-list",
+  "session-open",
+  "session-rename",
+  "session-delete",
+  "queue-add",
+  "queue-remove",
+] as const;
+
+export type SessionOp = (typeof SESSION_OPS)[number];
 
 // —— SW → UI 消息（Port 广播 + hello/journal-snapshot 全量补发）——
 
@@ -307,7 +406,17 @@ export type SwToUiMessage =
   | SwAttachmentBegunMessage
   | SwAttachmentRejectedMessage
   | SwSkillDraftsMessage
-  | SwDistillStatusMessage;
+  | SwDistillStatusMessage
+  | SwSessionUpdatedMessage;
+
+/** 会话面变更合并推送（issue #35 U1：索引/队列/归档/turn 任一变更都发这一条，
+ *  载荷只带定位摘要——UI 按需 session-list/session-open 补查，不做细粒度广播） */
+export interface SwSessionUpdatedMessage {
+  kind: "session-updated";
+  /** 变更会话（索引级变更如 LRU 淘汰无定值） */
+  sessionId?: string;
+  reason: "turn" | "archive" | "index" | "queue";
+}
 
 // —— UI → SW 消息（Port 发送 + options 页 sendMessage 单发共用）——
 
@@ -330,9 +439,13 @@ export interface UiSubmitResolveMessage {
 
 export interface UiControlMessage {
   kind: "control";
-  action: "start" | "stop" | "pause" | "resume";
+  /** steer 预留（issue #35：运行中插话——core 未支持，SW 回 not-supported；
+   *  U2/远期实现前防协议 breaking） */
+  action: "start" | "stop" | "pause" | "resume" | "steer";
   /** action=start 时必填；其余 action 忽略 */
   task?: string;
+  /** action=start 时可选：续接指定会话（缺省 = 续当前 tab 绑定会话——issue #35 U1） */
+  sessionId?: string;
 }
 
 /**
@@ -394,6 +507,13 @@ export interface UiDiagMessage {
   payload?: unknown;
 }
 
+/** 会话单发请求（sendMessage 请求-应答——同 options 模式；op 形态见 SESSION_OPS） */
+export interface UiSessionRequestMessage {
+  kind: "session";
+  op: SessionOp;
+  payload?: unknown;
+}
+
 export type UiToSwMessage =
   | UiJournalAckMessage
   | UiPermissionResolveMessage
@@ -406,6 +526,7 @@ export type UiToSwMessage =
   | UiAttachmentRemoveMessage
   | UiSettingsChangedMessage
   | UiOptionsRequestMessage
+  | UiSessionRequestMessage
   | UiDiagMessage;
 
 // —— 桥↔扩展私线 wire 类型（issue #31 M1 + #32 M2 直驱面，type-only）——

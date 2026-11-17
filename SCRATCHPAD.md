@@ -106,23 +106,24 @@
 
 ## 5. 进度记录
 
-- [ ] W1 协议扩展
-- [ ] W2 session-repo
-- [ ] W3 journal archiveSink
-- [ ] W4 continuity
-- [ ] W5 run-manager 集成
-- [ ] W6 session-handler
-- [ ] W7 router/bridge/background 装配
-- [ ] W8 测试全绿 + 覆盖率
+- [x] W1 协议扩展（SessionTurn/RunArchive/SessionMeta/SessionRecord + TerminalRunStatus + SESSION_OPS + session-updated + steer/sessionId 预留；envelope 穷举测试同步 12/13）
+- [x] W2 session-repo（键结构/LRU/1MB 降级链/变更链串行/rebindTab/compressArchiveEvents/sumUsage；StorageArea 扩可选 remove + StorageAreaWithRemove）
+- [x] W3 journal 归档缓冲（内部缓冲 + takeArchiveBuffer——比 archiveSink 注入更内聚，免 background 闭包接线；上限 4096 丢最老记账）
+- [x] W4 continuity（buildContinuityBlock 8K 预算从最老整条丢 + withContinuity）
+- [x] W5 run-manager 集成（resolveSession 显式优先/跨 tab 重绑、beginRun 记 turn、终态 archiveActiveRun、recoverInterrupted 会话对账、steer not-supported、fail-soft 全路径）
+- [x] W6 session-handler（五 op + queue not-supported + notifyUpdated）
+- [x] W7 装配（message-router onSession / bridge-gateway startRun(task,"bridge") / background sessionRepo+SessionFace）
+- [x] W8 测试：266 例全绿（新增 36：session-repo 12 / continuity 8 / session-handler 6 / journal 归档 4 / run-manager 会话集成 9 + 既有 bridge-gateway 3 处 fake 更新）；覆盖率 96.72% / 86.08%
 - [ ] W9 提交门通过
 
 ## 6. 验收自查（对应 §0 五条）
 
-- [ ] ①二连发前情块（含 8K 截断）
-- [ ] ②重启归档完整 + >256 环淘汰不丢
-- [ ] ③重命名/删除/切换（op 面）
-- [ ] ④LRU + 1MB 降级
-- [ ] ⑤覆盖率 ≥85%
+- [x] ①二连发前情块（run-manager 会话集成首例；8K 截断在 continuity.test 预算用例）
+- [x] ②重启归档完整（恢复对账用例）+ >256 环淘汰不丢（journal 归档缓冲 >300 用例）
+- [x] ③重命名/删除/切换（session-handler 往返用例；rebindTab 用例覆盖切换语义）
+- [x] ④LRU + 1MB 降级（session-repo LRU/预算两用例）
+- [x] ⑤覆盖率 ≥85%（96.72%/86.08%）
+- 备注：①的真机口径（持久快照 task 字段含前情块）留 U1b e2e 冒烟补验（smoke-sw-runtime 风格）
 
 ## 7. 评审轮次登记（review-loop 填写）
 

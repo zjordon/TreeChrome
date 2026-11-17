@@ -55,6 +55,8 @@ import { registerMessageRouter } from "../src/runtime/message-router.js";
 import { handleOptionsRequest, type OptionsFace } from "../src/runtime/options-handler.js";
 import { PortServer } from "../src/runtime/port-server.js";
 import { RunManager } from "../src/runtime/run-manager.js";
+import { handleSessionRequest, type SessionFace } from "../src/runtime/session-handler.js";
+import { SessionRepository } from "../src/runtime/session-repo.js";
 
 function _isDiagMessage(v: unknown): v is UiDiagMessage {
   return (
@@ -153,6 +155,16 @@ export default defineBackground(() => {
         );
       return true;
     },
+    // session 请求-应答（issue #35 U1a）：同 options 模式经 bootPromise 排队
+    onSession: (op, payload, sendResponse) => {
+      void bootPromise
+        .then((booted) => handleSessionRequest(op, payload, booted.session))
+        .then((result) => sendResponse(result))
+        .catch((e: unknown) =>
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+        );
+      return true;
+    },
   });
 
   // 点扩展图标 = 开侧边栏（sidepanel entrypoint 由 WXT 注册 default_path）。
@@ -176,6 +188,8 @@ interface Booted {
   skillStore: SkillStore;
   /** options 请求-应答面（段 E） */
   options: OptionsFace;
+  /** session 请求-应答面（issue #35 U1a） */
+  session: SessionFace;
 }
 
 /** IDB 打不开时的降级空库（评审轮 1 [13]：skill 是可选增强，存储故障不得
@@ -199,6 +213,10 @@ async function boot(): Promise<Booted> {
   const settingsStore = new SettingsStore(storage);
   const grantStore = new ChromeGrantStore(storage);
   const attachments = new AttachmentRegistry();
+  // 会话存储层（issue #35 U1a）：生产必注入 runManager（漏注入即会话面静默禁用——
+  // boot 日志确认，D4）
+  const sessionRepo = new SessionRepository(storage, { log });
+  log("session repository ready");
   const journal = new RunJournal({
     scheduler: new DebounceScheduler(async (runKey, snapshot) => {
       await storage.set({ [runKey]: snapshot });
@@ -270,6 +288,7 @@ async function boot(): Promise<Booted> {
       enqueue: (job) => distillQueue.enqueue(job),
       kick: kickDistill,
     },
+    sessions: sessionRepo,
     log,
   });
   portServerRef = new PortServer(chromeOnConnect(), {
@@ -415,6 +434,17 @@ async function boot(): Promise<Booted> {
     runManager,
     skillStore: store,
     options: { settingsStore, grantStore, skillStore: store, notifyDrafts },
+    session: {
+      repo: sessionRepo,
+      // session-updated 广播（自吞异常——通知失败不改变 op 结果，notifyDrafts 同款）
+      notifyUpdated: (sessionId, reason) => {
+        try {
+          portServerRef?.broadcast({ kind: "session-updated", sessionId, reason });
+        } catch (e) {
+          log(`session notify failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      },
+    },
   };
 }
 

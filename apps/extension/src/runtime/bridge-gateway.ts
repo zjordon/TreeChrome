@@ -90,7 +90,7 @@ export function createBridgeGateway(
           `run ${current.runId} is ${current.status} — stop_run first or wait.`,
         );
       }
-      const result = await deps.runManager.control("start", task);
+      const result = await deps.runManager.startRun(task, "bridge");
       if (!result.ok) throw new BridgeGatewayError("RUN_START_FAILED", result.error);
       deps.log?.(`[bridge] run accepted: ${deps.journal.runId ?? "?"}`);
       return { accepted: true, runId: deps.journal.runId ?? "" };

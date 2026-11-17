@@ -19,6 +19,7 @@ function swKindOf(msg: SwToUiMessage): SwToUiKind {
     case "attachment-rejected":
     case "skill-drafts":
     case "distill-status":
+    case "session-updated":
       return msg.kind;
     default: {
       const unreachable: never = msg;
@@ -40,6 +41,7 @@ function uiKindOf(msg: UiToSwMessage): UiToSwKind {
     case "attachment-remove":
     case "settings-changed":
     case "options":
+    case "session":
     case "diag":
       return msg.kind;
     default: {
@@ -70,13 +72,14 @@ describe("@tw/protocol 信封", () => {
       },
       { kind: "skill-drafts", count: 1 },
       { kind: "distill-status", phase: "running" },
+      { kind: "session-updated", reason: "index" },
     ];
-    expect([...SW_TO_UI_KINDS]).toHaveLength(11);
+    expect([...SW_TO_UI_KINDS]).toHaveLength(12);
     expect(samples.map(swKindOf)).toEqual([...SW_TO_UI_KINDS]);
   });
 
   it("UI→SW kind 常量表与判别联合一致", () => {
-    expect([...UI_TO_SW_KINDS]).toHaveLength(12);
+    expect([...UI_TO_SW_KINDS]).toHaveLength(13);
     const samples: UiToSwMessage[] = [
       { kind: "journal-ack", seq: 3 },
       { kind: "permission-resolve", token: "t", verdict: "deny" },
@@ -89,6 +92,7 @@ describe("@tw/protocol 信封", () => {
       { kind: "attachment-remove", attachmentId: "att_1" },
       { kind: "settings-changed" },
       { kind: "options", op: "list-grants" },
+      { kind: "session", op: "session-list" },
       { kind: "diag", command: "echo" },
     ];
     expect(samples.map(uiKindOf)).toEqual([...UI_TO_SW_KINDS]);

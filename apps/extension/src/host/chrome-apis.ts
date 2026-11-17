@@ -3,11 +3,19 @@
 // fake 即可全覆盖，runtime/ 层零 chrome 依赖。本目录（src/host/）与 entrypoints/
 // 是扩展内合法使用 chrome.* 的区域。
 
-/** chrome.storage.local 同形（settings/grant/journal 落盘共用） */
+/** chrome.storage.local 同形（settings/grant/journal 落盘共用）。remove 标注可选
+ *  （既有 fake 兼容）；需要删除面的消费方（issue #35 会话 LRU/删除）用 WithRemove 形 */
 export interface StorageArea {
   get(keys: string | string[] | null): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
+  remove?(keys: string | string[]): Promise<void>;
 }
+
+/** 带删除面的 storage（chrome.storage.local 原生恒有 remove——chromeStorageLocal
+ *  真绑定即此形；SessionRepository 等消费方以此收窄） */
+export type StorageAreaWithRemove = StorageArea & {
+  remove(keys: string | string[]): Promise<void>;
+};
 
 /** chrome.alarms 同形（keepalive） */
 export interface AlarmsApi {
@@ -101,11 +109,13 @@ function chromeLike(): ChromeLike | null {
   return typeof g.chrome === "object" && g.chrome !== null ? (g.chrome as ChromeLike) : null;
 }
 
-/** 真绑定访问器（缺失时抛——调用方在扩展上下文内必有；测试不触真绑定） */
-export function chromeStorageLocal(): StorageArea {
+/** 真绑定访问器（缺失时抛——调用方在扩展上下文内必有；测试不触真绑定）。
+ *  返回带 remove 面（chrome.storage.local 原生恒有——issue #35 会话层依赖） */
+export function chromeStorageLocal(): StorageAreaWithRemove {
   const area = chromeLike()?.storage?.local;
   if (area === undefined) throw new Error("chrome.storage.local unavailable");
-  return area;
+  if (typeof area.remove !== "function") throw new Error("chrome.storage.local.remove unavailable");
+  return area as StorageAreaWithRemove;
 }
 
 export function chromeAlarms(): AlarmsApi {

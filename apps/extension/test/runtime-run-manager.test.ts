@@ -5,15 +5,17 @@
 // handleUiMessage 分发——assemble 覆盖缝注入 stub agent（不跑真 Agent）。
 
 import { AgentHistoryList } from "@tw/core";
-import type { RunJournalSnapshot, SwToUiMessage } from "@tw/protocol";
-import { describe, expect, it } from "vitest";
+import type { RunJournalSnapshot, SessionRecord, SwToUiMessage } from "@tw/protocol";
+import { describe, expect, it, vi } from "vitest";
 import { AttachmentRegistry } from "../src/host/attachment-registry.js";
+import type { StorageAreaWithRemove } from "../src/host/chrome-apis.js";
 import type { KeepaliveController } from "../src/host/keepalive.js";
 import type { DirHandleLike } from "../src/host/opfs-fs.js";
 import { OpfsFs } from "../src/host/opfs-fs.js";
 import { parseExtensionSettings, type SettingsStore } from "../src/host/settings-store.js";
 import { RunJournal } from "../src/runtime/journal.js";
 import { RunManager, type RunManagerDeps } from "../src/runtime/run-manager.js";
+import { SessionRepository } from "../src/runtime/session-repo.js";
 
 const SETTINGS = parseExtensionSettings({
   providerCards: [
@@ -65,6 +67,10 @@ function makeDeps(
     captureInteraction?: (i: unknown) => void;
     /** 注入小上限 registry（拒绝面测试——不造百兆载荷） */
     attachments?: AttachmentRegistry;
+    /** 会话存储面（issue #35 U1a：缺省不注入 = 降级路径） */
+    sessions?: RunManagerDeps["sessions"];
+    /** 装配时捕获任务文本入参（#35 验收①：前情块注入断言） */
+    captureTask?: (task: string) => void;
   } = {},
 ) {
   const journal = new RunJournal({ now: () => 1234 });
@@ -95,8 +101,9 @@ function makeDeps(
       }) as never;
     }
     const agent = options.agent ?? stub.agent;
-    return ((_input: unknown, deps: { policyInteraction: unknown }) => {
+    return ((_input: { task: string }, deps: { policyInteraction: unknown }) => {
       options.captureInteraction?.(deps.policyInteraction);
+      options.captureTask?.(_input.task);
       return {
         agent,
         browser: { stop: async () => void browserStops.push(1) },
@@ -137,6 +144,7 @@ function makeDeps(
     hasPorts: () => true,
     assemble: assembleOverride,
     ...(options.distill !== undefined ? { distill: options.distill } : {}),
+    ...(options.sessions !== undefined ? { sessions: options.sessions } : {}),
     newRunId: () => "run_test",
     now: () => 1234,
     log: (m: string) => void logs.push(m),
@@ -857,5 +865,250 @@ describe("RunManager 蒸馏门控入队", () => {
     expect(jobs).toHaveLength(1); // 门控过——入队
     expect(jobs[0]?.task).not.toContain("hunter2secret"); // task 脱敏
     expect(jobs[0]?.traceText).not.toContain("hunter2secret"); // Action/Result 行脱敏
+  });
+});
+
+// —— 会话模型集成（issue #35 U1a W8）——
+
+function fakeSessionStorage(): StorageAreaWithRemove {
+  const map = new Map<string, unknown>();
+  return {
+    get: async (keys) => {
+      if (keys === null) return Object.fromEntries(map);
+      const list = typeof keys === "string" ? [keys] : keys;
+      const out: Record<string, unknown> = {};
+      for (const k of list) if (map.has(k)) out[k] = map.get(k);
+      return out;
+    },
+    set: async (items) => {
+      for (const [k, v] of Object.entries(items)) map.set(k, v);
+    },
+    remove: async (keys) => {
+      for (const k of typeof keys === "string" ? [keys] : keys) map.delete(k);
+    },
+  };
+}
+
+function makeRepo(): SessionRepository {
+  let n = 0;
+  let clock = 1000;
+  return new SessionRepository(fakeSessionStorage(), {
+    newSessionId: () => {
+      n += 1;
+      return `s${n}`;
+    },
+    newTurnId: () => {
+      n += 1;
+      return `t${n}`;
+    },
+    now: () => {
+      clock += 1;
+      return clock;
+    },
+  });
+}
+
+const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
+
+describe("RunManager 会话集成（#35 U1a）", () => {
+  it("验收①：同 tab 二连发——第二次装配任务含前情块（首任务 + [当前任务] 分隔）", async () => {
+    const repo = makeRepo();
+    const tasks: string[] = [];
+    const m = makeDeps({ tabId: 7, sessions: repo, captureTask: (t) => void tasks.push(t) });
+    expect(await m.manager.control("start", "查价")).toMatchObject({ ok: true });
+    m.stub.finish(doneHistory());
+    await settle();
+    expect(tasks[0]).toBe("查价"); // 首 run 零行为面（无前情块）
+    expect(await m.manager.control("start", "再查一次")).toMatchObject({ ok: true });
+    expect(tasks[1]).toContain("[会话前情·自动注入]");
+    expect(tasks[1]).toContain("此前任务：查价");
+    expect(tasks[1]).toContain("[当前任务]\n再查一次");
+    // 会话复用：两次 run 同 session（不另建）
+    expect(await repo.listIndex()).toHaveLength(1);
+    m.stub.finish(doneHistory());
+    await settle();
+  });
+
+  it("终态收口：turn 置终态 + 归档事件全量 + meta 计数 + session-updated 广播", async () => {
+    const repo = makeRepo();
+    const m = makeDeps({ tabId: 7, sessions: repo });
+    expect(await m.manager.control("start", "查价")).toMatchObject({ ok: true });
+    m.journal.record({ eventType: "step_start", step: 1, sessionId: "s" });
+    m.journal.record({
+      eventType: "model_result",
+      step: 1,
+      sessionId: "s",
+      actionName: "click",
+      inputTokens: 100,
+      outputTokens: 20,
+    });
+    m.stub.finish(doneHistory());
+    await settle();
+    const record = (await repo.open("s1")) as SessionRecord;
+    expect(record.turns).toHaveLength(1);
+    expect(record.turns[0]).toMatchObject({ status: "done", task: "查价" });
+    expect(record.runs).toHaveLength(1);
+    expect(record.runs[0]?.events).toHaveLength(2); // 归档缓冲全量（journal 直录也进档）
+    expect(record.meta).toMatchObject({ runCount: 1, lastStatus: "done", usageTokens: 120 });
+    const reasons = m.broadcasts
+      .filter((b) => b.kind === "session-updated")
+      .map((b) => (b as { reason: string }).reason);
+    expect(reasons).toContain("turn");
+    expect(reasons).toContain("archive");
+  });
+
+  it("bridge origin：startRun 走 bridge 标记进快照与会话", async () => {
+    const repo = makeRepo();
+    const m = makeDeps({ tabId: 7, sessions: repo });
+    expect(await m.manager.startRun("外部任务", "bridge")).toMatchObject({ ok: true });
+    expect(m.journal.current()).toMatchObject({ origin: "bridge", sessionId: "s1" });
+    expect((await repo.open("s1"))?.meta.origin).toBe("bridge");
+    m.stub.finish(doneHistory());
+    await settle();
+  });
+
+  it("steer 预留：明确回 not-supported（U2/L2 前防 breaking）", async () => {
+    const m = makeDeps();
+    const r = await m.manager.control("steer", "插话");
+    expect(r).toMatchObject({ ok: false });
+    if (!r.ok) expect(r.error).toContain("尚未支持");
+  });
+
+  it("恢复对账：非终态快照 → journal interrupted + turn 置终态 + 环幸存事件归档", async () => {
+    const repo = makeRepo();
+    // 预置：SW 死前该 run 已记 turn（running）——模拟上一生命周期的 beginRun
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "对账" });
+    await repo.beginRun(meta.sessionId, {
+      runId: "run_dead",
+      task: "被打断的任务",
+      attachments: [],
+    });
+    const m = makeDeps({ tabId: 7, sessions: repo });
+    const snapshot: RunJournalSnapshot = {
+      runId: "run_dead",
+      tabId: 7,
+      status: "running",
+      seq: 2,
+      ackedSeq: 0,
+      discardedBeforeSeq: 1,
+      events: [{ seq: 2, type: "model_result", ts: 1, data: { inputTokens: 5 } }],
+      task: "被打断的任务",
+      startedAt: 1,
+      endedAt: null,
+      finalResult: null,
+      isDone: false,
+      isSuccessful: null,
+      stepCount: 1,
+      lastError: null,
+      attachments: [],
+      sessionId: meta.sessionId,
+      origin: "user",
+    };
+    m.manager.recoverInterrupted(snapshot);
+    await settle();
+    expect(m.journal.status).toBe("interrupted");
+    const record = (await repo.open(meta.sessionId)) as SessionRecord;
+    expect(record.turns[0]).toMatchObject({ status: "interrupted", runId: "run_dead" });
+    expect(record.runs[0]).toMatchObject({
+      status: "interrupted",
+      runId: "run_dead",
+      discardedBeforeSeq: 1, // 环淘汰如实记账
+    });
+    expect(record.runs[0]?.events).toHaveLength(1);
+  });
+
+  it("旧快照无 sessionId：恢复照旧、会话面零写不炸（向后兼容）", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "无关会话" });
+    await repo.beginRun(meta.sessionId, { runId: "run_live", task: "在跑", attachments: [] });
+    const m = makeDeps({ tabId: 7, sessions: repo });
+    m.manager.recoverInterrupted({
+      runId: "run_dead",
+      tabId: 7,
+      status: "running",
+      seq: 0,
+      ackedSeq: 0,
+      discardedBeforeSeq: 0,
+      events: [],
+      task: "旧任务",
+      startedAt: 1,
+      endedAt: null,
+      finalResult: null,
+      isDone: false,
+      isSuccessful: null,
+      stepCount: 0,
+      lastError: null,
+      attachments: [],
+    });
+    await settle();
+    expect(m.journal.status).toBe("interrupted");
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns[0]?.status).toBe("running"); // 未被误置终态
+    expect(record?.runs).toHaveLength(0);
+  });
+
+  it("beginRun 抛错 fail-soft：run 生命周期不受影响（D3）", async () => {
+    const broken = makeRepo();
+    // 实例属性直接遮蔽原型方法（保住 own 字段——spread/prototype 复制都会丢状态）
+    (
+      broken as unknown as {
+        beginRun: SessionRepository["beginRun"];
+      }
+    ).beginRun = async () => {
+      throw new Error("session write boom");
+    };
+    const m = makeDeps({ tabId: 7, sessions: broken });
+    expect(await m.manager.control("start", "任务")).toMatchObject({ ok: true });
+    m.stub.finish(doneHistory());
+    await settle();
+    expect(m.journal.status).toBe("done"); // run 照常终态
+    expect(m.logs.some((l) => l.includes("beginRun failed"))).toBe(true);
+  });
+
+  it("会话面缺省（sessions 未注入）：start/run 照旧零会话语义（降级路径）", async () => {
+    const m = makeDeps();
+    expect(await m.manager.control("start", "任务")).toMatchObject({ ok: true });
+    const snap = m.journal.current();
+    expect(snap?.sessionId).toBeUndefined();
+    expect(snap?.origin).toBeUndefined();
+    m.stub.finish(doneHistory());
+    await settle();
+    expect(m.journal.status).toBe("done");
+  });
+
+  it("显式 sessionId 续跑：跨 tab 跟随重绑（rebindTab）+ 前情块来自该会话", async () => {
+    const repo = makeRepo();
+    // 先在 tab 7 建会话跑一 run（直接经 repo 预置——隔离 start 链）
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "旧 tab 会话" });
+    const turn = await repo.beginRun(meta.sessionId, {
+      runId: "r_old",
+      task: "旧任务",
+      attachments: [],
+    });
+    await repo.completeRun(meta.sessionId, {
+      turnId: turn?.turnId ?? "",
+      archive: {
+        runId: "r_old",
+        startedAt: 1,
+        endedAt: 2,
+        status: "done",
+        finalResult: "旧结果",
+        lastError: null,
+        events: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        discardedBeforeSeq: 0,
+      },
+    });
+    // 在 tab 9 显式续跑该会话
+    const tasks: string[] = [];
+    const m9 = makeDeps({ tabId: 9, sessions: repo, captureTask: (t) => void tasks.push(t) });
+    expect(await m9.manager.control("start", "新任务", meta.sessionId)).toMatchObject({ ok: true });
+    expect(tasks[0]).toContain("此前任务：旧任务");
+    expect(tasks[0]).toContain("结果：旧结果");
+    const list = await repo.listIndex();
+    expect(list).toHaveLength(1); // 未另建
+    expect(list[0]?.tabId).toBe(9); // 已重绑
+    m9.stub.finish(doneHistory());
+    await settle();
   });
 });
