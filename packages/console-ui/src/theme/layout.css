@@ -50,6 +50,37 @@
   flex: 1 1 auto;
 }
 
+/* —— 页签条（#39 U3 批 B PageTabs）：header 行内次级导航（聊天是缺省主视图） —— */
+.tc-page-tabs {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.tc-page-tab {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--tc-radius-pill);
+  background: transparent;
+  color: var(--tc-muted);
+  cursor: pointer;
+  transition: var(--tc-transition-surface);
+}
+
+.tc-page-tab:hover {
+  color: var(--tc-fg);
+  background: var(--tc-bg-muted);
+}
+
+.tc-page-tab--active {
+  color: var(--tc-accent);
+  border-color: var(--tc-accent);
+}
+
 .tc-port-dot {
   flex: none;
   width: 8px;

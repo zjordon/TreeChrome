@@ -12,11 +12,14 @@ import {
   Button,
   Composer,
   type ContextUsage,
+  DebugLogPage,
   ExternalDriveCard,
   FinalResult,
   formatBytes,
   GoalStrip,
   ModelSwitcher,
+  type PageRegistration,
+  PageTabs,
   PermissionCard,
   projectTranscript,
   QueueStrip,
@@ -25,13 +28,14 @@ import {
   RunTimeline,
   SessionsPage,
   SettingsOverlay,
+  SkillPage,
   SubmitCard,
   ThemedRoot,
   TranscriptView,
   WelcomePanel,
 } from "@tw/console-ui";
 import type { OptionsOp, SessionMeta, SessionOp, SessionRecord, UiToSwMessage } from "@tw/protocol";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type BegunSignal, uploadAttachment } from "./attachment-upload.js";
 import { OptionsApp } from "./options-app.js";
 import { PortClient, type UiPort } from "./port-client.js";
@@ -75,7 +79,8 @@ export function SidepanelApp({
   const [task, setTask] = useState("");
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [view, setView] = useState<"chat" | "tasks">("chat");
+  // 视图态（#39 批 B）：chat 是缺省主视图；页签页 = 静态注册（任务/技能/调试）
+  const [view, setView] = useState<"chat" | "tasks" | "skills" | "debug">("chat");
   const clientRef = useRef<PortClient | null>(null);
   /** begin→begun 回执桥（Map<transferId, settle>；超时自清不留悬挂传输） */
   const begunWaiters = useRef(new Map<string, (signal: BegunSignal) => void>());
@@ -315,6 +320,58 @@ export function SidepanelApp({
   currentSessionIdRef.current = state.currentSessionId;
   const fileInput = useRef<HTMLInputElement>(null);
 
+  /** 任务页视图（#39 批 B 抽件）：会话索引列表 + 打开/重命名/删除/新建 */
+  const TasksView = (): ReactElement => (
+    <SessionsPage
+      sessions={state.sessions}
+      currentSessionId={state.currentSessionId}
+      onOpen={openSession}
+      onRename={(sessionId, title) => {
+        void sessionRequest?.("session-rename", { sessionId, title }).catch(() => {});
+      }}
+      onDelete={(sessionId) => {
+        void sessionRequest?.("session-delete", { sessionId })
+          .then((res) => {
+            // 删除确认成功才清当前指向（评审轮 2 [9]：ok:false = 存储异常/未删成）
+            if ((res as { ok?: boolean }).ok !== true) return;
+            if (currentSessionIdRef.current === sessionId) {
+              dispatch({ kind: "session-current", sessionId: null });
+            }
+          })
+          .catch(() => {});
+      }}
+      onNew={newChat}
+    />
+  );
+  /** 调试页视图：原始 journal 事件流（state 面）+ 快照头部态 */
+  const DebugView = (): ReactElement => (
+    <DebugLogPage events={state.events} snapshot={state.snapshot} />
+  );
+  /** 技能页视图：技能库 + 草稿审阅（OPTIONS_OPS 单发面——与 options 双宿主一致） */
+  const SkillsView = (): ReactElement | null =>
+    optionsRequest !== undefined ? <SkillPage request={optionsRequest} /> : null;
+
+  // 静态页签注册（#39 批 B，方案 §5：任务 10/技能 40/调试日志 50；isEnabled=false
+  // 不出现——验收③）。数组在组态处声明，聊天不在页签（缺省主视图）
+  const pages: PageRegistration[] = [
+    {
+      id: "tasks",
+      title: "任务",
+      order: 10,
+      isEnabled: sessionRequest !== undefined,
+      Component: TasksView,
+    },
+    {
+      id: "skills",
+      title: "技能",
+      order: 40,
+      isEnabled: optionsRequest !== undefined,
+      Component: SkillsView,
+    },
+    { id: "debug", title: "调试", order: 50, isEnabled: true, Component: DebugView },
+  ].filter((p) => p.isEnabled);
+  const activePage = view === "chat" ? null : (pages.find((p) => p.id === view) ?? null);
+
   return (
     <ThemedRoot>
       <AppShell
@@ -324,8 +381,17 @@ export function SidepanelApp({
             portStatus={portStatus}
             distill={state.distill}
             draftCount={state.draftCount}
+            tabs={
+              <PageTabs
+                pages={pages.map((p) => ({ id: p.id, title: p.title }))}
+                activeId={view === "chat" ? null : view}
+                onSelect={(id) =>
+                  // toggle：点活动中的页签回聊天主视图
+                  setView((v) => (v === id ? "chat" : (id as typeof v)))
+                }
+              />
+            }
             onNewChat={sessionRequest !== undefined ? newChat : undefined}
-            onOpenTasks={sessionRequest !== undefined ? () => setView("tasks") : undefined}
             onOpenSettings={
               optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
             }
@@ -515,28 +581,8 @@ export function SidepanelApp({
           />
         ) : null}
 
-        {view === "tasks" && sessionRequest !== undefined ? (
-          <SessionsPage
-            sessions={state.sessions}
-            currentSessionId={state.currentSessionId}
-            onOpen={openSession}
-            onRename={(sessionId, title) => {
-              void sessionRequest("session-rename", { sessionId, title }).catch(() => {});
-            }}
-            onDelete={(sessionId) => {
-              void sessionRequest("session-delete", { sessionId })
-                .then((res) => {
-                  // 删除确认成功才清当前指向（评审轮 2 [9]：ok:false = 存储异常/
-                  // 未删成——会话仍在，索引/归档刷新走 session-updated 广播）
-                  if ((res as { ok?: boolean }).ok !== true) return;
-                  if (currentSessionIdRef.current === sessionId) {
-                    dispatch({ kind: "session-current", sessionId: null });
-                  }
-                })
-                .catch(() => {});
-            }}
-            onNew={newChat}
-          />
+        {activePage !== null ? (
+          <activePage.Component />
         ) : (
           <>
             {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}

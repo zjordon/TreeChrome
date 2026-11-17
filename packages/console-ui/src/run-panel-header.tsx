@@ -1,7 +1,9 @@
-// 面板 header（issue #20 M3）：标题 + 连接状态点 + 蒸馏状态 + 草稿徽标 + 设置入口。
-// distillStatusText 自 ui-glue 迁入（展示文案归组件）；设置钮本期跳 options（M4 换 overlay）。
+// 面板 header（issue #20 M3 + #39 U3 批 B）：标题 + 连接状态点 + 页签条（tabs 插槽
+// ——PageTabs 由宿主组装）+ 蒸馏状态 + 草稿徽标 + 设置入口。distillStatusText 自
+// ui-glue 迁入（展示文案归组件）；设置钮本期跳 options（M4 换 overlay）。
 
 import type { DistillPhase } from "@tw/protocol";
+import type { ReactNode } from "react";
 import { IconButton } from "./icon-button.js";
 
 export type PortStatus = "connecting" | "online" | "offline";
@@ -50,8 +52,10 @@ export interface RunPanelHeaderProps {
   onReviewDrafts?: () => void;
   /** 新对话（issue #35 U1b：会话模型入口；缺省不渲染） */
   onNewChat?: () => void;
-  /** 任务页（会话列表）入口；缺省不渲染 */
+  /** 任务页（会话列表）入口；缺省不渲染（#39 起由 tabs 承载——保留兼容） */
   onOpenTasks?: () => void;
+  /** 页签条（#39 U3 批 B）：渲染在标题/状态点之后、右侧钮组之前 */
+  tabs?: ReactNode;
 }
 
 export function RunPanelHeader({
@@ -63,6 +67,7 @@ export function RunPanelHeader({
   onReviewDrafts,
   onNewChat,
   onOpenTasks,
+  tabs,
 }: RunPanelHeaderProps) {
   return (
     <>
@@ -75,6 +80,7 @@ export function RunPanelHeader({
           aria-label={`连接：${PORT_LABEL[portStatus]}`}
         />
       ) : null}
+      {tabs !== undefined ? tabs : null}
       <span className="tc-panel-header-spacer" />
       {distill !== null && distill !== undefined ? (
         <span
