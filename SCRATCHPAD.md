@@ -68,12 +68,13 @@ run 进行中可发后续任务入队可视化、终态后自动续跑；上下�
 
 ## 4. 进度
 
-- [x] 批 A 排队全链：repo 六方法（appendQueuedTurn/firstQueuedTurn/activateQueuedTurn/cancelQueuedTurn/cancelQueued/cancelAllQueued，上限 5）；run-manager 队列器（queueFollowUp 入队即试出队/终态 2s 节流续播/stop 连播清空/queueTurnId 激活复用+回落新建/出队失败留队重试）；session-handler 实装 queue-add/remove（SessionQueueFace 注入）；background 接线 + boot cancelAllQueued 兜底（D3）；UI 发送分流（运行中→入队）+ QueueStrip；测试 extension 280 / console-ui 97 全绿（新增：repo 4 + run-manager 4 + handler 1 改 + QueueStrip 2）
-- [ ] 批 B usage pill + 只读态
-- [ ] 批 C 目标条 + commands + 预设
-- [ ] 批 D 滚动意图
-- [ ] e2e 冒烟（smoke-queue：3 条入队中途 stop 全状态断言）——调整至批 D 后统一做（跨批验收⑤）
-- [ ] 全量验收自查（§0 五条）
+- [x] 批 A 排队全链（5f81fd5）：repo 六方法（appendQueuedTurn/firstQueuedTurn/activateQueuedTurn/cancelQueuedTurn/cancelQueued/cancelAllQueued，上限 5）；run-manager 队列器（queueFollowUp 入队即试出队/终态 2s 节流续播/stop 连播清空/queueTurnId 激活复用+回落新建/出队失败留队重试）；session-handler 实装 queue-add/remove（SessionQueueFace 注入）；background 接线 + boot cancelAllQueued 兜底（D3）；UI 发送分流（运行中→入队）+ QueueStrip
+- [x] 批 B usage pill + 只读态（5c2e647）：RunStatusBar usage pill（formatTokens 短写/≥90% 警色/缺省不渲染）；contextWindow 经 get-settings 热读；事件流倒序取最近 model_result；origin==="bridge" → ExternalDriveCard + composer 禁用（停止保留；连接命令不含配对 URL——D4 偏离）
+- [x] 批 C 目标条 + commands + 预设（1fd06c4）：session-open 带 targetUrl（SW 现查）+ GoalStrip（点击 session-focus 激活）；manifest commands Ctrl+Shift+K/M + model-switch-request 广播（模块级 uiBroadcastRef 桥 MV3 时序）；ModelSwitcher overlay（点选即 save-settings）；PRESET_CARDS 五条预填
+- [x] 批 D 滚动意图（209c8c8）：TranscriptView 自有滚动面（贴底跟随/上滚解除 28px/回底恢复/浮钮）+ isAtBottom 纯函数
+- [x] e2e 冒烟（smoke-queue.mjs，随批 D 提交）：mock LLM 挂起窗 → 入队×3 → stop → interrupted + 3 cancelled + 零续跑断言（脚本就绪——真机实跑按仓库惯例手动执行 `pnpm --filter extension e2e:queue`，先 `npx wxt build`）
+- [x] 全量验收自查（§0 五条）：①②③④单测锚点齐（run-manager 排队四例/usage pill/ExternalDriveCard）；⑤ e2e 脚本就绪待真机实跑
+- 测试总账：extension 272→283、console-ui 95→110；分支提交：计划 + 四批共 5 个
 
 ## 5. 评审轮次登记（review-loop 填写）
 
