@@ -74,8 +74,19 @@ run 进行中可发后续任务入队可视化、终态后自动续跑；上下�
 - [x] 批 D 滚动意图（209c8c8）：TranscriptView 自有滚动面（贴底跟随/上滚解除 28px/回底恢复/浮钮）+ isAtBottom 纯函数
 - [x] e2e 冒烟（smoke-queue.mjs，随批 D 提交）：mock LLM 挂起窗 → 入队×3 → stop → interrupted + 3 cancelled + 零续跑断言（脚本就绪——真机实跑按仓库惯例手动执行 `pnpm --filter extension e2e:queue`，先 `npx wxt build`）
 - [x] 全量验收自查（§0 五条）：①②③④单测锚点齐（run-manager 排队四例/usage pill/ExternalDriveCard）；⑤ e2e 脚本就绪待真机实跑
-- 测试总账：extension 272→283、console-ui 95→110；分支提交：计划 + 四批共 5 个
+- 测试总账：extension 272→289（批 A-D +283；评审轮 1 +6）、console-ui 95→110；分支提交：计划 + 四批 + 评审修复
 
 ## 5. 评审轮次登记（review-loop 填写）
 
-（待各轮登记）
+### 轮 1（2026-11-17，10 条全采纳：P1×2 / P2×8）
+
+- **[1] P1 滚动面宿主失效**：`.tc-shell-main` grid auto 行高下 `.tc-transcript--scroll` 恒等于内容高、自身永不溢出——跟随/解除/浮钮在唯一真实宿主（sidepanel/web-console 均 AppShell）整体 inert，jsdom 无布局测不出。修复：main 改 flex 列（其余子项靠 min-height:auto 默认不缩，行为与 grid 等价）+ 转录面 `flex:1 1 auto`（overflow 非 visible 时自动最小高为 0）。
+- **[9] P1 出队拒绝 FIFO 头阻塞**：无重试调度无终态收口——附件指涉任务（queue-add 不落附件 + clearForRun 清表）永久 queued 且阻塞后续。修复：queueFollowUp 附件指涉拒绝（可行动文案）；出队拒绝退避重试（drainRetryMs 缺省 10s）×3 后头阻塞解除（转 cancelled + session-updated 广播 + 立即续试下一条）。
+- **[2] P2 跨会话排队搁浅**：单 timer 字段不分会话——A 运行中给 B 入队，drain(B) 让位即丢触发，A 终态只调度 A，B 永久「排队中」。修复：drainTimers per-session Map + 让位重排；stop 只清被停会话的 timer。
+- **[3] P2 激活错过回落新建**：出队多 await 窗口内 queue-remove 撤销 → activateQueuedTurn miss → 回落 beginRun 把已撤销任务跑起来。修复：激活前置到 assemble 后/journal.begin 前——miss/存储异常即无副作用中止（skipped 标记，drainQueue 不计退避立即试下一条）。
+- **[10] P2 续播抢活动页**：出队走 pickActiveDrivableTab——agent 在用户当前浏览的任意页面执行任务 + rebindTab 静默改绑会话目标。修复：tabByIdDrivable 校验会话绑定 tab（http/https），出队显式带 tabId；tabId 0（未绑定）回落活动页挑选。
+- **[4] P2 external 全局判定**：bridge run 在他会话时 composer/外部卡张冠李戴。修复：external 加 runViewEligible 会话门（与转录层同款）。
+- **[5]+[8] P2 targetUrl 无归属守卫/同会话重入丢失**：组件态 targetUrl 缺 forSessionId 守卫且自动跟随路径不清；同会话重入误清后无恢复通道。修复：收进 reducer（session-target 动作 + 归属守卫），session-current/hello/journal-snapshot/notFound 四分支同步清，同会话重入早退不清。
+- **[6] P2 运行中静默无操作**：running && 无当前会话（删除活跃会话/LRU/无会话面）时发送钮可点但什么都不发生——相对旧禁用是回归。修复：canSend 补 `!running || queueable`。
+- **[7] P2 usage 分母不随换卡**：ModelSwitcher 关闭不在 contextWindow 热读触发器——快速换卡后 ratio 按 stale 分母。修复：effect 增 modelSwitcherOpen 触发器。
+- 双向验证：[2] 破坏让位重排 → 跨会话用例必红；[5] 破坏换会话清 → reducer 用例必红；还原复绿。extension 283→289，console-ui 110 不变，门禁 exit 0。

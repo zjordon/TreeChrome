@@ -739,6 +739,69 @@ describe("sidepanel reducer 会话面（#35 U1b）", () => {
     expect(reconnected.currentSessionId).toBe("s2");
     expect(reconnected.sessionRecord).toBeNull();
   });
+
+  it("session-target（#37 批 C + 评审轮 1 [5][8]）：归属守卫写入 + 换会话各分支同步清 + 同会话重入不清", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "session-current",
+      sessionId: "s1",
+    }).state;
+    // 归属匹配 → 写入
+    state = ingestSidepanel(state, {
+      kind: "session-target",
+      url: "https://a.example/x",
+      forSessionId: "s1",
+    }).state;
+    expect(state.targetUrl).toBe("https://a.example/x");
+    // 切会话（session-current 换会话分支）→ 同步清
+    const switched = ingestSidepanel(state, { kind: "session-current", sessionId: "s2" }).state;
+    expect(switched.targetUrl).toBeNull();
+    // 旧会话 s1 的迟到应答 → 归属不符丢弃
+    const stale = ingestSidepanel(switched, {
+      kind: "session-target",
+      url: "https://old.example/y",
+      forSessionId: "s1",
+    }).state;
+    expect(stale.targetUrl).toBeNull();
+    // journal-snapshot 自动跟随换会话（bridge 在 s9 起 run）→ 目标条同步清
+    let later = ingestSidepanel(
+      ingestSidepanel(stale, {
+        kind: "session-target",
+        url: "https://s2.example/z",
+        forSessionId: "s2",
+      }).state,
+      { kind: "journal-snapshot", snapshot: snapS("s9", "r2") },
+    ).state;
+    expect(later.currentSessionId).toBe("s9");
+    expect(later.targetUrl).toBeNull();
+    // hello 换会话 → 同步清
+    later = ingestSidepanel(
+      ingestSidepanel(later, {
+        kind: "session-target",
+        url: "https://s9.example/z",
+        forSessionId: "s9",
+      }).state,
+      { kind: "hello", runId: "r3", snapshot: snapS("s2", "r3") },
+    ).state;
+    expect(later.currentSessionId).toBe("s2");
+    expect(later.targetUrl).toBeNull();
+    // 同会话重入（任务页点当前会话返回）→ 早退不清（评审轮 1 [8]——清了无恢复通道）
+    const settled = ingestSidepanel(later, { kind: "session-current", sessionId: "s3" }).state;
+    const written = ingestSidepanel(settled, {
+      kind: "session-target",
+      url: "https://s3.example/w",
+      forSessionId: "s3",
+    }).state;
+    const same = ingestSidepanel(written, { kind: "session-current", sessionId: "s3" }).state;
+    expect(same.targetUrl).toBe("https://s3.example/w");
+    // notFound 清空（session-record null）→ 目标条一并清
+    const cleared = ingestSidepanel(same, {
+      kind: "session-record",
+      record: null,
+      forSessionId: "s3",
+    }).state;
+    expect(cleared.currentSessionId).toBeNull();
+    expect(cleared.targetUrl).toBeNull();
+  });
 });
 
 describe("sidepanel reducer 模型快速切换（#37 批 C）", () => {

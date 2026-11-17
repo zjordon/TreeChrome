@@ -44,6 +44,10 @@ export interface SidepanelState {
   currentSessionId: string | null;
   /** session-updated 计数（变更是 fetch 触发器——载荷只带定位摘要，D8 单源） */
   sessionRev: number;
+  /** 会话目标 tab URL（#37 批 C + 评审轮 1 [5]：session-open 应答写入；换会话
+   *  各分支（session-current/hello/journal-snapshot/notFound）同步清——与
+   *  sessionRecord 同款 forSessionId 归属守卫） */
+  targetUrl: string | null;
   /** 模型快速切换 overlay 开（#37 批 C：model-switch-request 广播置位，关闭本地清） */
   modelSwitcherOpen: boolean;
 }
@@ -62,6 +66,7 @@ export const initialSidepanelState: SidepanelState = {
   sessionRecord: null,
   currentSessionId: null,
   sessionRev: 0,
+  targetUrl: null,
   modelSwitcherOpen: false,
 };
 
@@ -87,6 +92,9 @@ export type SidepanelAction =
     }
   /** 当前会话切换（null = 无当前——落地页态） */
   | { kind: "session-current"; sessionId: string | null }
+  /** session-open 应答的目标条 URL（null = 无目标/tab 已关/查询失败；归属守卫
+   *  同 session-record——评审轮 1 [5]） */
+  | { kind: "session-target"; url: string | null; forSessionId: string }
   /** 模型快速切换 overlay 关闭（本地动作——#37 批 C） */
   | { kind: "model-switcher-closed" };
 
@@ -126,10 +134,10 @@ export function ingestSidepanel(
           attachments: snap.attachments,
           // 换 run（如 SW 休眠期间新 run 已起）——旧 run 的蒸馏状态一并作废
           ...(sameRun ? {} : { distill: null }),
-          // 会话归属同步（#35：SW 侧受理时已写——面板跟随；换会话连归档一起清
-          // 防串台，与 journal-snapshot 分支对齐——评审轮 2 [4]）
+          // 会话归属同步（#35：SW 侧受理时已写——面板跟随；换会话连归档/目标条
+          // 一起清防串台，与 journal-snapshot 分支对齐——评审轮 2 [4] + 轮 1 [5]）
           ...(snap.sessionId !== undefined && snap.sessionId !== state.currentSessionId
-            ? { currentSessionId: snap.sessionId, sessionRecord: null }
+            ? { currentSessionId: snap.sessionId, sessionRecord: null, targetUrl: null }
             : snap.sessionId !== undefined
               ? { currentSessionId: snap.sessionId }
               : {}),
@@ -156,20 +164,27 @@ export function ingestSidepanel(
       if (action.forSessionId !== state.currentSessionId) return { state, ack: null };
       if (action.record === null) {
         return {
-          state: { ...state, sessionRecord: null, currentSessionId: null },
+          state: { ...state, sessionRecord: null, currentSessionId: null, targetUrl: null },
           ack: null,
         };
       }
       return { state: { ...state, sessionRecord: action.record }, ack: null };
     }
+    case "session-target": {
+      // 迟到应答防串台（评审轮 1 [5]）：归属不符一律丢弃（同 session-record）
+      if (action.forSessionId !== state.currentSessionId) return { state, ack: null };
+      return { state: { ...state, targetUrl: action.url }, ack: null };
+    }
     case "session-current": {
-      // 切会话：归档视图即时清（fetch 在途不闪旧会话内容）
+      // 切会话：归档/目标条即时清（fetch 在途不闪旧会话内容——评审轮 1 [5][8]；
+      // 同会话重入早退不清——reducer 无变化、补查 effect 不重跑，清了无恢复通道）
       if (action.sessionId === state.currentSessionId) return { state, ack: null };
       return {
         state: {
           ...state,
           currentSessionId: action.sessionId,
           sessionRecord: null,
+          targetUrl: null,
         },
         ack: null,
       };
@@ -198,9 +213,10 @@ export function ingestSidepanel(
           ...(runChanged
             ? { ...state, snapshot: action.snapshot, events: action.snapshot.events, distill: null }
             : { ...state, snapshot: action.snapshot }),
-          // 会话归属跟随（#35：bridge/远端发起的 run 面板自动切换视图）
+          // 会话归属跟随（#35：bridge/远端发起的 run 面板自动切换视图——目标条
+          // 同步清，评审轮 1 [5]）
           ...(nextSessionId !== null && nextSessionId !== state.currentSessionId
-            ? { currentSessionId: nextSessionId, sessionRecord: null }
+            ? { currentSessionId: nextSessionId, sessionRecord: null, targetUrl: null }
             : {}),
         },
         ack: null,

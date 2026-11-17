@@ -119,9 +119,12 @@ export function SidepanelApp({
   const [contextWindow, setContextWindow] = useState<number | null>(null);
   useEffect(() => {
     if (portStatus !== "online" || optionsRequest === undefined) return;
-    // settingsOpen 是纯触发器（设置关闭后重读分母）——显式消费让依赖必要性成立
+    // settingsOpen / modelSwitcherOpen 是纯触发器（主设置/快速换卡关闭后重读分母
+    // ——评审轮 1 [7]：换卡正是该功能主路径，分母须跟随）——显式消费让依赖成立
     const reopen = settingsOpen;
     void reopen;
+    const reswitch = state.modelSwitcherOpen;
+    void reswitch;
     void optionsRequest("get-settings")
       .then((res) => {
         const s = res as {
@@ -138,10 +141,7 @@ export function SidepanelApp({
         setContextWindow(typeof card?.contextWindow === "number" ? card.contextWindow : null);
       })
       .catch(() => {});
-  }, [portStatus, optionsRequest, settingsOpen]);
-
-  // 会话目标 tab URL（#37 批 C）：session-open 应答附带——切会话即时清防串台
-  const [targetUrl, setTargetUrl] = useState<string | null>(null);
+  }, [portStatus, optionsRequest, settingsOpen, state.modelSwitcherOpen]);
 
   // 会话面拉取（#35 U1b）：上线 / session-updated 变更 / 切换当前会话时补查索引
   // 与归档（session-updated 载荷只是定位摘要——全量经单发应答，D8 单源）
@@ -173,8 +173,13 @@ export function SidepanelApp({
           targetUrl?: string | null;
         };
         if (cancelled) return;
-        // 目标条数据（#37 批 C）：随归档同 fetch 现查（tab 关/查询败 → null 不渲染）
-        setTargetUrl(typeof res?.targetUrl === "string" ? res.targetUrl : null);
+        // 目标条数据（#37 批 C）：随归档同 fetch 现查（tab 关/查询败 → null 不渲染）。
+        // 走 reducer（评审轮 1 [5]）：forSessionId 归属守卫 + 换会话分支同步清
+        dispatch({
+          kind: "session-target",
+          url: typeof res?.targetUrl === "string" ? res.targetUrl : null,
+          forSessionId: current,
+        });
         if (res?.ok === true) {
           dispatch({
             kind: "session-record",
@@ -266,8 +271,9 @@ export function SidepanelApp({
   };
 
   const openSession = (sessionId: string): void => {
+    // 目标条清理在 reducer 的换会话分支（评审轮 1 [8]）：同会话重入 reducer
+    // 早退无状态变化、补查 effect 不重跑——组件态误清后无恢复通道
     dispatch({ kind: "session-current", sessionId });
-    setTargetUrl(null); // 目标条随会话清（fetch 在途不闪旧会话 URL）
     setView("chat");
   };
 
@@ -276,10 +282,21 @@ export function SidepanelApp({
   const running = snap !== null && !terminal;
   const transcript = projectTranscript(state.sessionRecord, snap, state.events);
   const landing = transcript.length === 0 && snap === null && state.events.length === 0;
-  // 运行中仍可输入（#37 批 A：发送→入队而非禁用）；仅附件在途禁发（起跑/入队丢字节）。
-  // 外部直驱只读（#37 批 B）：bridge 会话禁输入——查看态，停止权保留
-  const external = snap?.origin === "bridge";
-  const canSend = uploads.length === 0 && !external;
+  // 回退时间线面的会话语境门（评审轮 2 [3]）：snap 属当前会话/无会话语境
+  // （旧数据）才承载；新对话/他会话时旧 run 视图不串入
+  const runViewEligible =
+    snap === null ||
+    snap.sessionId === undefined ||
+    state.currentSessionId === null ||
+    snap.sessionId === state.currentSessionId;
+  // 外部直驱只读（#37 批 B）：bridge 会话禁输入——查看态，停止权保留。snap 须属
+  // 当前会话（评审轮 1 [4]）：bridge run 在他会话跑时，正在查看的会话不受牵连
+  const external = snap !== null && snap.origin === "bridge" && runViewEligible;
+  // 运行中仍可输入（#37 批 A：发送→入队而非禁用）；仅附件在途禁发（起跑/入队丢
+  // 字节）。运行中但无处入队（无会话面/无当前会话）维持禁用（评审轮 1 [6]：
+  // 静默无操作是相对旧禁用钮的行为回归）
+  const queueable = state.currentSessionId !== null && sessionRequest !== undefined;
+  const canSend = uploads.length === 0 && !external && (!running || queueable);
   const queuedTurns = state.sessionRecord?.turns.filter((t) => t.status === "queued") ?? [];
   // 上下文用量（验收④）：最近一次 model_result 的 inputTokens（多轮拼接模式下即
   // 拼接后 prompt 的实证）——从事件流倒序取首个带值者
@@ -294,14 +311,6 @@ export function SidepanelApp({
       break;
     }
   }
-  // 回退时间线面的会话语境门（评审轮 2 [3]）：snap 属当前会话/无会话语境
-  // （旧数据）才承载；新对话/他会话时旧 run 视图不串入
-  const runViewEligible =
-    snap === null ||
-    snap.sessionId === undefined ||
-    state.currentSessionId === null ||
-    snap.sessionId === state.currentSessionId;
-
   const currentSessionIdRef = useRef<string | null>(null);
   currentSessionIdRef.current = state.currentSessionId;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -414,9 +423,9 @@ export function SidepanelApp({
               </ul>
             ) : null}
             {/* 目标条（#37 批 C）：当前会话目标 tab——点击聚焦（session-focus） */}
-            {targetUrl !== null && state.currentSessionId !== null && !landing ? (
+            {state.targetUrl !== null && state.currentSessionId !== null && !landing ? (
               <GoalStrip
-                url={targetUrl}
+                url={state.targetUrl}
                 onFocus={() => {
                   const sessionId = currentSessionIdRef.current;
                   if (sessionId === null) return;
