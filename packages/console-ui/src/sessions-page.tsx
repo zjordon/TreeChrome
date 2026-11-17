@@ -64,6 +64,9 @@ function SessionRow({ meta, isCurrent, onOpen, onRename, onDelete }: RowProps) {
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitRename}
           onKeyDown={(e) => {
+            // IME 组字态不接键（评审轮 2 [7]）：中文确认候选词的 Enter/取消候选
+            // 的 Escape 会误触提交/退出——composer 同款防护
+            if (e.nativeEvent.isComposing) return;
             if (e.key === "Enter") commitRename();
             if (e.key === "Escape") {
               setDraft(meta.title);

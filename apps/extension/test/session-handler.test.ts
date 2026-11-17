@@ -79,8 +79,10 @@ describe("handleSessionRequest", () => {
     expect(await handleSessionRequest("session-delete", { sessionId: "s1" }, f)).toEqual({
       ok: true,
     });
+    // 确认不存在带 notFound 标记（评审轮 2 [5]——UI 据此区分存储瞬时错误）
     expect(await handleSessionRequest("session-open", { sessionId: "s1" }, f)).toMatchObject({
       ok: false,
+      notFound: true,
     });
   });
 

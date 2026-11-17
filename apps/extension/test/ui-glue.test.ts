@@ -632,9 +632,16 @@ describe("sidepanel reducer 会话面（#35 U1b）", () => {
     expect(state.currentSessionId).toBe("s1");
     state = ingestSidepanel(state, {
       kind: "session-record",
-      record: null,
+      record: { meta: { sessionId: "s1" }, turns: [], runs: [] } as never,
+      forSessionId: "s1",
     }).state;
-    // record null 且会话不存在 → 连当前指向一起清（LRU/删除竞态回落地页）
+    expect(state.sessionRecord).not.toBeNull();
+    state = ingestSidepanel(state, {
+      kind: "session-record",
+      record: null,
+      forSessionId: "s1",
+    }).state;
+    // record null 且归属匹配（确认 notFound）→ 连当前指向一起清（LRU/删除竞态回落地页）
     expect(state.sessionRecord).toBeNull();
     expect(state.currentSessionId).toBeNull();
   });
@@ -648,12 +655,36 @@ describe("sidepanel reducer 会话面（#35 U1b）", () => {
     const tagged = ingestSidepanel(state, {
       kind: "session-record",
       record: { meta: { sessionId: "s1" }, turns: [], runs: [] } as never,
+      forSessionId: "s1",
     }).state;
     const switched = ingestSidepanel(tagged, { kind: "session-current", sessionId: "s2" }).state;
     expect(switched.currentSessionId).toBe("s2");
     expect(switched.sessionRecord).toBeNull();
     const same = ingestSidepanel(switched, { kind: "session-current", sessionId: "s2" }).state;
     expect(same).toBe(switched); // 引用不变——幂等
+  });
+
+  it("session-record 迟到应答防串台（评审轮 2 [8]）：forSessionId 归属不符一律丢弃", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "session-index",
+      sessions: [],
+    }).state;
+    state = ingestSidepanel(state, { kind: "session-current", sessionId: "s2" }).state;
+    // 旧会话 s1 的迟到 record（切到 s2 后应答才回）——丢弃
+    const dropped = ingestSidepanel(state, {
+      kind: "session-record",
+      record: { meta: { sessionId: "s1" }, turns: [], runs: [] } as never,
+      forSessionId: "s1",
+    }).state;
+    expect(dropped.sessionRecord).toBeNull();
+    expect(dropped).toBe(state); // 引用不变——纯丢弃
+    // 旧会话 s1 的迟到 notFound 清空——同样丢弃（不得清掉 s2 的当前指向）
+    const kept = ingestSidepanel(state, {
+      kind: "session-record",
+      record: null,
+      forSessionId: "s1",
+    }).state;
+    expect(kept).toBe(state);
   });
 
   it("hello / journal-snapshot 携 sessionId → currentSessionId 跟随（换会话清归档）", () => {
@@ -670,6 +701,7 @@ describe("sidepanel reducer 会话面（#35 U1b）", () => {
     const tagged = ingestSidepanel(state, {
       kind: "session-record",
       record: { meta: { sessionId: "s1" }, turns: [], runs: [] } as never,
+      forSessionId: "s1",
     }).state;
     // 旧快照无 sessionId：不动当前指向
     const legacy = ingestSidepanel(tagged, {
@@ -684,5 +716,27 @@ describe("sidepanel reducer 会话面（#35 U1b）", () => {
     }).state;
     expect(bridge.currentSessionId).toBe("s9");
     expect(bridge.sessionRecord).toBeNull();
+  });
+
+  it("hello 换会话连归档一起清（评审轮 2 [4]——与 journal-snapshot 分支对称）", () => {
+    let state = ingestSidepanel(initialSidepanelState, {
+      kind: "session-index",
+      sessions: [],
+    }).state;
+    state = ingestSidepanel(state, { kind: "session-current", sessionId: "s1" }).state;
+    state = ingestSidepanel(state, {
+      kind: "session-record",
+      record: { meta: { sessionId: "s1" }, turns: [], runs: [] } as never,
+      forSessionId: "s1",
+    }).state;
+    expect(state.sessionRecord).not.toBeNull();
+    // SW 休眠期间 bridge 在 s2 起 run → 重连 hello 带 s2——归档不得残留 s1
+    const reconnected = ingestSidepanel(state, {
+      kind: "hello",
+      runId: "r2",
+      snapshot: snapS("s2", "r2"),
+    }).state;
+    expect(reconnected.currentSessionId).toBe("s2");
+    expect(reconnected.sessionRecord).toBeNull();
   });
 });

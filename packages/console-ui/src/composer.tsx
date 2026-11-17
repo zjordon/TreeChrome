@@ -2,7 +2,7 @@
 // + 发送钮（空输入禁用）+ 提示行。qz composer 形态的 TC 裁剪版（附件清单/预算/
 // 拒绝明细行由宿主在组件上方组合——组件不管附件面）。零 chrome。
 
-import { type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef } from "react";
 import { Button } from "./primitives.js";
 
 /** 自适应高度上下限（qz 同值：min 20px / max 120px） */
@@ -31,12 +31,15 @@ export function Composer({
 }: ComposerProps) {
   const textarea = useRef<HTMLTextAreaElement>(null);
 
-  const adjustHeight = (): void => {
+  // 高度跟随受控值（评审轮 2 [2]）：宿主外部重置 task（如新对话 setTask("")）
+  // 不经 onChange——命令式残留的旧高度只有渲染驱动的 effect 能收敛。无依赖数组
+  // = 每次渲染后重算（内联展开避免 adjustHeight 依赖告警；一次 style 赋值开销可忽略）
+  useLayoutEffect(() => {
     const el = textarea.current;
     if (el === null) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT), COMPOSER_MAX_HEIGHT)}px`;
-  };
+  });
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -56,10 +59,7 @@ export function Composer({
           placeholder={placeholder}
           value={task}
           disabled={!canSend}
-          onChange={(e) => {
-            onTaskChange(e.target.value);
-            adjustHeight();
-          }}
+          onChange={(e) => onTaskChange(e.target.value)}
           onKeyDown={onKeyDown}
           aria-label="任务输入"
         />

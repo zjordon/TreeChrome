@@ -75,7 +75,13 @@ export type SidepanelAction =
   /** session-list 应答（issue #35 U1b） */
   | { kind: "session-index"; sessions: SessionMeta[] }
   /** session-open 应答（null = 会话已不存在——清空当前视图） */
-  | { kind: "session-record"; record: SessionRecord | null }
+  | {
+      kind: "session-record";
+      record: SessionRecord | null;
+      /** 发起 session-open 时的会话（迟到应答防串台——评审轮 2 [8]；record null
+       *  = 确认不存在（notFound），清当前指向回落地页） */
+      forSessionId: string;
+    }
   /** 当前会话切换（null = 无当前——落地页态） */
   | { kind: "session-current"; sessionId: string | null };
 
@@ -115,8 +121,13 @@ export function ingestSidepanel(
           attachments: snap.attachments,
           // 换 run（如 SW 休眠期间新 run 已起）——旧 run 的蒸馏状态一并作废
           ...(sameRun ? {} : { distill: null }),
-          // 会话归属同步（#35：SW 侧受理时已写——面板跟随）
-          ...(snap.sessionId !== undefined ? { currentSessionId: snap.sessionId } : {}),
+          // 会话归属同步（#35：SW 侧受理时已写——面板跟随；换会话连归档一起清
+          // 防串台，与 journal-snapshot 分支对齐——评审轮 2 [4]）
+          ...(snap.sessionId !== undefined && snap.sessionId !== state.currentSessionId
+            ? { currentSessionId: snap.sessionId, sessionRecord: null }
+            : snap.sessionId !== undefined
+              ? { currentSessionId: snap.sessionId }
+              : {}),
         },
         ack: null,
       };
@@ -128,7 +139,10 @@ export function ingestSidepanel(
     case "session-index":
       return { state: { ...state, sessions: action.sessions }, ack: null };
     case "session-record": {
-      // 会话已不存在（LRU/删除竞态）——清空当前指向回落地页态
+      // 迟到应答防串台（评审轮 2 [8]）：effect 的 cancelled 旗要到 cleanup 才置位，
+      // 应答宏任务可先到——切会话/自动跟随后旧会话的应答（record 或 notFound 清空）
+      // 一律按 forSessionId 归属丢弃
+      if (action.forSessionId !== state.currentSessionId) return { state, ack: null };
       if (action.record === null) {
         return {
           state: { ...state, sessionRecord: null, currentSessionId: null },

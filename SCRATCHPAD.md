@@ -155,4 +155,22 @@
 
 ## 7. 评审轮次登记（review-loop 填写）
 
-（待 /review-loop 各轮登记：轮号/意见分布/采纳与驳回/修复提交）
+### 轮 1（U1a 数据面，range main..789ab83）
+
+零意见收敛（11 文件，11m26s）。无修复提交。
+
+### 轮 2（U1b UI 面，增量 range 789ab83..605b91a）
+
+9 条意见（high 2 / medium 5 / low 2）——逐条代码级核实**全部成立，全采纳**（P1×2、P2×7、驳回 0、stale 0）：
+
+- **[1] P1** transcript.ts isActive 缺 turn 终态与快照终态校验——已收口 run 永显 live、终态结果被 `!== "live"` 门挡住（切会话再切回仍复现）。修复：live 判定加 `turn.status === "running"` + 快照非终态（过渡窗也走归档分支）。新增 2 用例 + 双向验证（去防护 2 红/复防护 7 绿）。
+- **[3] P1** 切换/新建会话后旧 run 视图串台——session-current 不清 snap/events，回退时间线面把他会话内容渲进新会话语境。修复：回退面加会话语境门（snap 属当前会话/无会话语境才承载；否则空转录占位）。
+- **[2] P2** Composer 高度不随宿主外部 setTask("") 收敛。修复：useLayoutEffect 跟随 [task] 驱动（onChange 内调用移除）。
+- **[4] P2** hello 换会话不清 sessionRecord（与 journal-snapshot 分支不对称）。修复：对齐清空 + 用例。
+- **[5] P2** session-open ok:false 一律当「不存在」清当前指向——瞬时存储错误踢用户回落地页。修复：SW 侧 notFound:true 可区分标记；UI 仅确认不存在才清，其余 fail-soft + 用例。
+- **[6] P2** newChat 迟到应答覆盖用户后续选择。修复：发起时快照 currentSessionId，应答时变化则放弃应用。
+- **[7] P2** 重命名输入框未防 IME 组字态（中文 Enter 确认候选词误提交）。修复：isComposing 守卫（composer 同款）。
+- **[8] P2** session-record 迟到应答串台（cancelled 旗在 effect cleanup 才置位，应答宏任务可先到）。修复：action 加 forSessionId 归属，reducer 不符丢弃（含 null 清空路径）+ 用例 + 双向验证。
+- **[9] P2** session-delete 应答未判 ok——失败也清当前指向致 UI 与 SW 脱同步。修复：ok 才清。
+
+测试账目：extension 270→272、console-ui 93→95；覆盖率 extension 96.73%/86.17%。修复提交见本轮 commit。

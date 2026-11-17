@@ -41,9 +41,11 @@ export type TranscriptItem = UserTurnItem | RunBlockItem;
 
 /**
  * 投影（turn 序为主序）：每 turn 出用户气泡；终态 turn 配对 RunArchive 出
- * run 块；running turn 若是活动 run（snapshot.runId 匹配且同会话）出 live 块
- * （事件取 liveEvents）；无归档且非活动（跨 SW 生死的残留 running）只出气泡
- * ——状态章呈现「运行中」，record 刷新（恢复对账置 interrupted）后自然收口。
+ * run 块；running turn 若是活动 run（snapshot.runId 匹配、同会话且快照非终态）
+ * 出 live 块（事件取 liveEvents）；无归档且非活动（跨 SW 生死的残留 running）
+ * 只出气泡——状态章呈现「运行中」，record 刷新（恢复对账置 interrupted）后
+ * 自然收口。live 判定必须同时要求 turn 仍 running 且快照非终态（评审轮 2 [1]）：
+ * 只看 runId 匹配会让已收口的 run 永显 live——终态结果被 `!== "live"` 门挡住。
  */
 export function projectTranscript(
   record: SessionRecord | null,
@@ -52,6 +54,12 @@ export function projectTranscript(
 ): TranscriptItem[] {
   if (record === null) return [];
   const items: TranscriptItem[] = [];
+  const snapshotTerminal =
+    snapshot !== null &&
+    (snapshot.endedAt !== null ||
+      snapshot.status === "done" ||
+      snapshot.status === "error" ||
+      snapshot.status === "interrupted");
   for (const turn of record.turns) {
     items.push({
       kind: "user-turn",
@@ -63,6 +71,8 @@ export function projectTranscript(
     });
     const isActive =
       snapshot !== null &&
+      turn.status === "running" &&
+      !snapshotTerminal &&
       snapshot.runId === turn.runId &&
       (snapshot.sessionId === undefined || snapshot.sessionId === record.meta.sessionId);
     if (isActive && snapshot !== null) {

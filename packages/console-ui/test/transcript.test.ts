@@ -167,4 +167,57 @@ describe("projectTranscript", () => {
     expect(items).toHaveLength(3);
     expect(items[2]).toMatchObject({ kind: "user-turn", status: "running" });
   });
+
+  it("终态快照不再配 live（评审轮 2 [1]）：turn done / 快照同 runId 已收口 → 走归档，终态结果可见", () => {
+    // run 收口后：turn=done、归档就位、snapshot 仍是同 runId 的终态快照（reducer 无置空路径）
+    const terminalSnapshot = snapshot({
+      runId: "r1",
+      status: "done",
+      endedAt: 9,
+      finalResult: "答：42",
+    });
+    const items = projectTranscript(record(), terminalSnapshot, []);
+    expect(items).toHaveLength(2);
+    expect(items[1]).toMatchObject({
+      kind: "run-block",
+      status: "done", // 不是 live——归档分支
+      finalResult: "答：42",
+    });
+  });
+
+  it("turn 仍 running 但快照已终态（补查在途过渡窗）：同样走归档分支", () => {
+    const rec = record({
+      turns: [
+        ...record().turns,
+        {
+          turnId: "t2",
+          sessionId: "s1",
+          runId: "r2",
+          task: "刚收口",
+          status: "running",
+          attachments: [],
+          createdAt: 3,
+          endedAt: null,
+        },
+      ],
+      runs: [
+        ...record().runs,
+        {
+          runId: "r2",
+          turnId: "t2",
+          startedAt: 3,
+          endedAt: 8,
+          status: "done",
+          finalResult: "R2",
+          lastError: null,
+          events: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          discardedBeforeSeq: 0,
+        },
+      ],
+    });
+    const items = projectTranscript(rec, snapshot({ status: "done", endedAt: 8 }), []);
+    expect(items).toHaveLength(4);
+    expect(items[3]).toMatchObject({ kind: "run-block", status: "done", finalResult: "R2" });
+  });
 });

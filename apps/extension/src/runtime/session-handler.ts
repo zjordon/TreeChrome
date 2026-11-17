@@ -48,7 +48,11 @@ export async function handleSessionRequest(
           return { ok: false, error: "session-open 需要 {sessionId}" };
         }
         const record = await face.repo.open(sessionId);
-        if (record === null) return { ok: false, error: `会话不存在：${sessionId}` };
+        // notFound 与存储异常可区分（评审轮 2 [5]）：UI 只在确认不存在时清当前
+        // 指向，瞬时错误走 fail-soft 保留旧值待补查
+        if (record === null) {
+          return { ok: false, error: `会话不存在：${sessionId}`, notFound: true };
+        }
         return { ok: true, record };
       }
       case "session-rename": {

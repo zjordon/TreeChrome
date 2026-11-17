@@ -136,12 +136,19 @@ export function SidepanelApp({
         const res = (await sessionRequest("session-open", { sessionId: current })) as {
           ok?: boolean;
           record?: SessionRecord | null;
+          notFound?: boolean;
         };
-        if (!cancelled) {
+        if (cancelled) return;
+        if (res?.ok === true) {
           dispatch({
             kind: "session-record",
-            record: res?.ok === true ? (res.record ?? null) : null,
+            record: res.record ?? null,
+            forSessionId: current,
           });
+        } else if (res?.notFound === true) {
+          // 确认不存在（LRU/删除竞态）才清当前指向；其余 ok:false（存储瞬时异常）
+          // fail-soft 保留旧值——session-updated 触发补查（评审轮 2 [5]）
+          dispatch({ kind: "session-record", record: null, forSessionId: current });
         }
       } catch {
         /* fail-soft：归档拉不到保留旧值（live 事件面不受影响） */
@@ -201,13 +208,19 @@ export function SidepanelApp({
   };
 
   /** 新对话（#35 D9）：建空会话（tabId 0 未绑定）置当前——下一次 start 显式带
-   *  sessionId，SW 侧 rebindTab 落到实际活动 tab */
+   *  sessionId，SW 侧 rebindTab 落到实际活动 tab。迟到应答守卫（评审轮 2 [6]）：
+   *  SW 冷启动应答慢时用户可能已切别的会话——发起时的指向变了就放弃应用 */
   const newChat = (): void => {
     if (sessionRequest === undefined) return;
+    const at = currentSessionIdRef.current;
     void sessionRequest("session-new", {})
       .then((res) => {
         const meta = (res as { ok?: boolean; session?: SessionMeta }).session;
-        if ((res as { ok?: boolean }).ok === true && meta !== undefined) {
+        if (
+          (res as { ok?: boolean }).ok === true &&
+          meta !== undefined &&
+          currentSessionIdRef.current === at
+        ) {
           dispatch({ kind: "session-current", sessionId: meta.sessionId });
           setTask("");
           setView("chat");
@@ -227,6 +240,13 @@ export function SidepanelApp({
   const transcript = projectTranscript(state.sessionRecord, snap, state.events);
   const landing = transcript.length === 0 && snap === null && state.events.length === 0;
   const canSend = !running && uploads.length === 0;
+  // 回退时间线面的会话语境门（评审轮 2 [3]）：snap 属当前会话/无会话语境
+  // （旧数据）才承载；新对话/他会话时旧 run 视图不串入
+  const runViewEligible =
+    snap === null ||
+    snap.sessionId === undefined ||
+    state.currentSessionId === null ||
+    snap.sessionId === state.currentSessionId;
 
   const currentSessionIdRef = useRef<string | null>(null);
   currentSessionIdRef.current = state.currentSessionId;
@@ -407,8 +427,10 @@ export function SidepanelApp({
             }}
             onDelete={(sessionId) => {
               void sessionRequest("session-delete", { sessionId })
-                .then(() => {
-                  // 删的是当前会话 → 回落地页态（索引/归档刷新走 session-updated 广播）
+                .then((res) => {
+                  // 删除确认成功才清当前指向（评审轮 2 [9]：ok:false = 存储异常/
+                  // 未删成——会话仍在，索引/归档刷新走 session-updated 广播）
+                  if ((res as { ok?: boolean }).ok !== true) return;
                   if (currentSessionIdRef.current === sessionId) {
                     dispatch({ kind: "session-current", sessionId: null });
                   }
@@ -429,9 +451,9 @@ export function SidepanelApp({
             ) : null}
             {transcript.length > 0 ? (
               <TranscriptView items={transcript} />
-            ) : !landing ? (
-              /* 会话数据未就绪/旧 run 无会话——回退旧时间线面（归档 fetch 在途或
-               * 前会话模型数据，live 事件不丢） */
+            ) : !landing && runViewEligible ? (
+              /* 回退旧时间线面：仅承载本会话/无会话语境的 run 视图（归档 fetch 在途
+               * 或前会话模型数据）——旧会话的 snap/events 不串入新会话（评审轮 2 [3]） */
               <>
                 <RunTimeline
                   events={state.events}
@@ -448,6 +470,9 @@ export function SidepanelApp({
                   />
                 ) : null}
               </>
+            ) : transcript.length === 0 && !landing ? (
+              /* 非本会话的 run 视图被门控（新对话/他会的 fetch 在途）——空转录占位 */
+              <TranscriptView items={[]} />
             ) : null}
           </>
         )}
