@@ -1318,4 +1318,27 @@ describe("RunManager 排队面（#37 批 A）", () => {
     const record = await repo.open(meta.sessionId);
     expect(record?.turns).toHaveLength(0); // 未入队（防 FIFO 头永久阻塞）
   });
+
+  it("退避计数不跨代（评审轮 2 [1]）：撤销换代后新任务仍享满 3 次重试", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 9, origin: "user", title: "跨代" });
+    const m = makeDeps({
+      tabId: 7,
+      sessions: repo,
+      drainDelayMs: 5,
+      drainRetryMs: 30,
+      tabs: [{ id: 7 }], // 绑定 tab 9 不存在 → 出队必拒（可重试类拒绝）
+    });
+    const t1 = await m.manager.queueFollowUp(meta.sessionId, "旧任务");
+    if (!t1.ok) throw new Error("queue failed");
+    await new Promise((r) => setTimeout(r, 15)); // 旧任务首次拒绝落账（attempts=1）
+    expect(m.logs.filter((l) => l.includes("queue dequeue rejected")).length).toBe(1);
+    expect(await m.manager.queueRemove(meta.sessionId, t1.turnId)).toBe(true); // 换代
+    expect(await m.manager.queueFollowUp(meta.sessionId, "新任务")).toMatchObject({ ok: true });
+    await new Promise((r) => setTimeout(r, 250)); // 新任务 3 次拒绝 → 上限解除
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns.every((t) => t.status === "cancelled")).toBe(true);
+    // 固定语义：旧 1 次 + 新 3 次满额（修复前旧计数跨代沿用 → 新任务 2 次即被取消）
+    expect(m.logs.filter((l) => l.includes("queue dequeue rejected")).length).toBe(4);
+  });
 });

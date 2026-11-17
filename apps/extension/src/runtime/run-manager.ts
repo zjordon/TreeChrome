@@ -733,7 +733,12 @@ export class RunManager {
     if (sessions === null) return false;
     try {
       const ok = await sessions.cancelQueuedTurn(sessionId, turnId);
-      if (ok) this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      if (ok) {
+        // 撤销重置退避计数（评审轮 2 [1]）：队列换代（头 turn 更替/清空）后旧计数
+        // 不跨代沿用——否则新任务首次被拒即达上限被静默取消
+        this.drainAttempts.delete(sessionId);
+        this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      }
       return ok;
     } catch {
       return false;
@@ -746,6 +751,8 @@ export class RunManager {
     if (sessions === null) return;
     try {
       const n = await sessions.cancelQueued(sessionId);
+      // stop 清空同样重置退避计数（评审轮 2 [1]——与 queueRemove 同语义）
+      this.drainAttempts.delete(sessionId);
       if (n > 0) {
         this.deps.log?.(`queue cancelled (${n}): ${sessionId}`);
         this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });

@@ -74,7 +74,7 @@ run 进行中可发后续任务入队可视化、终态后自动续跑；上下�
 - [x] 批 D 滚动意图（209c8c8）：TranscriptView 自有滚动面（贴底跟随/上滚解除 28px/回底恢复/浮钮）+ isAtBottom 纯函数
 - [x] e2e 冒烟（smoke-queue.mjs，随批 D 提交）：mock LLM 挂起窗 → 入队×3 → stop → interrupted + 3 cancelled + 零续跑断言（脚本就绪——真机实跑按仓库惯例手动执行 `pnpm --filter extension e2e:queue`，先 `npx wxt build`）
 - [x] 全量验收自查（§0 五条）：①②③④单测锚点齐（run-manager 排队四例/usage pill/ExternalDriveCard）；⑤ e2e 脚本就绪待真机实跑
-- 测试总账：extension 272→289（批 A-D +283；评审轮 1 +6）、console-ui 95→110；分支提交：计划 + 四批 + 评审修复
+- 测试总账：extension 272→290（批 A-D +283；评审轮 1 +6、轮 2 +1）、console-ui 95→110；分支提交：计划 + 四批 + 评审修复
 
 ## 5. 评审轮次登记（review-loop 填写）
 
@@ -90,3 +90,9 @@ run 进行中可发后续任务入队可视化、终态后自动续跑；上下�
 - **[6] P2 运行中静默无操作**：running && 无当前会话（删除活跃会话/LRU/无会话面）时发送钮可点但什么都不发生——相对旧禁用是回归。修复：canSend 补 `!running || queueable`。
 - **[7] P2 usage 分母不随换卡**：ModelSwitcher 关闭不在 contextWindow 热读触发器——快速换卡后 ratio 按 stale 分母。修复：effect 增 modelSwitcherOpen 触发器。
 - 双向验证：[2] 破坏让位重排 → 跨会话用例必红；[5] 破坏换会话清 → reducer 用例必红；还原复绿。extension 283→289，console-ui 110 不变，门禁 exit 0。
+
+### 轮 2（2026-11-17，1 条采纳：P2×1；另有增量基线操作修正）
+
+- **[1] P2 退避计数跨代沿用**：drainAttempts 清零只在 drainQueue 三出口——queueRemove（撤销头 turn）与 stop→cancelQueue（清空队列）均不清零，且 stop 清 timer 连「队列空兜底出口」一并取消。头 turn 被拒 2 次后换代，新任务首拒即 3 达上限被静默取消（违背三次语义）。修复：queueRemove/cancelQueue 成功即 delete(sessionId)（用户干预重置计数；换代必经三出口——append 只尾插不改头，boot cancelAllQueued 时实例已新建）。测试锚定拒绝日志计数（旧 1 + 新 3 = 4；修复前 3）。双向验证：破坏清零 → 用例必红（3≠4）。
+- **操作修正**：轮 2 首发误用 lastCommit（= 分支 tip）作 --from → range 空 skipped（#35 轮 3 同款）；改用 reviewedTip e667605 重发。已同步修正 .claude/.zcode 双栖 review-loop 命令文档（diffBase 基线改 reviewedTip + 状态文件字段补登）。
+- 测试总账：extension 289→290；门禁 exit 0。

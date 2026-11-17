@@ -48,7 +48,7 @@ allowed-tools: Bash(git:*), Bash(node:*), Bash(pnpm:*), Bash(ocr:*), Bash(which:
 
 单轮循环包含 dump 全文阅读 + 多文件编辑 + 测试输出，**连续两轮以上上下文消耗已过半**。循环必须做到「任意时点压缩/重开会话都无损续跑」：
 
-- **状态文件 `.git/review-loop-state.json`**（在 .git 内，永不入库），字段：`{base, branch, slug, background, maxRounds, round, phase, stats, lastCommit}`。
+- **状态文件 `.git/review-loop-state.json`**（在 .git 内，永不入库），字段：`{base, branch, slug, background, maxRounds, round, phase, stats, lastCommit, reviewedTip}`（`reviewedTip` = 上一轮评审已覆盖的分支 tip——下一轮的增量 diff 基线）。
   - `phase`：`reviewing`（ocr 在跑）/ `triaging`（处置中，dump 在盘可重读）/ `done`。
   - `stats`：`{rounds, findings, adopted, rejected, stale}` 累计值。
   - 写入时机：循环启动时、**每次发起 ocr 后台评审前**（round/phase=reviewing）、**每轮提交完成后**（stats/lastCommit/round=下一轮）。
@@ -72,7 +72,7 @@ allowed-tools: Bash(git:*), Bash(node:*), Bash(pnpm:*), Bash(ocr:*), Bash(which:
 ocr review --from <diffBase> --to <branch> -B .git/ocr-background.md --format json --output docs/code-review/review-<slug>-<N>.json --audience agent
 ```
 
-- **增量 diff（防「修复生产新意见」的正反馈）**：`diffBase` 首轮 = `<base>`（如 main），后续轮 = 状态文件的 `lastCommit`（上一轮修复提交）——只评审增量，旧代码不重复扫（早前轮已覆盖；全量重扫是 47 轮不收敛的机制之一）。**上一轮无修复提交时（全驳回/backlog）lastCommit 未变 → 增量为空，该轮即视为无 P1/P2 轮**，直接计入收敛判据，不空跑评审。
+- **增量 diff（防「修复生产新意见」的正反馈）**：`diffBase` 首轮 = `<base>`（如 main），后续轮 = 状态文件的 **`reviewedTip`（上一轮评审已覆盖到的分支 tip）**——只评审增量，旧代码不重复扫（早前轮已覆盖；全量重扫是 47 轮不收敛的机制之一）。**不得用 `lastCommit`（上一轮修复提交）当 diffBase**：修复轮后 lastCommit 即分支 tip，`--from` 它 → range 为空被 ocr skipped（#37 轮 2 实录，#35 轮 3 同款）；正确形态是 `--from reviewedTip --to 分支 tip`，恰含上一轮修复提交本身。**上一轮无修复提交时（全驳回/backlog）reviewedTip == 分支 tip → 增量为空，该轮即视为无 P1/P2 轮**，直接计入收敛判据，不空跑评审。
 - **产出体量三道闸（已预置，勿重复配置）**：`.opencodereview/rule.json` 的 `rules[].rule`（`path:"**"` + `merge_system_rule:true`）携带严重度边界——只产出必须修改的问题、每条须给失效场景、宁缺毋滥；`review-dump.mjs --min-severity` 读前机械滤除；本命令 triage 的 P1/P2 门控。意见体量仍高时可在评审命令加 `--effort low` 降产出深度（备用旋钮，默认不动）。
 - **必须 `run_in_background: true`**：单轮评审 10-20 分钟，超过前台命令 10 分钟上限；任务完成通知到达后继续下一步。
 - 完成后删除 `.git/ocr-background.md`。
@@ -118,7 +118,7 @@ ocr review --from <diffBase> --to <branch> -B .git/ocr-background.md --format js
 
 ### 6. 轮转与收尾
 
-- 意见数 > 0：更新状态文件（stats 累计、`lastCommit`、`round: N+1`），向用户简报本轮处置（P1/P2/P3 分布 + 采纳/驳回/stale 计数 + 关键修复一句），然后：
+- 意见数 > 0：更新状态文件（stats 累计、`lastCommit`、**`reviewedTip` = 本轮评审覆盖到的分支 tip**、`round: N+1`），向用户简报本轮处置（P1/P2/P3 分布 + 采纳/驳回/stale 计数 + 关键修复一句），然后：
   - **本轮与上一轮均无 P1/P2 → 宣布收敛**（状态 `phase: "done"`，P3 backlog 留档），不等额度；
   - **本会话已连续处理 ≥2 轮 → 先做轮边界上下文提醒**（见「状态持久化与上下文管理」：提示用户可 /compact，评审后台空窗是最佳时机；用户示意继续或已压缩则直接续跑）；
   - N+1 回到第 1 步自动续跑下一轮。
