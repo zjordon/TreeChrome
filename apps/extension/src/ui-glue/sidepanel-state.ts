@@ -44,6 +44,8 @@ export interface SidepanelState {
   currentSessionId: string | null;
   /** session-updated 计数（变更是 fetch 触发器——载荷只带定位摘要，D8 单源） */
   sessionRev: number;
+  /** 模型快速切换 overlay 开（#37 批 C：model-switch-request 广播置位，关闭本地清） */
+  modelSwitcherOpen: boolean;
 }
 
 export const initialSidepanelState: SidepanelState = {
@@ -60,6 +62,7 @@ export const initialSidepanelState: SidepanelState = {
   sessionRecord: null,
   currentSessionId: null,
   sessionRev: 0,
+  modelSwitcherOpen: false,
 };
 
 /** 本地动作（确认卡 resolve 后乐观清除——SW 不广播 resolve 回执；拒绝明细的
@@ -83,7 +86,9 @@ export type SidepanelAction =
       forSessionId: string;
     }
   /** 当前会话切换（null = 无当前——落地页态） */
-  | { kind: "session-current"; sessionId: string | null };
+  | { kind: "session-current"; sessionId: string | null }
+  /** 模型快速切换 overlay 关闭（本地动作——#37 批 C） */
+  | { kind: "model-switcher-closed" };
 
 /** live TwEvent → journal 条目形态（ts 取接收时刻墙上钟——展示序不参与协议；
  *  step 已随 compactEventData 进 data——JournalEvent 顶层无 step 字段） */
@@ -136,6 +141,12 @@ export function ingestSidepanel(
       // 变更合并推送只做触发器（载荷是定位摘要非全量——UI 按需补查，D8）
       return { state: { ...state, sessionRev: state.sessionRev + 1 }, ack: null };
     }
+    case "model-switch-request": {
+      // chrome.commands Ctrl+Shift+M（#37 批 C）：SW 广播——弹快速切换 overlay
+      return { state: { ...state, modelSwitcherOpen: true }, ack: null };
+    }
+    case "model-switcher-closed":
+      return { state: { ...state, modelSwitcherOpen: false }, ack: null };
     case "session-index":
       return { state: { ...state, sessions: action.sessions }, ack: null };
     case "session-record": {

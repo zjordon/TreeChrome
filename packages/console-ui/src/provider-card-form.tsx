@@ -11,6 +11,48 @@ export const PROTOCOL_OPTIONS = ["openai-completions", "anthropic-messages", "ge
 
 export type ProtocolOption = (typeof PROTOCOL_OPTIONS)[number];
 
+/** 常用端点预设（#37 批 C）：一键预填 protocol/baseUrl/model 示例——apiKey 恒不
+ *  预填（密钥只有用户能提供）；不引入 qz 的预设中心，只降建卡门槛 */
+export interface ProviderPreset {
+  name: string;
+  protocol: ProtocolOption;
+  baseUrl: string;
+  model: string;
+}
+
+export const PRESET_CARDS: readonly ProviderPreset[] = [
+  {
+    name: "智谱",
+    protocol: "anthropic-messages",
+    baseUrl: "https://open.bigmodel.cn/api/anthropic",
+    model: "glm-4.7",
+  },
+  {
+    name: "OpenAI",
+    protocol: "openai-completions",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o",
+  },
+  {
+    name: "DeepSeek",
+    protocol: "openai-completions",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+  },
+  {
+    name: "Kimi",
+    protocol: "openai-completions",
+    baseUrl: "https://api.moonshot.cn/v1",
+    model: "kimi-k2-0905-preview",
+  },
+  {
+    name: "OpenRouter",
+    protocol: "openai-completions",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "openrouter/auto",
+  },
+] as const;
+
 export interface CardFormState {
   name: string;
   protocol: ProtocolOption;
@@ -149,6 +191,31 @@ export function ProviderCardForm({
   return (
     <section className="tc-card" data-testid="provider-card-form">
       {card !== undefined ? <strong>编辑卡片：{card.name}</strong> : <strong>新增卡片</strong>}
+      {card === undefined ? (
+        // 预设模板（#37 批 C）：新增时一键预填常用端点（名称空才带出——已手填不覆盖）
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="tc-ev-muted" style={{ fontSize: 11 }}>
+            预设：
+          </span>
+          {PRESET_CARDS.map((p) => (
+            <Button
+              key={p.name}
+              variant="secondary"
+              aria-label={`预设 ${p.name}`}
+              onClick={() =>
+                set({
+                  name: form.name.trim() === "" ? p.name : form.name,
+                  protocol: p.protocol,
+                  baseUrl: p.baseUrl,
+                  model: p.model,
+                })
+              }
+            >
+              {p.name}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <div
         style={{
           display: "grid",

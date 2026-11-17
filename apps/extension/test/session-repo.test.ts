@@ -345,7 +345,10 @@ describe("session-repo 排队面（#37 批 A）", () => {
     let n = 0;
     return new SessionRepository(fakeStorage(), {
       newSessionId: () => "s1",
-      newTurnId: () => `t${(n += 1)}`,
+      newTurnId: () => {
+        n += 1;
+        return `t${n}`;
+      },
       now: () => 100 + n,
     });
   }

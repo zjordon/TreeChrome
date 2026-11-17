@@ -740,3 +740,14 @@ describe("sidepanel reducer 会话面（#35 U1b）", () => {
     expect(reconnected.sessionRecord).toBeNull();
   });
 });
+
+describe("sidepanel reducer 模型快速切换（#37 批 C）", () => {
+  it("model-switch-request 置位 overlay；closed 清位", () => {
+    const opened = ingestSidepanel(initialSidepanelState, {
+      kind: "model-switch-request",
+    }).state;
+    expect(opened.modelSwitcherOpen).toBe(true);
+    const closed = ingestSidepanel(opened, { kind: "model-switcher-closed" }).state;
+    expect(closed.modelSwitcherOpen).toBe(false);
+  });
+});

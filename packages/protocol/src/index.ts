@@ -44,6 +44,7 @@ export const SW_TO_UI_KINDS = [
   "skill-drafts",
   "distill-status",
   "session-updated",
+  "model-switch-request",
 ] as const;
 
 export const UI_TO_SW_KINDS = [
@@ -314,6 +315,7 @@ export const SESSION_OPS = [
   "session-open",
   "session-rename",
   "session-delete",
+  "session-focus",
   "queue-add",
   "queue-remove",
 ] as const;
@@ -407,7 +409,14 @@ export type SwToUiMessage =
   | SwAttachmentRejectedMessage
   | SwSkillDraftsMessage
   | SwDistillStatusMessage
-  | SwSessionUpdatedMessage;
+  | SwSessionUpdatedMessage
+  | SwModelSwitchRequestMessage;
+
+/** 模型快速切换请求（#37 批 C：chrome.commands Ctrl+Shift+M → 开面板 + 广播本
+ *  消息——UI 弹快速切换 overlay） */
+export interface SwModelSwitchRequestMessage {
+  kind: "model-switch-request";
+}
 
 /** 会话面变更合并推送（issue #35 U1：索引/队列/归档/turn 任一变更都发这一条，
  *  载荷只带定位摘要——UI 按需 session-list/session-open 补查，不做细粒度广播） */

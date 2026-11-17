@@ -20,6 +20,7 @@ function swKindOf(msg: SwToUiMessage): SwToUiKind {
     case "skill-drafts":
     case "distill-status":
     case "session-updated":
+    case "model-switch-request":
       return msg.kind;
     default: {
       const unreachable: never = msg;
@@ -73,8 +74,9 @@ describe("@tw/protocol 信封", () => {
       { kind: "skill-drafts", count: 1 },
       { kind: "distill-status", phase: "running" },
       { kind: "session-updated", reason: "index" },
+      { kind: "model-switch-request" },
     ];
-    expect([...SW_TO_UI_KINDS]).toHaveLength(12);
+    expect([...SW_TO_UI_KINDS]).toHaveLength(13);
     expect(samples.map(swKindOf)).toEqual([...SW_TO_UI_KINDS]);
   });
 

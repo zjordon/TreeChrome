@@ -27,6 +27,10 @@ export interface SessionFace {
   ) => void;
   /** 排队受理（缺省不注入 = 排队面禁用——旧装配/测试兼容） */
   queue?: SessionQueueFace;
+  /** 目标 tab 现查 URL（#37 批 C 目标条：缺省 null——无 tabs 注入的测试面） */
+  targetUrlOf?: (tabId: number) => Promise<string | null>;
+  /** 激活会话目标 tab（session-focus 消费；缺省回 false） */
+  focusTab?: (tabId: number) => Promise<boolean>;
 }
 
 export async function handleSessionRequest(
@@ -65,7 +69,21 @@ export async function handleSessionRequest(
         if (record === null) {
           return { ok: false, error: `会话不存在：${sessionId}`, notFound: true };
         }
-        return { ok: true, record };
+        // 目标条（#37 批 C）：现查目标 tab URL（tab 已关/查询失败 → null 不渲染）
+        const targetUrl =
+          face.targetUrlOf !== undefined ? await face.targetUrlOf(record.meta.tabId) : null;
+        return { ok: true, record, targetUrl };
+      }
+      case "session-focus": {
+        const sessionId = (payload as { sessionId?: unknown } | null)?.sessionId;
+        if (typeof sessionId !== "string" || sessionId === "") {
+          return { ok: false, error: "session-focus 需要 {sessionId}" };
+        }
+        if (face.focusTab === undefined) return { ok: false, error: "聚焦面未启用" };
+        const record = await face.repo.open(sessionId);
+        if (record === null) return { ok: false, error: `会话不存在：${sessionId}` };
+        const focused = await face.focusTab(record.meta.tabId);
+        return focused ? { ok: true } : { ok: false, error: "目标标签页不可用（已关闭？）" };
       }
       case "session-rename": {
         const p = payload as { sessionId?: unknown; title?: unknown } | null;

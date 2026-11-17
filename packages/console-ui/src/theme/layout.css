@@ -110,6 +110,41 @@
   margin-left: auto;
 }
 
+/* 上下文用量 pill（#37 批 B）：≥90% 警色 */
+.tc-runstatus-usage {
+  flex: none;
+  font-size: 11px;
+  color: var(--tc-muted);
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-pill);
+  padding: 0 6px;
+}
+.tc-runstatus-usage--warn {
+  color: var(--tc-warning);
+  border-color: var(--tc-warning);
+}
+
+/* —— 目标条（GoalStrip，#37 批 C）—— */
+.tc-goal-strip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--tc-muted);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tc-goal-strip:hover {
+  color: var(--tc-fg);
+  background: var(--tc-bg-muted);
+  border-radius: var(--tc-radius-sm);
+}
+
 @keyframes tc-pulse {
   50% {
     opacity: 0.35;

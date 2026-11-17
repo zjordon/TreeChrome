@@ -11,7 +11,7 @@ import {
   createChromeDebuggerTransport,
 } from "@tw/cdp-chrome";
 import { BrowserSession as BrowserSessionClass, LLMClient, Tools } from "@tw/core";
-import type { RunJournalSnapshot, UiDiagMessage } from "@tw/protocol";
+import type { RunJournalSnapshot, SwToUiMessage, UiDiagMessage } from "@tw/protocol";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
 import { AttachmentRegistry } from "../src/host/attachment-registry.js";
@@ -177,11 +177,37 @@ export default defineBackground(() => {
     console.warn(`[tc] sidePanel API unavailable: ${String(e)}`);
   }
 
+  // chrome.commands（#37 批 C）：Ctrl+Shift=K=_execute_action（浏览器原生路由到
+  // action → 开面板）；Ctrl+Shift+M=模型快速切换——先开面板再广播 switch-request
+  // （D5：命令回调是合法用户手势，sidePanel.open 需手势上下文）。广播经模块级
+  // 晚绑定 ref（portServer 在 boot 内构造——监听器须在首个 await 前同步注册）
+  try {
+    browser.commands?.onCommand.addListener((command: string) => {
+      if (command !== "open-model-switcher") return;
+      void (async () => {
+        try {
+          const tabs = await chromeTabsQuery().query({ active: true, currentWindow: true });
+          const tabId = tabs[0]?.id;
+          if (tabId !== undefined) await browser.sidePanel.open({ tabId });
+        } catch {
+          /* 面板开不了（无手势上下文/旧内核）——广播照发，已开的面板也能切 */
+        }
+        uiBroadcastRef?.({ kind: "model-switch-request" });
+      })();
+    });
+  } catch (e) {
+    console.warn(`[tc] commands API unavailable: ${String(e)}`);
+  }
+
   const bootPromise = boot();
   bootPromise.catch((e: unknown) => {
     console.error(`[tc] boot failed: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
   });
 });
+
+/** UI 广播晚绑定 ref（#37 批 C：commands 监听器在 boot 前注册，portServer 在
+ *  boot 内构造——模块级 ref 桥接时序） */
+let uiBroadcastRef: ((message: SwToUiMessage) => void) | null = null;
 
 interface Booted {
   runManager: RunManager;
@@ -297,6 +323,8 @@ async function boot(): Promise<Booted> {
     onAllPortsDisconnected: () => runManager.onAllPortsDisconnected(),
     pendingCards: () => runManager.pendingCards(),
   });
+  // commands 广播桥（#37 批 C）：模块级晚绑定 ref 指向 portServer.broadcast
+  uiBroadcastRef = (message) => portServerRef?.broadcast(message);
   chromeOnInstalled().addListener((details: unknown) => {
     const reason = (details as { reason?: unknown } | null)?.reason;
     if (reason === "install" || reason === "update") void refreshSkills();
@@ -458,6 +486,25 @@ async function boot(): Promise<Booted> {
       queue: {
         add: (sessionId, task) => runManager.queueFollowUp(sessionId, task),
         remove: (sessionId, turnId) => runManager.queueRemove(sessionId, turnId),
+      },
+      // 目标条（#37 批 C）：现查目标 tab URL / session-focus 激活
+      targetUrlOf: async (tabId) => {
+        if (tabId <= 0) return null;
+        try {
+          const tabs = await chromeTabsQuery().query({});
+          return tabs.find((t) => t.id === tabId)?.url ?? null;
+        } catch {
+          return null;
+        }
+      },
+      focusTab: async (tabId) => {
+        if (tabId <= 0) return false;
+        try {
+          await browser.tabs.update(tabId, { active: true });
+          return true;
+        } catch {
+          return false;
+        }
       },
     },
   };

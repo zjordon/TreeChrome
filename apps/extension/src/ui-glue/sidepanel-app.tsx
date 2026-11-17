@@ -15,6 +15,8 @@ import {
   ExternalDriveCard,
   FinalResult,
   formatBytes,
+  GoalStrip,
+  ModelSwitcher,
   PermissionCard,
   projectTranscript,
   QueueStrip,
@@ -117,6 +119,9 @@ export function SidepanelApp({
   const [contextWindow, setContextWindow] = useState<number | null>(null);
   useEffect(() => {
     if (portStatus !== "online" || optionsRequest === undefined) return;
+    // settingsOpen 是纯触发器（设置关闭后重读分母）——显式消费让依赖必要性成立
+    const reopen = settingsOpen;
+    void reopen;
     void optionsRequest("get-settings")
       .then((res) => {
         const s = res as {
@@ -134,6 +139,9 @@ export function SidepanelApp({
       })
       .catch(() => {});
   }, [portStatus, optionsRequest, settingsOpen]);
+
+  // 会话目标 tab URL（#37 批 C）：session-open 应答附带——切会话即时清防串台
+  const [targetUrl, setTargetUrl] = useState<string | null>(null);
 
   // 会话面拉取（#35 U1b）：上线 / session-updated 变更 / 切换当前会话时补查索引
   // 与归档（session-updated 载荷只是定位摘要——全量经单发应答，D8 单源）
@@ -162,8 +170,11 @@ export function SidepanelApp({
           ok?: boolean;
           record?: SessionRecord | null;
           notFound?: boolean;
+          targetUrl?: string | null;
         };
         if (cancelled) return;
+        // 目标条数据（#37 批 C）：随归档同 fetch 现查（tab 关/查询败 → null 不渲染）
+        setTargetUrl(typeof res?.targetUrl === "string" ? res.targetUrl : null);
         if (res?.ok === true) {
           dispatch({
             kind: "session-record",
@@ -256,6 +267,7 @@ export function SidepanelApp({
 
   const openSession = (sessionId: string): void => {
     dispatch({ kind: "session-current", sessionId });
+    setTargetUrl(null); // 目标条随会话清（fetch 在途不闪旧会话 URL）
     setView("chat");
   };
 
@@ -400,6 +412,17 @@ export function SidepanelApp({
                   </li>
                 ))}
               </ul>
+            ) : null}
+            {/* 目标条（#37 批 C）：当前会话目标 tab——点击聚焦（session-focus） */}
+            {targetUrl !== null && state.currentSessionId !== null && !landing ? (
+              <GoalStrip
+                url={targetUrl}
+                onFocus={() => {
+                  const sessionId = currentSessionIdRef.current;
+                  if (sessionId === null) return;
+                  void sessionRequest?.("session-focus", { sessionId }).catch(() => {});
+                }}
+              />
             ) : null}
             {/* 排队消息条（#37 批 A）：当前会话 queued turns——撤销即 queue-remove */}
             {queuedTurns.length > 0 && sessionRequest !== undefined ? (
@@ -550,6 +573,19 @@ export function SidepanelApp({
       {optionsRequest !== undefined ? (
         <SettingsOverlay open={settingsOpen} onClose={() => setSettingsOpen(false)} title="设置">
           <OptionsApp request={optionsRequest} />
+        </SettingsOverlay>
+      ) : null}
+      {/* 模型快速切换（#37 批 C：Ctrl+Shift+M → SW 广播置位；点选保存后关闭） */}
+      {optionsRequest !== undefined && state.modelSwitcherOpen ? (
+        <SettingsOverlay
+          open
+          onClose={() => dispatch({ kind: "model-switcher-closed" })}
+          title="模型快速切换"
+        >
+          <ModelSwitcher
+            request={optionsRequest}
+            onClose={() => dispatch({ kind: "model-switcher-closed" })}
+          />
         </SettingsOverlay>
       ) : null}
     </ThemedRoot>

@@ -11,10 +11,14 @@ export type { ExternalDriveCardProps } from "./external-card.js";
 export { ExternalDriveCard } from "./external-card.js";
 export type { FinalResultProps } from "./final-result.js";
 export { FinalResult } from "./final-result.js";
+export type { GoalStripProps } from "./goal-strip.js";
+export { GoalStrip, goalLabelOf } from "./goal-strip.js";
 export type { GrantsViewProps } from "./grants-view.js";
 export { GrantsView } from "./grants-view.js";
 export type { IconButtonProps } from "./icon-button.js";
 export { IconButton } from "./icon-button.js";
+export type { ModelSwitcherProps } from "./model-switcher.js";
+export { ModelSwitcher } from "./model-switcher.js";
 export type { PermissionCardProps } from "./permission-card.js";
 export { PermissionCard } from "./permission-card.js";
 export type { BadgeTone, ButtonProps } from "./primitives.js";
@@ -24,9 +28,11 @@ export type {
   CardFormState,
   ProtocolOption,
   ProviderCardFormProps,
+  ProviderPreset,
 } from "./provider-card-form.js";
 export {
   formStateOf,
+  PRESET_CARDS,
   PROTOCOL_OPTIONS,
   ProviderCardForm,
   validateCardForm,
