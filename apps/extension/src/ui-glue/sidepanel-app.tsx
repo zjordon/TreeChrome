@@ -11,10 +11,15 @@ import {
   AppShell,
   Button,
   Composer,
+  type ContextUsage,
+  ExternalDriveCard,
   FinalResult,
   formatBytes,
+  GoalStrip,
+  ModelSwitcher,
   PermissionCard,
   projectTranscript,
+  QueueStrip,
   RunPanelHeader,
   RunStatusBar,
   RunTimeline,
@@ -110,6 +115,34 @@ export function SidepanelApp({
       .catch(() => {});
   }, [portStatus, fetchDraftCount]);
 
+  // 活跃卡上下文窗口（#37 批 B 验收④分母）：上线/设置关闭后热读一次（SW 单一写者）
+  const [contextWindow, setContextWindow] = useState<number | null>(null);
+  useEffect(() => {
+    if (portStatus !== "online" || optionsRequest === undefined) return;
+    // settingsOpen / modelSwitcherOpen 是纯触发器（主设置/快速换卡关闭后重读分母
+    // ——评审轮 1 [7]：换卡正是该功能主路径，分母须跟随）——显式消费让依赖成立
+    const reopen = settingsOpen;
+    void reopen;
+    const reswitch = state.modelSwitcherOpen;
+    void reswitch;
+    void optionsRequest("get-settings")
+      .then((res) => {
+        const s = res as {
+          ok?: boolean;
+          settings?: {
+            providerCards?: Array<{ name?: unknown; contextWindow?: unknown }>;
+            activeCard?: unknown;
+          };
+        };
+        if (s?.ok !== true || s.settings === undefined) return;
+        const card = (s.settings.providerCards ?? []).find(
+          (c) => c.name === s.settings?.activeCard,
+        );
+        setContextWindow(typeof card?.contextWindow === "number" ? card.contextWindow : null);
+      })
+      .catch(() => {});
+  }, [portStatus, optionsRequest, settingsOpen, state.modelSwitcherOpen]);
+
   // 会话面拉取（#35 U1b）：上线 / session-updated 变更 / 切换当前会话时补查索引
   // 与归档（session-updated 载荷只是定位摘要——全量经单发应答，D8 单源）
   useEffect(() => {
@@ -137,8 +170,16 @@ export function SidepanelApp({
           ok?: boolean;
           record?: SessionRecord | null;
           notFound?: boolean;
+          targetUrl?: string | null;
         };
         if (cancelled) return;
+        // 目标条数据（#37 批 C）：随归档同 fetch 现查（tab 关/查询败 → null 不渲染）。
+        // 走 reducer（评审轮 1 [5]）：forSessionId 归属守卫 + 换会话分支同步清
+        dispatch({
+          kind: "session-target",
+          url: typeof res?.targetUrl === "string" ? res.targetUrl : null,
+          forSessionId: current,
+        });
         if (res?.ok === true) {
           dispatch({
             kind: "session-record",
@@ -230,6 +271,8 @@ export function SidepanelApp({
   };
 
   const openSession = (sessionId: string): void => {
+    // 目标条清理在 reducer 的换会话分支（评审轮 1 [8]）：同会话重入 reducer
+    // 早退无状态变化、补查 effect 不重跑——组件态误清后无恢复通道
     dispatch({ kind: "session-current", sessionId });
     setView("chat");
   };
@@ -239,7 +282,6 @@ export function SidepanelApp({
   const running = snap !== null && !terminal;
   const transcript = projectTranscript(state.sessionRecord, snap, state.events);
   const landing = transcript.length === 0 && snap === null && state.events.length === 0;
-  const canSend = !running && uploads.length === 0;
   // 回退时间线面的会话语境门（评审轮 2 [3]）：snap 属当前会话/无会话语境
   // （旧数据）才承载；新对话/他会话时旧 run 视图不串入
   const runViewEligible =
@@ -247,7 +289,28 @@ export function SidepanelApp({
     snap.sessionId === undefined ||
     state.currentSessionId === null ||
     snap.sessionId === state.currentSessionId;
-
+  // 外部直驱只读（#37 批 B）：bridge 会话禁输入——查看态，停止权保留。snap 须属
+  // 当前会话（评审轮 1 [4]）：bridge run 在他会话跑时，正在查看的会话不受牵连
+  const external = snap !== null && snap.origin === "bridge" && runViewEligible;
+  // 运行中仍可输入（#37 批 A：发送→入队而非禁用）；仅附件在途禁发（起跑/入队丢
+  // 字节）。运行中但无处入队（无会话面/无当前会话）维持禁用（评审轮 1 [6]：
+  // 静默无操作是相对旧禁用钮的行为回归）
+  const queueable = state.currentSessionId !== null && sessionRequest !== undefined;
+  const canSend = uploads.length === 0 && !external && (!running || queueable);
+  const queuedTurns = state.sessionRecord?.turns.filter((t) => t.status === "queued") ?? [];
+  // 上下文用量（验收④）：最近一次 model_result 的 inputTokens（多轮拼接模式下即
+  // 拼接后 prompt 的实证）——从事件流倒序取首个带值者
+  let latestUsage: ContextUsage | undefined;
+  for (let i = state.events.length - 1; i >= 0; i -= 1) {
+    const e = state.events[i];
+    if (e === undefined) continue;
+    if (e.type !== "model_result" || typeof e.data !== "object" || e.data === null) continue;
+    const tokens = (e.data as { inputTokens?: unknown }).inputTokens;
+    if (typeof tokens === "number") {
+      latestUsage = { inputTokens: tokens, contextWindow };
+      break;
+    }
+  }
   const currentSessionIdRef = useRef<string | null>(null);
   currentSessionIdRef.current = state.currentSessionId;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -279,6 +342,7 @@ export function SidepanelApp({
                 stepCount={snap.stepCount}
                 startedAt={snap.startedAt}
                 endedAt={snap.endedAt}
+                usage={latestUsage}
                 onStop={() => send({ kind: "control", action: "stop" })}
               />
             ) : null}
@@ -358,11 +422,45 @@ export function SidepanelApp({
                 ))}
               </ul>
             ) : null}
+            {/* 目标条（#37 批 C）：当前会话目标 tab——点击聚焦（session-focus） */}
+            {state.targetUrl !== null && state.currentSessionId !== null && !landing ? (
+              <GoalStrip
+                url={state.targetUrl}
+                onFocus={() => {
+                  const sessionId = currentSessionIdRef.current;
+                  if (sessionId === null) return;
+                  void sessionRequest?.("session-focus", { sessionId }).catch(() => {});
+                }}
+              />
+            ) : null}
+            {/* 排队消息条（#37 批 A）：当前会话 queued turns——撤销即 queue-remove */}
+            {queuedTurns.length > 0 && sessionRequest !== undefined ? (
+              <QueueStrip
+                turns={queuedTurns}
+                onRemove={(turnId) => {
+                  const sessionId = currentSessionIdRef.current;
+                  if (sessionId === null) return;
+                  void sessionRequest("queue-remove", { sessionId, turnId }).catch(() => {});
+                }}
+              />
+            ) : null}
             <Composer
               task={task}
               onTaskChange={setTask}
               canSend={canSend}
               onSend={() => {
+                // 运行中发送 = 入队（#37 批 A：连播而非禁用/拒绝）
+                if (running) {
+                  const sessionId = currentSessionIdRef.current;
+                  if (sessionId !== null && sessionRequest !== undefined) {
+                    void sessionRequest("queue-add", { sessionId, task })
+                      .then((res) => {
+                        if ((res as { ok?: boolean }).ok === true) setTask("");
+                      })
+                      .catch(() => {});
+                  }
+                  return;
+                }
                 dispatch({ kind: "attachment-rejections-cleared" });
                 send({
                   kind: "control",
@@ -441,6 +539,10 @@ export function SidepanelApp({
           />
         ) : (
           <>
+            {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}
+            {external ? (
+              <ExternalDriveCard sessionTitle={state.sessionRecord?.meta.title ?? null} />
+            ) : null}
             {landing ? (
               <WelcomePanel
                 title="TreeChrome"
@@ -480,6 +582,19 @@ export function SidepanelApp({
       {optionsRequest !== undefined ? (
         <SettingsOverlay open={settingsOpen} onClose={() => setSettingsOpen(false)} title="设置">
           <OptionsApp request={optionsRequest} />
+        </SettingsOverlay>
+      ) : null}
+      {/* 模型快速切换（#37 批 C：Ctrl+Shift+M → SW 广播置位；点选保存后关闭） */}
+      {optionsRequest !== undefined && state.modelSwitcherOpen ? (
+        <SettingsOverlay
+          open
+          onClose={() => dispatch({ kind: "model-switcher-closed" })}
+          title="模型快速切换"
+        >
+          <ModelSwitcher
+            request={optionsRequest}
+            onClose={() => dispatch({ kind: "model-switcher-closed" })}
+          />
         </SettingsOverlay>
       ) : null}
     </ThemedRoot>

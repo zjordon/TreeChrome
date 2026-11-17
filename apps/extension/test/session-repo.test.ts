@@ -339,3 +339,79 @@ describe("compressArchiveEvents / sumUsage", () => {
     expect(usage).toEqual({ inputTokens: 15, outputTokens: 2 });
   });
 });
+
+describe("session-repo 排队面（#37 批 A）", () => {
+  function repoOf() {
+    let n = 0;
+    return new SessionRepository(fakeStorage(), {
+      newSessionId: () => "s1",
+      newTurnId: () => {
+        n += 1;
+        return `t${n}`;
+      },
+      now: () => 100 + n,
+    });
+  }
+
+  it("appendQueuedTurn：FIFO 追加（runId null）；上限 5 拒绝；会话不存在 not-found", async () => {
+    const repo = repoOf();
+    const meta = await repo.createSession({ tabId: 1, origin: "user", title: "x" });
+    for (let i = 1; i <= 5; i += 1) {
+      const r = await repo.appendQueuedTurn(meta.sessionId, { task: `任务${i}`, attachments: [] });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.turn).toMatchObject({ status: "queued", runId: null, task: `任务${i}` });
+    }
+    const full = await repo.appendQueuedTurn(meta.sessionId, { task: "第6条", attachments: [] });
+    expect(full).toEqual({ ok: false, error: "queue-full" });
+    const missing = await repo.appendQueuedTurn("ghost", { task: "x", attachments: [] });
+    expect(missing).toEqual({ ok: false, error: "not-found" });
+    const first = await repo.firstQueuedTurn(meta.sessionId);
+    expect(first?.task).toBe("任务1"); // FIFO
+  });
+
+  it("activateQueuedTurn：queued→running 回填 runId；非 queued/不存在回 false", async () => {
+    const repo = repoOf();
+    const meta = await repo.createSession({ tabId: 1, origin: "user", title: "x" });
+    const q = await repo.appendQueuedTurn(meta.sessionId, { task: "t", attachments: [] });
+    if (!q.ok) throw new Error("queue failed");
+    expect(await repo.activateQueuedTurn(meta.sessionId, q.turn.turnId, "run_1")).toBe(true);
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns[0]).toMatchObject({ status: "running", runId: "run_1" });
+    // 再激活（已 running）→ false
+    expect(await repo.activateQueuedTurn(meta.sessionId, q.turn.turnId, "run_2")).toBe(false);
+    expect(await repo.activateQueuedTurn(meta.sessionId, "ghost", "run_3")).toBe(false);
+  });
+
+  it("cancelQueuedTurn/cancelQueued：仅 queued 转 cancelled（running 不动）；计数正确", async () => {
+    const repo = repoOf();
+    const meta = await repo.createSession({ tabId: 1, origin: "user", title: "x" });
+    const a = await repo.appendQueuedTurn(meta.sessionId, { task: "a", attachments: [] });
+    await repo.appendQueuedTurn(meta.sessionId, { task: "b", attachments: [] });
+    if (!a.ok) throw new Error("queue failed");
+    expect(await repo.cancelQueuedTurn(meta.sessionId, a.turn.turnId)).toBe(true);
+    // 已 cancelled 再撤 → false
+    expect(await repo.cancelQueuedTurn(meta.sessionId, a.turn.turnId)).toBe(false);
+    let record = await repo.open(meta.sessionId);
+    expect(record?.turns[0]?.status).toBe("cancelled");
+    expect(record?.turns[1]?.status).toBe("queued");
+    expect(await repo.cancelQueued(meta.sessionId)).toBe(1);
+    record = await repo.open(meta.sessionId);
+    expect(record?.turns[1]?.status).toBe("cancelled");
+    expect(await repo.cancelQueued("ghost")).toBe(0);
+  });
+
+  it("cancelAllQueued：跨会话清空 queued；无排队零写", async () => {
+    const repo = repoOf();
+    const m1 = await repo.createSession({ tabId: 1, origin: "user", title: "a" });
+    const m2 = await repo.createSession({ tabId: 2, origin: "user", title: "b" });
+    await repo.appendQueuedTurn(m1.sessionId, { task: "x", attachments: [] });
+    await repo.appendQueuedTurn(m1.sessionId, { task: "y", attachments: [] });
+    await repo.appendQueuedTurn(m2.sessionId, { task: "z", attachments: [] });
+    expect(await repo.cancelAllQueued()).toBe(3);
+    for (const m of [m1, m2]) {
+      const record = await repo.open(m.sessionId);
+      expect(record?.turns.every((t) => t.status === "cancelled")).toBe(true);
+    }
+    expect(await repo.cancelAllQueued()).toBe(0);
+  });
+});

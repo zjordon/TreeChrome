@@ -22,6 +22,19 @@ export interface TabPick {
   sawRestricted: boolean;
 }
 
+/** 指定 tab 现存且可驱动（会话绑定 tab 校验——#37 评审轮 1 [10] 排队续播用）。
+ *  url 未知（权限缺失/注入测试）不判形态，与 drivableOf 同口径 */
+export async function tabByIdDrivable(
+  tabsQuery: TabsQueryApi,
+  tabId: number,
+): Promise<{ ok: true } | { ok: false; reason: "closed" | "restricted" }> {
+  const tabs = await tabsQuery.query({});
+  const tab = tabs.find((t) => t.id === tabId);
+  if (tab === undefined) return { ok: false, reason: "closed" };
+  if (tab.url !== undefined && !isDrivableUrl(tab.url)) return { ok: false, reason: "restricted" };
+  return { ok: true };
+}
+
 /**
  * 三级降级链挑选活动可驱动 tab。sawRestricted 取最后一级查询结果的形态
  * （早命中时即该级结果）——与 run-manager 既有语义逐字一致（抽出不改行为）。

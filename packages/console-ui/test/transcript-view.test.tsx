@@ -1,10 +1,10 @@
 // TranscriptView 组件单测（issue #35 U1b B8）：用户气泡（非 done 状态章/附件行）/
 // run 块（状态头 + 事件 + 终态结果）/空态。
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { RunBlockItem, UserTurnItem } from "../src/transcript.js";
-import { TranscriptView } from "../src/transcript-view.js";
+import { isAtBottom, TranscriptView } from "../src/transcript-view.js";
 
 const user = (over: Partial<UserTurnItem> = {}): UserTurnItem => ({
   kind: "user-turn",
@@ -74,5 +74,40 @@ describe("TranscriptView", () => {
     );
     expect(screen.getByText("出错")).toBeTruthy();
     expect(screen.getByText("连接断开")).toBeTruthy();
+  });
+});
+
+describe("TranscriptView 滚动意图（#37 批 D）", () => {
+  it("isAtBottom 判定：距底 ≤28 真 / >28 假；阈值可参", () => {
+    expect(isAtBottom(972, 1000, 0)).toBe(true); // 距底 28
+    expect(isAtBottom(971, 1000, 0)).toBe(false); // 距底 29
+    expect(isAtBottom(90, 100, 0, 20)).toBe(true);
+  });
+
+  it("上滚解除 → 浮钮出现；回底/点浮钮 → 恢复跟随、浮钮消失", () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      user({ turnId: `t${i}`, task: `第${i}条`, createdAt: i }),
+    );
+    const { rerender } = render(<TranscriptView items={many} />);
+    const el = screen.getByTestId("transcript-view");
+    expect(screen.queryByTestId("transcript-jump")).toBeNull(); // 初始跟随无浮钮
+    // jsdom 无真实布局：scrollHeight/clientHeight 恒 0——用 scrollTop 模拟距底
+    Object.defineProperty(el, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(el, "clientHeight", { value: 0, configurable: true });
+    el.scrollTop = 500; // 距底 500 > 28
+    fireEvent.scroll(el);
+    expect(screen.getByTestId("transcript-jump")).toBeTruthy();
+    // 回底（距底 10）
+    el.scrollTop = 990;
+    fireEvent.scroll(el);
+    expect(screen.queryByTestId("transcript-jump")).toBeNull();
+    // 再解除后点浮钮回底
+    el.scrollTop = 100;
+    fireEvent.scroll(el);
+    fireEvent.click(screen.getByTestId("transcript-jump"));
+    expect(screen.queryByTestId("transcript-jump")).toBeNull();
+    // rerender 保活（items 变更路径不炸）
+    rerender(<TranscriptView items={[...many, user({ turnId: "new", task: "新" })]} />);
+    expect(screen.getByText("新")).toBeTruthy();
   });
 });

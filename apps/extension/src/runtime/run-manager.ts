@@ -22,6 +22,7 @@ import {
   serializeTraceForPrompt,
 } from "@tw/core";
 import type {
+  AttachmentInfo,
   RunJournalSnapshot,
   SessionOrigin,
   SwToUiMessage,
@@ -46,9 +47,14 @@ import {
   type SessionRepository,
   sumUsage,
 } from "./session-repo.js";
-import { pickActiveDrivableTab } from "./tab-pick.js";
+import { pickActiveDrivableTab, tabByIdDrivable } from "./tab-pick.js";
 
-export type ControlResult = { ok: true } | { ok: false; error: string };
+export type ControlResult =
+  | { ok: true }
+  | { ok: false; error: string }
+  /** 非失败的中止（排队出队面）：任务已不在队列（被撤销）——调用方立即试下一条，
+   *  不计退避次数（#37 评审轮 1 [3][9]） */
+  | { ok: false; error: string; skipped: true };
 
 export interface RunManagerDeps {
   settingsStore: SettingsStore;
@@ -79,6 +85,10 @@ export interface RunManagerDeps {
   /** 会话存储面（issue #35 U1a：缺省 null = 会话面禁用降级——旧单测兼容；
    *  background 生产装配必须注入，漏注入由 boot 日志确认） */
   sessions?: SessionRepository | null;
+  /** 终态→排队续播的节流毫秒（#37 批 A：缺省 2000——测试注入小值） */
+  drainDelayMs?: number;
+  /** 出队被拒的退避重试毫秒（#37 评审轮 1 [9]：缺省 10s——测试注入小值） */
+  drainRetryMs?: number;
   now?: () => number;
   newRunId?: () => string;
   log?: (message: string) => void;
@@ -108,6 +118,13 @@ interface ActiveRun {
 
 /** 终态集合（awaiting-* 是挂起态可回 running） */
 const TERMINAL: readonly string[] = ["done", "error", "interrupted"];
+
+/** 任务文本的附件指涉（起跑守卫 #11 D3 + 排队受理守卫 #37 评审轮 1 [9] 共用） */
+const ATTACHMENT_REF_RE = /附件|attachment:/i;
+
+/** 出队被拒的连续上限（#37 评审轮 1 [9]）：达到即头阻塞解除——头 turn 转
+ *  cancelled + 广播，立即续试下一条（无新触发点的搁浅比丢失更糟） */
+const QUEUE_DRAIN_MAX_ATTEMPTS = 3;
 
 /** sensitiveData 配置 → key→真值映射（core distill keyToReal 同口径——URL 过滤
  *  条目保守一律脱敏：蒸馏输入宁可过度占位） */
@@ -295,6 +312,12 @@ export class RunManager {
       // agent.stop() 只置标志位——挂在桥 pending 上的 run 要等收口才解除（最长
       // 300s gate 兜底），此处同步 deny 未决确认（评审轮 1 [17]）
       active.bridge.cancelAll();
+      // 连播语义（#37 D2）：叫停的是这个会话的整个队列——排队 turns 标 cancelled；
+      // 只清本会话 drain timer（评审轮 1 [2]：per-session 分区后他会话续播不受累）
+      if (active.sessionId !== null) {
+        this.clearDrainTimer(active.sessionId);
+        void this.cancelQueue(active.sessionId);
+      }
       return { ok: true };
     }
     if (action === "pause") {
@@ -312,7 +335,13 @@ export class RunManager {
 
   private async start(
     task: string,
-    options: { origin: SessionOrigin; sessionId?: string },
+    options: {
+      origin: SessionOrigin;
+      sessionId?: string;
+      queueTurnId?: string;
+      /** 排队续播的会话绑定 tab（#37 评审轮 1 [10]）：显式指定时不走活动页挑选 */
+      tabId?: number;
+    },
   ): Promise<ControlResult> {
     if (this.active !== null || this.starting) {
       return { ok: false, error: "请先停止当前任务" };
@@ -327,7 +356,12 @@ export class RunManager {
 
   private async startInner(
     task: string,
-    options: { origin: SessionOrigin; sessionId?: string },
+    options: {
+      origin: SessionOrigin;
+      sessionId?: string;
+      queueTurnId?: string;
+      tabId?: number;
+    },
   ): Promise<ControlResult> {
     if (task.trim() === "") {
       return { ok: false, error: "任务不能为空" };
@@ -336,7 +370,7 @@ export class RunManager {
     // 上一轮 clearForRun 清表）→ 拒绝起跑给可行动提示——否则任务文本无 [Attachments]
     // 段，模型瞎猜文件路径空烧 ~10 步（2026-10-25 实录）。误报（如反向表述）成本低：
     // 附加文件或改措辞即可
-    if (/附件|attachment:/i.test(task) && this.deps.attachments.list().length === 0) {
+    if (ATTACHMENT_REF_RE.test(task) && this.deps.attachments.list().length === 0) {
       return {
         ok: false,
         error: "任务提到附件但附件列表为空——请先在下方附加文件（浏览器重启或上一轮结束会清空附件）",
@@ -344,24 +378,45 @@ export class RunManager {
     }
     let tabId: number | undefined;
     let sawRestricted = false;
-    try {
-      // 降级链挑选（issue #32 抽出 tab-pick 共享——drive-session 同款）：
-      // currentWindow → lastFocusedWindow → 任意窗口 active；每级先取可驱动页
-      // （http/https——chrome:// 等内部页 chrome.debugger 拒绝附着）
-      const pick = await pickActiveDrivableTab(this.deps.tabsQuery);
-      tabId = pick.tabId;
-      sawRestricted = pick.sawRestricted;
-    } catch {
-      tabId = undefined;
-    }
-    if (tabId === undefined) {
-      return sawRestricted
-        ? {
-            ok: false,
-            error:
-              "当前活动标签页是浏览器内部页面（chrome:// 等）无法被驱动——请切换到普通网页标签页后再开始",
-          }
-        : { ok: false, error: "找不到活动标签页" };
+    if (options.tabId !== undefined) {
+      // 排队续播驱动会话绑定 tab（评审轮 1 [10]）：不抢用户当前活动页——绑定 tab
+      // 即任务语境（GoalStrip/session-focus 同源）；已关/内部页 → 拒绝走重试面
+      let check: Awaited<ReturnType<typeof tabByIdDrivable>>;
+      try {
+        check = await tabByIdDrivable(this.deps.tabsQuery, options.tabId);
+      } catch {
+        return { ok: false, error: "会话目标标签页查询失败" };
+      }
+      if (!check.ok) {
+        return {
+          ok: false,
+          error:
+            check.reason === "closed"
+              ? "会话目标标签页已关闭——请重新打开后再试"
+              : "会话目标标签页是浏览器内部页面（chrome:// 等）无法被驱动",
+        };
+      }
+      tabId = options.tabId;
+    } else {
+      try {
+        // 降级链挑选（issue #32 抽出 tab-pick 共享——drive-session 同款）：
+        // currentWindow → lastFocusedWindow → 任意窗口 active；每级先取可驱动页
+        // （http/https——chrome:// 等内部页 chrome.debugger 拒绝附着）
+        const pick = await pickActiveDrivableTab(this.deps.tabsQuery);
+        tabId = pick.tabId;
+        sawRestricted = pick.sawRestricted;
+      } catch {
+        tabId = undefined;
+      }
+      if (tabId === undefined) {
+        return sawRestricted
+          ? {
+              ok: false,
+              error:
+                "当前活动标签页是浏览器内部页面（chrome:// 等）无法被驱动——请切换到普通网页标签页后再开始",
+            }
+          : { ok: false, error: "找不到活动标签页" };
+      }
     }
     const settings = await this.deps.settingsStore.load();
     const runId = this.deps.newRunId?.() ?? `run_${Date.now().toString(16)}`;
@@ -395,6 +450,30 @@ export class RunManager {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+    // 排队激活前置（评审轮 1 [3]）：miss（出队窗口内被 queue-remove 撤销）或存储
+    // 异常 → 无副作用中止（journal.begin 未发生、无新 turn）——撤销是用户显式
+    // 意图，优先于「任务不丢」；turn 已是 cancelled，留队重试语义不适用
+    let turnId: string | null = null;
+    if (session !== null && options.queueTurnId !== undefined) {
+      const sessions = this.deps.sessions;
+      if (sessions != null) {
+        try {
+          const activated = await sessions.activateQueuedTurn(
+            session.sessionId,
+            options.queueTurnId,
+            runId,
+          );
+          if (!activated) {
+            this.deps.log?.(`queue activate missed (cancelled): ${options.queueTurnId}`);
+            return { ok: false, error: "排队任务已被撤销", skipped: true };
+          }
+          turnId = options.queueTurnId;
+        } catch (e) {
+          this.deps.log?.(`queue activate failed: ${e instanceof Error ? e.message : String(e)}`);
+          return { ok: false, error: "排队任务激活失败（稍后自动重试）" };
+        }
+      }
+    }
     this.deps.journal.begin({
       runId,
       tabId,
@@ -408,29 +487,31 @@ export class RunManager {
     if (startSnapshot !== null) {
       this.deps.broadcast({ kind: "journal-snapshot", snapshot: startSnapshot });
     }
-    // 记用户 turn（task 原文——转录用户气泡来源；前情块只进 prompt 不回写 turn）
-    let turnId: string | null = null;
-    if (session !== null) {
+    // 记用户 turn（task 原文——转录用户气泡来源；前情块只进 prompt 不回写 turn）。
+    // 排队路径已在上面激活复用；此处只走非排队的新建
+    if (session !== null && turnId === null) {
       const sessions = this.deps.sessions;
       if (sessions != null) {
         try {
-          const turn = await sessions.beginRun(session.sessionId, {
-            runId,
-            task,
-            attachments: this.deps.attachments.list(),
-          });
-          turnId = turn?.turnId ?? null;
+          turnId =
+            (
+              await sessions.beginRun(session.sessionId, {
+                runId,
+                task,
+                attachments: this.deps.attachments.list(),
+              })
+            )?.turnId ?? null;
         } catch (e) {
           this.deps.log?.(`session beginRun failed: ${e instanceof Error ? e.message : String(e)}`);
         }
-        if (turnId !== null) {
-          this.deps.broadcast({
-            kind: "session-updated",
-            sessionId: session.sessionId,
-            reason: "turn",
-          });
-        }
       }
+    }
+    if (session !== null && turnId !== null) {
+      this.deps.broadcast({
+        kind: "session-updated",
+        sessionId: session.sessionId,
+        reason: "turn",
+      });
     }
     const forwarder = new EventForwarder(assembled.bus, this.deps.journal, this.deps.broadcast);
     forwarder.start();
@@ -589,6 +670,8 @@ export class RunManager {
       // 会话终态收口（issue #35 U1a：turn 置终态 + run 归档——fail-soft D3，
       // 失败只记日志不改变 run 终态广播）
       await this.archiveActiveRun(active);
+      // 排队续播（#37 批 A）：终态收口后 2s 节流出队同会话下一条 queued turn
+      if (active.sessionId !== null) this.scheduleDrain(active.sessionId);
       // 终态广播（sidepanel 收 journal-snapshot 收口视图）
       const snapshot = journal.current();
       if (snapshot !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot });
@@ -608,6 +691,164 @@ export class RunManager {
    * 后连同终态字段写 SessionRepository。fail-soft（D3）：失败记日志，不影响 run
    * 终态与广播——转录缺本 run 归档可容忍，run 崩不可容忍。
    */
+  // —— 排队面（#37 U2 批 A）：入队/出队/清空（D1 内聚 run-manager——出队即 start
+  //     语义，互斥/节流/收口都在本类生命周期内）——
+
+  /** 入队受理（session-handler queue-add 消费）；入队即尝试出队（空闲时立刻跑） */
+  async queueFollowUp(
+    sessionId: string,
+    task: string,
+    attachments: AttachmentInfo[] = [],
+  ): Promise<{ ok: true; turnId: string } | { ok: false; error: string }> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return { ok: false, error: "会话面未启用" };
+    if (task.trim() === "") return { ok: false, error: "任务不能为空" };
+    // 附件指涉不入队（评审轮 1 [9]）：附件不随排队传递（start 读注册表不读 turn，
+    // 且注册表随本轮 clearForRun 清空）——出队必被起跑守卫拒，FIFO 头永久阻塞
+    if (ATTACHMENT_REF_RE.test(task)) {
+      return {
+        ok: false,
+        error: "排队任务不支持附件指涉——附件不随排队传递（本轮结束即清空），请在本轮结束后直接发送",
+      };
+    }
+    try {
+      const r = await sessions.appendQueuedTurn(sessionId, { task, attachments });
+      if (!r.ok) {
+        return {
+          ok: false,
+          error: r.error === "queue-full" ? "排队已满（上限 5 条）" : "会话不存在",
+        };
+      }
+      this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      this.scheduleDrain(sessionId, 0);
+      return { ok: true, turnId: r.turn.turnId };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** 撤销单条排队（queue-remove 消费） */
+  async queueRemove(sessionId: string, turnId: string): Promise<boolean> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return false;
+    try {
+      const ok = await sessions.cancelQueuedTurn(sessionId, turnId);
+      if (ok) {
+        // 撤销重置退避计数（评审轮 2 [1]）：队列换代（头 turn 更替/清空）后旧计数
+        // 不跨代沿用——否则新任务首次被拒即达上限被静默取消
+        this.drainAttempts.delete(sessionId);
+        this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      }
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /** stop 连播语义（D2）：清空一会话全部排队 */
+  private async cancelQueue(sessionId: string): Promise<void> {
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return;
+    try {
+      const n = await sessions.cancelQueued(sessionId);
+      // stop 清空同样重置退避计数（评审轮 2 [1]——与 queueRemove 同语义）
+      this.drainAttempts.delete(sessionId);
+      if (n > 0) {
+        this.deps.log?.(`queue cancelled (${n}): ${sessionId}`);
+        this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      }
+    } catch (e) {
+      this.deps.log?.(`queue cancel failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** 出队节流（#37 批 A + 评审轮 1 [2][9]）：per-session timer——终态收口 2s /
+   *  入队即时（0ms）/ 占位让位重排 / 拒绝退避重试。延迟可注入（测试小值免假钟） */
+  private drainTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 出队被拒的连续次数（per-session；成功出队 / 队列空即清零） */
+  private drainAttempts = new Map<string, number>();
+  private scheduleDrain(sessionId: string, delayMs?: number): void {
+    if (this.drainTimers.has(sessionId)) return;
+    const delay = delayMs ?? this.deps.drainDelayMs ?? 2000;
+    this.drainTimers.set(
+      sessionId,
+      setTimeout(() => {
+        this.drainTimers.delete(sessionId);
+        void this.drainQueue(sessionId);
+      }, delay),
+    );
+  }
+
+  private clearDrainTimer(sessionId: string): void {
+    const timer = this.drainTimers.get(sessionId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.drainTimers.delete(sessionId);
+  }
+
+  private async drainQueue(sessionId: string): Promise<void> {
+    if (this.active !== null || this.starting) {
+      // 占位让位重排（评审轮 1 [2]）：终态收口只调度本 run 所属会话——等待中会话
+      // 若无自身 timer 会永久搁浅（跨会话排队场景）
+      this.scheduleDrain(sessionId);
+      return;
+    }
+    const sessions = this.deps.sessions ?? null;
+    if (sessions === null) return;
+    try {
+      const turn = await sessions.firstQueuedTurn(sessionId);
+      if (turn === null) {
+        this.drainAttempts.delete(sessionId);
+        return;
+      }
+      // 续播绑定会话目标 tab（评审轮 1 [10]）：不抢用户当前活动页（否则 agent 在
+      // 无关页面执行任务 + rebindTab 静默改绑目标）。tabId 0 = 未绑定（新会话首跑
+      // 前入队）——回落活动页挑选（与显式续跑 rebind 语义一致）
+      const boundTabId = (await sessions.open(sessionId))?.meta.tabId ?? 0;
+      const r =
+        boundTabId > 0
+          ? await this.start(turn.task, {
+              origin: "user",
+              sessionId,
+              queueTurnId: turn.turnId,
+              tabId: boundTabId,
+            })
+          : await this.start(turn.task, { origin: "user", sessionId, queueTurnId: turn.turnId });
+      if (r.ok) {
+        this.drainAttempts.delete(sessionId);
+        return;
+      }
+      if (this.active !== null || this.starting) {
+        // 出队窗口被手动起跑抢占——让位重排（不计退避次数）
+        this.scheduleDrain(sessionId);
+        return;
+      }
+      if ("skipped" in r) {
+        // 头 turn 出队窗口内被撤销——立即续试下一条（不计退避次数）
+        this.scheduleDrain(sessionId, 0);
+        return;
+      }
+      // 出队被拒（评审轮 1 [9]）：退避重试；连续达上限 → 头阻塞解除（转 cancelled
+      // + 广播）后立即试下一条。此前「留队等下个触发点」在无新触发时永久搁浅
+      this.deps.log?.(`queue dequeue rejected: ${r.error}`);
+      const attempts = (this.drainAttempts.get(sessionId) ?? 0) + 1;
+      if (attempts < QUEUE_DRAIN_MAX_ATTEMPTS) {
+        this.drainAttempts.set(sessionId, attempts);
+        this.scheduleDrain(sessionId, this.deps.drainRetryMs ?? 10_000);
+        return;
+      }
+      this.drainAttempts.delete(sessionId);
+      this.deps.log?.(`queue drain attempts exhausted — cancel head turn: ${turn.turnId}`);
+      const cancelled = await sessions.cancelQueuedTurn(sessionId, turn.turnId);
+      if (cancelled) {
+        this.deps.broadcast({ kind: "session-updated", sessionId, reason: "queue" });
+      }
+      this.scheduleDrain(sessionId, 0);
+    } catch (e) {
+      this.deps.log?.(`queue drain failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   private async archiveActiveRun(active: ActiveRun): Promise<void> {
     const sessions = this.deps.sessions ?? null;
     if (sessions === null || active.sessionId === null || active.turnId === null) return;

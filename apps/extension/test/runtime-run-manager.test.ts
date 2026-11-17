@@ -69,6 +69,12 @@ function makeDeps(
     attachments?: AttachmentRegistry;
     /** 会话存储面（issue #35 U1a：缺省不注入 = 降级路径） */
     sessions?: RunManagerDeps["sessions"];
+    /** 终态→续播节流毫秒（#37 批 A：测试注入小值） */
+    drainDelayMs?: number;
+    /** 出队拒绝退避毫秒（#37 评审轮 1 [9]：测试注入小值） */
+    drainRetryMs?: number;
+    /** tabsQuery 返回面（评审轮 1 [10] 绑定 tab 测试：多 tab/url 形态注入） */
+    tabs?: Array<{ id: number; url?: string }>;
     /** 装配时捕获任务文本入参（#35 验收①：前情块注入断言） */
     captureTask?: (task: string) => void;
   } = {},
@@ -123,7 +129,7 @@ function makeDeps(
     tabsQuery: {
       query: async () => {
         if (options.queryGate !== undefined) await options.queryGate;
-        return [{ id: "tabId" in options ? options.tabId : 77 }];
+        return options.tabs ?? [{ id: "tabId" in options ? options.tabId : 77 }];
       },
     },
     tabsOnRemoved: {
@@ -145,6 +151,8 @@ function makeDeps(
     assemble: assembleOverride,
     ...(options.distill !== undefined ? { distill: options.distill } : {}),
     ...(options.sessions !== undefined ? { sessions: options.sessions } : {}),
+    ...(options.drainDelayMs !== undefined ? { drainDelayMs: options.drainDelayMs } : {}),
+    ...(options.drainRetryMs !== undefined ? { drainRetryMs: options.drainRetryMs } : {}),
     newRunId: () => "run_test",
     now: () => 1234,
     log: (m: string) => void logs.push(m),
@@ -1110,5 +1118,227 @@ describe("RunManager 会话集成（#35 U1a）", () => {
     expect(list[0]?.tabId).toBe(9); // 已重绑
     m9.stub.finish(doneHistory());
     await settle();
+  });
+});
+
+describe("RunManager 排队面（#37 批 A）", () => {
+  it("空闲入队即出队：queueFollowUp → 立即 start（复用 queued turn 激活，不另建）", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "排队" });
+    const tasks: string[] = [];
+    const m = makeDeps({
+      tabId: 7,
+      sessions: repo,
+      drainDelayMs: 5,
+      captureTask: (t) => void tasks.push(t),
+    });
+    const r = await m.manager.queueFollowUp(meta.sessionId, "排队任务");
+    expect(r).toMatchObject({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 出队启动：journal running、turn 激活为 running（同一条 turnId，无新建第二条）
+    expect(m.journal.current()).toMatchObject({ status: "running" });
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns).toHaveLength(1);
+    expect(record?.turns[0]).toMatchObject({ status: "running", task: "排队任务" });
+    m.stub.finish(doneHistory());
+    await settle();
+  });
+
+  it("运行中入队 → 终态后节流续跑（≤drainDelayMs 窗口）；前情块带上前轮结果", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "连播" });
+    const tasks: string[] = [];
+    const m = makeDeps({
+      tabId: 7,
+      sessions: repo,
+      drainDelayMs: 5,
+      captureTask: (t) => void tasks.push(t),
+    });
+    expect(await m.manager.control("start", "第一任务", meta.sessionId)).toMatchObject({
+      ok: true,
+    });
+    // 运行中入队（发送→queue 语义）
+    const q = await m.manager.queueFollowUp(meta.sessionId, "第二任务");
+    expect(q).toMatchObject({ ok: true });
+    let record = await repo.open(meta.sessionId);
+    expect(record?.turns.filter((t) => t.status === "queued")).toHaveLength(1);
+    // 第一轮终态 → 节流后自动续跑第二条（共用 stub 的 runPromise 已解决——第二轮
+    // 即刻收口 done，断言按「已续跑并终态」口径）
+    m.stub.finish(doneHistory());
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(tasks.length).toBeGreaterThanOrEqual(2);
+    expect(tasks[1]).toContain("此前任务：第一任务");
+    record = await repo.open(meta.sessionId);
+    expect(record?.turns.filter((t) => t.status === "queued")).toHaveLength(0);
+    expect(record?.runs).toHaveLength(2); // 第二轮真跑过（非仅入队）
+    expect(record?.turns[1]).toMatchObject({ status: "done", task: "第二任务" });
+  });
+
+  it("stop 连播清空：终态后队列全转 cancelled、不再续跑", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "停队列" });
+    const m = makeDeps({ tabId: 7, sessions: repo, drainDelayMs: 5 });
+    expect(await m.manager.control("start", "首轮", meta.sessionId)).toMatchObject({ ok: true });
+    await m.manager.queueFollowUp(meta.sessionId, "排队A");
+    await m.manager.queueFollowUp(meta.sessionId, "排队B");
+    expect(await m.manager.control("stop")).toMatchObject({ ok: true });
+    m.stub.finish(doneHistory()); // interrupted 收口
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const record = await repo.open(meta.sessionId);
+    // 首轮 interrupted；两条排队全 cancelled；无新 run 启动（runs 仅 1）
+    expect(record?.turns[0]?.status).toBe("interrupted");
+    expect(record?.turns.filter((t) => t.status === "cancelled")).toHaveLength(2);
+    expect(record?.runs).toHaveLength(1);
+  });
+
+  it("queueRemove 撤销：开跑前撤销生效（续跑跳过该条）；上限拒绝回可行动文案", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "撤销" });
+    const m = makeDeps({ tabId: 7, sessions: repo, drainDelayMs: 5 });
+    expect(await m.manager.control("start", "首轮", meta.sessionId)).toMatchObject({ ok: true });
+    const q = await m.manager.queueFollowUp(meta.sessionId, "会被撤销");
+    if (!q.ok) throw new Error("queue failed");
+    expect(await m.manager.queueRemove(meta.sessionId, q.turnId)).toBe(true);
+    m.stub.finish(doneHistory());
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // 队列已空——不续跑
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns[1]?.status).toBe("cancelled");
+    expect(m.journal.current()?.status).toBe("done"); // 首轮终态未被覆盖
+    // 上限拒绝（新会话灌满 5 条）
+    const m2 = makeDeps({ tabId: 7, sessions: repo });
+    for (let i = 0; i < 5; i += 1) await m2.manager.queueFollowUp(meta.sessionId, `灌${i}`);
+    const full = await m2.manager.queueFollowUp(meta.sessionId, "第6条");
+    expect(full).toMatchObject({ ok: false });
+    if (!full.ok) expect(full.error).toContain("上限");
+  });
+
+  it("出队窗口撤销（评审轮 1 [3]）：激活 miss → 无副作用中止——不回落新建、journal 不 begin", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "撤销竞态" });
+    let releaseQuery!: () => void;
+    const gate = new Promise<void>((r) => {
+      releaseQuery = r;
+    });
+    const m = makeDeps({ tabId: 7, sessions: repo, drainDelayMs: 5, queryGate: gate });
+    const q = await m.manager.queueFollowUp(meta.sessionId, "将被撤销的任务");
+    if (!q.ok) throw new Error("queue failed");
+    // drain → start → tabByIdDrivable 挂在 gate（出队窗口），此刻撤销
+    await new Promise((r) => setTimeout(r, 15));
+    expect(await m.manager.queueRemove(meta.sessionId, q.turnId)).toBe(true);
+    releaseQuery();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(m.journal.current()).toBeNull(); // journal 未 begin（无残留 running 快照）
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns).toHaveLength(1); // 无回落新建的第二条 turn
+    expect(record?.turns[0]).toMatchObject({ status: "cancelled" });
+    expect(record?.runs).toHaveLength(0);
+    expect(m.logs.some((l) => l.includes("queue activate missed"))).toBe(true);
+  });
+
+  it("跨会话排队不搁浅（评审轮 1 [2]）：A 运行中给 B 入队 → stop A 后 B 照常续播（per-session timer）", async () => {
+    const repo = makeRepo();
+    const a = await repo.createSession({ tabId: 7, origin: "user", title: "A" });
+    const b = await repo.createSession({ tabId: 8, origin: "user", title: "B" });
+    const m = makeDeps({
+      tabId: 7,
+      sessions: repo,
+      drainDelayMs: 5,
+      tabs: [{ id: 7 }, { id: 8 }],
+    });
+    expect(await m.manager.control("start", "A 首轮", a.sessionId)).toMatchObject({ ok: true });
+    expect(await m.manager.queueFollowUp(b.sessionId, "B 排队任务")).toMatchObject({ ok: true });
+    await new Promise((r) => setTimeout(r, 20)); // B 的 0ms drain 让位 → 占位重排
+    let recordB = await repo.open(b.sessionId);
+    expect(recordB?.turns.filter((t) => t.status === "queued")).toHaveLength(1); // 未抢跑
+    // stop 只清 A 的队列与 timer（D2）——B 的续播 timer 不受累
+    expect(await m.manager.control("stop")).toMatchObject({ ok: true });
+    m.stub.finish(doneHistory());
+    await new Promise((r) => setTimeout(r, 80));
+    const recordA = await repo.open(a.sessionId);
+    expect(recordA?.turns[0]?.status).toBe("interrupted");
+    recordB = await repo.open(b.sessionId);
+    // B 续播了并收口（共用 stub 的 runPromise 已解决——第二轮即刻 done）
+    expect(recordB?.turns[0]).toMatchObject({ status: "done", task: "B 排队任务" });
+    expect(recordB?.runs).toHaveLength(1);
+  });
+
+  it("排队续播绑定会话目标 tab（评审轮 1 [10]）：驱动绑定 tab 而非当前活动页、不 rebind", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 8, origin: "user", title: "绑定" });
+    // 活动页是 tab 7；会话绑定 tab 8（可驱动）→ 续播应上 8
+    const m = makeDeps({
+      tabId: 7,
+      sessions: repo,
+      drainDelayMs: 5,
+      tabs: [{ id: 7 }, { id: 8, url: "https://session.example/page" }],
+    });
+    expect(await m.manager.queueFollowUp(meta.sessionId, "续播任务")).toMatchObject({ ok: true });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(m.journal.current()).toMatchObject({ status: "running", tabId: 8 });
+    expect((await repo.listIndex())[0]?.tabId).toBe(8); // 未重绑到活动页 7
+    m.stub.finish(doneHistory());
+    await settle();
+  });
+
+  it("出队拒绝退避与上限（评审轮 1 [9]）：目标 tab 已关 → 重试达上限头阻塞解除（转 cancelled + 广播），后续条目续试", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 9, origin: "user", title: "拒绝重试" });
+    // 活动页 tab 7 可驱动，但会话绑定 tab 9 不存在 → 每次出队被拒
+    const m = makeDeps({
+      tabId: 7,
+      sessions: repo,
+      drainDelayMs: 5,
+      drainRetryMs: 5,
+      tabs: [{ id: 7 }],
+    });
+    expect(await m.manager.queueFollowUp(meta.sessionId, "任务一")).toMatchObject({ ok: true });
+    expect(await m.manager.queueFollowUp(meta.sessionId, "任务二")).toMatchObject({ ok: true });
+    await new Promise((r) => setTimeout(r, 150));
+    const record = await repo.open(meta.sessionId);
+    expect(record?.runs).toHaveLength(0); // 从未起跑
+    expect(record?.turns.every((t) => t.status === "cancelled")).toBe(true); // 两条均被上限解除
+    expect(m.journal.current()).toBeNull();
+    expect(m.broadcasts).toContainEqual({
+      kind: "session-updated",
+      sessionId: meta.sessionId,
+      reason: "queue",
+    });
+    expect(m.logs.some((l) => l.includes("queue dequeue rejected"))).toBe(true);
+  });
+
+  it("queueFollowUp 附件指涉拒绝（评审轮 1 [9]）：附件不随排队传递——可行动文案，不入队", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "附件" });
+    const m = makeDeps({ tabId: 7, sessions: repo });
+    const r = await m.manager.queueFollowUp(meta.sessionId, "用附件里的视频发布到抖音");
+    expect(r).toMatchObject({ ok: false });
+    if (!r.ok) expect(r.error).toContain("附件");
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns).toHaveLength(0); // 未入队（防 FIFO 头永久阻塞）
+  });
+
+  it("退避计数不跨代（评审轮 2 [1]）：撤销换代后新任务仍享满 3 次重试", async () => {
+    const repo = makeRepo();
+    const meta = await repo.createSession({ tabId: 9, origin: "user", title: "跨代" });
+    const m = makeDeps({
+      tabId: 7,
+      sessions: repo,
+      drainDelayMs: 5,
+      drainRetryMs: 30,
+      tabs: [{ id: 7 }], // 绑定 tab 9 不存在 → 出队必拒（可重试类拒绝）
+    });
+    const t1 = await m.manager.queueFollowUp(meta.sessionId, "旧任务");
+    if (!t1.ok) throw new Error("queue failed");
+    await new Promise((r) => setTimeout(r, 15)); // 旧任务首次拒绝落账（attempts=1）
+    expect(m.logs.filter((l) => l.includes("queue dequeue rejected")).length).toBe(1);
+    expect(await m.manager.queueRemove(meta.sessionId, t1.turnId)).toBe(true); // 换代
+    expect(await m.manager.queueFollowUp(meta.sessionId, "新任务")).toMatchObject({ ok: true });
+    await new Promise((r) => setTimeout(r, 250)); // 新任务 3 次拒绝 → 上限解除
+    const record = await repo.open(meta.sessionId);
+    expect(record?.turns.every((t) => t.status === "cancelled")).toBe(true);
+    // 固定语义：旧 1 次 + 新 3 次满额（修复前旧计数跨代沿用 → 新任务 2 次即被取消）
+    expect(m.logs.filter((l) => l.includes("queue dequeue rejected")).length).toBe(4);
   });
 });

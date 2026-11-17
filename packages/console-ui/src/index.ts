@@ -7,12 +7,18 @@ export { AppShell } from "./app-shell.js";
 export { formatBytes } from "./bytes.js";
 export type { ComposerProps } from "./composer.js";
 export { COMPOSER_MAX_HEIGHT, COMPOSER_MIN_HEIGHT, Composer } from "./composer.js";
+export type { ExternalDriveCardProps } from "./external-card.js";
+export { ExternalDriveCard } from "./external-card.js";
 export type { FinalResultProps } from "./final-result.js";
 export { FinalResult } from "./final-result.js";
+export type { GoalStripProps } from "./goal-strip.js";
+export { GoalStrip, goalLabelOf } from "./goal-strip.js";
 export type { GrantsViewProps } from "./grants-view.js";
 export { GrantsView } from "./grants-view.js";
 export type { IconButtonProps } from "./icon-button.js";
 export { IconButton } from "./icon-button.js";
+export type { ModelSwitcherProps } from "./model-switcher.js";
+export { ModelSwitcher } from "./model-switcher.js";
 export type { PermissionCardProps } from "./permission-card.js";
 export { PermissionCard } from "./permission-card.js";
 export type { BadgeTone, ButtonProps } from "./primitives.js";
@@ -22,19 +28,23 @@ export type {
   CardFormState,
   ProtocolOption,
   ProviderCardFormProps,
+  ProviderPreset,
 } from "./provider-card-form.js";
 export {
   formStateOf,
+  PRESET_CARDS,
   PROTOCOL_OPTIONS,
   ProviderCardForm,
   validateCardForm,
 } from "./provider-card-form.js";
 export type { ProviderListProps } from "./provider-list.js";
 export { ProviderList } from "./provider-list.js";
+export type { QueueStripProps } from "./queue-strip.js";
+export { QueueStrip } from "./queue-strip.js";
 export type { DistillState, PortStatus, RunPanelHeaderProps } from "./run-panel-header.js";
 export { distillStatusText, RunPanelHeader } from "./run-panel-header.js";
-export type { RunStatusBarProps } from "./run-status-bar.js";
-export { formatSeconds, RunStatusBar } from "./run-status-bar.js";
+export type { ContextUsage, RunStatusBarProps } from "./run-status-bar.js";
+export { formatSeconds, formatTokens, RunStatusBar } from "./run-status-bar.js";
 export type { RunTimelineProps } from "./run-timeline.js";
 export { groupByStep, RunTimeline, repeatedSkillSeqs } from "./run-timeline.js";
 export type { SegmentItem, SegmentProps } from "./segment.js";
@@ -58,6 +68,6 @@ export { ThemedRoot } from "./themed-root.js";
 export type { RunBlockItem, TranscriptItem, UserTurnItem } from "./transcript.js";
 export { projectTranscript } from "./transcript.js";
 export type { TranscriptViewProps } from "./transcript-view.js";
-export { TranscriptView } from "./transcript-view.js";
+export { FOLLOW_BOTTOM_THRESHOLD_PX, isAtBottom, TranscriptView } from "./transcript-view.js";
 export type { WelcomePanelProps } from "./welcome-panel.js";
 export { WelcomePanel } from "./welcome-panel.js";

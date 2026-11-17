@@ -22,9 +22,13 @@
   min-height: 0;
   overflow-y: auto;
   padding: 10px;
-  display: grid;
+  /* flex 列（#37 评审轮 1 [1]）：grid auto 行高下子项恒等于内容高、自身永不溢出
+     ——转录滚动面（.tc-transcript--scroll）拿不到限高父级则跟随/解除全失效。
+     其余子项靠 flex 列 min-height:auto 默认不缩（低于内容高即溢出回退 main 滚动，
+     与原 grid 行为一致） */
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-content: start;
 }
 
 .tc-shell-dock {
@@ -108,6 +112,41 @@
 
 .tc-runstatus-stop {
   margin-left: auto;
+}
+
+/* 上下文用量 pill（#37 批 B）：≥90% 警色 */
+.tc-runstatus-usage {
+  flex: none;
+  font-size: 11px;
+  color: var(--tc-muted);
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-pill);
+  padding: 0 6px;
+}
+.tc-runstatus-usage--warn {
+  color: var(--tc-warning);
+  border-color: var(--tc-warning);
+}
+
+/* —— 目标条（GoalStrip，#37 批 C）—— */
+.tc-goal-strip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--tc-muted);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tc-goal-strip:hover {
+  color: var(--tc-fg);
+  background: var(--tc-bg-muted);
+  border-radius: var(--tc-radius-sm);
 }
 
 @keyframes tc-pulse {
@@ -209,11 +248,37 @@
   text-decoration: underline;
 }
 
-/* —— 转录（#35 U1b TranscriptView）—— */
+/* —— 转录（#35 U1b TranscriptView + #37 批 D 滚动面）—— */
 .tc-transcript {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* 滚动意图（#37 批 D + 评审轮 1 [1]）：转录自有滚动面——跟随/解除/浮钮的容器。
+   flex:1 + min-height:0（overflow 非 visible 时自动最小高为 0）：占据 main 剩余
+   高度并内部滚动——限高父级是 flex 列化的 .tc-shell-main */
+.tc-transcript--scroll {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding-right: 2px;
+}
+
+/* 回底浮钮：解除跟随时出现（流式新事件提示） */
+.tc-transcript-jump {
+  position: sticky;
+  bottom: 6px;
+  align-self: flex-end;
+  margin-left: auto;
+  margin-top: -4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-bg-elevated);
+  color: var(--tc-accent);
+  cursor: pointer;
 }
 
 /* 用户气泡：右对齐轻底（归档 run 块居左——对话方向感的最小实现） */

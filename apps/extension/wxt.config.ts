@@ -58,5 +58,14 @@ export default defineConfig({
     // domain-skills.json 走 web_accessible_resources（SW fetch 自身资源不需
     // web_accessible——但显式声明无害且便于诊断页直读）
     web_accessible_resources: [{ resources: ["domain-skills.json"], matches: ["<all_urls>"] }],
+    // chrome.commands（#37 批 C）：Ctrl+Shift+K 开面板（_execute_action 原生路由）；
+    // Ctrl+Shift+M 模型快速切换（background onCommand → 开面板 + 广播）
+    commands: {
+      _execute_action: { suggested_key: { default: "Ctrl+Shift+K" } },
+      "open-model-switcher": {
+        suggested_key: { default: "Ctrl+Shift+M" },
+        description: "打开模型快速切换",
+      },
+    },
   },
 });

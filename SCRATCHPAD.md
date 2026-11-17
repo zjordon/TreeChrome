@@ -1,180 +1,103 @@
-# SCRATCHPAD——sidepanel 改版 U1：转录骨架 + 会话模型
+# SCRATCHPAD——sidepanel 改版 U2：干预与状态
 
-> 依据：`docs/sidepanel-redesign-plan.md` §6 U1（2026-11-16 定稿）。本文件随实施持续更新；
-> 评审轮次登记见 §7。U1 拆两条闸门分支：**U1a 数据面**（本分支先行）/ **U1b UI 面**（U1a 合并后另分支，开工前细化其工作项）。
+> 依据：docs/sidepanel-redesign-plan.md §6 U2。U1（#35）已合并：会话模型/转录形态/Composer/任务页就位；
+> 协议 queue-add/remove kind 与 steer 预留、快照 origin 字段、SessionTurn.status 含 queued 均已在 U1a 落地。
+> 本期单分支多提交（评审循环按增量轮跑——U1 已验证），评审登记见 §7。
 
-## 0. U1 总目标与验收（引自方案 §6）
+## 0. U2 总目标与验收（引自方案 §6）
 
-同 tab 连发任务 → 连续多轮转录（含前情块注入）；SW 重启后会话列表完整、归档转录无洞。
+run 进行中可发后续任务入队可视化、终态后自动续跑；上下文用量常驻状态条；bridge 发起的 run 面板只读可视化；快捷键与预设降建卡门槛；滚动跟随。
 
-验收口径：
-1. 同 tab 二连发：转录两 turn，第二次 run 的任务文本含前情块且受 8K 截断
-2. SW 重启后重连：会话列表完整、归档转录无洞（含环淘汰场景：单 run 事件 >256 时归档仍完整）
-3. 重命名/删除/切换生效且 index 一致
-4. 会话超 50 条 LRU 淘汰最老、单会话超 1MB 丢 tool 明细保标题行
-5. repository/投影纯函数 vitest 覆盖率 ≥85%
+验收五条：
+1. run 进行中发送 → 入队可见且转录出现排队标记；done 后 ≤2s 自动开跑下一条；开跑前撤销有效
+2. stop 后队列清空且对应 turn 标 cancelled（转录可查）
+3. bridge 发起 run，sidepanel 显示外部卡 + 只读条，stop 可用
+4. usage pill 数值与 diag 导出的 model_result.inputTokens 一致，分母 = activeCard.contextWindow
+5. e2e 冒烟：排队 3 条中途 stop 的全状态断言
 
-## 1. U1a 数据面工作项（本分支）
+## 1. 工作项（提交分四批）
 
-### W1 协议扩展（packages/protocol/src/index.ts）
+### 批 A：排队全链（SW + UI，强耦合同批）
 
-- 新类型：`SessionOrigin = "user" | "bridge"`；`SessionTurn`（turnId/sessionId/runId/task(用户原文)/status: queued|running|done|error|interrupted|cancelled/attachments/createdAt/endedAt）；`RunArchive`（runId/turnId/startedAt/endedAt/status/finalResult/events(压缩后 JournalEvent[])/usage{inputTokens,outputTokens}）；`SessionMeta`（sessionId/tabId/title/origin/runCount/lastStatus/createdAt/updatedAt/usageTokens）；`SessionRecord`（meta+turns+runs）
-- `RunJournalSnapshot` 加可选 `origin?` / `sessionId?`（非破坏；旧快照无字段照常恢复）
-- `UiControlMessage` 加可选 `sessionId?`；action 联合加 `"steer"`（预留——SW 回 not-supported）
-- 新单发面（镜像 options 模式）：`SESSION_OPS = ["session-new","session-list","session-open","session-rename","session-delete","queue-add","queue-remove"]` + `UiSessionRequestMessage {kind:"session", op, payload?}`；UI_TO_SW_KINDS 加 `"session"`。queue 两 op 本期 SW 回 not-supported（U2 实现）
-- SW→UI：`session-updated` kind + `SwSessionUpdatedMessage {kind, sessionId?: string, reason: "turn"|"archive"|"index"|"queue"}`（Port 广播；UI 消费在 U1b）
+- **A1 协议**：queue-add 载荷 {sessionId, task, attachments?}、queue-remove {turnId} 实质化（kind 已在）；queue-add 应答 {ok, turnId}；SW→UI 复用 session-updated(reason:"queue")
+- **A2 SW 排队器**（run-manager 内聚，不另立模块）：
+  - queue-add：同 session queued turns <5 → repo 追加 queued turn（runId null）→ 无活 run 且无在途 create 时立即尝试出队；有则等终态
+  - 终态收口（drive finally 归档后）：同 session 有 queued → 2s 节流出队（start 语义，显式 sessionId）；出队前 turn 转 running（复用 beginRun 路径——queued→running 需 repo 支持 updateTurn 补 runId）
+  - control.stop：清空当前 session 全部 queued turns 标 cancelled（连播语义——用户叫停整个队列）
+  - SW 重启：恢复扫描时 queued→cancelled（与「不续跑」决策 5 同构——无人值守起跑不可接受）
+  - 出队与 drive/run 互斥：出队走既有单飞互斥（starting 标志），失败即下一条不烧
+- **A3 repo**：appendQueuedTurn / activateQueuedTurn(turnId, runId)（queued→running）/ cancelQueued(sessionId)——变更链内串行
+- **A4 session-handler**：queue-add/queue-remove 实装（替换 not-supported）；queue-add 上限/空任务校验
+- **A5 UI**：composer 运行中可输入（canSend 语义反转——running 时仍可发→queue-add）；排队消息条（当前 session queued turns 列表 + 逐条撤销，数据面=session-open 应答已含 queued turns）；TranscriptView 排队 turn 气泡（状态章「排队中」——projectTranscript 已支持 queued 状态，补 run-block 缺省渲染）
+- **A6 测试**：排队器状态机（入队/节流出队/撤销/stop 清空/重启 cancelled/上限拒绝/与互斥窗口竞态）+ repo 三方法 + handler 两 op + UI reducer/组件 + e2e 冒烟脚本（smoke-queue.mjs：mock LLM 三步 run ×3 入队中途 stop）
 
-### W2 SessionRepository（apps/extension/src/runtime/session-repo.ts，新建）
+### 批 B：usage pill + 外部直驱只读态
 
-- 形态：零 chrome（StorageArea 注入，同 journal/settings-store 模式）；内部变更链串行化（读-改-写不竞态，同 mutation-queue/driveAuditWriter 先例）
-- 键：`tc_sessions:index`（SessionMeta[]，上限 50 条 LRU——超限删最老会话及其 `tc_session:<id>`）；`tc_session:<sessionId>`（SessionRecord，单会话预算 1MB——超限从最老 run 的 events 丢 tool_result 明细保留标题行，逐步降级）
-- 接口：`createSession({tabId, origin, title})` / `resolveSessionForTab(tabId)`（该 tab 最新会话）/ `appendTurn` / `updateTurn(sessionId, turnId, patch)` / `appendRunArchive` / `listIndex` / `open(sessionId)` / `rename` / `delete`
-- 坏形态回退：读旧/坏数据回空不抛（宽松收窄，parse 同 settings-store 风格）；写失败上抛由调用方 fail-soft
-- id：`newSessionId` 注入（缺省 `sess_${Date.now().toString(16)}_${随机 4 位}`）
+- **B1 usage**：UI reducer 从 events 取最近 model_result.inputTokens/outputTokens（已有数据面）；contextWindow 经 optionsRequest get-settings 热读（设置变更后拉一次）；RunStatusBar 加 usage pill（比例条+数值 title）
+- **B2 只读态**：snapshot.origin==="bridge" 时——①转录顶部外部卡（静态说明：外部客户端直驱中/此处只读/停止可用；连接命令显示 tc-bridge 用法行，不含可复制配对 URL——扩展侧不回读 bridge 配置，登记偏离）②composer 禁用+提示条（发送钮隐藏）③停止钮保留（既有）
+- **B3 测试**：usage 投影（多 model_result 取最新）、只读态渲染、origin 缺省不触发
 
-### W3 journal 归档钩子（apps/extension/src/runtime/journal.ts，改造）
+### 批 C：目标条 + chrome.commands + 预设模板
 
-- `RunJournalOptions` 加 `archiveSink?: (entry: JournalEvent) => void`；`record()` 在 push 后同步调用——**环淘汰只作用于环数组，sink 先于淘汰语义拿到全量事件**（>256 场景归档不丢，验收②的技术保证）
-- 归档缓冲（JournalEvent[]）由 run-manager 持有：begin 时重置，终态收口时压缩成 RunArchive 写 repo
-- 既有行为零变化（不注入 sink = 现状）
+- **C1 目标条**：session-open 应答带 targetUrl（SW tabs.query(tabId) 现查）；新 op session-focus（tabs.update 激活）；composer 顶部条件行（有会话时显示 host+路径截断，点击聚焦）
+- **C2 commands**：manifest commands：_execute_action（Ctrl+Shift+K 开面板——setPanelBehavior 已接）+ open-model-switcher（Ctrl+Shift+M）；background onCommand：switcher → sidePanel.open + 端口广播 model-switch-request（新 SW→UI kind）；UI 收到弹 ProviderList 快速切换 overlay（选卡 → save-settings activeCard）
+- **C3 预设**：console-ui 常量 PRESETS（智谱/OpenAI/DeepSeek/Kimi/OpenRouter：baseUrl+protocol+model 示例）；ProviderCardForm 新建时预设下拉预填
+- **C4 测试**：目标条/聚焦 op/switcher 广播链/预设表单
 
-### W4 continuity 模块（apps/extension/src/runtime/continuity.ts，新建纯函数）
+### 批 D：滚动意图裁剪版
 
-- `buildContinuityBlock(priorTurns: Array<{task, finalResult, status}>): string | null`——前情块 `[会话前情·自动注入]…[当前任务]` 形态（方案 §5.2）；总预算 8192 字符（硬编码常量，超限从最老条目起截断/丢弃）；无前情返回 null
-- `withContinuity(task, block): string`——块在前、`[当前任务]` 分隔、用户任务在后
-- 只取终态 turn 的 finalResult（error/interrupted 的 lastError 不进前情——失败任务以 finalResult=null 形态出现时仅列任务行）
+- TranscriptView 容器：sticky-bottom 跟随 + 上滚解除（阈值 28px）+ 回底恢复 + 解除时新事件浮钮「↓」；纯组件（scroll 事件 + ref），测试 jsdom 模拟 scrollTop
 
-### W5 run-manager 集成（apps/extension/src/runtime/run-manager.ts，改造）
-
-- deps 加 `sessions?: SessionRepository`（缺省 null = 会话面禁用降级——旧单测不动；background 必须显式注入，装配漏注入在 boot 日志断言）
-- start 路径：`startRun(task, origin)` 内部方法（control("start") 与 bridge-gateway 共用；starting 互斥语义不变）：
-  1. tab 挑选/校验照旧 → `sessions.resolveSessionForTab(tabId)`（无 → `createSession`，title=任务前 30 字符）
-  2. `repo.open` 取既有终态 turn → `buildContinuityBlock` → `withContinuity` 得 effectiveTask → `assembleRun({task: effectiveTask, …})`
-  3. `appendTurn({runId, task: 用户原文, status:"running", attachments: list()})`
-  4. `journal.begin` 携带 `sessionId`/`origin`
-- drive() 终态收口（finally 前段）：`appendRunArchive`（events=归档缓冲压缩；usage=events 汇总 tokens）+ `updateTurn`（终态 status/finalResult/endedAt）+ meta 更新（runCount/lastStatus/usageTokens 累计/updatedAt）→ 广播 `session-updated {reason:"turn"|"archive"}`；全部 fail-soft（失败记日志不改变 run 终态——转录缺档优于 run 崩）
-- `recoverInterrupted`：非终态快照恢复时同步对账——按 snapshot.sessionId 找会话：turn 标 interrupted + archive 取自快照幸存事件（环外已丢如实记录，discardedBeforeSeq 带入）；无 sessionId（旧快照）跳过对账
-- 归档压缩规则：model_call/model_result/session_end 全量保留；tool_call/tool_result 压缩为标题行（type/actionName/elementIndex/error 摘要 ≤200 字符）；anomaly/skill_active/step_* 保留
-
-### W6 session-handler（apps/extension/src/runtime/session-handler.ts，新建）
-
-- 镜像 options-handler：`handleSessionRequest(op, payload, face)`；face = {repo, notifyUpdated(reason, sessionId?)}（广播 session-updated；自吞异常）
-- ops：session-new（显式开新会话，返回 meta）/ session-list（索引）/ session-open（完整 Record）/ session-rename / session-delete；queue-add/queue-remove → `{ok:false, error:"排队功能将在 U2 提供"}`
-- 全路径 fail-soft 回 `{ok:false,error}`（同 options-handler）
-
-### W7 message-router + bridge-gateway + background 装配
-
-- message-router：deps 加 `onSession?`，`kind === "session"` 分发（同 options 分支形态）
-- bridge-gateway：run_task 改调 `runManager.startRun(task, "bridge")`（origin 标记；sessionId 走 tab 解析同 user——wire 级 sessionId 参数 U1a 不加，登记 U2 评估）
-- background.ts boot：`SessionRepository` 构造（storage 注入）→ runManager deps + `onSession` 接线 + Booted face；recoverInterruptedRuns 照旧（对账在 run-manager 内）
-
-### W8 测试（vitest，全绿 + 覆盖率 ≥85%）
-
-- `session-repo.test.ts`（新）：键结构/LRU 50（连带删会话键）/1MB 预算降级链（丢 tool 明细保标题）/变更链串行（并发 append 不丢）/坏形态回退/rename-delete-open-roundtrip
-- `continuity.test.ts`（新）：无前情 null/多 turn 拼接/8K 截断从最老起/error turn 处理
-- `runtime-journal.test.ts`（扩）：archiveSink 收到全量事件（>256 环淘汰场景——验收②单测锚点）
-- `runtime-run-manager.test.ts`（扩）：二连发第二次 assemble 入参 task 含前情块（stub assemble 捕获——验收①实现层证据；比 diag echo 更直接，方案文档的 diag 口径以此等效落地）/终态归档与 turn 状态/bridge origin 进快照/recover 对账（含无 sessionId 旧快照跳过）/sessions 缺省 null 降级
-- `session-handler.test.ts`（新）：五 op 应答/queue not-supported/fail-soft
-- port-server 既有校验单测：kinds 扩容后 `session-updated` 过验（如有枚举断言同步）
-
-### W9 提交门与验收自查
-
-- `pnpm typecheck` + `pnpm test` + `node scripts/gate.mjs pre-commit` 全绿
-- 验收①②④⑤有单测锚点；验收③（重命名/删除生效）session-handler 测试覆盖（UI 入口 U1b）
-
-## 2. U1b UI 面（同分支续作——闸门二，2026-11-17 细化）
-
-范围（方案 §6 U1）：reducer 扩展 / 六区壳起步（header 动作钮 + 视图切换）/ Composer / TranscriptView v1 + projectTranscript / WelcomePanel 二态 / 任务页 v0。
-
-工作项（闸门分支内序）：
-
-- **B1 转录投影纯函数**（console-ui `transcript.ts`）：`TranscriptItem = user-turn | run-block`；`projectTranscript(record, snapshot, liveEvents)`——归档 turns 按序出用户气泡；turn 终态 → 配对 RunArchive 出 run 块（事件 + finalResult + lastError）；turn 是活动 run（snapshot.runId 匹配）→ 事件取 liveEvents（UI 状态已合并 hello 尾巴 + live 追加）、终态字段取快照。零 chrome。
-- **B2 TranscriptView**（`transcript-view.tsx`）：用户气泡（task 原文 + 非 done 状态章）；run 块 = 状态头 + 复用 `RunTimeline`（事件）+ 终态复用 `FinalResult`。未知事件可读回退由 RunTimeline 既有 default 分支承载。
-- **B3 Composer**（`composer.tsx`）：自适应高度 textarea（rows=1，min 20px / max 120px，dir=auto）+ Enter 发送 / Shift+Enter 换行 + 发送钮（空输入禁用）+ 提示行。附件清单/预算/拒绝明细行维持现有渲染位（sidepanel-app 组合，组件不管附件）。
-- **B4 SessionsPage**（`sessions-page.tsx`）：索引列表（title/runCount/lastStatus/updatedAt）+ 打开切换 + 行内重命名（input 替换，Enter 提交）+ 删除（二次确认钮）+ 新对话钮。
-- **B5 header/欢迎屏扩展**：RunPanelHeader 加 onNewChat（⊕）/onOpenTasks（☰）图标钮；WelcomePanel 加 historyCount/onOpenHistory（二态：无历史纯欢迎 / 有历史带「查看历史会话」链接）。
-- **B6 reducer 扩展**（sidepanel-state.ts）：state 加 sessions/sessionRecord/currentSessionId/sessionRev；actions 加 `session-updated`（rev+1——摄取 SwToUiMessage 新 kind）/`session-index`/`session-record`/`session-current`；hello 与 journal-snapshot 携 sessionId 时同步 currentSessionId。
-- **B7 sidepanel-app 组态**：sessionRequest 注入（entrypoints 加 sendMessage kind:"session" 工厂）；sessionRev/portStatus online → session-list 补查 + currentSessionId → session-open；主区二视图（chat：landing（transcript 空且无 run）↔ TranscriptView；tasks：SessionsPage）；起跑带 sessionId（currentSessionId 非空时显式传——切换会话后续跑该会话，SW 侧 rebind）；新对话 = session-new（tabId 0 未绑定）→ 置当前 → 下一次 start 显式 sessionId 触发 rebind 绑 tab。TaskBar 退役（组件保留导出——web-console 预留），附件面保持原渲染位。
-- **B8 测试**：transcript 纯函数（归档/活动合并/空）/TranscriptView/Composer（Enter/Shift+Enter/禁用态）/SessionsPage（列表/切换/行内重命名/删除）/header 新钮/reducer 扩展（ui-glue.test.ts）。
-
-### U1b 进度
-
-- [x] B1 transcript.ts（projectTranscript + 5 用例：归档-only/活动合流/他会话不串/残留 running/空态）
-- [x] B2 TranscriptView（用户气泡+状态章；run 块复用 RunTimeline/FinalResult；4 用例）
-- [x] B3 Composer（自适应高度/Enter/Shift+Enter/禁用态；4 用例；Button 原件）
-- [x] B4 SessionsPage（列表投影/打开/行内重命名三路径/两段删除/空态；4 用例）
-- [x] B5 header 新对话+任务列表钮（用例入 run-panel-header.test）；WelcomePanel 二态（historyCount/onOpenHistory）
-- [x] B6 reducer：sessions/sessionRecord/currentSessionId/sessionRev + hello/journal-snapshot sessionId 跟随（4 用例入 ui-glue.test）
-- [x] B7 sidepanel-app 组态：二视图（chat/tasks）、转录+live 合流、归档未就绪回退旧时间线、Composer+附件条收编、新对话/切换/删除流、sessionRequest 注入（entrypoints）
-- [x] B8 测试：extension 266→270、console-ui 87→93 全绿；覆盖率 extension 96.75%/86.2%、console-ui 98.12%/89.91%
-- 备注：顺手清了 sidepanel-app.tsx 的 SidepanelState 未用导入（既有 E 档告警）；theme/layout.css 补 tc-transcript/tc-session-row 等新类
-
-设计决策（U1b 增补）：
-- D8 活动 run 事件源 = UI 侧 state.events（hello 尾巴合并 + live 去重已在 reducer 完成）——投影不再自行合并，避免双源分叉。
-- D9 「新对话」不建空会话常驻：session-new(tabId 0) 后若用户不发任务，空会话留在索引是可接受的噪声（LRU 兜底）；避免「隐式建会话再回滚」的复杂度。
-- D10 切换会话后起跑显式带 sessionId（SW rebindTab 跟随当前 tab）——与「省略=续 tab 最新」语义并存不冲突。
-
-## 3. 设计决策记录
+## 2. 设计决策
 
 | # | 决策 | 理由 |
 | --- | --- | --- |
-| D1 | 前情块注入点=run-manager（effectiveTask 传 assemble），journal.task 含前情 | core 零改动；journal.task 本就是 prompt 契约面（附件清单同款先例）；转录用户气泡用 SessionTurn.task 原文，不显示前情块 |
-| D2 | 归档缓冲挂 journal.archiveSink（record 内同步） | record 是事件唯一入口、同步无竞态；淘汰只剪环数组不影响 sink——>256 不丢的技术保证 |
-| D3 | 会话写全 fail-soft（记日志不阻断 run） | 转录缺档可容忍，run 终态不可逆——与 distill「可选增强」同姿态但会话面记 WARN 级日志便于发现 |
-| D4 | sessions 依赖缺省 null（降级）而非必填 | 既有单测 harness 零改动；生产装配在 background 显式注入 + boot 日志确认 |
-| D5 | bridge run_task 本期走 tab 会话解析，wire sessionId 参数登记 U2 | wire 协议变更牵 tc-bridge 配对端，U1a 收敛在扩展侧 |
-| D6 | queue/steer 协议 kind 本期预留、SW 回 not-supported | 防 U2/远期 breaking；实现零成本 |
-| D7 | 验收①的「diag echo 查证」落地为 stub assemble 入参断言 + 持久快照 task 字段断言 | 比新增 diag 探针更直接可测；e2e 冒烟（smoke-sw-runtime 风格）在 U1b 收口时补真机验证 |
+| D1 | 排队器内聚 run-manager（不另立 queue 模块） | 出队= start 语义、互斥/节流/收口都在 run-manager 生命周期内——另立模块要双向接线 |
+| D2 | stop 清空的是「当前 session」队列 | 连播语义：用户叫停的是这个会话的后续任务，不动他会话残留（他会话 queued 由其自身收口/重启处理） |
+| D3 | SW 重启 queued→cancelled | 与「run 不续跑」同构；无人值守自动起跑撞权限卡模型不可接受 |
+| D4 | 外部卡不含可复制 URL | bridge 配对 URL 属 tc-bridge 进程配置（扩展侧不回读）；显示用法行，完整 URL 由 tc-bridge connect 自身输出——方案 §5.6 的「连接命令模板」按此降级，登记偏离 |
+| D5 | Ctrl+Shift+M 先开面板再广播 | 面板未开时切换器无处渲染；sidePanel.open 需用户手势上下文，commands 回调是合法手势 |
+| D6 | 批 A-F 四批提交 | 排队链强耦合不可拆；B/C/D 相互独立可分段评审 |
 
-## 4. 风险与对策（U1a 特有）
+## 3. 风险
 
-- **storage 写放大**：归档终态一次写（run 结束单点），无逐事件写盘；index 更新同链串行
-- **重启对账窗口**：SW 被杀时归档缓冲丢失——恢复用快照幸存事件（≤256）+ discardedBeforeSeq 如实记账；turn 状态以 interrupted 收口不悬挂
-- **旧数据兼容**：无 sessionId 的既有 `tc_runUi:*` 快照恢复照旧（对账跳过）；`tc_sessions:index` 不存在=空索引首次创建
+- 出队节流窗（2s）内用户手动 start：互斥拒绝→队列保留，下次收口再试（不丢）
+- queue-add 与终态收口竞态（终态 finally 中 repo 写 vs queue-add 追加）：repo 变更链串行天然安全；出队触发点在收口尾部统一检查
+- SW 被杀丢失在内存的「待出队」定时器：重启 cancelled 兜底（D3）
+- commands 快捷键与浏览器/其他扩展冲突：chrome://extensions/shortcuts 用户可改，文档注明
 
-## 5. 进度记录
+## 4. 进度
 
-- [x] W1 协议扩展（SessionTurn/RunArchive/SessionMeta/SessionRecord + TerminalRunStatus + SESSION_OPS + session-updated + steer/sessionId 预留；envelope 穷举测试同步 12/13）
-- [x] W2 session-repo（键结构/LRU/1MB 降级链/变更链串行/rebindTab/compressArchiveEvents/sumUsage；StorageArea 扩可选 remove + StorageAreaWithRemove）
-- [x] W3 journal 归档缓冲（内部缓冲 + takeArchiveBuffer——比 archiveSink 注入更内聚，免 background 闭包接线；上限 4096 丢最老记账）
-- [x] W4 continuity（buildContinuityBlock 8K 预算从最老整条丢 + withContinuity）
-- [x] W5 run-manager 集成（resolveSession 显式优先/跨 tab 重绑、beginRun 记 turn、终态 archiveActiveRun、recoverInterrupted 会话对账、steer not-supported、fail-soft 全路径）
-- [x] W6 session-handler（五 op + queue not-supported + notifyUpdated）
-- [x] W7 装配（message-router onSession / bridge-gateway startRun(task,"bridge") / background sessionRepo+SessionFace）
-- [x] W8 测试：266 例全绿（新增 36：session-repo 12 / continuity 8 / session-handler 6 / journal 归档 4 / run-manager 会话集成 9 + 既有 bridge-gateway 3 处 fake 更新）；覆盖率 96.72% / 86.08%
-- [ ] W9 提交门通过
+- [x] 批 A 排队全链（5f81fd5）：repo 六方法（appendQueuedTurn/firstQueuedTurn/activateQueuedTurn/cancelQueuedTurn/cancelQueued/cancelAllQueued，上限 5）；run-manager 队列器（queueFollowUp 入队即试出队/终态 2s 节流续播/stop 连播清空/queueTurnId 激活复用+回落新建/出队失败留队重试）；session-handler 实装 queue-add/remove（SessionQueueFace 注入）；background 接线 + boot cancelAllQueued 兜底（D3）；UI 发送分流（运行中→入队）+ QueueStrip
+- [x] 批 B usage pill + 只读态（5c2e647）：RunStatusBar usage pill（formatTokens 短写/≥90% 警色/缺省不渲染）；contextWindow 经 get-settings 热读；事件流倒序取最近 model_result；origin==="bridge" → ExternalDriveCard + composer 禁用（停止保留；连接命令不含配对 URL——D4 偏离）
+- [x] 批 C 目标条 + commands + 预设（1fd06c4）：session-open 带 targetUrl（SW 现查）+ GoalStrip（点击 session-focus 激活）；manifest commands Ctrl+Shift+K/M + model-switch-request 广播（模块级 uiBroadcastRef 桥 MV3 时序）；ModelSwitcher overlay（点选即 save-settings）；PRESET_CARDS 五条预填
+- [x] 批 D 滚动意图（209c8c8）：TranscriptView 自有滚动面（贴底跟随/上滚解除 28px/回底恢复/浮钮）+ isAtBottom 纯函数
+- [x] e2e 冒烟（smoke-queue.mjs，随批 D 提交）：mock LLM 挂起窗 → 入队×3 → stop → interrupted + 3 cancelled + 零续跑断言（脚本就绪——真机实跑按仓库惯例手动执行 `pnpm --filter extension e2e:queue`，先 `npx wxt build`）
+- [x] 全量验收自查（§0 五条）：①②③④单测锚点齐（run-manager 排队四例/usage pill/ExternalDriveCard）；⑤ e2e 脚本就绪待真机实跑
+- 测试总账：extension 272→290（批 A-D +283；评审轮 1 +6、轮 2 +1）、console-ui 95→110；分支提交：计划 + 四批 + 评审修复
 
-## 6. 验收自查（对应 §0 五条）
+## 5. 评审轮次登记（review-loop 填写）
 
-- [x] ①二连发前情块（run-manager 会话集成首例；8K 截断在 continuity.test 预算用例）
-- [x] ②重启归档完整（恢复对账用例）+ >256 环淘汰不丢（journal 归档缓冲 >300 用例）
-- [x] ③重命名/删除/切换（session-handler 往返用例；rebindTab 用例覆盖切换语义）
-- [x] ④LRU + 1MB 降级（session-repo LRU/预算两用例）
-- [x] ⑤覆盖率 ≥85%（96.72%/86.08%）
-- 备注：①的真机口径（持久快照 task 字段含前情块）留 U1b e2e 冒烟补验（smoke-sw-runtime 风格）
+### 轮 1（2026-11-17，10 条全采纳：P1×2 / P2×8）
 
-## 7. 评审轮次登记（review-loop 填写）
+- **[1] P1 滚动面宿主失效**：`.tc-shell-main` grid auto 行高下 `.tc-transcript--scroll` 恒等于内容高、自身永不溢出——跟随/解除/浮钮在唯一真实宿主（sidepanel/web-console 均 AppShell）整体 inert，jsdom 无布局测不出。修复：main 改 flex 列（其余子项靠 min-height:auto 默认不缩，行为与 grid 等价）+ 转录面 `flex:1 1 auto`（overflow 非 visible 时自动最小高为 0）。
+- **[9] P1 出队拒绝 FIFO 头阻塞**：无重试调度无终态收口——附件指涉任务（queue-add 不落附件 + clearForRun 清表）永久 queued 且阻塞后续。修复：queueFollowUp 附件指涉拒绝（可行动文案）；出队拒绝退避重试（drainRetryMs 缺省 10s）×3 后头阻塞解除（转 cancelled + session-updated 广播 + 立即续试下一条）。
+- **[2] P2 跨会话排队搁浅**：单 timer 字段不分会话——A 运行中给 B 入队，drain(B) 让位即丢触发，A 终态只调度 A，B 永久「排队中」。修复：drainTimers per-session Map + 让位重排；stop 只清被停会话的 timer。
+- **[3] P2 激活错过回落新建**：出队多 await 窗口内 queue-remove 撤销 → activateQueuedTurn miss → 回落 beginRun 把已撤销任务跑起来。修复：激活前置到 assemble 后/journal.begin 前——miss/存储异常即无副作用中止（skipped 标记，drainQueue 不计退避立即试下一条）。
+- **[10] P2 续播抢活动页**：出队走 pickActiveDrivableTab——agent 在用户当前浏览的任意页面执行任务 + rebindTab 静默改绑会话目标。修复：tabByIdDrivable 校验会话绑定 tab（http/https），出队显式带 tabId；tabId 0（未绑定）回落活动页挑选。
+- **[4] P2 external 全局判定**：bridge run 在他会话时 composer/外部卡张冠李戴。修复：external 加 runViewEligible 会话门（与转录层同款）。
+- **[5]+[8] P2 targetUrl 无归属守卫/同会话重入丢失**：组件态 targetUrl 缺 forSessionId 守卫且自动跟随路径不清；同会话重入误清后无恢复通道。修复：收进 reducer（session-target 动作 + 归属守卫），session-current/hello/journal-snapshot/notFound 四分支同步清，同会话重入早退不清。
+- **[6] P2 运行中静默无操作**：running && 无当前会话（删除活跃会话/LRU/无会话面）时发送钮可点但什么都不发生——相对旧禁用是回归。修复：canSend 补 `!running || queueable`。
+- **[7] P2 usage 分母不随换卡**：ModelSwitcher 关闭不在 contextWindow 热读触发器——快速换卡后 ratio 按 stale 分母。修复：effect 增 modelSwitcherOpen 触发器。
+- 双向验证：[2] 破坏让位重排 → 跨会话用例必红；[5] 破坏换会话清 → reducer 用例必红；还原复绿。extension 283→289，console-ui 110 不变，门禁 exit 0。
 
-### 轮 1（U1a 数据面，range main..789ab83）
+### 轮 2（2026-11-17，1 条采纳：P2×1；另有增量基线操作修正）
 
-零意见收敛（11 文件，11m26s）。无修复提交。
+- **[1] P2 退避计数跨代沿用**：drainAttempts 清零只在 drainQueue 三出口——queueRemove（撤销头 turn）与 stop→cancelQueue（清空队列）均不清零，且 stop 清 timer 连「队列空兜底出口」一并取消。头 turn 被拒 2 次后换代，新任务首拒即 3 达上限被静默取消（违背三次语义）。修复：queueRemove/cancelQueue 成功即 delete(sessionId)（用户干预重置计数；换代必经三出口——append 只尾插不改头，boot cancelAllQueued 时实例已新建）。测试锚定拒绝日志计数（旧 1 + 新 3 = 4；修复前 3）。双向验证：破坏清零 → 用例必红（3≠4）。
+- **操作修正**：轮 2 首发误用 lastCommit（= 分支 tip）作 --from → range 空 skipped（#35 轮 3 同款）；改用 reviewedTip e667605 重发。已同步修正 .claude/.zcode 双栖 review-loop 命令文档（diffBase 基线改 reviewedTip + 状态文件字段补登）。
+- 测试总账：extension 289→290；门禁 exit 0。
 
-### 轮 2（U1b UI 面，增量 range 789ab83..605b91a）
+### 轮 3（2026-11-17，零意见——循环收敛）
 
-9 条意见（high 2 / medium 5 / low 2）——逐条代码级核实**全部成立，全采纳**（P1×2、P2×7、驳回 0、stale 0）：
-
-- **[1] P1** transcript.ts isActive 缺 turn 终态与快照终态校验——已收口 run 永显 live、终态结果被 `!== "live"` 门挡住（切会话再切回仍复现）。修复：live 判定加 `turn.status === "running"` + 快照非终态（过渡窗也走归档分支）。新增 2 用例 + 双向验证（去防护 2 红/复防护 7 绿）。
-- **[3] P1** 切换/新建会话后旧 run 视图串台——session-current 不清 snap/events，回退时间线面把他会话内容渲进新会话语境。修复：回退面加会话语境门（snap 属当前会话/无会话语境才承载；否则空转录占位）。
-- **[2] P2** Composer 高度不随宿主外部 setTask("") 收敛。修复：useLayoutEffect 跟随 [task] 驱动（onChange 内调用移除）。
-- **[4] P2** hello 换会话不清 sessionRecord（与 journal-snapshot 分支不对称）。修复：对齐清空 + 用例。
-- **[5] P2** session-open ok:false 一律当「不存在」清当前指向——瞬时存储错误踢用户回落地页。修复：SW 侧 notFound:true 可区分标记；UI 仅确认不存在才清，其余 fail-soft + 用例。
-- **[6] P2** newChat 迟到应答覆盖用户后续选择。修复：发起时快照 currentSessionId，应答时变化则放弃应用。
-- **[7] P2** 重命名输入框未防 IME 组字态（中文 Enter 确认候选词误提交）。修复：isComposing 守卫（composer 同款）。
-- **[8] P2** session-record 迟到应答串台（cancelled 旗在 effect cleanup 才置位，应答宏任务可先到）。修复：action 加 forSessionId 归属，reducer 不符丢弃（含 null 清空路径）+ 用例 + 双向验证。
-- **[9] P2** session-delete 应答未判 ok——失败也清当前指向致 UI 与 SW 脱同步。修复：ok 才清。
-
-测试账目：extension 270→272、console-ui 93→95；覆盖率 extension 96.73%/86.17%。修复提交见本轮 commit。
-
-### 轮 3（修复增量，range 605b91a..deb1aea）
-
-零意见（complete，7 文件，3m43s；首次发轮误用分支 tip 作基线致空 range skipped——按 reviewedTip 重发）。**循环收敛**：3 轮累计 9 意见全采纳（P1×2 / P2×7），零驳回零 stale。
+- complete / 0 条（增量 = 轮 2 修复提交单提交，实审 1 文件 1m31s）——按「意见数 0」收敛判据终止。
+- 累计：3 轮 / 11 条全采纳（P1×2 + P2×9）/ 驳回 0 / stale 0；extension 283→290、console-ui 110 不变；分支 7 提交（计划+四批+进度 + 两轮修复）；覆盖率 96.35/85.81；全程门禁 exit 0。
