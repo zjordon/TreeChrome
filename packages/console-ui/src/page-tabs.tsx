@@ -2,7 +2,7 @@
 // 数组声明页面（id/title/order/isEnabled/Component），PageTabs 只承切换面——
 // 聊天不是页签（缺省主视图），页签仅次级导航入口。roving 键盘焦点（tablist 规范）。
 
-import type { ComponentType } from "react";
+import type { ReactElement } from "react";
 
 /** 静态页签注册项（宿主组态层声明；isEnabled=false 不出现——验收③） */
 export interface PageRegistration {
@@ -11,8 +11,9 @@ export interface PageRegistration {
   /** 排序键（方案 §5：任务 10/技能 40/调试日志 50） */
   order: number;
   isEnabled: boolean;
-  /** 零 props 组件（宿主闭包组装数据流） */
-  Component: ComponentType;
+  /** 零 props 视图工厂（宿主闭包组装数据流；渲染处函数调用——评审轮 1 [2]
+   *  组件体内声明的工厂作 JSX 类型会换引用致整页 remount） */
+  Component: () => ReactElement;
 }
 
 export interface PageTabsProps {

@@ -18,6 +18,7 @@ import {
   FontSizePopover,
   formatBytes,
   GoalStrip,
+  initFontSize,
   ModelSwitcher,
   type PageRegistration,
   PageTabs,
@@ -37,15 +38,29 @@ import {
   TranscriptView,
   WelcomePanel,
 } from "@tw/console-ui";
-// 导出 HTML 的内联 CSS（#39 批 D D5：console-ui 不 import CSS 副作用进导出——
-// vite ?raw 读聚合主题文本，宿主注入纯函数）
-import themeCssText from "@tw/console-ui/theme.css?raw";
+import baseCss from "@tw/console-ui/theme/base.css?raw";
+import componentsCss from "@tw/console-ui/theme/components.css?raw";
+import controlsCss from "@tw/console-ui/theme/controls.css?raw";
+import layoutCss from "@tw/console-ui/theme/layout.css?raw";
+import markdownCss from "@tw/console-ui/theme/markdown.css?raw";
+// 导出 HTML 的内联 CSS（#39 批 D D5 + 评审轮 1 [1][4]）：theme.css 是纯 @import
+// 聚合入口（?raw 不展开、blob:/file: 下相对路径 404）——逐分片 ?raw 拼接实体文本
+import tokensCss from "@tw/console-ui/theme/tokens.css?raw";
+
+const themeCssText = [tokensCss, baseCss, controlsCss, componentsCss, markdownCss, layoutCss].join(
+  "\n",
+);
+
 import type { OptionsOp, SessionMeta, SessionOp, SessionRecord, UiToSwMessage } from "@tw/protocol";
 import { type ReactElement, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type BegunSignal, uploadAttachment } from "./attachment-upload.js";
 import { OptionsApp } from "./options-app.js";
 import { PortClient, type UiPort } from "./port-client.js";
 import { ingestSidepanel, initialSidepanelState, type SidepanelAction } from "./sidepanel-state.js";
+
+// 字号档位冷启动恢复（#39 评审轮 1 [7]）：模块级一次——FontSizePopover 只在
+// 有会话的聊天区挂载，欢迎页/页签页若无此恢复则持久化档位被无视
+initFontSize();
 
 export interface SidepanelAppProps {
   connect: () => UiPort;
@@ -353,9 +368,10 @@ export function SidepanelApp({
   const DebugView = (): ReactElement => (
     <DebugLogPage events={state.events} snapshot={state.snapshot} />
   );
-  /** 技能页视图：技能库 + 草稿审阅（OPTIONS_OPS 单发面——与 options 双宿主一致） */
-  const SkillsView = (): ReactElement | null =>
-    optionsRequest !== undefined ? <SkillPage request={optionsRequest} /> : null;
+  /** 技能页视图：技能库 + 草稿审阅（OPTIONS_OPS 单发面——与 options 双宿主一致）。
+   *  null 分支不可达（isEnabled 已推导）——空 fragment 兜底签名 */
+  const SkillsView = (): ReactElement =>
+    optionsRequest !== undefined ? <SkillPage request={optionsRequest} /> : <></>;
 
   // 静态页签注册（#39 批 B，方案 §5：任务 10/技能 40/调试日志 50；isEnabled=false
   // 不出现——验收③）。数组在组态处声明，聊天不在页签（缺省主视图）
@@ -588,7 +604,10 @@ export function SidepanelApp({
         ) : null}
 
         {activePage !== null ? (
-          <activePage.Component />
+          // 函数调用而非元素渲染（评审轮 1 [2]）：视图工厂在组件体内声明，作为
+          // JSX 类型渲染时每次 dispatch 重渲染都换引用 → 整页 remount 丢输入/折叠
+          // 态。函数调用输出稳定的 SessionsPage 等模块级元素树，按类型 reconcile
+          activePage.Component()
         ) : (
           <>
             {/* 会话标题条（#39 批 C/D）：行内重命名 + 字号 + 导出 */}

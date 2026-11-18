@@ -17,7 +17,7 @@ export { ExternalDriveCard } from "./external-card.js";
 export type { FinalResultProps } from "./final-result.js";
 export { FinalResult } from "./final-result.js";
 export type { FontSize, FontSizePopoverProps } from "./font-size.js";
-export { FONT_SIZE_KEY, FontSizePopover, readFontSize } from "./font-size.js";
+export { FONT_SIZE_KEY, FontSizePopover, initFontSize, readFontSize } from "./font-size.js";
 export type { GoalStripProps } from "./goal-strip.js";
 export { GoalStrip, goalLabelOf } from "./goal-strip.js";
 export type { GrantsViewProps } from "./grants-view.js";

@@ -101,6 +101,13 @@ describe("MarkdownText 安全样例集（验收①——无脚本执行）", () 
     const { container } = render(<MarkdownText>{"```\nplain\n```"}</MarkdownText>);
     expect(container.querySelector(".tc-md-codebar")?.textContent).toContain("text");
   });
+
+  it("react-markdown 注入的 node prop 不铺成 DOM 属性（轮 1 [5]）", () => {
+    const { container } = render(<MarkdownText>{"```js\nx()\n```"}</MarkdownText>);
+    const pre = container.querySelector("pre");
+    expect(pre).not.toBeNull();
+    expect(Array.from(pre?.attributes ?? []).some((a) => a.name === "node")).toBe(false);
+  });
 });
 
 describe("CopyButton", () => {

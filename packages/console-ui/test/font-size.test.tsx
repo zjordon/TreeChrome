@@ -4,7 +4,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FONT_SIZE_KEY, FontSizePopover, readFontSize } from "../src/font-size.js";
+import { FONT_SIZE_KEY, FontSizePopover, initFontSize, readFontSize } from "../src/font-size.js";
 import { SessionTitleBar } from "../src/session-title-bar.js";
 
 afterEach(() => {
@@ -25,6 +25,20 @@ describe("readFontSize", () => {
     });
     expect(readFontSize()).toBe("md");
     spy.mockRestore();
+  });
+});
+
+describe("initFontSize（冷启动恢复——轮 1 [7]）", () => {
+  it("读 localStorage 并挂档位类：欢迎页/页签页无弹卡也生效", () => {
+    window.localStorage.setItem(FONT_SIZE_KEY, "lg");
+    const restored = initFontSize();
+    expect(restored).toBe("lg");
+    expect(document.documentElement.classList.contains("tc-font-lg")).toBe(true);
+  });
+
+  it("无偏好时 md——不挂任何档位类", () => {
+    expect(initFontSize()).toBe("md");
+    expect(document.documentElement.className).toBe("");
   });
 });
 

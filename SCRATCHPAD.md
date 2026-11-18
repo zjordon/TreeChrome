@@ -77,7 +77,14 @@
 
 ## 5. 评审轮次登记（review-loop 填写）
 
-（待各轮登记）
+### 轮 1（2026-11-18，7 条全采纳：P1×2 / P2×4（两组同根））
+
+- **[1]+[4] P1 导出 HTML 零样式**：theme.css 是纯 @import 聚合入口，vite ?raw 不展开——导出内联的是 6 条相对 @import，离线 404 全裸。修复：console-ui exports 增 `./theme/*.css` 子路径模式，宿主六分片逐件 ?raw 拼接实体文本；构建级实证（bundle 内含 `html.tc-font-sm` 原始 CSS 文本、CSS 资产 0 @import）。
+- **[2] P1 页签整页 remount**：视图工厂声明在组件体内，作 JSX 元素类型渲染时每次 dispatch（事件流高频）换引用 → SessionsPage/SkillPage/DebugLogPage 整页重挂，输入/焦点/折叠态全丢。修复：渲染处改函数调用 `activePage.Component()`（工厂无 hooks，输出模块级组件元素树按类型 reconcile）；PageRegistration.Component 类型改 `() => ReactElement` 工厂签名。
+- **[3]+[6] P2 markdown 字号脱离档位**：.tc-md 正文/标题/代码/表格固定 px 显式覆盖继承基线——字号档位对最核心阅读面（finalResult 长文）不生效。修复：字号全改相对单位（h1 1.3em/h2 1.15em/code 0.92em 等），.tc-md 删 font-size 走继承；复制钮控件几何保持 px（全仓控件惯例）。
+- **[5] P2 node 垃圾属性**：react-markdown 向 components 注入 hast node prop，未剔除铺成 `node="[object Object]"` DOM 属性。修复：CodeBlock 解构剔除（测试断言 pre 无 node 属性）。
+- **[7] P2 档位无冷启动恢复**：applyFontSizeClass 唯一调用点是弹卡 effect，欢迎页/页签页不挂载 → 持久化档位被无视（回落 13px 进会话才突跳）。修复：导出 initFontSize()，sidepanel-app 模块级调用一次；双向验证（破坏挂类 → initFontSize 用例必红）。
+- 测试：console-ui 145→148（node 属性 1 + initFontSize 2）；extension 292 不变；wxt build 实证 ?raw 六连链路。
 
 ## 6. 备注
 

@@ -53,7 +53,14 @@ export function CopyButton({
 }
 
 /** pre 重包装：语言标签（code.language-* 提取）+ 复制钮 */
-function CodeBlock({ children, ...rest }: HTMLAttributes<HTMLPreElement>) {
+function CodeBlock({
+  children,
+  node,
+  ...rest
+}: HTMLAttributes<HTMLPreElement> & { node?: unknown }) {
+  // react-markdown 向 components 注入的 hast 节点——非 DOM prop，剔除避免
+  // 铺成 node="[object Object]" 垃圾属性（评审轮 1 [5]）
+  void node;
   const ref = useRef<HTMLPreElement>(null);
   const [lang, setLang] = useState<string | null>(null);
   useEffect(() => {

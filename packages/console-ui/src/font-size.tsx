@@ -39,6 +39,17 @@ function applyFontSizeClass(size: FontSize): void {
   for (const s of FONT_SIZES) root.classList.toggle(`tc-font-${s}`, s === size && s !== "md");
 }
 
+/**
+ * 冷启动恢复档位（评审轮 1 [7]）：宿主入口调用一次——FontSizePopover 只在
+ * 聊天区有会话时挂载，欢迎页/页签页若无此恢复则持久化偏好被无视（回落 13px
+ * 基线，进会话才突跳）。返回恢复后的档位供调用方自用。
+ */
+export function initFontSize(): FontSize {
+  const size = readFontSize();
+  applyFontSizeClass(size);
+  return size;
+}
+
 export interface FontSizePopoverProps {
   /** 受控初值缺省读 localStorage（宿主不持态——纯偏好自管理） */
   initial?: FontSize;
@@ -49,6 +60,7 @@ export function FontSizePopover({ initial }: FontSizePopoverProps) {
   const [size, setSize] = useState<FontSize>(initial ?? readFontSize());
   const [open, setOpen] = useState(false);
   useEffect(() => {
+    // 交互变更路径（冷启动恢复走宿主调 initFontSize——轮 1 [7]）
     applyFontSizeClass(size);
   }, [size]);
   const choose = (next: FontSize): void => {
