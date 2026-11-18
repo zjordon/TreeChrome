@@ -6,4 +6,5 @@
 @import "./theme/base.css";
 @import "./theme/controls.css";
 @import "./theme/components.css";
+@import "./theme/markdown.css";
 @import "./theme/layout.css";

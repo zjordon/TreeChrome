@@ -16,6 +16,7 @@ const meta = (sessionId: string, over: Partial<SessionMeta> = {}): SessionMeta =
   createdAt: 1,
   updatedAt: 100,
   usageTokens: 50,
+  attachmentCount: 0,
   ...over,
 });
 

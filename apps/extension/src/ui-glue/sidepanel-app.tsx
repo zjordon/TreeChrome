@@ -12,11 +12,16 @@ import {
   Button,
   Composer,
   type ContextUsage,
+  DebugLogPage,
   ExternalDriveCard,
   FinalResult,
+  FontSizePopover,
   formatBytes,
   GoalStrip,
+  initFontSize,
   ModelSwitcher,
+  type PageRegistration,
+  PageTabs,
   PermissionCard,
   projectTranscript,
   QueueStrip,
@@ -24,18 +29,38 @@ import {
   RunStatusBar,
   RunTimeline,
   SessionsPage,
+  SessionTitleBar,
   SettingsOverlay,
+  SkillPage,
   SubmitCard,
+  serializeTranscriptHtml,
   ThemedRoot,
   TranscriptView,
   WelcomePanel,
 } from "@tw/console-ui";
+import baseCss from "@tw/console-ui/theme/base.css?raw";
+import componentsCss from "@tw/console-ui/theme/components.css?raw";
+import controlsCss from "@tw/console-ui/theme/controls.css?raw";
+import layoutCss from "@tw/console-ui/theme/layout.css?raw";
+import markdownCss from "@tw/console-ui/theme/markdown.css?raw";
+// 导出 HTML 的内联 CSS（#39 批 D D5 + 评审轮 1 [1][4]）：theme.css 是纯 @import
+// 聚合入口（?raw 不展开、blob:/file: 下相对路径 404）——逐分片 ?raw 拼接实体文本
+import tokensCss from "@tw/console-ui/theme/tokens.css?raw";
+
+const themeCssText = [tokensCss, baseCss, controlsCss, componentsCss, markdownCss, layoutCss].join(
+  "\n",
+);
+
 import type { OptionsOp, SessionMeta, SessionOp, SessionRecord, UiToSwMessage } from "@tw/protocol";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type BegunSignal, uploadAttachment } from "./attachment-upload.js";
 import { OptionsApp } from "./options-app.js";
 import { PortClient, type UiPort } from "./port-client.js";
 import { ingestSidepanel, initialSidepanelState, type SidepanelAction } from "./sidepanel-state.js";
+
+// 字号档位冷启动恢复（#39 评审轮 1 [7]）：模块级一次——FontSizePopover 只在
+// 有会话的聊天区挂载，欢迎页/页签页若无此恢复则持久化档位被无视
+initFontSize();
 
 export interface SidepanelAppProps {
   connect: () => UiPort;
@@ -75,7 +100,8 @@ export function SidepanelApp({
   const [task, setTask] = useState("");
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [view, setView] = useState<"chat" | "tasks">("chat");
+  // 视图态（#39 批 B）：chat 是缺省主视图；页签页 = 静态注册（任务/技能/调试）
+  const [view, setView] = useState<"chat" | "tasks" | "skills" | "debug">("chat");
   const clientRef = useRef<PortClient | null>(null);
   /** begin→begun 回执桥（Map<transferId, settle>；超时自清不留悬挂传输） */
   const begunWaiters = useRef(new Map<string, (signal: BegunSignal) => void>());
@@ -315,6 +341,59 @@ export function SidepanelApp({
   currentSessionIdRef.current = state.currentSessionId;
   const fileInput = useRef<HTMLInputElement>(null);
 
+  /** 任务页视图（#39 批 B 抽件）：会话索引列表 + 打开/重命名/删除/新建 */
+  const TasksView = (): ReactElement => (
+    <SessionsPage
+      sessions={state.sessions}
+      currentSessionId={state.currentSessionId}
+      onOpen={openSession}
+      onRename={(sessionId, title) => {
+        void sessionRequest?.("session-rename", { sessionId, title }).catch(() => {});
+      }}
+      onDelete={(sessionId) => {
+        void sessionRequest?.("session-delete", { sessionId })
+          .then((res) => {
+            // 删除确认成功才清当前指向（评审轮 2 [9]：ok:false = 存储异常/未删成）
+            if ((res as { ok?: boolean }).ok !== true) return;
+            if (currentSessionIdRef.current === sessionId) {
+              dispatch({ kind: "session-current", sessionId: null });
+            }
+          })
+          .catch(() => {});
+      }}
+      onNew={newChat}
+    />
+  );
+  /** 调试页视图：原始 journal 事件流（state 面）+ 快照头部态 */
+  const DebugView = (): ReactElement => (
+    <DebugLogPage events={state.events} snapshot={state.snapshot} />
+  );
+  /** 技能页视图：技能库 + 草稿审阅（OPTIONS_OPS 单发面——与 options 双宿主一致）。
+   *  null 分支不可达（isEnabled 已推导）——空 fragment 兜底签名 */
+  const SkillsView = (): ReactElement =>
+    optionsRequest !== undefined ? <SkillPage request={optionsRequest} /> : <></>;
+
+  // 静态页签注册（#39 批 B，方案 §5：任务 10/技能 40/调试日志 50；isEnabled=false
+  // 不出现——验收③）。数组在组态处声明，聊天不在页签（缺省主视图）
+  const pages: PageRegistration[] = [
+    {
+      id: "tasks",
+      title: "任务",
+      order: 10,
+      isEnabled: sessionRequest !== undefined,
+      Component: TasksView,
+    },
+    {
+      id: "skills",
+      title: "技能",
+      order: 40,
+      isEnabled: optionsRequest !== undefined,
+      Component: SkillsView,
+    },
+    { id: "debug", title: "调试", order: 50, isEnabled: true, Component: DebugView },
+  ].filter((p) => p.isEnabled);
+  const activePage = view === "chat" ? null : (pages.find((p) => p.id === view) ?? null);
+
   return (
     <ThemedRoot>
       <AppShell
@@ -324,8 +403,17 @@ export function SidepanelApp({
             portStatus={portStatus}
             distill={state.distill}
             draftCount={state.draftCount}
+            tabs={
+              <PageTabs
+                pages={pages.map((p) => ({ id: p.id, title: p.title }))}
+                activeId={view === "chat" ? null : view}
+                onSelect={(id) =>
+                  // toggle：点活动中的页签回聊天主视图
+                  setView((v) => (v === id ? "chat" : (id as typeof v)))
+                }
+              />
+            }
             onNewChat={sessionRequest !== undefined ? newChat : undefined}
-            onOpenTasks={sessionRequest !== undefined ? () => setView("tasks") : undefined}
             onOpenSettings={
               optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
             }
@@ -515,30 +603,51 @@ export function SidepanelApp({
           />
         ) : null}
 
-        {view === "tasks" && sessionRequest !== undefined ? (
-          <SessionsPage
-            sessions={state.sessions}
-            currentSessionId={state.currentSessionId}
-            onOpen={openSession}
-            onRename={(sessionId, title) => {
-              void sessionRequest("session-rename", { sessionId, title }).catch(() => {});
-            }}
-            onDelete={(sessionId) => {
-              void sessionRequest("session-delete", { sessionId })
-                .then((res) => {
-                  // 删除确认成功才清当前指向（评审轮 2 [9]：ok:false = 存储异常/
-                  // 未删成——会话仍在，索引/归档刷新走 session-updated 广播）
-                  if ((res as { ok?: boolean }).ok !== true) return;
-                  if (currentSessionIdRef.current === sessionId) {
-                    dispatch({ kind: "session-current", sessionId: null });
-                  }
-                })
-                .catch(() => {});
-            }}
-            onNew={newChat}
-          />
+        {activePage !== null ? (
+          // 函数调用而非元素渲染（评审轮 1 [2]）：视图工厂在组件体内声明，作为
+          // JSX 类型渲染时每次 dispatch 重渲染都换引用 → 整页 remount 丢输入/折叠
+          // 态。函数调用输出稳定的 SessionsPage 等模块级元素树，按类型 reconcile
+          activePage.Component()
         ) : (
           <>
+            {/* 会话标题条（#39 批 C/D）：行内重命名 + 字号 + 导出 */}
+            {state.currentSessionId !== null && !landing ? (
+              <SessionTitleBar
+                title={state.sessionRecord?.meta.title ?? "会话"}
+                onRename={(title) => {
+                  void sessionRequest?.("session-rename", {
+                    sessionId: state.currentSessionId,
+                    title,
+                  }).catch(() => {});
+                }}
+                actions={
+                  <>
+                    <FontSizePopover />
+                    <Button
+                      aria-label="导出会话 HTML"
+                      title="导出会话 HTML（自包含静态页）"
+                      onClick={() => {
+                        // 导出（验收④）：当前会话转录 → 零脚本单文件（内联主题 CSS）
+                        const record = state.sessionRecord;
+                        if (record === null) return;
+                        const html = serializeTranscriptHtml(
+                          projectTranscript(record, snap, state.events),
+                          { cssText: themeCssText, title: record.meta.title },
+                        );
+                        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `treechrome-${record.meta.title.slice(0, 30) || "session"}.html`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      ⬇ HTML
+                    </Button>
+                  </>
+                }
+              />
+            ) : null}
             {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}
             {external ? (
               <ExternalDriveCard sessionTitle={state.sessionRecord?.meta.title ?? null} />

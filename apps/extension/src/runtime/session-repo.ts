@@ -64,6 +64,7 @@ function parseMeta(v: unknown): SessionMeta | null {
     createdAt,
     updatedAt,
     usageTokens: num(v.usageTokens) ?? 0,
+    attachmentCount: num(v.attachmentCount) ?? 0,
   };
 }
 
@@ -258,10 +259,22 @@ export class SessionRepository {
     return parseRecord(stored[key]);
   }
 
-  private async writeRecord(record: SessionRecord): Promise<void> {
+  /** 落盘并返回派生后的 record（调用方写 index 须用返回的 meta——派生字段
+   *  在此单点计算，不回写调用方入参对象） */
+  private async writeRecord(record: SessionRecord): Promise<SessionRecord> {
+    // attachmentCount 单点派生（#39 批 D）：所有落盘路径（beginRun/append/complete…）
+    // 经此覆盖——调用点无需各自维护
+    const withCount: SessionRecord = {
+      ...record,
+      meta: {
+        ...record.meta,
+        attachmentCount: record.turns.reduce((n, t) => n + t.attachments.length, 0),
+      },
+    };
     await this.area.set({
-      [sessionKey(record.meta.sessionId)]: enforceSessionBudget(record, this.budget),
+      [sessionKey(record.meta.sessionId)]: enforceSessionBudget(withCount, this.budget),
     });
+    return withCount;
   }
 
   createSession(input: {
@@ -280,6 +293,7 @@ export class SessionRepository {
         createdAt: this.now(),
         updatedAt: this.now(),
         usageTokens: 0,
+        attachmentCount: 0,
       };
       await this.writeRecord({ meta, turns: [], runs: [] });
       const index = await this.readIndex();
@@ -324,8 +338,8 @@ export class SessionRepository {
         turns: [...record.turns, turn],
         runs: record.runs,
       };
-      await this.writeRecord(next);
-      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      const saved = await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), saved.meta));
       return turn;
     });
   }
@@ -354,8 +368,8 @@ export class SessionRepository {
         turns,
         runs: [...record.runs, archive],
       };
-      await this.writeRecord(next);
-      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      const saved = await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), saved.meta));
       return true;
     });
   }
@@ -376,8 +390,8 @@ export class SessionRepository {
       const record = await this.readRecord(sessionId);
       if (record === null) return false;
       const next: SessionRecord = { ...record, meta: { ...record.meta, title } };
-      await this.writeRecord(next);
-      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      const saved = await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), saved.meta));
       return true;
     });
   }
@@ -390,8 +404,8 @@ export class SessionRepository {
       if (record === null) return false;
       if (record.meta.tabId === tabId) return true;
       const next: SessionRecord = { ...record, meta: { ...record.meta, tabId } };
-      await this.writeRecord(next);
-      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      const saved = await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), saved.meta));
       return true;
     });
   }
@@ -437,8 +451,8 @@ export class SessionRepository {
         turns: [...record.turns, turn],
         runs: record.runs,
       };
-      await this.writeRecord(next);
-      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      const saved = await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), saved.meta));
       return { ok: true as const, turn };
     });
   }
@@ -470,8 +484,8 @@ export class SessionRepository {
         turns,
         runs: record.runs,
       };
-      await this.writeRecord(next);
-      await this.writeIndex(replaceMeta(await this.readIndex(), next.meta));
+      const saved = await this.writeRecord(next);
+      await this.writeIndex(replaceMeta(await this.readIndex(), saved.meta));
       return true;
     });
   }
