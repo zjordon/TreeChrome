@@ -458,10 +458,12 @@ export function SidepanelApp({
   }, [running, pickFiles]);
 
   return (
-    // 附件拖入接面（#41 批 A + 评审轮 1 [5]）：display:contents 不破布局；
-    // drop 受理文件时才 preventDefault——纯文本拖入输入框保留原生插入（与粘贴
-    // 侧「纯文本不拦截」对齐），非编辑元素落点恒 preventDefault 防 file:// 导航；
-    // 受理门与 📎 同款（!running）——同源 pickFiles
+    // 附件拖入接面（#41 批 A + 评审轮 1 [5] + 轮 2 [1]）：display:contents 不破
+    // 布局；drop 受理文件时 preventDefault；**带文件的 drop 恒拦截**（running 门
+    // 拒绝也拦——原生默认会把 file:// 路径写进输入框且经后续 onChange 污染草稿
+    // state）；仅纯文本拖入输入框保留原生插入（与粘贴侧「纯文本不拦截」对齐）；
+    // 非编辑元素落点恒 preventDefault 防 file:// 导航；受理门与 📎 同款——同源
+    // pickFiles
     // biome-ignore lint/a11y/noStaticElementInteractions: 无语义的整页事件接面（拖放转发）——非交互元素，加 role 反而失真
     <div
       style={{ display: "contents" }}
@@ -472,10 +474,12 @@ export function SidepanelApp({
           pickFiles(files);
           return;
         }
+        // running 门拒绝的文件 drop 也拦（评审轮 2 [1]）——先判带文件再判落点
+        const hasFiles = (e.dataTransfer?.files?.length ?? 0) > 0;
         const t = e.target as HTMLElement | null;
         const editable =
           t !== null && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
-        if (!editable) e.preventDefault();
+        if (hasFiles || !editable) e.preventDefault();
       }}
       onDragOver={(e) => e.preventDefault()}
     >

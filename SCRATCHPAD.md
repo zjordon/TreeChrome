@@ -94,6 +94,11 @@ console-ui 148→163（批 A +2、批 B +13）；extension 292→303（批 A +3�
 - **[5] P2 无条件 drop preventDefault 吞原生文本拖入**：纯文本拖入 composer/搜索框被拦截且不接管（原生插入被取消，静默无反馈——本变更前可用）。修复：文件受理才 preventDefault + pickFiles；纯文本落点在可编辑元素（INPUT/TEXTAREA/contentEditable）保留原生插入，其余恒 preventDefault 防 file:// 导航。
 - 测试：extension 303→304（冷启动恢复 +1、即取即清改幂等语义）；console-ui 163 不变。
 
+### 轮 2（2026-11-18，1 条采纳：P2×1）
+
+- **[1] P2 running 门拒绝的文件 drop 落输入框污染草稿**：回退分支区分不了「无文件」与「running 拒绝文件」——running 时拖文件到输入框放行原生默认，file:// 路径被写入 DOM 且经后续 onChange 混入草稿 state（受理门与 📎 同款「静默拒绝」意图被破）。修复：带文件的 drop 恒 preventDefault（先判 hasFiles 再判落点），仅纯文本拖入保留可编辑元素原生插入。
+- 测试：extension 304 不变（glue 面内联判定——intake 守卫已有单测锚定）。
+
 ## 6. 元素选择器评估（批 D，D8 裁决：远期独立提案——本期不做）
 
 **是什么**：面板「引用页面元素」入口——选择模式下到目标页点选元素，元素指纹（稳定 selector/bbox/文本摘要）插入任务文本，模型获得精确指涉。
