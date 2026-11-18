@@ -67,18 +67,44 @@
 
 ## 4. 进度
 
-- [ ] 批 A 输入增强
-- [ ] 批 B 聊天搜索浮层
-- [ ] 批 C 通知回流 + 设置通用区
-- [ ] 批 D 元素选择器评估 + 验收自查
+- [x] 批 A 输入增强（55cf9ad）：整页粘贴/拖入接面（onPaste/onDrop/onDragOver + intakeFiles 守卫——!running 与 📎 同门、files 非空才接管）→ 既有 pickFiles 单一入口（验收③结构性同源）；TranscriptView「↻ 以此开新对话」钮（onReuseTurn）→ newChat(prefill)：session-new + 预填不自动起跑（D5）。
+- [x] 批 B 聊天搜索浮层（2318288）：transcript-search.tsx（splitTextByQuery 大小写不敏感 / ordinalBasesOf 全局命中序——run 块内 lastError 先于 finalResult 与 DOM 序一致 / HighlightedText mark + data-search-ordinal）；SearchOverlay（<search> 语义地标 + Enter/Shift+Enter/Esc + 计数 aria-live="polite"）；TranscriptView highlight prop + scrollIntoView 居中（仅 query/active 变化触发）；FinalResult 搜索态终态降级纯文本（markdown 重排会使命中序错位）；标题条 🔍 钮 + Ctrl/Cmd+F（D7 仅 chat 视图且浮层关）；.tc-search-pop sticky 挂 main 顶部右侧。
+- [x] 批 C 通知回流 + 设置通用区（307dbc5）：manifest += notifications（构建级实证：wxt build 过、产物 manifest 权限面含 notifications）；chrome-apis 增 notifications/sidePanel/tabs.update 窄接口（update receiver 敏感——API 对象方法调用形态）；RunNotifier（三终态分文案/任务截 40/结果截 80/点击回流激活 tab + sidePanel.open/设置门异步热读 fail-open/onClicked 构造时注册）；run-manager drive() 终态收口——!hasPorts() 才通知（D3）；OptionsApp 通用区（notifyOnRunDone + showDebugTab——收编 U3 D3 遗留）。
+- [x] 批 D 元素选择器评估 + 验收自查（本提交）：评估结论见 §6（D8 远期）；验收①–④ 锚点见下。
+
+### 验收自查（§0 四条）
+
+1. **搜索计数/aria-live**：search-overlay.test（「2/5 处」/「无命中」aria-live="polite"）+ transcript-search.test（计数纯函数/序号表）+ transcript-view.test（跨条目全局序/当前命中强标识）✓
+2. **通知回流**：host-run-notifier.test（basic 形态/设置门关不发/fail-open/点击激活+开面板/即取即清/fail-soft）+ runtime-run-manager.test（在场静默/离场 done·error 载荷门）；**真机手动项**——done 通知出现且点击打开 sidepanel（headless e2e 断言不了系统通知 UI）
+3. **粘贴路径一致**：ui-glue.test intakeFiles 三态守卫（文件非空才接管/运行中拒绝/纯文本不拦）+ 同源 pickFiles 结构性保证（单一入口）；**真机手动项**——粘贴截图进附件清单与 📎 同径
+4. **弱替代**：transcript-view.test（reuse 钮渲染/回调/缺省不渲染）+ continuity.test 既有锚点（buildContinuityBlock([]) → null——新会话零 turn 前情块必空）；glue 面薄（newChat(prefill) 单发 + setTask）
+
+### 测试总账
+
+console-ui 148→163（批 A +2、批 B +13）；extension 292→303（批 A +3、批 C +8）；protocol 3 不变。覆盖率门禁全轮过；wxt build 构建级实证（manifest 权限面）。分支提交：计划 + 四批共 5 个。
 
 ## 5. 评审轮次登记（review-loop 填写）
 
 （待评审）
 
-## 6. 元素选择器评估（批 D 填写）
+## 6. 元素选择器评估（批 D，D8 裁决：远期独立提案——本期不做）
 
-（待评估）
+**是什么**：面板「引用页面元素」入口——选择模式下到目标页点选元素，元素指纹（稳定 selector/bbox/文本摘要）插入任务文本，模型获得精确指涉。
+
+**技术路线**：
+
+| 路线 | 依赖 | 成本 | 主要风险 |
+| --- | --- | --- | --- |
+| content script 选择模式 | manifest 新增 `scripting` 权限 + 注入声明；选择状态机（hover 高亮/Esc 退出）跑页面上下文 | ~3 人日 + 权限可见性变更 | SPA 路由下注入时机；多 frame；与页面脚本冲突 |
+| CDP 注入（drive-session 同构体） | 零 manifest 变更（debugger 已有）；run 外空闲会话附着目标 tab，Runtime.evaluate 注入 | ~4–5 人日 | 附着信息栏常驻「正在调试此浏览器」（体验代价）；与 run 互斥（同一 tab 只能一个 debugger 附着——选择模式期间不可跑任务） |
+
+**与 TC 心智的重叠**：自然语言任务已覆盖多数指涉场景（模型经 element_tree_text 感知页面）；增量价值集中在**高歧义精确指涉**（多上传 input 区分）——该场景已被任务级 skill 的 selectors.md 沉淀覆盖（domain-skills 现役形态），且 upload-identity 稳定指纹算法可复用。
+
+**需求信号**：U1–U3 期间无用户/issue 需求指向元素选择器。
+
+**再评估触发**：出现 ≥2 个真实场景（用户反馈/高频失败轨迹）表明自然语言指涉不足且 skill 沉淀未覆盖——届时按 CDP 路线独立立项（避开 scripting 权限）。
+
+**跨会话搜索（D2 关联）**：裁剪不做——会话索引摘要面未建（SessionMeta 无摘要字段），标题搜索价值低（任务页 50 条 LRU 肉眼可扫）；留远期与索引摘要面同期评估。
 
 ## 7. 备注
 
