@@ -53,6 +53,8 @@ export default defineConfig({
       "debugger",
       "downloads",
       "alarms",
+      // issue #41 U4 批 C：run 终态桌面通知（sidepanel 不可见时回流，点击开面板）
+      "notifications",
     ],
     host_permissions: ["<all_urls>"],
     // domain-skills.json 走 web_accessible_resources（SW fetch 自身资源不需

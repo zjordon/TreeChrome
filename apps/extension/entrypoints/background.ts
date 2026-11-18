@@ -17,20 +17,24 @@ import { defineBackground } from "wxt/utils/define-background";
 import { AttachmentRegistry } from "../src/host/attachment-registry.js";
 import {
   chromeAlarms,
+  chromeNotifications,
   chromeOnConnect,
   chromeOnInstalled,
   chromeRuntimeId,
+  chromeSidePanel,
   chromeStorageLocal,
   chromeStorageOnChanged,
   chromeTabsOnRemoved,
   chromeTabsOnUpdated,
   chromeTabsQuery,
+  chromeTabsUpdate,
 } from "../src/host/chrome-apis.js";
 import { makeDebuggerTransportFactory } from "../src/host/debugger-api.js";
 import { ChromeGrantStore } from "../src/host/grant-store.js";
 import { KeepaliveController } from "../src/host/keepalive.js";
 import { OpfsFs } from "../src/host/opfs-fs.js";
-import { SettingsStore } from "../src/host/settings-store.js";
+import { RunNotifier } from "../src/host/run-notifier.js";
+import { notifyOnRunDoneOf, SettingsStore } from "../src/host/settings-store.js";
 import { ExtensionSkillSource } from "../src/host/skill-source.js";
 import {
   type BuiltinsManifest,
@@ -291,6 +295,15 @@ async function boot(): Promise<Booted> {
 
   // 广播/端口态闭包晚绑定（portServer 在 runManager 之后构造——双向引用经 holder 收口）
   let portServerRef: PortServer | null = null;
+  // 终态通知回流（issue #41 批 C，验收②）：onClicked 在构造时同步注册（MV3 纪律）；
+  // 设置门 hot-read（save-settings 立即生效，不发不泄漏）
+  const runNotifier = new RunNotifier({
+    notifications: chromeNotifications(),
+    tabsUpdate: chromeTabsUpdate(),
+    sidePanelOpen: (options) => chromeSidePanel().open(options),
+    enabled: () => settingsStore.load().then(notifyOnRunDoneOf),
+    log,
+  });
   const runManager = new RunManager({
     settingsStore,
     attachments,
@@ -310,6 +323,7 @@ async function boot(): Promise<Booted> {
     grantStore,
     broadcast: (m) => portServerRef?.broadcast(m),
     hasPorts: () => portServerRef?.hasPorts ?? false,
+    notifyTerminal: (input) => runNotifier.notifyTerminal(input),
     distill: {
       enqueue: (job) => distillQueue.enqueue(job),
       kick: kickDistill,

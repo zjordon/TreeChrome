@@ -33,6 +33,7 @@ import type { AttachmentRegistry } from "../host/attachment-registry.js";
 import type { TabsOnRemovedApi, TabsQueryApi } from "../host/chrome-apis.js";
 import type { KeepaliveController } from "../host/keepalive.js";
 import type { OpfsFs } from "../host/opfs-fs.js";
+import type { TerminalNotifyInput } from "../host/run-notifier.js";
 import type { ExtensionSettings, SettingsStore } from "../host/settings-store.js";
 import { selfEvolutionOf, sensitiveSpecsOf } from "../host/settings-store.js";
 import { type AssembledRun, assembleRun } from "./assemble.js";
@@ -85,6 +86,9 @@ export interface RunManagerDeps {
   /** 会话存储面（issue #35 U1a：缺省 null = 会话面禁用降级——旧单测兼容；
    *  background 生产装配必须注入，漏注入由 boot 日志确认） */
   sessions?: SessionRepository | null;
+  /** run 终态通知面（issue #41 批 C，验收②）：面板无端口连接（sidepanel 不可见）
+   *  时调用；设置门在 notifier 内部（hot-read）。不注入 = 不通知（旧装配兼容） */
+  notifyTerminal?: (input: TerminalNotifyInput) => void;
   /** 终态→排队续播的节流毫秒（#37 批 A：缺省 2000——测试注入小值） */
   drainDelayMs?: number;
   /** 出队被拒的退避重试毫秒（#37 评审轮 1 [9]：缺省 10s——测试注入小值） */
@@ -675,6 +679,22 @@ export class RunManager {
       // 终态广播（sidepanel 收 journal-snapshot 收口视图）
       const snapshot = journal.current();
       if (snapshot !== null) this.deps.broadcast({ kind: "journal-snapshot", snapshot });
+      // 通知回流（issue #41 批 C，验收②）：sidepanel 无端口连接（不可见）才通知
+      // ——在场自然静默；设置门在 notifier 内部。状态在 try/catch 三分支均已收口
+      //（终态判定显式收窄——running 残态属理论防御跳过）
+      const notifyStatus = journal.status;
+      if (
+        !this.deps.hasPorts() &&
+        (notifyStatus === "done" || notifyStatus === "error" || notifyStatus === "interrupted")
+      ) {
+        this.deps.notifyTerminal?.({
+          status: notifyStatus,
+          task: active.task,
+          finalResult: snapshot?.finalResult ?? null,
+          lastError: snapshot?.lastError ?? null,
+          tabId: active.tabId,
+        });
+      }
       this.deps.log?.(`run ended: ${active.runId} (${journal.status ?? "?"})`);
       // 失败原因进 SW 控制台（段 F 验收反馈：lastError 原先只在 storage 快照里）
       if (

@@ -91,6 +91,33 @@ export interface RuntimeEventApi {
   addListener(callback: (...args: never[]) => void): void;
 }
 
+/** chrome.notifications 同形（issue #41 U4 批 C：run 终态回流） */
+export interface NotificationsApi {
+  create(
+    notificationId: string,
+    options: {
+      type: "basic";
+      iconUrl: string;
+      title: string;
+      message: string;
+    },
+  ): string | undefined;
+  clear(notificationId: string): Promise<boolean>;
+  onClicked: {
+    addListener(callback: (notificationId: string) => void): void;
+  };
+}
+
+/** chrome.sidePanel 同形（issue #41 U4 批 C：通知点击打开面板） */
+export interface SidePanelApi {
+  open(options: { tabId?: number; windowId?: number }): Promise<void>;
+}
+
+/** chrome.tabs.update 同形（通知点击激活绑定 tab） */
+export interface TabsUpdateApi {
+  update(tabId: number, info: { active: boolean }): Promise<unknown>;
+}
+
 interface ChromeLike {
   storage?: { local?: StorageArea; onChanged?: StorageOnChangedApi };
   alarms?: AlarmsApi;
@@ -100,8 +127,14 @@ interface ChromeLike {
     onMessage?: unknown;
     id?: string;
   };
+  notifications?: NotificationsApi;
+  sidePanel?: SidePanelApi;
   // query 是方法（receiver 敏感——绑定须返回原生对象）；onRemoved/onUpdated 是事件对象
-  tabs?: { onRemoved?: TabsOnRemovedApi; onUpdated?: TabsOnUpdatedApi } & TabsQueryApi;
+  tabs?: {
+    onRemoved?: TabsOnRemovedApi;
+    onUpdated?: TabsOnUpdatedApi;
+    update?: TabsUpdateApi;
+  } & TabsQueryApi;
 }
 
 function chromeLike(): ChromeLike | null {
@@ -167,4 +200,27 @@ export function chromeTabsOnUpdated(): TabsOnUpdatedApi {
   const api = chromeLike()?.tabs?.onUpdated;
   if (api === undefined) throw new Error("chrome.tabs.onUpdated unavailable");
   return api;
+}
+
+/** chrome.notifications 真绑定（#41 批 C：manifest 声明 notifications 后必有） */
+export function chromeNotifications(): NotificationsApi {
+  const api = chromeLike()?.notifications;
+  if (api === undefined) throw new Error("chrome.notifications unavailable");
+  return api;
+}
+
+/** chrome.sidePanel 真绑定（#41 批 C：manifest 已声明 sidePanel） */
+export function chromeSidePanel(): SidePanelApi {
+  const api = chromeLike()?.sidePanel;
+  if (api === undefined) throw new Error("chrome.sidePanel unavailable");
+  return api;
+}
+
+/** chrome.tabs.update 真绑定（#41 批 C：通知点击激活绑定 tab——receiver 敏感
+ *  返回原生对象不解构，同 chromeTabsQuery 先例） */
+export function chromeTabsUpdate(): TabsUpdateApi {
+  const tabs = chromeLike()?.tabs;
+  const api = tabs?.update;
+  if (tabs === undefined || api === undefined) throw new Error("chrome.tabs.update unavailable");
+  return api as TabsUpdateApi;
 }

@@ -146,7 +146,9 @@ export function SidepanelApp({
   }, [portStatus, fetchDraftCount]);
 
   // 活跃卡上下文窗口（#37 批 B 验收④分母）：上线/设置关闭后热读一次（SW 单一写者）
+  // + 调试页签可见性（#41 批 C：showDebugTabOf 缺省 true——设置关闭后同 fetch 生效）
   const [contextWindow, setContextWindow] = useState<number | null>(null);
+  const [showDebugTab, setShowDebugTab] = useState(true);
   useEffect(() => {
     if (portStatus !== "online" || optionsRequest === undefined) return;
     // settingsOpen / modelSwitcherOpen 是纯触发器（主设置/快速换卡关闭后重读分母
@@ -162,6 +164,7 @@ export function SidepanelApp({
           settings?: {
             providerCards?: Array<{ name?: unknown; contextWindow?: unknown }>;
             activeCard?: unknown;
+            showDebugTab?: unknown;
           };
         };
         if (s?.ok !== true || s.settings === undefined) return;
@@ -169,6 +172,7 @@ export function SidepanelApp({
           (c) => c.name === s.settings?.activeCard,
         );
         setContextWindow(typeof card?.contextWindow === "number" ? card.contextWindow : null);
+        setShowDebugTab(s.settings.showDebugTab !== false);
       })
       .catch(() => {});
   }, [portStatus, optionsRequest, settingsOpen, state.modelSwitcherOpen]);
@@ -425,7 +429,8 @@ export function SidepanelApp({
       isEnabled: optionsRequest !== undefined,
       Component: SkillsView,
     },
-    { id: "debug", title: "调试", order: 50, isEnabled: true, Component: DebugView },
+    // 调试页签可见性（#41 批 C）：showDebugTab 设置门（缺省 true；读取在途恒显）
+    { id: "debug", title: "调试", order: 50, isEnabled: showDebugTab, Component: DebugView },
   ].filter((p) => p.isEnabled);
   const activePage = view === "chat" ? null : (pages.find((p) => p.id === view) ?? null);
 

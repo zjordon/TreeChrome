@@ -12,6 +12,7 @@ import type { StorageAreaWithRemove } from "../src/host/chrome-apis.js";
 import type { KeepaliveController } from "../src/host/keepalive.js";
 import type { DirHandleLike } from "../src/host/opfs-fs.js";
 import { OpfsFs } from "../src/host/opfs-fs.js";
+import type { TerminalNotifyInput } from "../src/host/run-notifier.js";
 import { parseExtensionSettings, type SettingsStore } from "../src/host/settings-store.js";
 import { RunJournal } from "../src/runtime/journal.js";
 import { RunManager, type RunManagerDeps } from "../src/runtime/run-manager.js";
@@ -34,13 +35,17 @@ const SETTINGS = parseExtensionSettings({
 /** 受控 stub agent（run 挂起直到测试放行） */
 function stubAgent() {
   let resolveRun: (h: AgentHistoryList) => void = () => {};
+  let rejectRun: (e: unknown) => void = () => {};
   const calls: string[] = [];
-  const runPromise = new Promise<AgentHistoryList>((resolve) => {
+  const runPromise = new Promise<AgentHistoryList>((resolve, reject) => {
     resolveRun = resolve;
+    rejectRun = reject;
   });
   return {
     calls,
     finish: (h: AgentHistoryList) => resolveRun(h),
+    // #41 批 C 通知测试：agent.run 抛错 → drive() catch 分支 error 终态
+    fail: (e: unknown) => rejectRun(e),
     agent: {
       run: () => {
         calls.push("run");
@@ -77,6 +82,8 @@ function makeDeps(
     tabs?: Array<{ id: number; url?: string }>;
     /** 装配时捕获任务文本入参（#35 验收①：前情块注入断言） */
     captureTask?: (task: string) => void;
+    /** 端口在场门（#41 批 C 通知回流测试：缺省 true = 面板可见不通知） */
+    hasPorts?: boolean;
   } = {},
 ) {
   const journal = new RunJournal({ now: () => 1234 });
@@ -90,6 +97,7 @@ function makeDeps(
   const stub = stubAgent();
   const browserStops: number[] = [];
   const logs: string[] = [];
+  const notifyCalls: TerminalNotifyInput[] = [];
   const noRoot: DirHandleLike = {
     async getDirectoryHandle() {
       throw new Error("unused");
@@ -147,7 +155,9 @@ function makeDeps(
     }),
     grantStore: null,
     broadcast: (m) => void broadcasts.push(m),
-    hasPorts: () => true,
+    hasPorts: () => options.hasPorts ?? true,
+    // #41 批 C：终态通知面注入捕获（生产由 RunNotifier 消费——门测试在此锚定）
+    notifyTerminal: (input) => void notifyCalls.push(input),
     assemble: assembleOverride,
     ...(options.distill !== undefined ? { distill: options.distill } : {}),
     ...(options.sessions !== undefined ? { sessions: options.sessions } : {}),
@@ -167,6 +177,7 @@ function makeDeps(
     tabRemovedListeners,
     stub,
     browserStops,
+    notifyCalls,
   };
 }
 
@@ -278,6 +289,35 @@ describe("RunManager 状态机", () => {
       },
     ]);
     expect(m.manager.busy).toBe(false);
+  });
+
+  it("通知回流门（#41 批 C，验收②）：sidepanel 无端口连接才通知；在场静默", async () => {
+    // 面板可见（hasPorts=true，缺省）：终态不通知
+    const present = makeDeps();
+    expect(await present.manager.control("start", "查价")).toEqual({ ok: true });
+    present.stub.finish(doneHistory());
+    await new Promise((r) => setTimeout(r, 10));
+    expect(present.notifyCalls).toEqual([]);
+    // 面板不可见：done 终态携任务原文与绑定 tab 通知
+    const away = makeDeps({ hasPorts: false });
+    expect(await away.manager.control("start", "查价")).toEqual({ ok: true });
+    away.stub.finish(doneHistory());
+    await new Promise((r) => setTimeout(r, 10));
+    expect(away.notifyCalls).toEqual([
+      {
+        status: "done",
+        task: "查价",
+        finalResult: "全部完成",
+        lastError: null,
+        tabId: 77,
+      },
+    ]);
+    // error 终态同样通知（D3：三终态分文案由 notifier 承载，此处只锚状态面）
+    const failing = makeDeps({ hasPorts: false });
+    expect(await failing.manager.control("start", "再查")).toEqual({ ok: true });
+    failing.stub.fail(new Error("连接断开"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(failing.notifyCalls).toMatchObject([{ status: "error", tabId: 77 }]);
   });
 
   it("starting 互斥：tabsQuery 挂起期间的并发 start 被拒（判空与置 active 的 await 间隙）", async () => {

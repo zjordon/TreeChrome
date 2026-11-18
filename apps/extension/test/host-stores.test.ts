@@ -8,11 +8,13 @@ import { ChromeGrantStore, PERMISSIONS_KEY } from "../src/host/grant-store.js";
 import {
   DEFAULT_EXTENSION_SETTINGS,
   findCard,
+  notifyOnRunDoneOf,
   parseExtensionSettings,
   SETTINGS_KEY,
   SettingsStore,
   selfEvolutionOf,
   sensitiveSpecsOf,
+  showDebugTabOf,
 } from "../src/host/settings-store.js";
 
 function fakeArea(): StorageArea & { data: Map<string, unknown> } {
@@ -92,6 +94,24 @@ describe("parseExtensionSettings", () => {
         parseExtensionSettings({ selfEvolution: { enabled: false, distillCard: "" } }),
       ),
     ).toEqual({ enabled: false, distillCard: "" });
+  });
+
+  it("notifyOnRunDone / showDebugTab 宽松收窄（#41 批 C）：布尔直映，坏形态回缺省 true", () => {
+    const s = parseExtensionSettings({
+      notifyOnRunDone: false,
+      showDebugTab: false,
+    });
+    expect(s.notifyOnRunDone).toBe(false);
+    expect(s.showDebugTab).toBe(false);
+    const bad = parseExtensionSettings({ notifyOnRunDone: "no", showDebugTab: 0 });
+    expect(bad.notifyOnRunDone).toBeUndefined();
+    expect(bad.showDebugTab).toBeUndefined();
+    // 读取面缺省（新用户开箱：通知开、调试页签开）
+    const defaults = parseExtensionSettings(null);
+    expect(notifyOnRunDoneOf(defaults)).toBe(true);
+    expect(showDebugTabOf(defaults)).toBe(true);
+    expect(notifyOnRunDoneOf(s)).toBe(false);
+    expect(showDebugTabOf(s)).toBe(false);
   });
 });
 

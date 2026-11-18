@@ -24,6 +24,10 @@ export interface ExtensionSettings {
   };
   /** 自进化闭环开关（issue #5 D10）：enabled 缺省 true；distillCard 空串 = 复用主卡 */
   selfEvolution?: { enabled: boolean; distillCard: string };
+  /** run 终态桌面通知（issue #41 U4 批 C）：sidepanel 不可见时通知，缺省 true */
+  notifyOnRunDone?: boolean;
+  /** sidepanel 调试页签可见性（issue #41 U4 批 C——收编 U3 D3 遗留）：缺省 true */
+  showDebugTab?: boolean;
 }
 
 export const SETTINGS_KEY = "tc_settings";
@@ -78,6 +82,8 @@ export function parseExtensionSettings(raw: unknown): ExtensionSettings {
         typeof raw.selfEvolution.distillCard === "string" ? raw.selfEvolution.distillCard : "",
     };
   }
+  if (typeof raw.notifyOnRunDone === "boolean") out.notifyOnRunDone = raw.notifyOnRunDone;
+  if (typeof raw.showDebugTab === "boolean") out.showDebugTab = raw.showDebugTab;
   return out;
 }
 
@@ -87,6 +93,16 @@ export function selfEvolutionOf(settings: ExtensionSettings): {
   distillCard: string;
 } {
   return settings.selfEvolution ?? { enabled: true, distillCard: "" };
+}
+
+/** run 终态通知开关（issue #41 批 C：缺省 true——新用户开箱即有回流） */
+export function notifyOnRunDoneOf(settings: ExtensionSettings): boolean {
+  return settings.notifyOnRunDone ?? true;
+}
+
+/** 调试页签可见性（issue #41 批 C：缺省 true） */
+export function showDebugTabOf(settings: ExtensionSettings): boolean {
+  return settings.showDebugTab ?? true;
 }
 
 /** 热读（每次 start 前调；缺键/坏形态回缺省空卡——装配层报「无可用卡片」） */
