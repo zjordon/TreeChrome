@@ -113,7 +113,8 @@ export interface SidePanelApi {
   open(options: { tabId?: number; windowId?: number }): Promise<void>;
 }
 
-/** chrome.tabs.update 同形（通知点击激活绑定 tab） */
+/** chrome.tabs 命名空间的 update 方法面（通知点击激活绑定 tab——receiver 敏感：
+ *  须以对象方法形态调用，RunNotifier 持本接口整体对象） */
 export interface TabsUpdateApi {
   update(tabId: number, info: { active: boolean }): Promise<unknown>;
 }
@@ -129,11 +130,11 @@ interface ChromeLike {
   };
   notifications?: NotificationsApi;
   sidePanel?: SidePanelApi;
-  // query 是方法（receiver 敏感——绑定须返回原生对象）；onRemoved/onUpdated 是事件对象
+  // query/update 是方法（receiver 敏感——绑定须返回原生对象）；onRemoved/onUpdated 是事件对象
   tabs?: {
     onRemoved?: TabsOnRemovedApi;
     onUpdated?: TabsOnUpdatedApi;
-    update?: TabsUpdateApi;
+    update?: (tabId: number, info: { active: boolean }) => Promise<unknown>;
   } & TabsQueryApi;
 }
 
@@ -220,7 +221,8 @@ export function chromeSidePanel(): SidePanelApi {
  *  返回原生对象不解构，同 chromeTabsQuery 先例） */
 export function chromeTabsUpdate(): TabsUpdateApi {
   const tabs = chromeLike()?.tabs;
-  const api = tabs?.update;
-  if (tabs === undefined || api === undefined) throw new Error("chrome.tabs.update unavailable");
-  return api as TabsUpdateApi;
+  if (tabs === undefined || typeof tabs.update !== "function") {
+    throw new Error("chrome.tabs.update unavailable");
+  }
+  return tabs as TabsUpdateApi;
 }

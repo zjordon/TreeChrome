@@ -1,5 +1,6 @@
-// RunNotifier 单测（issue #41 U4 批 C，验收②）：终态通知创建（设置门/文案/
-// 截断）+ 点击回流（激活 tab + 打开面板 + 失败 fail-soft）+ 上下文即取即清。
+// RunNotifier 单测（issue #41 U4 批 C + 评审轮 1 [1][2]，验收②）：终态通知创建
+// （设置门/文案/截断）+ 点击回流（激活 tab + 打开面板 + 失败 fail-soft + SW
+// 冷启动恢复——id 内嵌 tabId，内存上下文丢失后解析 id 仍可回流）。
 
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsApi } from "../src/host/chrome-apis.js";
@@ -8,6 +9,7 @@ import {
   RunNotifier,
   renderTerminalNotification,
   type TerminalNotifyInput,
+  tabIdOfNotificationId,
 } from "../src/host/run-notifier.js";
 
 interface Notified {
@@ -39,7 +41,8 @@ function makeHarness() {
     tabsUpdate,
     sidePanelOpen,
     log: (m: string) => void logs.push(m),
-    generateId: () => `n${++idSeq}`,
+    // id 内嵌 tabId（可解析形态——冷启动恢复的前提）
+    makeId: (tabId: number) => `run-terminal-${tabId}-t${++idSeq}`,
   };
   return { created, clickListeners, cleared, tabsUpdate, sidePanelOpen, logs, deps };
 }
@@ -106,7 +109,7 @@ describe("RunNotifier（#41 批 C）", () => {
       iconUrl: NOTIFICATION_ICON_URL,
       title: "任务完成",
     });
-    expect(h.created[0]?.id).toBe("n1");
+    expect(h.created[0]?.id).toBe("run-terminal-7-t1");
 
     const off = new RunNotifier({ ...h.deps, enabled: () => Promise.resolve(false) });
     off.notifyTerminal(doneInput);
@@ -122,7 +125,7 @@ describe("RunNotifier（#41 批 C）", () => {
     expect(h.created).toHaveLength(1);
   });
 
-  it("点击回流：激活绑定 tab + 打开面板；上下文即取即清（二次点击 no-op）", async () => {
+  it("点击回流：激活绑定 tab + 打开面板；二次点击幂等无害；非本器形态 no-op", async () => {
     const h = makeHarness();
     const n = new RunNotifier(h.deps);
     n.notifyTerminal({ ...doneInput, tabId: 9 });
@@ -131,10 +134,29 @@ describe("RunNotifier（#41 批 C）", () => {
     await flush();
     expect(h.tabsUpdate.update).toHaveBeenCalledWith(9, { active: true });
     expect(h.sidePanelOpen).toHaveBeenCalledWith({ tabId: 9 });
-    h.clickListeners[0]?.(h.created[0]?.id ?? ""); // 已清——不再回流
-    expect(h.tabsUpdate.update).toHaveBeenCalledTimes(1);
+    // 无内存去重（幂等操作）——重复点击重复回流无害
+    h.clickListeners[0]?.(h.created[0]?.id ?? "");
+    expect(h.tabsUpdate.update).toHaveBeenCalledTimes(2);
     h.clickListeners[0]?.("unknown-id");
-    expect(h.tabsUpdate.update).toHaveBeenCalledTimes(1);
+    h.clickListeners[0]?.("run-terminal-x-bad"); // 前缀对但形态坏
+    expect(h.tabsUpdate.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("SW 冷启动恢复（评审轮 1 [2]）：新实例无内存上下文，解析 id 内嵌 tabId 仍可回流", async () => {
+    const h = makeHarness();
+    // 缺省 id 生成（不注入 makeId——走 crypto 路径，id 形态 run-terminal-<tabId>-<rand>）
+    const first = new RunNotifier({ ...h.deps, makeId: undefined });
+    first.notifyTerminal({ ...doneInput, tabId: 12 });
+    await flush();
+    const id = h.created[0]?.id ?? "";
+    expect(tabIdOfNotificationId(id)).toBe(12);
+    // SW 空闲回收后点击 → 冷启动 boot() 重建的实例（构造注册的监听器在列表尾，
+    // 零内存态——仅凭 id 解析回流）
+    new RunNotifier({ ...h.deps, makeId: undefined });
+    h.clickListeners.at(-1)?.(id);
+    await flush();
+    expect(h.tabsUpdate.update).toHaveBeenCalledWith(12, { active: true });
+    expect(h.sidePanelOpen).toHaveBeenCalledWith({ tabId: 12 });
   });
 
   it("回流失败 fail-soft：tab 已关（update reject）记日志不炸", async () => {

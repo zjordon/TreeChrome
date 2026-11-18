@@ -236,8 +236,12 @@ export function SidepanelApp({
   }, [portStatus, sessionRequest, state.sessionRev, state.currentSessionId]);
 
   /** 透传 PortClient.send 的送达语义（评审轮 1 [2]）：断连/端口竞态返 false 不抛——
-   *  附件传输靠它显式收口；其余调用方忽略返回值 */
-  const send = (message: UiToSwMessage): boolean => clientRef.current?.send(message) ?? false;
+   *  附件传输靠它显式收口；其余调用方忽略返回值。仅触 clientRef（ref 稳定）→
+   *  空依赖 useCallback（评审轮 1 [4]：pickFiles 链式稳定化的根） */
+  const send = useCallback(
+    (message: UiToSwMessage): boolean => clientRef.current?.send(message) ?? false,
+    [],
+  );
 
   const waitForBegun = useCallback(
     (transferId: string, timeoutMs: number) =>
@@ -255,32 +259,37 @@ export function SidepanelApp({
     [],
   );
 
-  const pickFiles = (files: File[]): void => {
-    for (const f of files) {
-      const transferId = crypto.randomUUID();
-      setUploads((prev) => [...prev, { transferId, name: f.name, size: f.size, sent: 0 }]);
-      void uploadAttachment(
-        {
-          name: f.name,
-          mimeType: f.type,
-          size: f.size,
-          slice: (off, end) => f.slice(off, end).arrayBuffer(),
-        },
-        {
-          send,
-          waitForBegun,
-          onProgress: (tid, sent) =>
-            setUploads((prev) => prev.map((u) => (u.transferId === tid ? { ...u, sent } : u))),
-          onLocalRejection: (rejection) =>
-            dispatch({ kind: "attachment-rejected-local", rejection }),
-          generateTransferId: () => transferId,
-        },
-      ).finally(() => {
-        // 乐观收尾（commit 后 SW 的 attachments 广播即回执；失败走 lost 拒绝广播）
-        setUploads((prev) => prev.filter((u) => u.transferId !== transferId));
-      });
-    }
-  };
+  // useCallback 稳定化（评审轮 1 [4]）：粘贴 effect 挂 document 需要稳定引用——
+  // 依赖链 send（空依赖）/waitForBegun（空依赖）+ 稳定 setter/dispatch
+  const pickFiles = useCallback(
+    (files: File[]): void => {
+      for (const f of files) {
+        const transferId = crypto.randomUUID();
+        setUploads((prev) => [...prev, { transferId, name: f.name, size: f.size, sent: 0 }]);
+        void uploadAttachment(
+          {
+            name: f.name,
+            mimeType: f.type,
+            size: f.size,
+            slice: (off, end) => f.slice(off, end).arrayBuffer(),
+          },
+          {
+            send,
+            waitForBegun,
+            onProgress: (tid, sent) =>
+              setUploads((prev) => prev.map((u) => (u.transferId === tid ? { ...u, sent } : u))),
+            onLocalRejection: (rejection) =>
+              dispatch({ kind: "attachment-rejected-local", rejection }),
+            generateTransferId: () => transferId,
+          },
+        ).finally(() => {
+          // 乐观收尾（commit 后 SW 的 attachments 广播即回执；失败走 lost 拒绝广播）
+          setUploads((prev) => prev.filter((u) => u.transferId !== transferId));
+        });
+      }
+    },
+    [send, waitForBegun],
+  );
 
   /** 新对话（#35 D9）：建空会话（tabId 0 未绑定）置当前——下一次 start 显式带
    *  sessionId，SW 侧 rebindTab 落到实际活动 tab。迟到应答守卫（评审轮 2 [6]）：
@@ -400,7 +409,7 @@ export function SidepanelApp({
           })
           .catch(() => {});
       }}
-      onNew={newChat}
+      onNew={() => newChat()}
     />
   );
   /** 调试页视图：原始 journal 事件流（state 面）+ 快照头部态 */
@@ -434,23 +443,39 @@ export function SidepanelApp({
   ].filter((p) => p.isEnabled);
   const activePage = view === "chat" ? null : (pages.find((p) => p.id === view) ?? null);
 
+  // 粘贴受理挂 document（评审轮 1 [4]）：React 18 在根容器代理事件——焦点在
+  // body（面板刚打开/点了不可聚焦区）时 paste 目标不经过 #root，div 接面收不
+  // 到；document 级监听恒可达。pickFiles 每渲染换引用 → 每渲染重挂（幂等廉价）
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent): void => {
+      const files = intakeFiles(e.clipboardData, { running });
+      if (files === null) return;
+      e.preventDefault();
+      pickFiles(files);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [running, pickFiles]);
+
   return (
-    // 附件粘贴/拖入接面（#41 批 A，验收③）：display:contents 不破布局；paste 仅
-    // 在剪贴板带文件时接管（纯文本粘贴不拦截）；drop/dragover 恒 preventDefault
-    // 防面板页被导航到 file://；受理门与 📎 同款（!running）——同源 pickFiles
-    // biome-ignore lint/a11y/noStaticElementInteractions: 无语义的整页事件接面（粘贴/拖放转发）——非交互元素，加 role 反而失真
+    // 附件拖入接面（#41 批 A + 评审轮 1 [5]）：display:contents 不破布局；
+    // drop 受理文件时才 preventDefault——纯文本拖入输入框保留原生插入（与粘贴
+    // 侧「纯文本不拦截」对齐），非编辑元素落点恒 preventDefault 防 file:// 导航；
+    // 受理门与 📎 同款（!running）——同源 pickFiles
+    // biome-ignore lint/a11y/noStaticElementInteractions: 无语义的整页事件接面（拖放转发）——非交互元素，加 role 反而失真
     <div
       style={{ display: "contents" }}
-      onPaste={(e) => {
-        const files = intakeFiles(e.clipboardData, { running });
-        if (files === null) return;
-        e.preventDefault();
-        pickFiles(files);
-      }}
       onDrop={(e) => {
-        e.preventDefault();
         const files = intakeFiles(e.dataTransfer, { running });
-        if (files !== null) pickFiles(files);
+        if (files !== null) {
+          e.preventDefault();
+          pickFiles(files);
+          return;
+        }
+        const t = e.target as HTMLElement | null;
+        const editable =
+          t !== null && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+        if (!editable) e.preventDefault();
       }}
       onDragOver={(e) => e.preventDefault()}
     >
@@ -472,7 +497,11 @@ export function SidepanelApp({
                   }
                 />
               }
-              onNewChat={sessionRequest !== undefined ? newChat : undefined}
+              onNewChat={
+                // 空参包装（评审轮 1 [3]）：直传会把点击事件对象当 prefill 写进
+                // task state——Composer 的 task.trim() 崩整页渲染
+                sessionRequest !== undefined ? () => newChat() : undefined
+              }
               onOpenSettings={
                 optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
               }

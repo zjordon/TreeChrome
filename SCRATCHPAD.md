@@ -85,7 +85,14 @@ console-ui 148→163（批 A +2、批 B +13）；extension 292→303（批 A +3�
 
 ## 5. 评审轮次登记（review-loop 填写）
 
-（待评审）
+### 轮 1（2026-11-18，5 条全采纳：P1×3 / P2×2）
+
+- **[1] P1 chromeTabsUpdate 形状错**：返回了解构出的 `tabs.update` 裸函数强转 `{update}` 对象形——`.update` 属性 undefined，通知点击回流真实路径 100% TypeError（测试用 `{update: vi.fn()}` fake 恰好同形掩盖）。修复：返回原生 tabs 命名空间对象（方法调用形态保 receiver，同 chromeTabsQuery 先例）；ChromeLike.tabs.update 改方法签名。
+- **[2] P1 通知点击的 SW 冷启动失效**：contexts 内存 Map 在 SW 空闲回收（终态后 ~30s，keepalive 已清 + 无端口）后丢失——用户数分钟后点通知冷启动重建实例查无上下文静默 no-op，恰击穿「离开面板才收通知」核心场景。修复：tabId 内嵌通知 id（`run-terminal-<tabId>-<uuid>`）+ onClicked 解析恢复（`tabIdOfNotificationId`），弃内存 Map（二次点击幂等无害）；冷启动恢复路径测试锚定（新实例解析 id 回流——Map 实现下该测试必红）。
+- **[3] P1 newChat 事件参数泄漏**：签名改 `(prefill?)` 后直传 `onNewChat`/`onNew`——点击事件对象被 setTask 写入 task state，Composer `task.trim()` 崩整页渲染。修复：两处调用点空参包装 `() => newChat()`。
+- **[4] P2 粘贴接面收不到 body 焦点 paste**：React 18 根容器代理——面板刚打开/点不可聚焦区时焦点在 body，paste 目标不经过 #root，div onPaste 永不触发（主场景失效）。修复：document 级监听（intakeFiles 守卫复用）；pickFiles/send 链式 useCallback 稳定化（biome exhaustive-deps）；drop/dragover 基于指针位置保留在接面 div。
+- **[5] P2 无条件 drop preventDefault 吞原生文本拖入**：纯文本拖入 composer/搜索框被拦截且不接管（原生插入被取消，静默无反馈——本变更前可用）。修复：文件受理才 preventDefault + pickFiles；纯文本落点在可编辑元素（INPUT/TEXTAREA/contentEditable）保留原生插入，其余恒 preventDefault 防 file:// 导航。
+- 测试：extension 303→304（冷启动恢复 +1、即取即清改幂等语义）；console-ui 163 不变。
 
 ## 6. 元素选择器评估（批 D，D8 裁决：远期独立提案——本期不做）
 
