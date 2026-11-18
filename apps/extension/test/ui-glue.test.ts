@@ -7,6 +7,7 @@
 import type { AttachmentRejection, SwToUiMessage, UiToSwMessage } from "@tw/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { registerMessageRouter } from "../src/runtime/message-router.js";
+import { intakeFiles } from "../src/ui-glue/attachment-intake.js";
 import {
   type BegunSignal,
   type UploadFile,
@@ -812,5 +813,25 @@ describe("sidepanel reducer 模型快速切换（#37 批 C）", () => {
     expect(opened.modelSwitcherOpen).toBe(true);
     const closed = ingestSidepanel(opened, { kind: "model-switcher-closed" }).state;
     expect(closed.modelSwitcherOpen).toBe(false);
+  });
+});
+
+describe("intakeFiles（粘贴/拖入守卫，#41 批 A 验收③）", () => {
+  it("剪贴板/拖拽带文件且非运行中 → 接管并返回数组", () => {
+    const a = new File(["x"], "a.png", { type: "image/png" });
+    const b = new File(["y"], "b.txt");
+    const out = intakeFiles({ files: [a, b] }, { running: false });
+    expect(out).toEqual([a, b]);
+  });
+
+  it("运行中不接管（与 📎 同门）——drop 的 preventDefault 由调用方另行执行", () => {
+    const a = new File(["x"], "a.png");
+    expect(intakeFiles({ files: [a] }, { running: true })).toBeNull();
+  });
+
+  it("无文件/空 files/null transfer → null（纯文本粘贴不拦截）", () => {
+    expect(intakeFiles({ files: [] }, { running: false })).toBeNull();
+    expect(intakeFiles({ files: null }, { running: false })).toBeNull();
+    expect(intakeFiles(null, { running: false })).toBeNull();
   });
 });

@@ -53,6 +53,7 @@ const themeCssText = [tokensCss, baseCss, controlsCss, componentsCss, markdownCs
 
 import type { OptionsOp, SessionMeta, SessionOp, SessionRecord, UiToSwMessage } from "@tw/protocol";
 import { type ReactElement, useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { intakeFiles } from "./attachment-intake.js";
 import { type BegunSignal, uploadAttachment } from "./attachment-upload.js";
 import { OptionsApp } from "./options-app.js";
 import { PortClient, type UiPort } from "./port-client.js";
@@ -276,8 +277,10 @@ export function SidepanelApp({
 
   /** 新对话（#35 D9）：建空会话（tabId 0 未绑定）置当前——下一次 start 显式带
    *  sessionId，SW 侧 rebindTab 落到实际活动 tab。迟到应答守卫（评审轮 2 [6]）：
-   *  SW 冷启动应答慢时用户可能已切别的会话——发起时的指向变了就放弃应用 */
-  const newChat = (): void => {
+   *  SW 冷启动应答慢时用户可能已切别的会话——发起时的指向变了就放弃应用。
+   *  prefill（#41 批 A 弱替代）：以历史 turn 任务预填 composer——不自动起跑（D5），
+   *  新会话零 turn → 前情块必空（验收④） */
+  const newChat = (prefill?: string): void => {
     if (sessionRequest === undefined) return;
     const at = currentSessionIdRef.current;
     void sessionRequest("session-new", {})
@@ -289,7 +292,7 @@ export function SidepanelApp({
           currentSessionIdRef.current === at
         ) {
           dispatch({ kind: "session-current", sessionId: meta.sessionId });
-          setTask("");
+          setTask(prefill ?? "");
           setView("chat");
         }
       })
@@ -395,317 +398,346 @@ export function SidepanelApp({
   const activePage = view === "chat" ? null : (pages.find((p) => p.id === view) ?? null);
 
   return (
-    <ThemedRoot>
-      <AppShell
-        header={
-          <RunPanelHeader
-            title="TreeChrome"
-            portStatus={portStatus}
-            distill={state.distill}
-            draftCount={state.draftCount}
-            tabs={
-              <PageTabs
-                pages={pages.map((p) => ({ id: p.id, title: p.title }))}
-                activeId={view === "chat" ? null : view}
-                onSelect={(id) =>
-                  // toggle：点活动中的页签回聊天主视图
-                  setView((v) => (v === id ? "chat" : (id as typeof v)))
-                }
-              />
-            }
-            onNewChat={sessionRequest !== undefined ? newChat : undefined}
-            onOpenSettings={
-              optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
-            }
-            onReviewDrafts={
-              optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
-            }
-          />
-        }
-        dock={
-          <>
-            {snap !== null && !terminal ? (
-              <RunStatusBar
-                status={snap.status}
-                stepCount={snap.stepCount}
-                startedAt={snap.startedAt}
-                endedAt={snap.endedAt}
-                usage={latestUsage}
-                onStop={() => send({ kind: "control", action: "stop" })}
-              />
-            ) : null}
-            {/* 附件条（TaskBar 的附件面原样收编——清单/在途/预算/拒绝明细） */}
-            {state.attachments.length > 0 ? (
-              <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}>
-                {state.attachments.map((a) => (
-                  <li
-                    key={a.attachmentId}
-                    style={{ display: "flex", gap: 6, alignItems: "center" }}
-                  >
-                    <span>
-                      {a.name}（{formatBytes(a.size)}）
-                    </span>
-                    <Button
-                      variant="danger"
-                      disabled={running}
-                      aria-label={`移除附件 ${a.name}`}
-                      onClick={() =>
-                        send({ kind: "attachment-remove", attachmentId: a.attachmentId })
-                      }
-                    >
-                      ×
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {uploads.length > 0 ? (
-              <ul
-                style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}
-                aria-label="附件上传中"
-              >
-                {uploads.map((u) => (
-                  <li
-                    key={u.transferId}
-                    className="tc-ev-muted"
-                    style={{ display: "flex", gap: 6 }}
-                  >
-                    <span>
-                      {u.name}（上传中 {u.size > 0 ? Math.floor((u.sent / u.size) * 100) : 100}%）
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {state.attachmentBudget !== null && state.attachmentBudget.usedBytes > 0 ? (
-              <p style={{ margin: 0 }} className="tc-ev-muted">
-                附件 {formatBytes(state.attachmentBudget.usedBytes)} /{" "}
-                {formatBytes(state.attachmentBudget.maxTotalBytes)}
-              </p>
-            ) : null}
-            {state.attachmentRejections.length > 0 ? (
-              <ul
-                style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}
-                aria-label="附件被拒明细"
-              >
-                {state.attachmentRejections.map((r, i) => (
-                  <li
-                    // biome-ignore lint/suspicious/noArrayIndexKey: 拒绝明细无稳定 id（同名可重复出现），name+序号复合 key 是务实解（同 submit-card 先例）
-                    key={`${r.name}-${i}`}
-                    className="tc-ev-err"
-                    style={{ display: "flex", gap: 6, alignItems: "center" }}
-                  >
-                    <span>
-                      ⚠ {r.name}
-                      {r.size > 0 ? `（${formatBytes(r.size)}）` : ""}
-                    </span>
-                    <Button
-                      variant="danger"
-                      aria-label={`清除附件提示 ${r.name}`}
-                      onClick={() => dispatch({ kind: "attachment-rejection-dismissed", index: i })}
-                    >
-                      ×
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {/* 目标条（#37 批 C）：当前会话目标 tab——点击聚焦（session-focus） */}
-            {state.targetUrl !== null && state.currentSessionId !== null && !landing ? (
-              <GoalStrip
-                url={state.targetUrl}
-                onFocus={() => {
-                  const sessionId = currentSessionIdRef.current;
-                  if (sessionId === null) return;
-                  void sessionRequest?.("session-focus", { sessionId }).catch(() => {});
-                }}
-              />
-            ) : null}
-            {/* 排队消息条（#37 批 A）：当前会话 queued turns——撤销即 queue-remove */}
-            {queuedTurns.length > 0 && sessionRequest !== undefined ? (
-              <QueueStrip
-                turns={queuedTurns}
-                onRemove={(turnId) => {
-                  const sessionId = currentSessionIdRef.current;
-                  if (sessionId === null) return;
-                  void sessionRequest("queue-remove", { sessionId, turnId }).catch(() => {});
-                }}
-              />
-            ) : null}
-            <Composer
-              task={task}
-              onTaskChange={setTask}
-              canSend={canSend}
-              onSend={() => {
-                // 运行中发送 = 入队（#37 批 A：连播而非禁用/拒绝）
-                if (running) {
-                  const sessionId = currentSessionIdRef.current;
-                  if (sessionId !== null && sessionRequest !== undefined) {
-                    void sessionRequest("queue-add", { sessionId, task })
-                      .then((res) => {
-                        if ((res as { ok?: boolean }).ok === true) setTask("");
-                      })
-                      .catch(() => {});
+    // 附件粘贴/拖入接面（#41 批 A，验收③）：display:contents 不破布局；paste 仅
+    // 在剪贴板带文件时接管（纯文本粘贴不拦截）；drop/dragover 恒 preventDefault
+    // 防面板页被导航到 file://；受理门与 📎 同款（!running）——同源 pickFiles
+    // biome-ignore lint/a11y/noStaticElementInteractions: 无语义的整页事件接面（粘贴/拖放转发）——非交互元素，加 role 反而失真
+    <div
+      style={{ display: "contents" }}
+      onPaste={(e) => {
+        const files = intakeFiles(e.clipboardData, { running });
+        if (files === null) return;
+        e.preventDefault();
+        pickFiles(files);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const files = intakeFiles(e.dataTransfer, { running });
+        if (files !== null) pickFiles(files);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+    >
+      <ThemedRoot>
+        <AppShell
+          header={
+            <RunPanelHeader
+              title="TreeChrome"
+              portStatus={portStatus}
+              distill={state.distill}
+              draftCount={state.draftCount}
+              tabs={
+                <PageTabs
+                  pages={pages.map((p) => ({ id: p.id, title: p.title }))}
+                  activeId={view === "chat" ? null : view}
+                  onSelect={(id) =>
+                    // toggle：点活动中的页签回聊天主视图
+                    setView((v) => (v === id ? "chat" : (id as typeof v)))
                   }
-                  return;
-                }
-                dispatch({ kind: "attachment-rejections-cleared" });
-                send({
-                  kind: "control",
-                  action: "start",
-                  task,
-                  // 显式续接当前会话（缺省由 SW 按 tab 解析——#35 U1 语义）
-                  ...(state.currentSessionId !== null ? { sessionId: state.currentSessionId } : {}),
-                });
-              }}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button disabled={running} onClick={() => fileInput.current?.click()}>
-                📎 附件
-              </Button>
-            </div>
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? []);
-                if (files.length > 0) pickFiles(files);
-                e.target.value = "";
-              }}
-            />
-          </>
-        }
-      >
-        {state.permission !== null ? (
-          <PermissionCard
-            req={state.permission.req}
-            expiresAt={state.permission.req.expiresAt}
-            onResolve={(verdict) => {
-              send({ kind: "permission-resolve", token: state.permission?.token ?? "", verdict });
-              dispatch({ kind: "permission-resolved" });
-            }}
-          />
-        ) : null}
-        {state.submit !== null ? (
-          <SubmitCard
-            req={state.submit.req}
-            fields={state.submit.fields}
-            onConfirm={() => {
-              send({ kind: "submit-resolve", token: state.submit?.token ?? "", approved: true });
-              dispatch({ kind: "submit-resolved" });
-            }}
-            onCancel={() => {
-              send({ kind: "submit-resolve", token: state.submit?.token ?? "", approved: false });
-              dispatch({ kind: "submit-resolved" });
-            }}
-          />
-        ) : null}
-
-        {activePage !== null ? (
-          // 函数调用而非元素渲染（评审轮 1 [2]）：视图工厂在组件体内声明，作为
-          // JSX 类型渲染时每次 dispatch 重渲染都换引用 → 整页 remount 丢输入/折叠
-          // 态。函数调用输出稳定的 SessionsPage 等模块级元素树，按类型 reconcile
-          activePage.Component()
-        ) : (
-          <>
-            {/* 会话标题条（#39 批 C/D）：行内重命名 + 字号 + 导出 */}
-            {state.currentSessionId !== null && !landing ? (
-              <SessionTitleBar
-                title={state.sessionRecord?.meta.title ?? "会话"}
-                onRename={(title) => {
-                  void sessionRequest?.("session-rename", {
-                    sessionId: state.currentSessionId,
-                    title,
-                  }).catch(() => {});
-                }}
-                actions={
-                  <>
-                    <FontSizePopover />
-                    <Button
-                      aria-label="导出会话 HTML"
-                      title="导出会话 HTML（自包含静态页）"
-                      onClick={() => {
-                        // 导出（验收④）：当前会话转录 → 零脚本单文件（内联主题 CSS）
-                        const record = state.sessionRecord;
-                        if (record === null) return;
-                        const html = serializeTranscriptHtml(
-                          projectTranscript(record, snap, state.events),
-                          { cssText: themeCssText, title: record.meta.title },
-                        );
-                        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `treechrome-${record.meta.title.slice(0, 30) || "session"}.html`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      }}
-                    >
-                      ⬇ HTML
-                    </Button>
-                  </>
-                }
-              />
-            ) : null}
-            {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}
-            {external ? (
-              <ExternalDriveCard sessionTitle={state.sessionRecord?.meta.title ?? null} />
-            ) : null}
-            {landing ? (
-              <WelcomePanel
-                title="TreeChrome"
-                tagline="浏览器里的任务代理"
-                historyCount={state.sessions.length}
-                onOpenHistory={() => setView("tasks")}
-              />
-            ) : null}
-            {transcript.length > 0 ? (
-              <TranscriptView items={transcript} />
-            ) : !landing && runViewEligible ? (
-              /* 回退旧时间线面：仅承载本会话/无会话语境的 run 视图（归档 fetch 在途
-               * 或前会话模型数据）——旧会话的 snap/events 不串入新会话（评审轮 2 [3]） */
-              <>
-                <RunTimeline
-                  events={state.events}
-                  discardedBeforeSeq={snap?.discardedBeforeSeq ?? 0}
-                  stepCount={snap?.stepCount}
                 />
-                {terminal ? (
-                  <FinalResult
-                    finalResult={snap.finalResult}
-                    isSuccessful={snap.isSuccessful}
-                    attachments={snap.attachments}
-                    lastError={snap.lastError}
-                    judgement={snap.judgement}
-                  />
-                ) : null}
-              </>
-            ) : transcript.length === 0 && !landing ? (
-              /* 非本会话的 run 视图被门控（新对话/他会的 fetch 在途）——空转录占位 */
-              <TranscriptView items={[]} />
-            ) : null}
-          </>
-        )}
-      </AppShell>
-      {optionsRequest !== undefined ? (
-        <SettingsOverlay open={settingsOpen} onClose={() => setSettingsOpen(false)} title="设置">
-          <OptionsApp request={optionsRequest} />
-        </SettingsOverlay>
-      ) : null}
-      {/* 模型快速切换（#37 批 C：Ctrl+Shift+M → SW 广播置位；点选保存后关闭） */}
-      {optionsRequest !== undefined && state.modelSwitcherOpen ? (
-        <SettingsOverlay
-          open
-          onClose={() => dispatch({ kind: "model-switcher-closed" })}
-          title="模型快速切换"
+              }
+              onNewChat={sessionRequest !== undefined ? newChat : undefined}
+              onOpenSettings={
+                optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
+              }
+              onReviewDrafts={
+                optionsRequest !== undefined ? () => setSettingsOpen(true) : onOpenSettings
+              }
+            />
+          }
+          dock={
+            <>
+              {snap !== null && !terminal ? (
+                <RunStatusBar
+                  status={snap.status}
+                  stepCount={snap.stepCount}
+                  startedAt={snap.startedAt}
+                  endedAt={snap.endedAt}
+                  usage={latestUsage}
+                  onStop={() => send({ kind: "control", action: "stop" })}
+                />
+              ) : null}
+              {/* 附件条（TaskBar 的附件面原样收编——清单/在途/预算/拒绝明细） */}
+              {state.attachments.length > 0 ? (
+                <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}>
+                  {state.attachments.map((a) => (
+                    <li
+                      key={a.attachmentId}
+                      style={{ display: "flex", gap: 6, alignItems: "center" }}
+                    >
+                      <span>
+                        {a.name}（{formatBytes(a.size)}）
+                      </span>
+                      <Button
+                        variant="danger"
+                        disabled={running}
+                        aria-label={`移除附件 ${a.name}`}
+                        onClick={() =>
+                          send({ kind: "attachment-remove", attachmentId: a.attachmentId })
+                        }
+                      >
+                        ×
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {uploads.length > 0 ? (
+                <ul
+                  style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}
+                  aria-label="附件上传中"
+                >
+                  {uploads.map((u) => (
+                    <li
+                      key={u.transferId}
+                      className="tc-ev-muted"
+                      style={{ display: "flex", gap: 6 }}
+                    >
+                      <span>
+                        {u.name}（上传中 {u.size > 0 ? Math.floor((u.sent / u.size) * 100) : 100}%）
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {state.attachmentBudget !== null && state.attachmentBudget.usedBytes > 0 ? (
+                <p style={{ margin: 0 }} className="tc-ev-muted">
+                  附件 {formatBytes(state.attachmentBudget.usedBytes)} /{" "}
+                  {formatBytes(state.attachmentBudget.maxTotalBytes)}
+                </p>
+              ) : null}
+              {state.attachmentRejections.length > 0 ? (
+                <ul
+                  style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}
+                  aria-label="附件被拒明细"
+                >
+                  {state.attachmentRejections.map((r, i) => (
+                    <li
+                      // biome-ignore lint/suspicious/noArrayIndexKey: 拒绝明细无稳定 id（同名可重复出现），name+序号复合 key 是务实解（同 submit-card 先例）
+                      key={`${r.name}-${i}`}
+                      className="tc-ev-err"
+                      style={{ display: "flex", gap: 6, alignItems: "center" }}
+                    >
+                      <span>
+                        ⚠ {r.name}
+                        {r.size > 0 ? `（${formatBytes(r.size)}）` : ""}
+                      </span>
+                      <Button
+                        variant="danger"
+                        aria-label={`清除附件提示 ${r.name}`}
+                        onClick={() =>
+                          dispatch({ kind: "attachment-rejection-dismissed", index: i })
+                        }
+                      >
+                        ×
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {/* 目标条（#37 批 C）：当前会话目标 tab——点击聚焦（session-focus） */}
+              {state.targetUrl !== null && state.currentSessionId !== null && !landing ? (
+                <GoalStrip
+                  url={state.targetUrl}
+                  onFocus={() => {
+                    const sessionId = currentSessionIdRef.current;
+                    if (sessionId === null) return;
+                    void sessionRequest?.("session-focus", { sessionId }).catch(() => {});
+                  }}
+                />
+              ) : null}
+              {/* 排队消息条（#37 批 A）：当前会话 queued turns——撤销即 queue-remove */}
+              {queuedTurns.length > 0 && sessionRequest !== undefined ? (
+                <QueueStrip
+                  turns={queuedTurns}
+                  onRemove={(turnId) => {
+                    const sessionId = currentSessionIdRef.current;
+                    if (sessionId === null) return;
+                    void sessionRequest("queue-remove", { sessionId, turnId }).catch(() => {});
+                  }}
+                />
+              ) : null}
+              <Composer
+                task={task}
+                onTaskChange={setTask}
+                canSend={canSend}
+                onSend={() => {
+                  // 运行中发送 = 入队（#37 批 A：连播而非禁用/拒绝）
+                  if (running) {
+                    const sessionId = currentSessionIdRef.current;
+                    if (sessionId !== null && sessionRequest !== undefined) {
+                      void sessionRequest("queue-add", { sessionId, task })
+                        .then((res) => {
+                          if ((res as { ok?: boolean }).ok === true) setTask("");
+                        })
+                        .catch(() => {});
+                    }
+                    return;
+                  }
+                  dispatch({ kind: "attachment-rejections-cleared" });
+                  send({
+                    kind: "control",
+                    action: "start",
+                    task,
+                    // 显式续接当前会话（缺省由 SW 按 tab 解析——#35 U1 语义）
+                    ...(state.currentSessionId !== null
+                      ? { sessionId: state.currentSessionId }
+                      : {}),
+                  });
+                }}
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button disabled={running} onClick={() => fileInput.current?.click()}>
+                  📎 附件
+                </Button>
+              </div>
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  if (files.length > 0) pickFiles(files);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          }
         >
-          <ModelSwitcher
-            request={optionsRequest}
+          {state.permission !== null ? (
+            <PermissionCard
+              req={state.permission.req}
+              expiresAt={state.permission.req.expiresAt}
+              onResolve={(verdict) => {
+                send({ kind: "permission-resolve", token: state.permission?.token ?? "", verdict });
+                dispatch({ kind: "permission-resolved" });
+              }}
+            />
+          ) : null}
+          {state.submit !== null ? (
+            <SubmitCard
+              req={state.submit.req}
+              fields={state.submit.fields}
+              onConfirm={() => {
+                send({ kind: "submit-resolve", token: state.submit?.token ?? "", approved: true });
+                dispatch({ kind: "submit-resolved" });
+              }}
+              onCancel={() => {
+                send({ kind: "submit-resolve", token: state.submit?.token ?? "", approved: false });
+                dispatch({ kind: "submit-resolved" });
+              }}
+            />
+          ) : null}
+
+          {activePage !== null ? (
+            // 函数调用而非元素渲染（评审轮 1 [2]）：视图工厂在组件体内声明，作为
+            // JSX 类型渲染时每次 dispatch 重渲染都换引用 → 整页 remount 丢输入/折叠
+            // 态。函数调用输出稳定的 SessionsPage 等模块级元素树，按类型 reconcile
+            activePage.Component()
+          ) : (
+            <>
+              {/* 会话标题条（#39 批 C/D）：行内重命名 + 字号 + 导出 */}
+              {state.currentSessionId !== null && !landing ? (
+                <SessionTitleBar
+                  title={state.sessionRecord?.meta.title ?? "会话"}
+                  onRename={(title) => {
+                    void sessionRequest?.("session-rename", {
+                      sessionId: state.currentSessionId,
+                      title,
+                    }).catch(() => {});
+                  }}
+                  actions={
+                    <>
+                      <FontSizePopover />
+                      <Button
+                        aria-label="导出会话 HTML"
+                        title="导出会话 HTML（自包含静态页）"
+                        onClick={() => {
+                          // 导出（验收④）：当前会话转录 → 零脚本单文件（内联主题 CSS）
+                          const record = state.sessionRecord;
+                          if (record === null) return;
+                          const html = serializeTranscriptHtml(
+                            projectTranscript(record, snap, state.events),
+                            { cssText: themeCssText, title: record.meta.title },
+                          );
+                          const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `treechrome-${record.meta.title.slice(0, 30) || "session"}.html`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        ⬇ HTML
+                      </Button>
+                    </>
+                  }
+                />
+              ) : null}
+              {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}
+              {external ? (
+                <ExternalDriveCard sessionTitle={state.sessionRecord?.meta.title ?? null} />
+              ) : null}
+              {landing ? (
+                <WelcomePanel
+                  title="TreeChrome"
+                  tagline="浏览器里的任务代理"
+                  historyCount={state.sessions.length}
+                  onOpenHistory={() => setView("tasks")}
+                />
+              ) : null}
+              {transcript.length > 0 ? (
+                <TranscriptView
+                  items={transcript}
+                  onReuseTurn={
+                    sessionRequest !== undefined ? (item) => newChat(item.task) : undefined
+                  }
+                />
+              ) : !landing && runViewEligible ? (
+                /* 回退旧时间线面：仅承载本会话/无会话语境的 run 视图（归档 fetch 在途
+                 * 或前会话模型数据）——旧会话的 snap/events 不串入新会话（评审轮 2 [3]） */
+                <>
+                  <RunTimeline
+                    events={state.events}
+                    discardedBeforeSeq={snap?.discardedBeforeSeq ?? 0}
+                    stepCount={snap?.stepCount}
+                  />
+                  {terminal ? (
+                    <FinalResult
+                      finalResult={snap.finalResult}
+                      isSuccessful={snap.isSuccessful}
+                      attachments={snap.attachments}
+                      lastError={snap.lastError}
+                      judgement={snap.judgement}
+                    />
+                  ) : null}
+                </>
+              ) : transcript.length === 0 && !landing ? (
+                /* 非本会话的 run 视图被门控（新对话/他会的 fetch 在途）——空转录占位 */
+                <TranscriptView items={[]} />
+              ) : null}
+            </>
+          )}
+        </AppShell>
+        {optionsRequest !== undefined ? (
+          <SettingsOverlay open={settingsOpen} onClose={() => setSettingsOpen(false)} title="设置">
+            <OptionsApp request={optionsRequest} />
+          </SettingsOverlay>
+        ) : null}
+        {/* 模型快速切换（#37 批 C：Ctrl+Shift+M → SW 广播置位；点选保存后关闭） */}
+        {optionsRequest !== undefined && state.modelSwitcherOpen ? (
+          <SettingsOverlay
+            open
             onClose={() => dispatch({ kind: "model-switcher-closed" })}
-          />
-        </SettingsOverlay>
-      ) : null}
-    </ThemedRoot>
+            title="模型快速切换"
+          >
+            <ModelSwitcher
+              request={optionsRequest}
+              onClose={() => dispatch({ kind: "model-switcher-closed" })}
+            />
+          </SettingsOverlay>
+        ) : null}
+      </ThemedRoot>
+    </div>
   );
 }

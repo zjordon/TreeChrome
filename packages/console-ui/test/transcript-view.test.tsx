@@ -77,6 +77,27 @@ describe("TranscriptView", () => {
   });
 });
 
+describe("TranscriptView 弱替代钮（#41 批 A）", () => {
+  it("onReuseTurn 提供：用户气泡出 ↻ 钮，点击回传该 turn；run 块无此钮", () => {
+    const reused: string[] = [];
+    render(
+      <TranscriptView
+        items={[user({ turnId: "t9", task: "查价并汇总" }), run({ turnId: "t9" })]}
+        onReuseTurn={(item) => reused.push(item.turnId)}
+      />,
+    );
+    const btn = screen.getByTestId("reuse-turn-btn");
+    expect(btn.getAttribute("title")).toContain("不自动起跑");
+    fireEvent.click(btn);
+    expect(reused).toEqual(["t9"]);
+  });
+
+  it("onReuseTurn 缺省：钮不渲染（旧宿主零变化）", () => {
+    render(<TranscriptView items={[user()]} />);
+    expect(screen.queryByTestId("reuse-turn-btn")).toBeNull();
+  });
+});
+
 describe("TranscriptView 滚动意图（#37 批 D）", () => {
   it("isAtBottom 判定：距底 ≤28 真 / >28 假；阈值可参", () => {
     expect(isAtBottom(972, 1000, 0)).toBe(true); // 距底 28

@@ -1,7 +1,7 @@
-// TranscriptView（issue #35 U1b B2 + #37 批 D 滚动意图 + #39 批 A 复制钮）：转录
-// 条目渲染——用户气泡（task 原文 + 非 done 状态章 + 复制钮）+ run 块（状态头 +
-// 复用 RunTimeline 事件面 + 终态复用 FinalResult）。零 chrome；事件条目的分色/
-// 折叠/未知回退由 RunTimeline 承载。
+// TranscriptView（issue #35 U1b B2 + #37 批 D 滚动意图 + #39 批 A 复制钮 + #41
+// 批 A 弱替代）：转录条目渲染——用户气泡（task 原文 + 非 done 状态章 + 复制钮 +
+// 「以此开新对话」钮）+ run 块（状态头 + 复用 RunTimeline 事件面 + 终态复用
+// FinalResult）。零 chrome；事件条目的分色/折叠/未知回退由 RunTimeline 承载。
 
 import { useEffect, useRef, useState } from "react";
 import { FinalResult } from "./final-result.js";
@@ -26,12 +26,31 @@ const RUN_STATUS_LABEL: Record<RunBlockItem["status"], string> = {
   interrupted: "已中断",
 };
 
-function UserBubble({ item }: { item: UserTurnItem }) {
+function UserBubble({
+  item,
+  onReuse,
+}: {
+  item: UserTurnItem;
+  onReuse?: (item: UserTurnItem) => void;
+}) {
   return (
     <div className="tc-transcript-user" data-testid={`turn-${item.turnId}`}>
       <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
         <div style={{ flex: 1, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.task}</div>
         <CopyButton text={item.task} label="复制任务原文" />
+        {onReuse !== undefined ? (
+          // 弱替代（#41 批 A，D5）：以该任务开新会话——预填不自动起跑，由宿主裁决
+          <button
+            type="button"
+            className="tc-copy-btn"
+            data-testid="reuse-turn-btn"
+            aria-label={`以此开新对话：${item.task.slice(0, 20)}`}
+            title="以此任务开新对话（预填输入框，不自动起跑）"
+            onClick={() => onReuse(item)}
+          >
+            ↻
+          </button>
+        ) : null}
       </div>
       {item.status !== "done" ? (
         <Badge tone={item.status === "error" ? "danger" : "accent"}>
@@ -75,6 +94,9 @@ function RunBlock({ item }: { item: RunBlockItem }) {
 
 export interface TranscriptViewProps {
   items: TranscriptItem[];
+  /** 「以此开新对话」弱替代（#41 批 A）：用户气泡回调——宿主 session-new +
+   *  预填 composer（D5：不自动起跑）。缺省不渲染该钮 */
+  onReuseTurn?: (item: UserTurnItem) => void;
 }
 
 /** 解除跟随的距底阈值（qz 同值 28px） */
@@ -93,7 +115,7 @@ export function isAtBottom(
 /** 滚动意图裁剪版（#37 批 D）：容器自有滚动面——尾部跟随 + 上滚解除（>28px）+
  *  回底恢复 + 解除期间新事件浮钮「↓」。跟随判定挂容器 scroll 事件与 items 变更
  *  双路径；空转录维持原占位不渲染滚动容器。 */
-export function TranscriptView({ items }: TranscriptViewProps) {
+export function TranscriptView({ items, onReuseTurn }: TranscriptViewProps) {
   const container = useRef<HTMLDivElement>(null);
   // 初始跟随（首屏在底）；scrollTop 初始 0 且内容未超视口时 isAtBottom 恒真
   const [following, setFollowing] = useState(true);
@@ -127,7 +149,7 @@ export function TranscriptView({ items }: TranscriptViewProps) {
       >
         {items.map((item) =>
           item.kind === "user-turn" ? (
-            <UserBubble key={item.turnId} item={item} />
+            <UserBubble key={item.turnId} item={item} onReuse={onReuseTurn} />
           ) : (
             <RunBlock key={item.runId} item={item} />
           ),
