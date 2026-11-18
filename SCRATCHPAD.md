@@ -86,6 +86,11 @@
 - **[7] P2 档位无冷启动恢复**：applyFontSizeClass 唯一调用点是弹卡 effect，欢迎页/页签页不挂载 → 持久化档位被无视（回落 13px 进会话才突跳）。修复：导出 initFontSize()，sidepanel-app 模块级调用一次；双向验证（破坏挂类 → initFontSize 用例必红）。
 - 测试：console-ui 145→148（node 属性 1 + initFontSize 2）；extension 292 不变；wxt build 实证 ?raw 六连链路。
 
+### 轮 2（2026-11-18，零意见——循环收敛）
+
+- complete / 0 条（增量 = 轮 1 修复提交 4d0e79f，实审 7 文件 2m18s）。首轮被会话中断重发（输出 JSON 缺失非孤儿，干净重跑）。
+- **累计：2 轮 / 7 条全采纳（P1×2 + P2×4 两组同根）/ 驳回 0 / stale 0**；console-ui 110→148、extension 290→292、protocol 3；分支 7 提交（计划+四批+轮 1 修复+本登记）；全程门禁 exit 0 + 双向验证两处（initFontSize 红绿 / wxt build 构建实证）。
+
 ## 6. 备注
 
 - manifest 本期无变更（页签/字号/导出全在组件与组态层）
