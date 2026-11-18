@@ -19,6 +19,7 @@ import {
   formatBytes,
   GoalStrip,
   initFontSize,
+  isSearchableQuery,
   ModelSwitcher,
   type PageRegistration,
   PageTabs,
@@ -28,6 +29,7 @@ import {
   RunPanelHeader,
   RunStatusBar,
   RunTimeline,
+  SearchOverlay,
   SessionsPage,
   SessionTitleBar,
   SettingsOverlay,
@@ -36,6 +38,7 @@ import {
   serializeTranscriptHtml,
   ThemedRoot,
   TranscriptView,
+  totalTranscriptMatches,
   WelcomePanel,
 } from "@tw/console-ui";
 import baseCss from "@tw/console-ui/theme/base.css?raw";
@@ -311,6 +314,35 @@ export function SidepanelApp({
   const running = snap !== null && !terminal;
   const transcript = projectTranscript(state.sessionRecord, snap, state.events);
   const landing = transcript.length === 0 && snap === null && state.events.length === 0;
+
+  // 聊天搜索（#41 批 B，验收①）：query/active 双元组——命中计数从 transcript 派生
+  const [search, setSearch] = useState<{ open: boolean; query: string; active: number }>({
+    open: false,
+    query: "",
+    active: 0,
+  });
+  // Ctrl/Cmd+F（D7）：仅 chat 视图、设置浮层关、有转录时拦截（原生 find 在页签页
+  // /浮层开时仍有价值）；transcript.length 是门条件——显式消费让依赖必要性成立
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "f") return;
+      if (view !== "chat" || settingsOpen || transcript.length === 0) return;
+      e.preventDefault();
+      setSearch((s) => ({ ...s, open: true }));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, settingsOpen, transcript.length]);
+  const searchMatchCount = search.open ? totalTranscriptMatches(transcript, search.query) : 0;
+  // 查询变化后命中数收缩 → 当前命中钳到上界（负数安全）
+  const searchActive = Math.min(search.active, Math.max(0, searchMatchCount - 1));
+  const searchStep = (delta: number): void => {
+    if (searchMatchCount === 0) return;
+    setSearch((s) => ({
+      ...s,
+      active: (searchActive + delta + searchMatchCount) % searchMatchCount,
+    }));
+  };
   // 回退时间线面的会话语境门（评审轮 2 [3]）：snap 属当前会话/无会话语境
   // （旧数据）才承载；新对话/他会话时旧 run 视图不串入
   const runViewEligible =
@@ -636,6 +668,18 @@ export function SidepanelApp({
             activePage.Component()
           ) : (
             <>
+              {/* 聊天搜索浮层（#41 批 B）：sticky 挂 main 顶部右侧，关闭即卸载零占位 */}
+              {search.open && view === "chat" ? (
+                <SearchOverlay
+                  query={search.query}
+                  onQueryChange={(q) => setSearch((s) => ({ ...s, query: q, active: 0 }))}
+                  matchIndex={searchActive}
+                  matchCount={searchMatchCount}
+                  onPrev={() => searchStep(-1)}
+                  onNext={() => searchStep(1)}
+                  onClose={() => setSearch((s) => ({ ...s, open: false }))}
+                />
+              ) : null}
               {/* 会话标题条（#39 批 C/D）：行内重命名 + 字号 + 导出 */}
               {state.currentSessionId !== null && !landing ? (
                 <SessionTitleBar
@@ -648,6 +692,15 @@ export function SidepanelApp({
                   }}
                   actions={
                     <>
+                      {transcript.length > 0 ? (
+                        <Button
+                          aria-label="搜索本会话"
+                          title="搜索本会话（Ctrl+F）"
+                          onClick={() => setSearch((s) => ({ ...s, open: true }))}
+                        >
+                          🔍
+                        </Button>
+                      ) : null}
                       <FontSizePopover />
                       <Button
                         aria-label="导出会话 HTML"
@@ -691,6 +744,11 @@ export function SidepanelApp({
                   items={transcript}
                   onReuseTurn={
                     sessionRequest !== undefined ? (item) => newChat(item.task) : undefined
+                  }
+                  highlight={
+                    search.open && isSearchableQuery(search.query)
+                      ? { query: search.query, activeOrdinal: searchActive }
+                      : null
                   }
                 />
               ) : !landing && runViewEligible ? (
