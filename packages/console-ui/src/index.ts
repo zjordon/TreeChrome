@@ -57,6 +57,8 @@ export type { ContextUsage, RunStatusBarProps } from "./run-status-bar.js";
 export { formatSeconds, formatTokens, RunStatusBar } from "./run-status-bar.js";
 export type { RunTimelineProps } from "./run-timeline.js";
 export { groupByStep, RunTimeline, repeatedSkillSeqs } from "./run-timeline.js";
+export type { SearchOverlayProps } from "./search-overlay.js";
+export { SearchOverlay } from "./search-overlay.js";
 export type { SegmentItem, SegmentProps } from "./segment.js";
 export { Segment } from "./segment.js";
 export type { SessionTitleBarProps } from "./session-title-bar.js";
@@ -81,6 +83,16 @@ export type { ThemedRootProps, ThemeMode } from "./themed-root.js";
 export { ThemedRoot } from "./themed-root.js";
 export type { RunBlockItem, TranscriptItem, UserTurnItem } from "./transcript.js";
 export { projectTranscript } from "./transcript.js";
+export type { TranscriptHighlight } from "./transcript-search.js";
+export {
+  countItemMatches,
+  countTextMatches,
+  HighlightedText,
+  isSearchableQuery,
+  ordinalBasesOf,
+  splitTextByQuery,
+  totalTranscriptMatches,
+} from "./transcript-search.js";
 export type { TranscriptViewProps } from "./transcript-view.js";
 export { FOLLOW_BOTTOM_THRESHOLD_PX, isAtBottom, TranscriptView } from "./transcript-view.js";
 export type { WelcomePanelProps } from "./welcome-panel.js";

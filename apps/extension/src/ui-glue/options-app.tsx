@@ -30,10 +30,11 @@ export interface OptionsAppProps {
 
 type FormTarget = { mode: "closed" } | { mode: "new" } | { mode: "edit"; card: ProviderCardDto };
 
-/** 分区 tab（issue #20 M4：Segment 首个消费方） */
-type TabKey = "models" | "grants" | "skills" | "drafts";
+/** 分区 tab（issue #20 M4：Segment 首个消费方；#41 批 C 增通用区） */
+type TabKey = "models" | "general" | "grants" | "skills" | "drafts";
 const TABS = [
   { value: "models", label: "模型" },
+  { value: "general", label: "通用" },
   { value: "grants", label: "授权" },
   { value: "skills", label: "技能库" },
   { value: "drafts", label: "草稿" },
@@ -232,6 +233,30 @@ export function OptionsApp({ request }: OptionsAppProps) {
               </div>
             </section>
           </>
+        )
+      ) : null}
+
+      {tab === "general" ? (
+        settings === null ? (
+          <p className="tc-ev-muted">读取设置中…</p>
+        ) : (
+          <section className="tc-card">
+            <strong>通用</strong>
+            <div style={{ display: "grid", gap: 10 }}>
+              <Switch
+                label="任务终态桌面通知（sidepanel 不可见时提醒，点击回到任务）"
+                checked={settings.notifyOnRunDone ?? true}
+                onChange={(e) =>
+                  void saveSettings({ ...settings, notifyOnRunDone: e.target.checked })
+                }
+              />
+              <Switch
+                label="显示调试页签（原始 journal 事件流）"
+                checked={settings.showDebugTab ?? true}
+                onChange={(e) => void saveSettings({ ...settings, showDebugTab: e.target.checked })}
+              />
+            </div>
+          </section>
         )
       ) : null}
 

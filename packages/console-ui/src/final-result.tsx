@@ -6,6 +6,7 @@ import type { AttachmentInfo } from "@tw/protocol";
 import { formatBytes } from "./bytes.js";
 import { CopyButton, MarkdownText } from "./markdown.js";
 import { Badge } from "./primitives.js";
+import { countTextMatches, HighlightedText, isSearchableQuery } from "./transcript-search.js";
 
 export interface FinalResultProps {
   finalResult: string | null;
@@ -20,6 +21,10 @@ export interface FinalResultProps {
     reasoning: string | null;
     failureReason: string | null;
   } | null;
+  /** 搜索高亮（#41 批 B）：提供且查询有效时 lastError/finalResult 降级纯文本 +
+   *  mark 高亮（markdown 重排会使命中序错位——搜索态语义优先）。fromOrdinal =
+   *  该 run 块首命中的全局序号（条目内 lastError 先于 finalResult——DOM 序） */
+  highlight?: { query: string; activeOrdinal: number; fromOrdinal: number };
 }
 
 export function FinalResult({
@@ -28,7 +33,13 @@ export function FinalResult({
   attachments,
   lastError,
   judgement,
+  highlight,
 }: FinalResultProps) {
+  const hl = highlight !== undefined && isSearchableQuery(highlight.query) ? highlight : undefined;
+  const lastErrHits =
+    hl !== undefined && lastError !== null && lastError !== undefined
+      ? countTextMatches(lastError, hl.query)
+      : 0;
   if (
     finalResult === null &&
     attachments.length === 0 &&
@@ -83,10 +94,41 @@ export function FinalResult({
           style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
           className="tc-ev-err"
         >
-          {lastError}
+          {hl !== undefined ? (
+            <HighlightedText
+              text={lastError}
+              highlight={{
+                query: hl.query,
+                baseOrdinal: hl.fromOrdinal,
+                activeOrdinal: hl.activeOrdinal,
+              }}
+            />
+          ) : (
+            lastError
+          )}
         </p>
       ) : null}
-      {finalResult !== null ? <MarkdownText>{finalResult}</MarkdownText> : null}
+      {finalResult !== null ? (
+        hl !== undefined ? (
+          // 搜索态降级纯文本（markdown 重排会使命中序错位）；base 接续 lastError 命中
+          <div
+            className="tc-md"
+            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+            data-testid="final-result-plain"
+          >
+            <HighlightedText
+              text={finalResult}
+              highlight={{
+                query: hl.query,
+                baseOrdinal: hl.fromOrdinal + lastErrHits,
+                activeOrdinal: hl.activeOrdinal,
+              }}
+            />
+          </div>
+        ) : (
+          <MarkdownText>{finalResult}</MarkdownText>
+        )
+      ) : null}
       {attachments.length > 0 ? (
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           {attachments.map((a) => (

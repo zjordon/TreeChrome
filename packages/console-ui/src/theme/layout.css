@@ -336,6 +336,41 @@
   gap: 10px;
 }
 
+/* —— 聊天搜索浮层（#41 U4 批 B）：sticky 挂 main 顶部右侧——滚动中恒可见、
+   不遮挡 header；关闭时不渲染零占位 —— */
+.tc-search-pop {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  align-self: flex-end;
+  padding: 4px 8px;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-popover-radius);
+  background: var(--tc-bg-elevated);
+  box-shadow: var(--tc-popover-shadow);
+}
+
+.tc-search-pop input {
+  width: 170px;
+  min-width: 0;
+}
+
+/* 命中高亮：subtle 底；当前命中 accent 反白强标识 */
+.tc-search-hit {
+  background: var(--tc-accent-subtle);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.tc-search-hit--active {
+  background: var(--tc-accent);
+  color: var(--tc-accent-fg);
+}
+
 /* 滚动意图（#37 批 D + 评审轮 1 [1]）：转录自有滚动面——跟随/解除/浮钮的容器。
    flex:1 + min-height:0（overflow 非 visible 时自动最小高为 0）：占据 main 剩余
    高度并内部滚动——限高父级是 flex 列化的 .tc-shell-main */
