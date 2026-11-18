@@ -10,6 +10,8 @@ export type { ComposerProps } from "./composer.js";
 export { COMPOSER_MAX_HEIGHT, COMPOSER_MIN_HEIGHT, Composer } from "./composer.js";
 export type { DebugLogPageProps } from "./debug-log-page.js";
 export { DebugLogPage } from "./debug-log-page.js";
+export type { ExportHtmlOptions } from "./export-html.js";
+export { escapeHtml, serializeTranscriptHtml } from "./export-html.js";
 export type { ExternalDriveCardProps } from "./external-card.js";
 export { ExternalDriveCard } from "./external-card.js";
 export type { FinalResultProps } from "./final-result.js";

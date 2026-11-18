@@ -23,6 +23,7 @@ const record = (over: Partial<SessionRecord> = {}): SessionRecord => ({
     createdAt: 1,
     updatedAt: 2,
     usageTokens: 10,
+    attachmentCount: 0,
   },
   turns: [
     {

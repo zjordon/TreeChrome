@@ -85,6 +85,7 @@ function SessionRow({ meta, isCurrent, onOpen, onRename, onDelete }: RowProps) {
           <span className="tc-ev-muted">
             {ORIGIN_LABEL[meta.origin] ? `${ORIGIN_LABEL[meta.origin]} · ` : ""}
             {meta.runCount} 轮 · {lastStatusLabel(meta.lastStatus)} · {formatWhen(meta.updatedAt)}
+            {meta.attachmentCount > 0 ? ` · 📎 ${meta.attachmentCount}` : ""}
           </span>
         </button>
       )}

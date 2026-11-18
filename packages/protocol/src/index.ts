@@ -245,6 +245,8 @@ export interface SessionMeta {
   updatedAt: number;
   /** 会话累计 token（run 终态累加） */
   usageTokens: number;
+  /** 累计附件件数（#39 U3 批 D：turns 附件聚合的只读投影——旧索引无字段回 0） */
+  attachmentCount: number;
 }
 
 /** 完整会话记录（tc_session:<sessionId> 的落盘形态） */

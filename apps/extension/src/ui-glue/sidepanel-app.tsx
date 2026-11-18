@@ -32,10 +32,14 @@ import {
   SettingsOverlay,
   SkillPage,
   SubmitCard,
+  serializeTranscriptHtml,
   ThemedRoot,
   TranscriptView,
   WelcomePanel,
 } from "@tw/console-ui";
+// 导出 HTML 的内联 CSS（#39 批 D D5：console-ui 不 import CSS 副作用进导出——
+// vite ?raw 读聚合主题文本，宿主注入纯函数）
+import themeCssText from "@tw/console-ui/theme.css?raw";
 import type { OptionsOp, SessionMeta, SessionOp, SessionRecord, UiToSwMessage } from "@tw/protocol";
 import { type ReactElement, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type BegunSignal, uploadAttachment } from "./attachment-upload.js";
@@ -587,7 +591,7 @@ export function SidepanelApp({
           <activePage.Component />
         ) : (
           <>
-            {/* 会话标题条（#39 批 C）：行内重命名 + 字号（导出批 D 接入） */}
+            {/* 会话标题条（#39 批 C/D）：行内重命名 + 字号 + 导出 */}
             {state.currentSessionId !== null && !landing ? (
               <SessionTitleBar
                 title={state.sessionRecord?.meta.title ?? "会话"}
@@ -597,7 +601,32 @@ export function SidepanelApp({
                     title,
                   }).catch(() => {});
                 }}
-                actions={<FontSizePopover />}
+                actions={
+                  <>
+                    <FontSizePopover />
+                    <Button
+                      aria-label="导出会话 HTML"
+                      title="导出会话 HTML（自包含静态页）"
+                      onClick={() => {
+                        // 导出（验收④）：当前会话转录 → 零脚本单文件（内联主题 CSS）
+                        const record = state.sessionRecord;
+                        if (record === null) return;
+                        const html = serializeTranscriptHtml(
+                          projectTranscript(record, snap, state.events),
+                          { cssText: themeCssText, title: record.meta.title },
+                        );
+                        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `treechrome-${record.meta.title.slice(0, 30) || "session"}.html`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      ⬇ HTML
+                    </Button>
+                  </>
+                }
               />
             ) : null}
             {/* 外部直驱说明卡（#37 批 B）：bridge 会话置顶——查看态 + 停止留权 */}

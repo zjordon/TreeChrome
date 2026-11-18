@@ -71,8 +71,9 @@
 - [x] 批 A markdown 渲染管线 + 复制钮：console-ui 增 react-markdown/remark-gfm/rehype-highlight；MarkdownText（双闸：raw HTML 不渲染 + safeUrlTransform 协议白名单）+ CodeBlock（语言标签/复制钮/textContent 兜底）+ CopyButton（ClipboardUtil 收口，不可用静默降级）；FinalResult.finalResult 走 markdown（复制钮在头部行尾）、UserBubble 复制钮；markdown.css（排版 + hljs token 双主题派生配色）。**偏离 D7**：next_goal 保持行内文本（每步一行×几十步，块级 markdown 纵向炸开；qz 同为单行）。
 - [x] 批 B PageRegistry + header tab + 技能页 + 调试日志页：PageRegistration/PageTabs（tablist 语义 + roving 键盘焦点，toggle 由宿主裁决）；SkillPage（list-skills/list-skill-drafts 双拉 + 采纳/丢弃经 OPTIONS_OPS——与 options 双宿主同面）；DebugLogPage（seq 排序原始事件流 + 快照头部 + 未知类型回退）；RunPanelHeader 增 tabs 插槽；sidepanel 静态注册（任务 10/技能 40/调试 50，isEnabled 由注入面推导）+ 列表钮退役（tab 承载）。
 - [x] 批 C 字号 + 会话标题条收拢：FontSizePopover（Aa 弹卡三档 sm/md/lg，localStorage `tc:font-size` 持久化，档位类挂 documentElement——base.css html 档位规则缩放 .tc-root，双主题 token 继承）；SessionTitleBar（标题行内重命名 Enter/Escape/isComposing 三路径 + actions 插槽）；sidepanel 聊天区顶部条件渲染（有会话非落地页），actions=字号（导出批 D 接入）。
-- [ ] 批 D 产物索引 + 导出 HTML + 验收自查
-- 测试总账：console-ui 110→139（批 A +9、批 B +13、批 C +7）；extension 290 不变
+- [x] 批 D 产物索引 + 导出 HTML + 验收自查：SessionMeta.attachmentCount（writeRecord 单点派生——所有写路径覆盖，返回派生 record 供 index 刷新；parseMeta 旧索引回 0）；SessionsPage 条目副行 📎 计数；serializeTranscriptHtml 纯函数（自包含零脚本：doctype + 内联 cssText + 转录类名体系 + EventLine 同口径事件行，验收④）；sidepanel 标题条导出钮（vite ?raw 注入聚合主题 CSS + Blob 下载）。**偏离 D8**：导出面 markdown 不重渲染（无 JS 环境）——finalResult 以 pre-wrap 文本呈现；**裁剪登记**：产物索引口径 = turns 输入附件聚合（RunArchive 无 done 产物通道——files_to_display 未归档）。
+- 验收自查（§0 五条）：①批 A 安全样例集（markdown.test 5 例）；②SkillPage 同 OPTIONS_OPS 面（skill-page.test 双拉/采纳/丢弃）；③isEnabled=false 页签不出现（sidepanel 组态 filter + page-tabs 空数组不渲染）；④serialize 纯函数测试（多轮/等待态/转义/工具卡行）+ 离线人工抽查待真机；⑤font-size.test（持久化/坏值回退/档位类）——双主题由 token 继承（结构保证）。
+- 测试总账：console-ui 110→145（批 A +9、B +13、C +7、D +6）；extension 290→292（attachmentCount 派生 + 旧索引收窄）；protocol 3 不变。分支提交：计划 + 四批共 5 个
 
 ## 5. 评审轮次登记（review-loop 填写）
 

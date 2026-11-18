@@ -124,6 +124,46 @@ describe("session-repo CRUD 往返", () => {
     expect(await repo.completeRun("ghost", { turnId: "t", archive: null as never })).toBe(false);
   });
 
+  it("attachmentCount 单点派生（#39 批 D）：turns 附件聚合进 meta/index——所有写路径生效", async () => {
+    const storage = fakeStorage();
+    const newTurnId = seqIds("t");
+    const repo = new SessionRepository(storage, {
+      newSessionId: () => "s1",
+      newTurnId,
+      now: () => 100,
+    });
+    const meta = await repo.createSession({ tabId: 7, origin: "user", title: "附件会话" });
+    expect((await repo.listIndex())[0]?.attachmentCount).toBe(0);
+    const file = { attachmentId: "a1", name: "f.mp4", mimeType: "video/mp4", size: 1 };
+    await repo.beginRun(meta.sessionId, { runId: "r1", task: "t", attachments: [file] });
+    await repo.appendQueuedTurn(meta.sessionId, { task: "排队", attachments: [file, file] });
+    // listIndex/open 双面聚合一致（writeRecord 单点覆盖）
+    expect((await repo.listIndex())[0]?.attachmentCount).toBe(3);
+    expect((await repo.open(meta.sessionId))?.meta.attachmentCount).toBe(3);
+  });
+
+  it("旧索引无 attachmentCount 字段回 0（parseMeta 宽松收窄——#39 批 D）", async () => {
+    const repo = new SessionRepository(
+      fakeStorage({
+        "tc_sessions:index": [
+          {
+            sessionId: "s-old",
+            tabId: 7,
+            title: "旧会话",
+            origin: "user",
+            runCount: 1,
+            lastStatus: "done",
+            createdAt: 1,
+            updatedAt: 1,
+            usageTokens: 10,
+          },
+        ],
+      }),
+      { newSessionId: () => "s1" },
+    );
+    expect((await repo.listIndex())[0]?.attachmentCount).toBe(0);
+  });
+
   it("rename/delete/rebindTab：生效且 index 同步；不存在回 false", async () => {
     const storage = fakeStorage();
     const repo = new SessionRepository(storage, { newSessionId: () => "s1" });
